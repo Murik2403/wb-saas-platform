@@ -17,6 +17,19 @@
     border: 1px solid rgba(255,255,255,.075); border-radius: 18px; padding: 32px;
     box-shadow: 0 12px 32px rgba(0,0,0,.25);
   }
+  .card.card-wide { max-width: 720px; }
+  .card-wide h2 { font-size: 1.1rem; margin: 26px 0 8px; }
+  .card-wide h2:first-of-type { margin-top: 0; }
+  .card-wide p, .card-wide li { color: #c4cad4; font-size: .93rem; line-height: 1.55; }
+  .card-wide ul, .card-wide ol { padding-left: 20px; margin: 8px 0; }
+  .card-wide table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: .9rem; }
+  .card-wide table td { padding: 6px 10px 6px 0; color: #c4cad4; vertical-align: top; }
+  .card-wide table td:first-child { color: #98a2b3; white-space: nowrap; }
+  .card-wide .back-link { display: inline-block; margin-top: 4px; color: #6d8dfa; text-decoration: none; font-size: .87rem; }
+  .card-wide .back-link:hover { text-decoration: underline; }
+  .nav-links { display: flex; gap: 16px; justify-content: center; margin-top: 18px; font-size: .82rem; }
+  .nav-links a { color: #98a2b3; text-decoration: none; }
+  .nav-links a:hover { color: #6d8dfa; }
   h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; margin: 0 0 6px; }
   .subtitle { color: #98a2b3; font-size: .9rem; margin: 0 0 22px; }
   label { display: block; font-size: .82rem; color: #98a2b3; margin: 14px 0 5px; }
@@ -44,7 +57,7 @@
 {% block head %}{% endblock %}
 </head>
 <body>
-<div class="card">
+<div class="card{% block card_extra_class %}{% endblock %}">
 {% block content %}{% endblock %}
 </div>
 </body>

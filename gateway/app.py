@@ -81,6 +81,35 @@ def home(request: Request):
     return templates.TemplateResponse(request, "home.html")
 
 
+# Public informational pages -- required by YooKassa's site review before it
+# will enable payments (real pricing/description, offer/terms, contacts +
+# legal details), and just generally good practice for a paid service.
+# Deliberately unauthenticated and linked from home.html's footer so both
+# reviewers and customers can find them without logging in.
+
+@app.get("/pricing", response_class=HTMLResponse)
+def pricing_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "pricing.html",
+        {
+            "price_rub": config.SUBSCRIPTION_PRICE_RUB,
+            "period_days": config.BILLING_PERIOD_DAYS,
+            "trial_days": config.TRIAL_DAYS,
+        },
+    )
+
+
+@app.get("/offer", response_class=HTMLResponse)
+def offer_page(request: Request):
+    return templates.TemplateResponse(request, "offer.html")
+
+
+@app.get("/contacts", response_class=HTMLResponse)
+def contacts_page(request: Request):
+    return templates.TemplateResponse(request, "contacts.html")
+
+
 @app.get("/register", response_class=HTMLResponse)
 def register_form(request: Request):
     account = _current_account(request)
