@@ -49,9 +49,9 @@ def billing_status(request: Request):
         days_left = billing.days_left_in_grace_period(account)
 
     return templates.TemplateResponse(
+        request,
         "billing.html",
         {
-            "request": request,
             "account": account,
             "days_left": days_left,
             "price_rub": config.SUBSCRIPTION_PRICE_RUB,
@@ -77,9 +77,9 @@ def billing_checkout(request: Request):
     except yookassa_client.YooKassaError:
         logger.exception("Failed to create YooKassa payment for account %s", account["id"])
         return templates.TemplateResponse(
+            request,
             "billing.html",
             {
-                "request": request,
                 "account": account,
                 "days_left": None,
                 "price_rub": config.SUBSCRIPTION_PRICE_RUB,
@@ -113,7 +113,7 @@ def billing_return(request: Request):
     # is deliberately just a "we're processing it" page, not a final
     # success/failure message. /billing (linked from here) reflects the
     # real, current, server-verified status.
-    return templates.TemplateResponse("billing_return.html", {"request": request})
+    return templates.TemplateResponse(request, "billing_return.html")
 
 
 @router.get("/billing/cancel", response_class=HTMLResponse)
@@ -126,7 +126,7 @@ def billing_cancel_confirm(request: Request):
         return RedirectResponse("/login", status_code=303)
     if account["status"] == "canceled":
         return RedirectResponse("/billing", status_code=303)
-    return templates.TemplateResponse("billing_cancel.html", {"request": request, "account": account})
+    return templates.TemplateResponse(request, "billing_cancel.html", {"account": account})
 
 
 @router.post("/billing/cancel")

@@ -25,10 +25,17 @@ providers:
 # While first testing DNS/TLS on a new domain, uncomment caServer below to
 # use Let's Encrypt's staging environment (untrusted certs, but no rate
 # limit risk) -- remove it again before going live for real trusted certs.
+#
+# NOTE: the ACME "email" field is intentionally NOT set here. Traefik does
+# NOT expand ${VAR} placeholders inside this static config file (that's a
+# docker-compose-only feature) -- a literal "${WB_SAAS_ACME_EMAIL}" string
+# would be sent to Let's Encrypt as the contact email and rejected. Instead
+# it's set via the TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL
+# environment variable on the traefik service in docker-compose.yml, which
+# Traefik reads natively and merges with this file.
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "${WB_SAAS_ACME_EMAIL}"
       storage: /letsencrypt/acme.json
       httpChallenge:
         entryPoint: web

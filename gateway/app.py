@@ -78,7 +78,7 @@ def home(request: Request):
     account = _current_account(request)
     if account is not None:
         return _redirect_for_account(account)
-    return templates.TemplateResponse("home.html", {"request": request})
+    return templates.TemplateResponse(request, "home.html")
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -86,7 +86,7 @@ def register_form(request: Request):
     account = _current_account(request)
     if account is not None:
         return _redirect_for_account(account)
-    return templates.TemplateResponse("register.html", {"request": request})
+    return templates.TemplateResponse(request, "register.html")
 
 
 @app.post("/register")
@@ -103,7 +103,7 @@ def register_submit(
             tenant_id = accounts.create_tenant_instance(conn, account_id, slug)
         except ValueError as exc:
             return templates.TemplateResponse(
-                "register.html", {"request": request, "error": str(exc), "email": email}, status_code=400
+                request, "register.html", {"error": str(exc), "email": email}, status_code=400
             )
         token = accounts.create_session(conn, account_id)
 
@@ -125,7 +125,7 @@ def login_form(request: Request, next: str = "", reset: str = ""):
     if account is not None:
         return _redirect_for_account(account)
     return templates.TemplateResponse(
-        "login.html", {"request": request, "next": next, "password_was_reset": bool(reset)}
+        request, "login.html", {"next": next, "password_was_reset": bool(reset)}
     )
 
 
@@ -135,8 +135,9 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
         account = accounts.authenticate_account(conn, email, password)
         if account is None:
             return templates.TemplateResponse(
+                request,
                 "login.html",
-                {"request": request, "error": "Неверный email или пароль.", "email": email, "next": next},
+                {"error": "Неверный email или пароль.", "email": email, "next": next},
                 status_code=400,
             )
         token = accounts.create_session(conn, account["id"])
@@ -162,7 +163,7 @@ def forgot_password_form(request: Request):
     account = _current_account(request)
     if account is not None:
         return _redirect_for_account(account)
-    return templates.TemplateResponse("forgot_password.html", {"request": request})
+    return templates.TemplateResponse(request, "forgot_password.html")
 
 
 @app.post("/forgot-password")
@@ -178,14 +179,14 @@ def forgot_password_submit(request: Request, background_tasks: BackgroundTasks, 
         background_tasks.add_task(
             mailer.send_password_reset_email, email.strip().lower(), reset_url, config.PASSWORD_RESET_TTL_MINUTES
         )
-    return templates.TemplateResponse("forgot_password.html", {"request": request, "submitted": True})
+    return templates.TemplateResponse(request, "forgot_password.html", {"submitted": True})
 
 
 @app.get("/reset-password", response_class=HTMLResponse)
 def reset_password_form(request: Request, token: str = ""):
     if not token:
         return RedirectResponse("/forgot-password", status_code=303)
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+    return templates.TemplateResponse(request, "reset_password.html", {"token": token})
 
 
 @app.post("/reset-password")
@@ -194,8 +195,9 @@ def reset_password_submit(
 ):
     if password != password_confirm:
         return templates.TemplateResponse(
+            request,
             "reset_password.html",
-            {"request": request, "token": token, "error": "Пароли не совпадают."},
+            {"token": token, "error": "Пароли не совпадают."},
             status_code=400,
         )
     with control_db.connect() as conn:
@@ -203,7 +205,7 @@ def reset_password_submit(
             password_reset.consume_reset_token(conn, token, password)
         except ValueError as exc:
             return templates.TemplateResponse(
-                "reset_password.html", {"request": request, "token": token, "error": str(exc)}, status_code=400
+                request, "reset_password.html", {"token": token, "error": str(exc)}, status_code=400
             )
     # Every session for the account was just revoked by consume_reset_token
     # (including, if it existed, whatever session this browser was holding)
@@ -234,7 +236,7 @@ def provisioning_status(request: Request):
     if tenant is not None and tenant["status"] == "running" and accounts.account_has_access(account):
         return RedirectResponse(config.tenant_url(tenant["slug"]), status_code=303)
     status = tenant["status"] if tenant is not None else "provisioning"
-    return templates.TemplateResponse("provisioning.html", {"request": request, "status": status})
+    return templates.TemplateResponse(request, "provisioning.html", {"status": status})
 
 
 def _redirect_for_account(account) -> RedirectResponse:

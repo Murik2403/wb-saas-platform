@@ -8,7 +8,13 @@ volumes:
 
 services:
   traefik:
-    image: traefik:v3.0
+    # v3.0 has a known Docker-provider bug against modern Docker Engine
+    # (>=29): it hardcodes API version 1.24, which newer daemons refuse
+    # ("client version 1.24 is too old"), so it can NEVER discover any
+    # container and every request gets Traefik's own 404 fallback -- not a
+    # DNS/TLS problem, routing itself is dead. Fixed in v3.6.1+; see
+    # https://github.com/traefik/traefik/issues/12253
+    image: traefik:v3.6.13
     restart: unless-stopped
     networks:
       - wbsaas_net
@@ -20,7 +26,9 @@ services:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik_letsencrypt:/letsencrypt
     environment:
-      - WB_SAAS_ACME_EMAIL=${WB_SAAS_ACME_EMAIL}
+      # Traefik reads TRAEFIK_* env vars as static config directly (unlike
+      # ${VAR} placeholders inside traefik.yml, which it does NOT expand).
+      - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL=${WB_SAAS_ACME_EMAIL}
 
   gateway:
     build: ./gateway
