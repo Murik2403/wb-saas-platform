@@ -1,0 +1,41 @@
+# Static Traefik configuration. Dynamic routing (which host goes to which
+# container) comes entirely from Docker labels -- the gateway's own labels
+# (docker-compose.yml) and each tenant container's labels
+# (gateway/provisioning.py's container_labels()) -- not from files here.
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false   # only containers with traefik.enable=true are routed --
+                              # otherwise every container on the shared network (including
+                              # ones with no business being public) would get exposed.
+    network: wbsaas_net
+
+# While first testing DNS/TLS on a new domain, uncomment caServer below to
+# use Let's Encrypt's staging environment (untrusted certs, but no rate
+# limit risk) -- remove it again before going live for real trusted certs.
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${WB_SAAS_ACME_EMAIL}"
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+      # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+api:
+  dashboard: false   # flip on + protect with auth if you want the Traefik UI; off by default
+
+log:
+  level: INFO

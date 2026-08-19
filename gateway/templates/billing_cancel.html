@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Отмена подписки — WB Control{% endblock %}
+{% block content %}
+<h1>Отменить подписку?</h1>
+<div class="error">
+  Доступ к вашему личному кабинету будет закрыт немедленно, а его контейнер
+  остановлен. Сами данные не удаляются и сохраняются на нашей стороне — при
+  повторной оплате мы сможем восстановить доступ к тому же кабинету.
+</div>
+<p class="subtitle">Это действие нельзя отменить самостоятельно через сайт — напишите нам, если передумаете.</p>
+
+<form method="post" action="/billing/cancel">
+  <button type="submit" style="background:#e05656;color:#fff;">Да, отменить подписку</button>
+</form>
+<div class="footer-link"><a href="/billing">Назад</a></div>
+{% endblock %}

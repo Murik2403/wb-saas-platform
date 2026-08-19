@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Подписка — WB Control{% endblock %}
+{% block content %}
+<h1>Подписка</h1>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+{% if account.status == "trialing" %}
+  <div class="info">Пробный период. Осталось дней: {{ days_left }}.</div>
+{% elif account.status == "active" %}
+  <div class="info">Подписка активна до {{ account.current_period_end[:10] }}.</div>
+{% elif account.status == "past_due" %}
+  <div class="error">Не удалось списать оплату. Доступ сохранится ещё {{ days_left }} дн., затем будет приостановлен.</div>
+{% elif account.status == "canceled" %}
+  <div class="error">Подписка приостановлена.</div>
+{% endif %}
+
+<p class="subtitle">{{ price_rub|int }} ₽ / {{ "30" }} дней. Оплата картой через ЮKassa — данные карты не передаются нам и не хранятся на наших серверах.</p>
+
+<form method="post" action="/billing/checkout">
+  <button type="submit">
+    {% if account.status == "active" %}Обновить способ оплаты{% else %}Оплатить{% endif %}
+  </button>
+</form>
+
+{% if account.status != "canceled" %}
+<div class="footer-link"><a href="/billing/cancel">Отменить подписку</a></div>
+{% endif %}
+<div class="footer-link"><a href="/">На главную</a></div>
+{% endblock %}

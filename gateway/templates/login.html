@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Вход — WB Control{% endblock %}
+{% block content %}
+<h1>Вход</h1>
+<p class="subtitle">Мы узнаем вас и откроем ваш личный кабинет.</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if info %}<div class="info">{{ info }}</div>{% endif %}
+{% if password_was_reset %}<div class="info">Пароль изменён. Войдите с новым паролем.</div>{% endif %}
+<form method="post" action="/login">
+  <input type="hidden" name="next" value="{{ next or '' }}">
+  <label for="email">Email</label>
+  <input type="email" id="email" name="email" value="{{ email or '' }}" required autofocus>
+  <label for="password">Пароль</label>
+  <input type="password" id="password" name="password" required>
+  <button type="submit">Войти</button>
+</form>
+<div class="footer-link"><a href="/forgot-password">Забыли пароль?</a></div>
+<div class="footer-link">Ещё нет аккаунта? <a href="/register">Зарегистрироваться</a></div>
+{% endblock %}

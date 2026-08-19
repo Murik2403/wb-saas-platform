@@ -1,0 +1,59 @@
+networks:
+  wbsaas_net:
+    name: ${WB_SAAS_DOCKER_NETWORK:-wbsaas_net}
+
+volumes:
+  traefik_letsencrypt:
+  gateway_data:
+
+services:
+  traefik:
+    image: traefik:v3.0
+    restart: unless-stopped
+    networks:
+      - wbsaas_net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik_letsencrypt:/letsencrypt
+    environment:
+      - WB_SAAS_ACME_EMAIL=${WB_SAAS_ACME_EMAIL}
+
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    networks:
+      - wbsaas_net
+    volumes:
+      # Needed so provisioning.py (docker-py) can create/start/stop tenant
+      # containers on the host's own Docker daemon -- the gateway container
+      # doesn't run Docker itself, it just talks to the host's socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gateway_data:/app/data
+    environment:
+      - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
+      - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
+      - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:latest}
+      - WB_SAAS_DOCKER_NETWORK=${WB_SAAS_DOCKER_NETWORK:-wbsaas_net}
+      - WB_SAAS_TENANT_INTERNAL_PORT=${WB_SAAS_TENANT_INTERNAL_PORT:-8501}
+      - WB_SAAS_TENANT_MEM_LIMIT=${WB_SAAS_TENANT_MEM_LIMIT:-768m}
+      - WB_SAAS_TENANT_CPU_QUOTA=${WB_SAAS_TENANT_CPU_QUOTA:-1.0}
+      - WB_SAAS_PROVISION_TIMEOUT=${WB_SAAS_PROVISION_TIMEOUT:-180}
+      - WB_SAAS_COOKIE_SECURE=${WB_SAAS_COOKIE_SECURE:-1}
+      - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@docker
+      - WB_SAAS_TLS_CERT_RESOLVER=letsencrypt
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)
+      - traefik.http.routers.gateway.entrypoints=websecure
+      - traefik.http.routers.gateway.tls.certresolver=letsencrypt
+      - traefik.http.services.gateway.loadbalancer.server.port=8000
+      # Defined once, here, and referenced by every tenant container's own
+      # labels (see gateway/provisioning.py container_labels()) as
+      # wb-saas-auth@docker -- Traefik's Docker provider merges routing
+      # config from every container's labels into one table, so a
+      # middleware defined on the gateway container is usable by any other.
+      - traefik.http.middlewares.wb-saas-auth.forwardauth.address=http://gateway:8000/auth/verify

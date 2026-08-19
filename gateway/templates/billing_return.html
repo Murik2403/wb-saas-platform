@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Обрабатываем оплату — WB Control{% endblock %}
+{% block head %}
+<meta http-equiv="refresh" content="4;url=/billing">
+{% endblock %}
+{% block content %}
+<h1>Обрабатываем платёж</h1>
+<p class="subtitle">Обычно это занимает несколько секунд. Сейчас перенаправим вас на страницу подписки.</p>
+<div class="spinner"></div>
+<div class="footer-link"><a href="/billing">Перейти сейчас</a></div>
+{% endblock %}

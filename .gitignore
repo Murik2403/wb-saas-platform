@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Local secrets / runtime config
+.env
+
+# Local/dev data (production data lives in per-tenant Docker volumes, not in git)
+tenant-app/data/*.sqlite3
+tenant-app/data/*.db
+*.sqlite3
+*.db
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Готовим кабинет — WB Control{% endblock %}
+{% block head %}
+<meta http-equiv="refresh" content="3">
+{% endblock %}
+{% block content %}
+<h1>Готовим ваш личный кабинет</h1>
+<p class="subtitle">Обычно это занимает меньше минуты. Страница обновится автоматически.</p>
+<div class="spinner"></div>
+{% if status == "failed" %}
+  <div class="error">Не получилось развернуть кабинет автоматически. Мы уже знаем об этом — напишите нам, если это не пройдёт в течение нескольких минут.</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+# Critical: data/ must NOT be baked into the image. Docker initializes a
+# freshly-created named volume from whatever exists at that path in the
+# image at container start -- if data/wb_dashboard.sqlite3 were copied in
+# here, every brand-new client would start out with a copy of whoever's
+# data happened to be in this build context (e.g. demo/test data from
+# development) instead of a genuinely empty database. app.py's own
+# init_db() creates a correct empty schema on first boot into the empty
+# mounted volume; nothing here should pre-populate it.
+data/
+
+tests/
+__pycache__/
+*.pyc
+.venv/
+.git/
+*.md
