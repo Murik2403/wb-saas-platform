@@ -121,16 +121,20 @@ https://wbsaas.example.com/webhooks/yookassa
 
 ```cron
 # /etc/cron.d/wb-saas-billing — раз в сутки в 03:00 по времени сервера
-0 3 * * * root cd /opt/wb-saas && docker compose exec -T gateway python3 /app/../scripts/run_billing_cycle.py >> /var/log/wb-saas-billing.log 2>&1
+0 3 * * * root cd /opt/wb-saas && docker compose exec -T -e PYTHONPATH=/app gateway python3 /app/scripts/run_billing_cycle.py >> /var/log/wb-saas-billing.log 2>&1
 ```
 
-Точный путь внутри контейнера `gateway` зависит от того, как он собран —
-проще всего смонтировать `scripts/` в контейнер gateway (или запускать
-скрипт с хоста через venv с `requests`/`docker` — он сам добавляет
-`gateway/` в `sys.path`, доступ к Docker API ему нужен только для
-`provisioning.stop_tenant()` в `cancel_overdue_accounts()`). Проверьте
-вручную первый прогон (`docker compose exec gateway python3
-scripts/run_billing_cycle.py`) и посмотрите лог перед тем как класть в
+Запускать нужно строго **внутри контейнера `gateway`**, не с хоста: реальная
+база аккаунтов (`logic/db.py`) живёт в Docker-томе `gateway_data`,
+примонтированном на `/app/data` только внутри этого контейнера. Запуск с
+хоста тихо открыл бы пустой файл `gateway/data/gateway.sqlite3` из
+git-чекаута и "успешно" ничего бы не сделал. `docker-compose.yml`
+монтирует `./scripts` в контейнер как `/app/scripts:ro`; `PYTHONPATH=/app`
+обязателен на exec — сборка образа плоская (`COPY . .` из `./gateway`), и
+собственный `sys.path.insert` скрипта (рассчитанный на соседнюю папку
+`gateway/`) в этом layout ничего не находит. Проверьте вручную первый
+прогон (`docker compose exec -e PYTHONPATH=/app gateway python3
+/app/scripts/run_billing_cycle.py`) и посмотрите лог перед тем как класть в
 cron.
 
 Ненулевой код выхода — только если сам вызов к ЮKassa не прошёл
@@ -202,8 +206,17 @@ python3 scripts/upgrade_all_tenants.py
 
 ```cron
 # /etc/cron.d/wb-saas-backup — раз в сутки в 02:00, до биллинг-цикла в 03:00
-0 2 * * * root cd /opt/wb-saas && python3 scripts/backup_tenant_volumes.py >> /var/log/wb-saas-backup.log 2>&1
+0 2 * * * root cd /opt/wb-saas && docker compose exec -T -e PYTHONPATH=/app gateway python3 /app/scripts/backup_tenant_volumes.py >> /var/log/wb-saas-backup.log 2>&1
 ```
+
+Тот же аргумент, что и для биллинг-цикла: скрипт тоже читает
+`logic/db.py`, поэтому обязан выполняться внутри контейнера `gateway`, а
+не с хоста — иначе он "успешно" отбэкапит ноль клиентов из пустой базы.
+`WB_SAAS_BACKUP_DIR` (путь `/opt/wb-saas/backups` по умолчанию) при этом
+всё равно означает путь на **хосте**: `alpine`-хелпер запускается через
+Docker socket на хостовом демоне, и bind-mount для него всегда
+разрешается относительно хоста, а не файловой системы контейнера
+`gateway`, из которого пришёл вызов.
 
 **Важно**: сам по себе `WB_SAAS_BACKUP_DIR` на том же сервере не защищает
 от потери сервера целиком — это тот же самый диск. Настройте отдельно

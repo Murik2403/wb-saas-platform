@@ -41,6 +41,15 @@ services:
       # doesn't run Docker itself, it just talks to the host's socket.
       - /var/run/docker.sock:/var/run/docker.sock
       - gateway_data:/app/data
+      # scripts/run_billing_cycle.py and scripts/backup_tenant_volumes.py both
+      # read the real accounts DB (logic/db.py), which only exists inside
+      # this container's /app/data (the gateway_data volume above) -- running
+      # them from the host instead would silently open an empty DB file from
+      # the git checkout and look like it "worked" while doing nothing.
+      # Mounted read-only; PYTHONPATH=/app is required on the exec (the
+      # scripts' own sys.path insert assumes a sibling gateway/ dir that
+      # doesn't exist in this flat image layout) -- see DEPLOY.md.
+      - ./scripts:/app/scripts:ro
     environment:
       - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
       - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
