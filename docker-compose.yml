@@ -53,6 +53,28 @@ services:
       - WB_SAAS_COOKIE_SECURE=${WB_SAAS_COOKIE_SECURE:-1}
       - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@docker
       - WB_SAAS_TLS_CERT_RESOLVER=letsencrypt
+      # Billing (logic/billing.py, yookassa_client.py) -- previously missing
+      # here entirely, so .env values for these never reached the container
+      # and the app silently ran on its built-in defaults instead.
+      - WB_SAAS_TRIAL_DAYS=${WB_SAAS_TRIAL_DAYS:-14}
+      - WB_SAAS_BILLING_PERIOD_DAYS=${WB_SAAS_BILLING_PERIOD_DAYS:-30}
+      - WB_SAAS_SUBSCRIPTION_PRICE_RUB=${WB_SAAS_SUBSCRIPTION_PRICE_RUB:-2990}
+      - WB_SAAS_GRACE_PERIOD_DAYS=${WB_SAAS_GRACE_PERIOD_DAYS:-5}
+      - WB_SAAS_YOOKASSA_SHOP_ID=${WB_SAAS_YOOKASSA_SHOP_ID:-}
+      - WB_SAAS_YOOKASSA_SECRET_KEY=${WB_SAAS_YOOKASSA_SECRET_KEY:-}
+      # Password reset (logic/password_reset.py, mailer.py) -- same issue.
+      - WB_SAAS_PASSWORD_RESET_TTL_MINUTES=${WB_SAAS_PASSWORD_RESET_TTL_MINUTES:-60}
+      - WB_SAAS_SMTP_HOST=${WB_SAAS_SMTP_HOST:-}
+      - WB_SAAS_SMTP_PORT=${WB_SAAS_SMTP_PORT:-587}
+      - WB_SAAS_SMTP_USER=${WB_SAAS_SMTP_USER:-}
+      - WB_SAAS_SMTP_PASSWORD=${WB_SAAS_SMTP_PASSWORD:-}
+      - WB_SAAS_SMTP_USE_STARTTLS=${WB_SAAS_SMTP_USE_STARTTLS:-1}
+      # Mirrors config.py's own Python-side fallback ("no-reply@" + domain) --
+      # if this were a bare empty-string default instead, an unset .env value
+      # would arrive in the container as an explicit empty string, which
+      # os.environ.get() treats as "set" and returns as-is, silently
+      # overriding that smarter default with a blank From address.
+      - WB_SAAS_SMTP_FROM_EMAIL=${WB_SAAS_SMTP_FROM_EMAIL:-no-reply@${WB_SAAS_PARENT_DOMAIN}}
     labels:
       - traefik.enable=true
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)
