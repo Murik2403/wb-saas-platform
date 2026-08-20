@@ -1,4 +1,10 @@
-streamlit>=1.38
+# Upper-bounded on purpose: an unpinned lower-bound-only requirement is
+# exactly what silently broke gateway/ earlier (fastapi>=0.110 picked up a
+# far newer version with a breaking Jinja2Templates.TemplateResponse
+# signature change, only caught live on the server, not in this sandbox).
+# Capping the major version here means a future `docker build` can't
+# silently jump to a breaking Streamlit 2.x without a deliberate bump.
+streamlit>=1.38,<2
 pandas>=2.0
 numpy>=1.26
 plotly>=5.20

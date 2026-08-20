@@ -65,10 +65,10 @@ def send_email(to_email: str, subject: str, body_text: str) -> bool:
 
 
 def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -> bool:
-    subject = "Восстановление пароля — Marketshelper"
+    subject = "Восстановление пароля — MARKETSHELPER"
     body = (
         f"Кто-то (надеемся, что вы) запросил сброс пароля для аккаунта {to_email} "
-        "в Marketshelper.\n\n"
+        "в MARKETSHELPER.\n\n"
         f"Чтобы задать новый пароль, перейдите по ссылке в течение {ttl_minutes} минут:\n"
         f"{reset_url}\n\n"
         "Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо -- "

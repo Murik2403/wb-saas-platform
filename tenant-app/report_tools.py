@@ -219,7 +219,7 @@ def build_finance_excel(
                 ws.column_dimensions[col_cells[0].column_letter].width = width
 
         ws = wb["Сводка"]
-        ws["A1"] = "Marketshelper — финансовая сводка"
+        ws["A1"] = "MARKETSHELPER — финансовая сводка"
         ws.merge_cells("A1:B1")
         ws["A1"].fill = PatternFill("solid", fgColor=purple)
         ws["A1"].font = Font(color=white, bold=True, size=15)

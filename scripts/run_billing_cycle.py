@@ -52,7 +52,7 @@ def charge_due_accounts() -> int:
         try:
             payment = yookassa_client.create_payment(
                 amount_rub=config.SUBSCRIPTION_PRICE_RUB,
-                description=f"Продление подписки Marketshelper — {account['email']}",
+                description=f"Продление подписки MARKETSHELPER — {account['email']}",
                 payment_method_id=account["payment_method_id"],
                 metadata={"account_id": str(account_id)},
                 # Deterministic per (account, period being paid for) -- see
