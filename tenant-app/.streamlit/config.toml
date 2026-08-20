@@ -1,0 +1,10 @@
+# Disables Streamlit's own auto-generated multipage sidebar nav (built from
+# filenames in pages/, e.g. "ads", "control", "settings page"). This app
+# drives its own routing via the PAGES dict + st.radio in app.py, so the
+# native nav is pure duplication -- and worse, on some Streamlit versions,
+# forcing it hidden via CSS (display:none) instead of disabling it here
+# broke the surrounding grid/flex layout. This is the official, version-
+# stable switch (vs. guessing at internal data-testid attributes that have
+# changed across Streamlit releases): https://docs.streamlit.io/develop/api-reference/configuration/config.toml
+[client]
+showSidebarNavigation = false
