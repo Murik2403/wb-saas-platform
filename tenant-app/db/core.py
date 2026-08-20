@@ -768,6 +768,17 @@ def init_db() -> None:
                 OR COALESCE(extra_unit_rub,0)>0
             """
         )
+        # NOTE (genericization pass): this one-time migration and the "v4.4"/
+        # "v2.8" ones below it hardcode one specific tenant's own legacy blank
+        # types and material costs ("Старые/Новые болванки", 102/192/208 руб.,
+        # 0.224/0.447/0.548 м). They're deliberately left as-is rather than
+        # rewritten: each is guarded by an app_meta flag (or a WHERE clause
+        # that only matches rows with those exact legacy values), so it has
+        # already run at most once against real data and is a permanent no-op
+        # for any new/other tenant's database going forward -- there is
+        # nothing left for it to do, and nothing here is reachable from the
+        # live app UI (see ui_helpers.py / pages/settings_page.py /
+        # pages/production.py, which are now fully generic).
         migration_key = "v4.2_cost_baseline_restored"
         migration_done = conn.execute("SELECT value FROM app_meta WHERE key=?", (migration_key,)).fetchone()
         if migration_done is None:

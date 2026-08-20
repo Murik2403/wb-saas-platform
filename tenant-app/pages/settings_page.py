@@ -13,7 +13,7 @@ import plotly.express as px
 import streamlit as st
 
 from ui_helpers import (
-    money, num, pct, PRODUCTION_RULES, production_rule, apply_production_rules,
+    money, num, pct,
     infer_material_name, material_key, ceil_to_batch, kpi_card,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
@@ -139,7 +139,7 @@ def render(ctx: dict) -> None:
             st.error(str(exc))
 
     st.markdown("### 3. Себестоимость")
-    st.caption("Указывайте себестоимость одной продаваемой единицы WB. Если карточка продаёт комплект из 4 плейсматов — укажите себестоимость всего комплекта.")
+    st.caption("Указывайте себестоимость одной продаваемой единицы WB. Если карточка продаёт комплект из нескольких изделий — укажите себестоимость всего комплекта.")
     current_costs = read_table("costs")
     catalog = read_table("products_catalog")
 
@@ -205,13 +205,13 @@ def render(ctx: dict) -> None:
 
     st.markdown("#### 3.1. Текущая себестоимость и прогноз новой партии")
     st.info(
-        "В прибыли используется текущая фиксированная себестоимость: старые болванки 2 шт. — 102 ₽, "
-        "старые 4 шт. — 192 ₽, новые 4 шт. — 208 ₽. Цена новой закупки показывается отдельно как прогноз "
-        "и не меняет прибыль, пока вы явно не примените её к выбранным товарам."
+        "В прибыли используется текущая фиксированная себестоимость, указанная выше по каждому товару. "
+        "Цена новой закупки показывается отдельно как прогноз и не меняет прибыль, пока вы явно не примените "
+        "её к выбранным товарам."
     )
     st.caption(
         "Прогноз новой партии учитывает полную стоимость рулона: цену поставщика, доставку, курс и прочие расходы. "
-        "Упаковка по умолчанию — 12 ₽ на комплект: 6 ₽ зип-пакет и 6 ₽ картонная подложка."
+        "Упаковка по умолчанию — 12 ₽ на комплект, значение можно изменить для каждого товара."
     )
     production_for_cost = read_table("production_settings")
     material_rates = read_material_cost_rates()
@@ -271,7 +271,7 @@ def render(ctx: dict) -> None:
                 "nm_id": st.column_config.NumberColumn("Артикул WB", format="%d"),
                 "supplier_article": "Артикул продавца",
                 "product_name": "Товар",
-                "blank_type": "Тип болванки",
+                "blank_type": "Тип заготовки",
                 "pack_size": st.column_config.NumberColumn("В комплекте", format="%d"),
                 "material_name": "Материал / цвет",
                 "material_per_unit": st.column_config.NumberColumn("Расход, м", format="%.3f"),
@@ -323,9 +323,10 @@ def render(ctx: dict) -> None:
 
     st.markdown("### 4. Параметры производства")
     st.caption(
-        "Отметьте товары собственного производства, выберите тип болванки, размер комплекта и материал/цвет. "
-        "Одинаковое название материала объединяет карточки в общий план сырья. При включённых автонормах программа сама "
-        "устанавливает расход материала и минимальную производственную партию."
+        "Отметьте товары собственного производства, укажите тип заготовки, размер комплекта и материал/цвет. "
+        "Одинаковое название материала объединяет карточки в общий план сырья. Расход материала и минимальную "
+        "производственную партию каждый товар задаёт вручную — это единственные и полностью свободные поля, "
+        "подходящие для любого вида продукции."
     )
     current_production = read_table("production_settings")
     if catalog.empty:
@@ -336,27 +337,19 @@ def render(ctx: dict) -> None:
             prod_base = prod_base.merge(
                 current_production[[
                     "nm_id", "enabled", "material_per_unit", "target_days", "min_batch", "note",
-                    "blank_type", "pack_size", "auto_rules", "material_name"
+                    "blank_type", "pack_size", "material_name"
                 ]],
                 on="nm_id", how="left",
             )
-        name_category = (
-            prod_base["product_name"].fillna("").astype(str) + " " +
-            prod_base["subject_name"].fillna("").astype(str)
-        ).str.casefold()
         if "enabled" not in prod_base.columns:
-            prod_base["enabled"] = name_category.str.contains("плейсмат", regex=False)
-        else:
-            default_enabled = name_category.str.contains("плейсмат", regex=False)
-            prod_base["enabled"] = prod_base["enabled"].where(prod_base["enabled"].notna(), default_enabled)
+            prod_base["enabled"] = False
         defaults = {
             "material_per_unit": 0.0,
             "target_days": 21,
             "min_batch": 1,
             "note": "",
             "blank_type": "Не задано",
-            "pack_size": 4,
-            "auto_rules": False,
+            "pack_size": 1,
             "material_name": "",
         }
         for col, default in defaults.items():
@@ -364,8 +357,7 @@ def render(ctx: dict) -> None:
                 prod_base[col] = default
             prod_base[col] = prod_base[col].fillna(default)
         prod_base["blank_type"] = prod_base["blank_type"].replace("", "Не задано")
-        prod_base["pack_size"] = pd.to_numeric(prod_base["pack_size"], errors="coerce").fillna(4).astype(int)
-        prod_base["auto_rules"] = prod_base["auto_rules"].fillna(False).astype(bool)
+        prod_base["pack_size"] = pd.to_numeric(prod_base["pack_size"], errors="coerce").fillna(1).astype(int)
         prod_base["enabled"] = prod_base["enabled"].fillna(False).astype(bool)
         prod_base["material_name"] = prod_base["material_name"].fillna("").astype(str)
         inferred_materials = prod_base.apply(
@@ -378,7 +370,7 @@ def render(ctx: dict) -> None:
         edited_production = st.data_editor(
             prod_base[[
                 "nm_id", "supplier_article", "product_name", "enabled",
-                "blank_type", "pack_size", "material_name", "auto_rules", "material_per_unit",
+                "blank_type", "pack_size", "material_name", "material_per_unit",
                 "target_days", "min_batch", "note"
             ]],
             num_rows="fixed", hide_index=True, use_container_width=True,
@@ -388,17 +380,14 @@ def render(ctx: dict) -> None:
                 "supplier_article": "Артикул продавца",
                 "product_name": "Товар",
                 "enabled": st.column_config.CheckboxColumn("Производим"),
-                "blank_type": st.column_config.SelectboxColumn(
-                    "Тип болванки", options=["Не задано", "Старые болванки", "Новые болванки", "Другое"], required=True
+                "blank_type": st.column_config.TextColumn(
+                    "Тип заготовки", help="Свободное название вашей заготовки/полуфабриката, например «Ткань А» или «Металл 2мм».", required=True
                 ),
-                "pack_size": st.column_config.SelectboxColumn(
-                    "В комплекте, шт.", options=[2, 4], required=True
+                "pack_size": st.column_config.NumberColumn(
+                    "В комплекте, шт.", min_value=1, step=1, format="%d", required=True
                 ),
                 "material_name": st.column_config.TextColumn(
                     "Материал / цвет", help="Одинаковое название объединяет потребность нескольких карточек в одну строку сырья."
-                ),
-                "auto_rules": st.column_config.CheckboxColumn(
-                    "Автонормы", help="Автоматически подставляет расход материала и минимальную партию."
                 ),
                 "material_per_unit": st.column_config.NumberColumn(
                     "Материал на комплект, м", min_value=0.0, step=0.001, format="%.3f"
@@ -412,35 +401,28 @@ def render(ctx: dict) -> None:
                 "note": "Примечание",
             },
         )
-        st.caption(
-            "Рекомендуемые автонормы: старые болванки 2 шт. — 0,224 м и партия 20 комплектов; "
-            "старые 4 шт. — 0,447 м и партия 10 комплектов; новые 4 шт. — 0,548 м и партия 10 комплектов. "
-            "Новые болванки допускаются только комплектами по 4 шт."
-        )
         if st.button("Сохранить параметры производства"):
             try:
-                normalized, rule_messages = apply_production_rules(edited_production)
+                normalized = edited_production
                 invalid = normalized[
                     normalized["enabled"].fillna(False).astype(bool)
-                    & (normalized["blank_type"].fillna("") == "Не задано")
+                    & (normalized["blank_type"].fillna("").str.strip().isin(["", "Не задано"]))
                 ]
                 if not invalid.empty:
                     articles = ", ".join(invalid["supplier_article"].astype(str).head(8).tolist())
-                    raise ValueError(f"Для производимых товаров выберите тип болванки: {articles}")
+                    raise ValueError(f"Для производимых товаров укажите тип заготовки: {articles}")
                 save_production_settings(normalized[[
                     "nm_id", "supplier_article", "enabled", "material_per_unit",
-                    "target_days", "min_batch", "note", "blank_type", "pack_size", "auto_rules", "material_name"
+                    "target_days", "min_batch", "note", "blank_type", "pack_size", "material_name"
                 ]])
                 st.success("Параметры производства сохранены. Нормы и минимальные партии применены.")
-                for message in rule_messages[:5]:
-                    st.info(message)
                 st.cache_data.clear()
             except Exception as exc:
                 st.error(str(exc))
 
     st.markdown("### 5. Остатки сырья и рулоны")
     st.caption(
-        "Склад сырья ведётся единообразно по цветам. Один и тот же рулон можно использовать для старых и новых болванок, "
+        "Склад сырья ведётся единообразно по цветам. Один и тот же рулон можно использовать для разных типов заготовок, "
         "поэтому цвет вводится один раз. Пока флажок «Остаток указан» выключен, нулевой остаток в расчёт не подставляется."
     )
     production_for_inventory = read_table("production_settings")
@@ -519,7 +501,7 @@ def render(ctx: dict) -> None:
             if st.button("Сохранить остатки сырья"):
                 try:
                     save_material_inventory(edited_inventory)
-                    st.success("Остатки сырья сохранены. Один цвет учитывается общим запасом для всех типов болванок.")
+                    st.success("Остатки сырья сохранены. Один цвет учитывается общим запасом для всех типов заготовок.")
                     st.cache_data.clear()
                 except Exception as exc:
                     st.error(str(exc))
@@ -847,7 +829,7 @@ def render(ctx: dict) -> None:
 
     st.markdown("### 7. Производственная мощность")
     st.caption(
-        "Укажите фактическое количество отдельных плейсматов за рабочий день, рабочий график и срок до появления "
+        "Укажите фактическое количество отдельных изделий за рабочий день, рабочий график и срок до появления "
         "готовой партии на WB. Сначала календарь раздаёт срочным товарам аварийный запас, затем закрывает полный план."
     )
     capacity = get_production_capacity()

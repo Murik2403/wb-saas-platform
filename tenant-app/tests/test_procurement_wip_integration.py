@@ -94,7 +94,7 @@ class ProcurementToWipFifoFlowTests(DbTestCase):
 
         # Issue 60m to WIP: FIFO must take all 50m from the cheap layer first, then 10m from the pricier one.
         issue = wip.issue_wip_material(
-            batch_date="2026-01-15", material_name="Синий ПВХ", blank_type="Старые болванки",
+            batch_date="2026-01-15", material_name="Синий ПВХ", blank_type="Тип А",
             meters_used=60.0, note="test batch",
         )
         self.assertEqual(issue["errors"], [])
@@ -119,7 +119,7 @@ class ProcurementToWipFifoFlowTests(DbTestCase):
     def test_wip_issue_beyond_available_fifo_and_physical_stock_fails_cleanly(self) -> None:
         self._receive_material(unit_price_per_roll=300.0, rolls=1, roll_length=25.0)  # only 25m total
         issue = wip.issue_wip_material(
-            batch_date="2026-01-15", material_name="Синий ПВХ", blank_type="Старые болванки",
+            batch_date="2026-01-15", material_name="Синий ПВХ", blank_type="Тип А",
             meters_used=100.0, note="too much",
         )
         self.assertEqual(issue["posted"], 0)

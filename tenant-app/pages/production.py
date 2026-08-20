@@ -13,7 +13,7 @@ import plotly.express as px
 import streamlit as st
 
 from ui_helpers import (
-    money, num, pct, PRODUCTION_RULES, production_rule, apply_production_rules,
+    money, num, pct,
     infer_material_name, material_key, ceil_to_batch, kpi_card,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
@@ -80,9 +80,8 @@ def render(ctx: dict) -> None:
             "target_days": "Целевой запас, дней",
             "min_batch": "Мин. партия, компл.",
             "note": "Примечание",
-            "blank_type": "Тип болванки",
+            "blank_type": "Тип заготовки",
             "pack_size": "Штук в комплекте",
-            "auto_rules": "Автонормы",
             "material_name": "Материал / цвет",
         }).copy()
 
@@ -153,7 +152,7 @@ def render(ctx: dict) -> None:
         plan["Дата прибытия"] = pd.to_datetime(plan.get("Дата прибытия"), errors="coerce")
         for col in [
             "Товар", "Артикул продавца", "Статус", "Основная причина", "Рекомендация",
-            "Примечание", "Тип болванки", "Материал / цвет", "Примечание поставки"
+            "Примечание", "Тип заготовки", "Материал / цвет", "Примечание поставки"
         ]:
             if col not in plan.columns:
                 plan[col] = ""
@@ -216,7 +215,7 @@ def render(ctx: dict) -> None:
             return raw
 
         plan["Рекомендовано, компл."] = plan.apply(recommended_qty, axis=1)
-        plan["Плейсматов к производству"] = plan["Рекомендовано, компл."] * plan["Штук в комплекте"]
+        plan["Штук к производству"] = plan["Рекомендовано, компл."] * plan["Штук в комплекте"]
         plan["Нужно материала, м"] = plan["Рекомендовано, компл."] * plan["Материал на ед., м"]
 
         def priority(row: pd.Series) -> str:
@@ -262,37 +261,30 @@ def render(ctx: dict) -> None:
         priority_order = {"Срочно": 0, "Высокий": 1, "Средний": 2, "Стоп": 3, "Нет спроса": 4, "Запас достаточен": 5}
         plan["_priority"] = plan["Приоритет"].map(priority_order).fillna(9)
         plan = plan.sort_values(
-            ["_priority", "Запас с готовым, дней", "Тип болванки", "Материал / цвет", "Расчётная прибыль"],
+            ["_priority", "Запас с готовым, дней", "Тип заготовки", "Материал / цвет", "Расчётная прибыль"],
             ascending=[True, True, True, True, False]
         ).drop(columns=["План без экономики"])
 
-        # Common raw-material stock by color. Old/new blank demand is shown as a breakdown,
-        # but one physical roll is never counted twice.
+        # Common raw-material stock by color. Demand is broken down by whatever
+        # blank types the tenant actually uses (any number of freely-named
+        # types, not just two) -- one physical roll of a given color is never
+        # counted twice across types.
         material_rows = plan[plan["Нужно материала, м"] > 0].copy()
-        if material_rows.empty:
-            material_plan = pd.DataFrame(columns=[
-                "Материал / цвет", "Старые болванки, м", "Новые болванки, м", "Другое, м", "Потребность, м"
-            ])
+        blank_type_labels = sorted({
+            t for t in material_rows.get("Тип заготовки", pd.Series(dtype=str)).astype(str).str.strip().tolist() if t
+        })
+        breakdown_columns = [f"{label}, м" for label in blank_type_labels]
+        if material_rows.empty or not blank_type_labels:
+            material_plan = pd.DataFrame(columns=["Материал / цвет"] + breakdown_columns + ["Потребность, м"])
         else:
             material_breakdown = material_rows.pivot_table(
-                index="Материал / цвет", columns="Тип болванки", values="Нужно материала, м",
+                index="Материал / цвет", columns="Тип заготовки", values="Нужно материала, м",
                 aggfunc="sum", fill_value=0
             ).reset_index()
-            for source, target in [
-                ("Старые болванки", "Старые болванки, м"),
-                ("Новые болванки", "Новые болванки, м"),
-                ("Другое", "Другое, м"),
-            ]:
-                if source in material_breakdown.columns:
-                    material_breakdown[target] = pd.to_numeric(material_breakdown[source], errors="coerce").fillna(0.0)
-                else:
-                    material_breakdown[target] = 0.0
-            material_plan = material_breakdown[[
-                "Материал / цвет", "Старые болванки, м", "Новые болванки, м", "Другое, м"
-            ]].copy()
-            material_plan["Потребность, м"] = material_plan[[
-                "Старые болванки, м", "Новые болванки, м", "Другое, м"
-            ]].sum(axis=1)
+            for label, column in zip(blank_type_labels, breakdown_columns):
+                material_breakdown[column] = pd.to_numeric(material_breakdown.get(label, 0), errors="coerce").fillna(0.0)
+            material_plan = material_breakdown[["Материал / цвет"] + breakdown_columns].copy()
+            material_plan["Потребность, м"] = material_plan[breakdown_columns].sum(axis=1)
 
         material_plan["material_key"] = material_plan["Материал / цвет"].apply(material_key)
         inventory = read_table("material_inventory_color")
@@ -449,9 +441,9 @@ def render(ctx: dict) -> None:
                     schedule_rows.append({
                         "Дата": current_date, "Этап": stage, "Приоритет": row["Приоритет"],
                         "Артикул WB": nm_id, "Артикул продавца": row["Артикул продавца"],
-                        "Товар": row["Товар"], "Тип болванки": row["Тип болванки"],
+                        "Товар": row["Товар"], "Тип заготовки": row["Тип заготовки"],
                         "Материал / цвет": material_name, "Комплектов": kits_today,
-                        "Плейсматов": pieces_today, "Материал, м": material_today,
+                        "Штук": pieces_today, "Материал, м": material_today,
                     })
                     if material_known and material_rate > 0:
                         material_available_by_key[m_key] = max(0.0, material_available_by_key.get(m_key, 0.0) - material_today)
@@ -502,7 +494,7 @@ def render(ctx: dict) -> None:
             # Main pass: after all urgent cards have received a bridge batch,
             # finish the target stock in priority order and group similar jobs.
             main_order = plan[plan["Рекомендовано, компл."] > 0].sort_values(
-                ["_priority", "Крайний срок производства", "Тип болванки", "Материал / цвет", "Расчётная прибыль"],
+                ["_priority", "Крайний срок производства", "Тип заготовки", "Материал / цвет", "Расчётная прибыль"],
                 ascending=[True, True, True, True, False], na_position="last"
             )
             for idx, _row in main_order.iterrows():
@@ -515,10 +507,10 @@ def render(ctx: dict) -> None:
         if not schedule.empty:
             group_cols = [
                 "Дата", "Этап", "Приоритет", "Артикул WB", "Артикул продавца", "Товар",
-                "Тип болванки", "Материал / цвет"
+                "Тип заготовки", "Материал / цвет"
             ]
             schedule = schedule.groupby(group_cols, as_index=False, dropna=False).agg({
-                "Комплектов": "sum", "Плейсматов": "sum", "Материал, м": "sum"
+                "Комплектов": "sum", "Штук": "sum", "Материал, м": "sum"
             }).sort_values(["Дата", "Этап", "Приоритет", "Артикул продавца"])
 
         scheduled_by_nm: dict[int, int] = {}
@@ -806,10 +798,10 @@ def render(ctx: dict) -> None:
         plan["Действия сейчас"] = plan.apply(_today_action, axis=1)
 
         total_kits = int(plan["Рекомендовано, компл."].sum())
-        total_pieces = int(plan["Плейсматов к производству"].sum())
+        total_pieces = int(plan["Штук к производству"].sum())
         total_material = float(plan["Нужно материала, м"].sum())
         scheduled_kits_total = int(schedule["Комплектов"].sum()) if not schedule.empty else 0
-        scheduled_pieces_total = int(schedule["Плейсматов"].sum()) if not schedule.empty else 0
+        scheduled_pieces_total = int(schedule["Штук"].sum()) if not schedule.empty else 0
         scheduled_material_total = float(schedule["Материал, м"].sum()) if not schedule.empty else 0.0
         material_blocked_total = int(plan.get("Заблокировано сырьём, компл.", pd.Series(dtype=float)).sum())
         ready_total = int(plan["Готово учтено"].sum())
@@ -820,8 +812,6 @@ def render(ctx: dict) -> None:
         late_count = int(plan["Не успеваем до обнуления"].sum())
         overdue_deadline_count = int(plan["Срок производства уже пропущен"].sum())
         norm_coverage = float((plan["Материал на ед., м"] > 0).mean() * 100) if len(plan) else 100.0
-        old_material = float(plan.loc[plan["Тип болванки"] == "Старые болванки", "Нужно материала, м"].sum())
-        new_material = float(plan.loc[plan["Тип болванки"] == "Новые болванки", "Нужно материала, м"].sum())
         material_groups = int(len(material_plan))
         known_material_groups = int(material_plan["Остаток указан"].sum()) if not material_plan.empty else 0
         known_stock_total = float(material_plan.loc[material_plan["Остаток указан"], "На складе, м"].sum()) if known_material_groups else 0.0
@@ -839,7 +829,7 @@ def render(ctx: dict) -> None:
 
         prod_kpis = st.columns(6)
         with prod_kpis[0]: kpi_card("Комплектов в календаре", num(scheduled_kits_total), f"Потребность {num(total_kits)} · блок сырья {num(material_blocked_total)}")
-        with prod_kpis[1]: kpi_card("Плейсматов в календаре", num(scheduled_pieces_total), f"Готово {num(ready_total)} · в пути {num(inbound_total)} компл.")
+        with prod_kpis[1]: kpi_card("Штук в календаре", num(scheduled_pieces_total), f"Готово {num(ready_total)} · в пути {num(inbound_total)} компл.")
         with prod_kpis[2]: kpi_card("Сырьё зарезервировано", f"{scheduled_material_total:,.1f} м".replace(",", " "), f"Валовая потребность {total_material:.1f} м")
         with prod_kpis[3]: kpi_card("Производственная мощность", f"{num(pieces_per_day)} шт./день" if capacity_known else "—", f"Мост {emergency_cover_days} дн. · до WB {fulfillment_lead_days} дн." if capacity_known else "Заполните в настройках")
         with prod_kpis[4]: kpi_card("Срочные позиции", num(urgent_count), f"Риск до поставки: {risk_inbound_count}")
@@ -847,7 +837,7 @@ def render(ctx: dict) -> None:
 
         if capacity_known and overload_pieces > 0:
             st.error(
-                f"План перегружен на {num(overload_pieces)} плейсматов в горизонте {horizon_days} дней. "
+                f"План перегружен на {num(overload_pieces)} штук в горизонте {horizon_days} дней. "
                 "Нужно увеличить мощность, продлить горизонт или сократить целевой запас."
             )
         if fulfillment_lead_days <= 0:
@@ -874,11 +864,11 @@ def render(ctx: dict) -> None:
 
         st.markdown("### Потребность по материалам и цветам")
         st.caption(
-            "Остаток сырья единый по цвету: один рулон может использоваться и для старых, и для новых болванок. "
+            "Остаток сырья единый по цвету: один рулон может использоваться для любых типов заготовок. "
             "Разбивка показывает, какая часть потребности приходится на каждый тип."
         )
         material_columns = [
-            "Материал / цвет", "Старые болванки, м", "Новые болванки, м", "Потребность, м",
+            "Материал / цвет", *breakdown_columns, "Потребность, м",
             "Остаток указан", "Полных рулонов", "Открытый остаток, м", "На складе, м",
             "Не хватает, м", "Рулонов использовать", "Рулонов докупить",
             "Зарезервировано календарём, м", "Остаток после календаря, м",
@@ -891,8 +881,7 @@ def render(ctx: dict) -> None:
                 material_plan[material_columns], hide_index=True, use_container_width=True,
                 height=min(420, 92 + 36 * max(len(material_plan), 1)),
                 column_config={
-                    "Старые болванки, м": st.column_config.NumberColumn(format="%.1f"),
-                    "Новые болванки, м": st.column_config.NumberColumn(format="%.1f"),
+                    **{column: st.column_config.NumberColumn(format="%.1f") for column in breakdown_columns},
                     "Потребность, м": st.column_config.NumberColumn(format="%.1f"),
                     "Остаток указан": st.column_config.CheckboxColumn("Остаток указан"),
                     "Открытый остаток, м": st.column_config.NumberColumn(format="%.1f"),
@@ -937,9 +926,9 @@ def render(ctx: dict) -> None:
             st.success("По текущим остаткам производство в календарь не требуется.")
         else:
             daily_summary = schedule.groupby("Дата", as_index=False).agg({
-                "Комплектов": "sum", "Плейсматов": "sum", "Материал, м": "sum"
+                "Комплектов": "sum", "Штук": "sum", "Материал, м": "sum"
             })
-            daily_summary["Загрузка, %"] = daily_summary["Плейсматов"] / pieces_per_day * 100
+            daily_summary["Загрузка, %"] = daily_summary["Штук"] / pieces_per_day * 100
             calendar_kpis = st.columns(3)
             with calendar_kpis[0]: kpi_card("Рабочих дней в плане", num(daily_summary["Дата"].nunique()), f"Горизонт настройки: {horizon_days} дней")
             with calendar_kpis[1]: kpi_card("Средняя загрузка", pct(float(daily_summary["Загрузка, %"].mean())), f"Мощность {num(pieces_per_day)} шт./день")
@@ -950,7 +939,7 @@ def render(ctx: dict) -> None:
                 column_config={
                     "Дата": st.column_config.DateColumn(format="DD.MM.YYYY"),
                     "Комплектов": st.column_config.NumberColumn(format="%d"),
-                    "Плейсматов": st.column_config.NumberColumn(format="%d"),
+                    "Штук": st.column_config.NumberColumn(format="%d"),
                     "Материал, м": st.column_config.NumberColumn(format="%.1f"),
                 },
             )
@@ -1069,7 +1058,7 @@ def render(ctx: dict) -> None:
         next_shift_date = schedule["Дата"].min() if not schedule.empty else pd.NaT
         next_shift = schedule[schedule["Дата"] == next_shift_date].copy() if pd.notna(next_shift_date) else pd.DataFrame()
         next_shift_kits = int(next_shift["Комплектов"].sum()) if not next_shift.empty else 0
-        next_shift_pieces = int(next_shift["Плейсматов"].sum()) if not next_shift.empty else 0
+        next_shift_pieces = int(next_shift["Штук"].sum()) if not next_shift.empty else 0
         gap_action_plan = shipment_plan[shipment_plan["Ожидаемый разрыв, дней"].fillna(0) > 0].copy()
         first_dispatch_total = int(gap_action_plan["Цель первой отгрузки, компл."].sum()) if not gap_action_plan.empty else 0
         bridge_total = int(gap_action_plan["Закрыть разрыв, компл."].sum()) if not gap_action_plan.empty else 0
@@ -1089,7 +1078,7 @@ def render(ctx: dict) -> None:
         with action_kpis[0]: kpi_card("Готово отгрузить сейчас", num(ready_now_total), "Подтверждённый готовый остаток")
         with action_kpis[1]:
             shift_label = pd.Timestamp(next_shift_date).strftime("%d.%m.%Y") if pd.notna(next_shift_date) else "—"
-            kpi_card("Ближайшая смена", num(next_shift_kits), f"{shift_label} · {num(next_shift_pieces)} плейсматов")
+            kpi_card("Ближайшая смена", num(next_shift_kits), f"{shift_label} · {num(next_shift_pieces)} штук")
         with action_kpis[2]: kpi_card("Только закрыть разрыв", num(bridge_total), "Минимальный мост до пополнения")
         with action_kpis[3]: kpi_card("Аварийное пополнение", num(first_dispatch_total), f"По {len(gap_action_plan)} позициям")
         with action_kpis[4]: kpi_card("FBS / ускорение", num(fbs_count), f"Макс. разрыв {max_gap_days} дн.")
@@ -1100,8 +1089,8 @@ def render(ctx: dict) -> None:
                 st.info("На ближайшую рабочую смену производственные задания не сформированы.")
             else:
                 next_shift_view = next_shift[[
-                    "Дата", "Этап", "Приоритет", "Артикул продавца", "Товар", "Тип болванки",
-                    "Материал / цвет", "Комплектов", "Плейсматов", "Материал, м"
+                    "Дата", "Этап", "Приоритет", "Артикул продавца", "Товар", "Тип заготовки",
+                    "Материал / цвет", "Комплектов", "Штук", "Материал, м"
                 ]].copy()
                 st.dataframe(
                     next_shift_view, hide_index=True, use_container_width=True,
@@ -1109,7 +1098,7 @@ def render(ctx: dict) -> None:
                     column_config={
                         "Дата": st.column_config.DateColumn(format="DD.MM.YYYY"),
                         "Комплектов": st.column_config.NumberColumn(format="%.0f"),
-                        "Плейсматов": st.column_config.NumberColumn(format="%.0f"),
+                        "Штук": st.column_config.NumberColumn(format="%.0f"),
                         "Материал, м": st.column_config.NumberColumn(format="%.1f"),
                     },
                 )
@@ -1345,7 +1334,7 @@ def render(ctx: dict) -> None:
             errors = list(result.get("errors", []) or [])
             base = f"{action}: проведено {posted} операций, {units} комплектов"
             if wip_units > 0:
-                base += f", использовано {wip_units} болванок из НЗП"
+                base += f", использовано {wip_units} заготовок из НЗП"
             if meters > 0:
                 base += f", списано {meters:.1f} м сырья"
             if goods_cost > 0:
@@ -1356,7 +1345,7 @@ def render(ctx: dict) -> None:
                 return "error", base + ". Ошибки: " + " | ".join(str(x) for x in errors)
             return "success", base + ". Остатки и план пересчитаны."
 
-        execution_tabs = st.tabs(["Сменное задание", "Отгрузки", "Печатная форма", "Журнал движений", "Себестоимость партий", "НЗП / болванки"])
+        execution_tabs = st.tabs(["Сменное задание", "Отгрузки", "Печатная форма", "Журнал движений", "Себестоимость партий", "НЗП / заготовки"])
         with execution_tabs[0]:
             if production_exec.empty:
                 st.info("Производственные задания пока не сформированы.")
@@ -1370,15 +1359,15 @@ def render(ctx: dict) -> None:
                 prod_day = production_exec[
                     pd.to_datetime(production_exec["task_date"]).dt.date == selected_execution_date
                 ].copy()
-                prod_day["Факт плейсматов"] = prod_day["actual_units"] * prod_day["Штук в комплекте"]
+                prod_day["Факт штук"] = prod_day["actual_units"] * prod_day["Штук в комплекте"]
                 prod_summary = prod_day.groupby(
-                    ["Тип болванки", "Материал / цвет"], as_index=False, dropna=False
+                    ["Тип заготовки", "Материал / цвет"], as_index=False, dropna=False
                 ).agg({
-                    "planned_units": "sum", "Плейсматов": "sum", "Материал, м": "sum",
-                    "actual_units": "sum", "Факт плейсматов": "sum"
+                    "planned_units": "sum", "Штук": "sum", "Материал, м": "sum",
+                    "actual_units": "sum", "Факт штук": "sum"
                 }).rename(columns={
-                    "planned_units": "План, компл.", "Плейсматов": "План, шт.",
-                    "actual_units": "Факт, компл.", "Факт плейсматов": "Факт, шт."
+                    "planned_units": "План, компл.", "Штук": "План, шт.",
+                    "actual_units": "Факт, компл.", "Факт штук": "Факт, шт."
                 })
                 st.dataframe(
                     prod_summary, hide_index=True, use_container_width=True,
@@ -1393,13 +1382,13 @@ def render(ctx: dict) -> None:
                 prod_editor = st.data_editor(
                     prod_day[[
                         "task_key", "task_type", "task_date", "stage", "nm_id", "supplier_article",
-                        "product_name", "Тип болванки", "Материал / цвет", "Штук в комплекте",
+                        "product_name", "Тип заготовки", "Материал / цвет", "Штук в комплекте",
                         "planned_units", "actual_units", "status", "note"
                     ]],
                     hide_index=True, use_container_width=True, num_rows="fixed",
                     disabled=[
                         "task_key", "task_type", "task_date", "stage", "nm_id", "supplier_article",
-                        "product_name", "Тип болванки", "Материал / цвет", "Штук в комплекте", "planned_units"
+                        "product_name", "Тип заготовки", "Материал / цвет", "Штук в комплекте", "planned_units"
                     ],
                     column_config={
                         "task_key": None, "task_type": None, "nm_id": None,
@@ -1415,7 +1404,7 @@ def render(ctx: dict) -> None:
                 close_statuses = ["Упаковано", "Передано на отгрузку"] if bool(wip_runtime.get("enabled")) else ["Изготовлено", "Упаковано", "Передано на отгрузку"]
                 if bool(wip_runtime.get("enabled")):
                     st.info(
-                        "Контур НЗП включён: закрытие смены списывает отдельные болванки по FIFO и оприходует только упакованные комплекты. "
+                        "Контур НЗП включён: закрытие смены списывает отдельные заготовки по FIFO и оприходует только упакованные комплекты. "
                         "Статус «Изготовлено» означает незавершённую продукцию и сам по себе не закрывает смену."
                     )
                 close_ready_mask = (
@@ -1454,7 +1443,7 @@ def render(ctx: dict) -> None:
                         type="primary",
                         use_container_width=True,
                         help=(
-                            "Добавляет фактические упакованные комплекты в готовый остаток. Если контур НЗП включён, списывает болванки по типу и цвету; "
+                            "Добавляет фактические упакованные комплекты в готовый остаток. Если контур НЗП включён, списывает заготовки по типу и цвету; "
                             "иначе использует прежний прямой расход сырья. При недостаточном остатке операция блокируется. Повторное нажатие не дублирует движения."
                         ),
                         disabled=not (confirm_close_shift and close_ready_units > 0),
@@ -1582,18 +1571,18 @@ def render(ctx: dict) -> None:
                 st.info("Нет сменного задания для печати.")
             else:
                 print_date = pd.Timestamp(next_shift_date).strftime("%d.%m.%Y")
-                grouped = next_shift.groupby(["Тип болванки", "Материал / цвет"], as_index=False).agg({
-                    "Комплектов": "sum", "Плейсматов": "sum", "Материал, м": "sum"
+                grouped = next_shift.groupby(["Тип заготовки", "Материал / цвет"], as_index=False).agg({
+                    "Комплектов": "sum", "Штук": "sum", "Материал, м": "sum"
                 })
                 summary_rows = "".join(
-                    f"<tr><td>{escape(str(r['Тип болванки']))}</td><td>{escape(str(r['Материал / цвет']))}</td>"
-                    f"<td>{int(r['Комплектов'])}</td><td>{int(r['Плейсматов'])}</td><td>{float(r['Материал, м']):.1f}</td></tr>"
+                    f"<tr><td>{escape(str(r['Тип заготовки']))}</td><td>{escape(str(r['Материал / цвет']))}</td>"
+                    f"<td>{int(r['Комплектов'])}</td><td>{int(r['Штук'])}</td><td>{float(r['Материал, м']):.1f}</td></tr>"
                     for _, r in grouped.iterrows()
                 )
                 detail_rows = "".join(
                     f"<tr><td>□</td><td>{escape(str(r['Артикул продавца']))}</td><td>{escape(str(r['Товар']))}</td>"
-                    f"<td>{escape(str(r['Тип болванки']))}</td><td>{escape(str(r['Материал / цвет']))}</td>"
-                    f"<td>{int(r['Комплектов'])}</td><td>{int(r['Плейсматов'])}</td><td>{float(r['Материал, м']):.1f}</td>"
+                    f"<td>{escape(str(r['Тип заготовки']))}</td><td>{escape(str(r['Материал / цвет']))}</td>"
+                    f"<td>{int(r['Комплектов'])}</td><td>{int(r['Штук'])}</td><td>{float(r['Материал, м']):.1f}</td>"
                     f"<td></td><td></td></tr>" for _, r in next_shift.iterrows()
                 )
                 shift_html = f"""<!doctype html><html lang='ru'><head><meta charset='utf-8'>
@@ -1603,9 +1592,9 @@ def render(ctx: dict) -> None:
                 th{{background:#eee}} .sign{{display:flex;gap:50px;margin-top:30px}} .line{{width:280px;border-bottom:1px solid #111;height:28px}}
                 @media print{{button{{display:none}} body{{margin:8mm}}}}
                 </style></head><body><button onclick='window.print()'>Печать</button>
-                <h1>Сменное задание</h1><div class='meta'>Дата: <b>{print_date}</b> · План: <b>{next_shift_kits} комплектов / {next_shift_pieces} плейсматов</b></div>
-                <h2>Сводка по материалам</h2><table><thead><tr><th>Тип болванки</th><th>Материал / цвет</th><th>Комплектов</th><th>Плейсматов</th><th>Материал, м</th></tr></thead><tbody>{summary_rows}</tbody></table>
-                <h2>Задания</h2><table><thead><tr><th>Готово</th><th>Артикул</th><th>Товар</th><th>Болванка</th><th>Цвет</th><th>План, компл.</th><th>План, шт.</th><th>Материал, м</th><th>Факт, компл.</th><th>Примечание</th></tr></thead><tbody>{detail_rows}</tbody></table>
+                <h1>Сменное задание</h1><div class='meta'>Дата: <b>{print_date}</b> · План: <b>{next_shift_kits} комплектов / {next_shift_pieces} штук</b></div>
+                <h2>Сводка по материалам</h2><table><thead><tr><th>Тип заготовки</th><th>Материал / цвет</th><th>Комплектов</th><th>Штук</th><th>Материал, м</th></tr></thead><tbody>{summary_rows}</tbody></table>
+                <h2>Задания</h2><table><thead><tr><th>Готово</th><th>Артикул</th><th>Товар</th><th>Заготовка</th><th>Цвет</th><th>План, компл.</th><th>План, шт.</th><th>Материал, м</th><th>Факт, компл.</th><th>Примечание</th></tr></thead><tbody>{detail_rows}</tbody></table>
                 <div class='sign'><div>Мастер смены<div class='line'></div></div><div>Принял готовую продукцию<div class='line'></div></div></div>
                 </body></html>"""
                 st.download_button(
@@ -1645,7 +1634,7 @@ def render(ctx: dict) -> None:
                 movement_labels = {
                     "production_receipt": "Оприходование производства (прямое сырьё)",
                     "wip_material_issue": "Выдача сырья в НЗП",
-                    "wip_blank_receipt": "Оприходование болванок",
+                    "wip_blank_receipt": "Оприходование заготовок",
                     "production_receipt_wip": "Комплектация из НЗП",
                     "dispatch": "Отгрузка",
                     "wb_receipt": "Приёмка WB",
@@ -1773,10 +1762,10 @@ def render(ctx: dict) -> None:
                 )
 
         with execution_tabs[5]:
-            st.markdown("#### НЗП / болванки")
+            st.markdown("#### НЗП / заготовки")
             st.caption(
                 "Двухэтапный производственный контур: сырьё сначала переводится в незавершённое производство и превращается "
-                "в отдельные болванки, затем болванки комплектуются и упаковываются в продаваемые наборы. Стоимость сырья "
+                "в отдельные заготовки, затем заготовки комплектуются и упаковываются в продаваемые наборы. Стоимость сырья "
                 "переносится между этапами по FIFO без повторного списания."
             )
 
@@ -1785,26 +1774,43 @@ def render(ctx: dict) -> None:
             wip_batches = read_wip_blank_batches(active_only=True)
             wip_total_units = int(pd.to_numeric(wip_summary.get("remaining_units", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if not wip_summary.empty else 0
             wip_total_value = float(pd.to_numeric(wip_summary.get("remaining_cost_rub", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if not wip_summary.empty else 0.0
-            wip_old_units = int(pd.to_numeric(wip_summary.loc[wip_summary.get("blank_type", pd.Series(dtype=str)).astype(str).eq("Старые болванки"), "remaining_units"], errors="coerce").fillna(0).sum()) if not wip_summary.empty else 0
-            wip_new_units = int(pd.to_numeric(wip_summary.loc[wip_summary.get("blank_type", pd.Series(dtype=str)).astype(str).eq("Новые болванки"), "remaining_units"], errors="coerce").fillna(0).sum()) if not wip_summary.empty else 0
+            # Breakdown by whatever blank types the tenant actually uses (any number
+            # of freely-named types), not a fixed two-way split.
+            if not wip_summary.empty:
+                wip_type_breakdown = wip_summary.assign(
+                    blank_type=wip_summary.get("blank_type", pd.Series(dtype=str)).astype(str).str.strip()
+                ).groupby("blank_type", as_index=False)["remaining_units"].sum()
+                wip_type_breakdown = wip_type_breakdown[wip_type_breakdown["blank_type"].ne("")]
+            else:
+                wip_type_breakdown = pd.DataFrame(columns=["blank_type", "remaining_units"])
+            wip_type_count = int(len(wip_type_breakdown))
+            wip_top_type = ""
+            wip_top_units = 0
+            if not wip_type_breakdown.empty:
+                top_row = wip_type_breakdown.sort_values("remaining_units", ascending=False).iloc[0]
+                wip_top_type = str(top_row["blank_type"])
+                wip_top_units = int(top_row["remaining_units"])
             wip_cols = st.columns(5)
             with wip_cols[0]: kpi_card("Контур НЗП", "Включён" if wip_status.get("enabled") else "Не использовался", "После первой выдачи сырья становится обязательным")
-            with wip_cols[1]: kpi_card("Болванок в НЗП", num(wip_total_units), "Годные отдельные изделия")
-            with wip_cols[2]: kpi_card("Старые / новые", f"{num(wip_old_units)} / {num(wip_new_units)}", "Штук")
+            with wip_cols[1]: kpi_card("Заготовок в НЗП", num(wip_total_units), "Годные отдельные изделия")
+            with wip_cols[2]: kpi_card(
+                "Типов заготовок в НЗП", num(wip_type_count),
+                f"Больше всего: {wip_top_type} — {num(wip_top_units)} шт." if wip_top_type else "Нет остатков",
+            )
             with wip_cols[3]: kpi_card("Стоимость НЗП", money(wip_total_value), "Остаточная стоимость FIFO")
             with wip_cols[4]: kpi_card("Открытых партий", num(int(wip_status.get("open_batches", 0) or 0)), f"Выдано {float(wip_status.get('open_meters', 0) or 0):.1f} м, выпуск не посчитан")
 
             if wip_status.get("enabled"):
                 st.info(
                     "Контур НЗП активен. Теперь кнопка «Закрыть смену и оприходовать» принимает только строки со статусом "
-                    "«Упаковано» или «Передано на отгрузку» и списывает болванки, а не сырьё напрямую."
+                    "«Упаковано» или «Передано на отгрузку» и списывает заготовки, а не сырьё напрямую."
                 )
 
-            wip_tabs = st.tabs(["Выпуск болванок", "Остатки НЗП", "Комплектация", "Журнал НЗП"])
+            wip_tabs = st.tabs(["Выпуск заготовок", "Остатки НЗП", "Комплектация", "Журнал НЗП"])
             with wip_tabs[0]:
-                st.markdown("##### Выдать сырьё и выпустить болванки")
+                st.markdown("##### Выдать сырьё и выпустить заготовки")
                 st.caption(
-                    "Если количество годных болванок ещё не посчитано, выберите режим «только выдать сырьё». "
+                    "Если количество годных заготовок ещё не посчитано, выберите режим «только выдать сырьё». "
                     "Партия останется открытой, а количество можно внести позднее без повторного списания материала."
                 )
                 material_inventory_wip = read_table("material_inventory_color")
@@ -1822,7 +1828,7 @@ def render(ctx: dict) -> None:
                     else:
                         issue_mode = st.radio(
                             "Способ проведения",
-                            ["Списать сырьё и сразу оприходовать болванки", "Только выдать сырьё в НЗП — количество внесу позже"],
+                            ["Списать сырьё и сразу оприходовать заготовки", "Только выдать сырьё в НЗП — количество внесу позже"],
                             horizontal=True,
                             key="wip_issue_mode",
                         )
@@ -1831,7 +1837,18 @@ def render(ctx: dict) -> None:
                             wip_batch_date = st.date_input("Дата производства", value=today_msk, key="wip_batch_date")
                             wip_material_name = st.selectbox("Материал / цвет", material_options, key="wip_material_name")
                         with issue_cols[1]:
-                            wip_blank_type = st.selectbox("Тип болванки", ["Старые болванки", "Новые болванки"], key="wip_blank_type")
+                            # Offer whatever blank types the tenant has already configured
+                            # in Settings (any number, freely named) instead of a fixed list;
+                            # fall back to free text if nothing is configured yet.
+                            configured_blank_types = sorted({
+                                str(t).strip()
+                                for t in read_table("production_settings").get("blank_type", pd.Series(dtype=str)).astype(str)
+                                if str(t).strip() and str(t).strip() != "Не задано"
+                            })
+                            if configured_blank_types:
+                                wip_blank_type = st.selectbox("Тип заготовки", configured_blank_types, key="wip_blank_type")
+                            else:
+                                wip_blank_type = st.text_input("Тип заготовки", key="wip_blank_type_text").strip()
                             selected_material_row = material_inventory_wip[material_inventory_wip["material_name"].astype(str).eq(str(wip_material_name))].head(1)
                             wip_roll_length = float(selected_material_row.iloc[0].get("roll_length", 25.5) or 25.5) if not selected_material_row.empty else 25.5
                             wip_full_rolls = st.number_input("Полных рулонов израсходовано", min_value=0, max_value=10000, value=0, step=1, key="wip_full_rolls")
@@ -1864,7 +1881,7 @@ def render(ctx: dict) -> None:
                                     theoretical_units = int(wip_total_meters // per_blank_rate) if per_blank_rate > 0 else 0
                         if per_blank_rate > 0 and wip_total_meters > 0:
                             st.caption(
-                                f"Ориентир по сохранённой норме: {per_blank_rate:.5f} м на одну болванку, теоретически около {theoretical_units} шт. "
+                                f"Ориентир по сохранённой норме: {per_blank_rate:.5f} м на одну заготовку, теоретически около {theoretical_units} шт. "
                                 "В учёт вносите фактическое количество после брака."
                             )
 
@@ -1872,7 +1889,7 @@ def render(ctx: dict) -> None:
                         output_cols = st.columns(3)
                         with output_cols[0]:
                             wip_produced_units = st.number_input(
-                                "Годных болванок, шт.", min_value=0, max_value=1000000,
+                                "Годных заготовок, шт.", min_value=0, max_value=1000000,
                                 value=int(theoretical_units) if immediate and theoretical_units > 0 else 0,
                                 step=1, disabled=not immediate, key="wip_produced_units",
                             )
@@ -1891,7 +1908,7 @@ def render(ctx: dict) -> None:
                             disabled=wip_total_meters <= 0,
                         )
                         if st.button(
-                            "Провести выпуск болванок" if immediate else "Выдать сырьё в НЗП",
+                            "Провести выпуск заготовок" if immediate else "Выдать сырьё в НЗП",
                             type="primary", use_container_width=True, key="post_wip_issue",
                             disabled=not wip_issue_confirm or wip_total_meters <= 0 or (immediate and int(wip_produced_units or 0) <= 0),
                         ):
@@ -1909,7 +1926,7 @@ def render(ctx: dict) -> None:
                             else:
                                 text = f"Сырьё списано: {float(wip_result.get('meters', 0) or 0):.3f} м"
                                 if int(wip_result.get("units", 0) or 0) > 0:
-                                    text += f"; болванок оприходовано: {int(wip_result.get('units', 0) or 0)} шт."
+                                    text += f"; заготовок оприходовано: {int(wip_result.get('units', 0) or 0)} шт."
                                 else:
                                     text += "; партия оставлена открытой до подсчёта выпуска."
                                 st.session_state["movement_flash"] = ("success", text)
@@ -1937,26 +1954,26 @@ def render(ctx: dict) -> None:
                         st.metric("Стоимость выданного сырья", money(float(close_row.get("material_cost_rub", 0) or 0)))
                     close_wip_note = st.text_input("Дополнение к примечанию", key="close_wip_note")
                     close_wip_confirm = st.checkbox("Подтверждаю фактический выпуск партии", key="close_wip_confirm")
-                    if st.button("Закрыть партию и оприходовать болванки", use_container_width=True, disabled=not close_wip_confirm, key="complete_wip_batch"):
+                    if st.button("Закрыть партию и оприходовать заготовки", use_container_width=True, disabled=not close_wip_confirm, key="complete_wip_batch"):
                         close_result = complete_wip_blank_batch(int(close_wip_id), int(close_good_units), int(close_scrap_units), close_wip_note)
                         if close_result.get("errors"):
                             st.session_state["movement_flash"] = ("error", " | ".join(str(x) for x in close_result.get("errors", [])))
                         else:
-                            st.session_state["movement_flash"] = ("success", f"Партия НЗП закрыта: {int(close_result.get('units', 0) or 0)} годных болванок.")
+                            st.session_state["movement_flash"] = ("success", f"Партия НЗП закрыта: {int(close_result.get('units', 0) or 0)} годных заготовок.")
                         st.cache_data.clear()
                         st.rerun()
 
             with wip_tabs[1]:
                 st.markdown("##### Текущие остатки незавершённого производства")
                 if wip_summary.empty:
-                    st.info("Болванки в НЗП ещё не оприходованы.")
+                    st.info("Заготовки в НЗП ещё не оприходованы.")
                 else:
                     summary_view = wip_summary.copy()
                     st.dataframe(
                         summary_view[["material_name", "blank_type", "remaining_units", "avg_unit_cost_rub", "remaining_cost_rub", "open_batches", "open_meters"]],
                         hide_index=True, use_container_width=True,
                         column_config={
-                            "material_name": "Материал / цвет", "blank_type": "Тип болванки",
+                            "material_name": "Материал / цвет", "blank_type": "Тип заготовки",
                             "remaining_units": st.column_config.NumberColumn("Остаток, шт.", format="%d"),
                             "avg_unit_cost_rub": st.column_config.NumberColumn("Средняя стоимость, ₽/шт.", format="%.2f"),
                             "remaining_cost_rub": st.column_config.NumberColumn("Стоимость остатка, ₽", format="%.2f"),
@@ -1977,7 +1994,7 @@ def render(ctx: dict) -> None:
                         column_config={
                             "id": st.column_config.NumberColumn("Партия", format="%d"),
                             "batch_date": st.column_config.DateColumn("Дата", format="DD.MM.YYYY"),
-                            "material_name": "Материал / цвет", "blank_type": "Тип болванки",
+                            "material_name": "Материал / цвет", "blank_type": "Тип заготовки",
                             "issued_meters": st.column_config.NumberColumn("Списано материала, м", format="%.3f"),
                             "produced_units": st.column_config.NumberColumn("Выпущено, шт.", format="%d"),
                             "scrap_units": st.column_config.NumberColumn("Брак, шт.", format="%d"),
@@ -1994,7 +2011,7 @@ def render(ctx: dict) -> None:
                     )
 
             with wip_tabs[2]:
-                st.markdown("##### Упаковать комплекты из болванок")
+                st.markdown("##### Упаковать комплекты из заготовок")
                 st.warning(
                     "Для плановой смены предпочтительно заполнить фактические комплекты во вкладке «Сменное задание» и закрыть смену там. "
                     "Ручная комплектация предназначена для внепланового выпуска и не должна дублировать уже проведённое сменное задание."
@@ -2034,12 +2051,12 @@ def render(ctx: dict) -> None:
                             available_blanks = int(pd.to_numeric(match_summary.get("remaining_units", 0), errors="coerce").fillna(0).sum()) if not match_summary.empty else 0
                         max_sets = available_blanks // max(1, pack_size)
                         pack_info_cols = st.columns(3)
-                        with pack_info_cols[0]: kpi_card("Доступно болванок", num(available_blanks), f"{pack_material} · {pack_blank}")
-                        with pack_info_cols[1]: kpi_card("Размер комплекта", num(pack_size), "Плейсматов в продаваемой единице")
+                        with pack_info_cols[0]: kpi_card("Доступно заготовок", num(available_blanks), f"{pack_material} · {pack_blank}")
+                        with pack_info_cols[1]: kpi_card("Размер комплекта", num(pack_size), "Штук в продаваемой единице")
                         with pack_info_cols[2]: kpi_card("Можно упаковать", num(max_sets), "Комплектов без отрицательного НЗП")
                         manual_pack_qty = st.number_input("Фактически упаковано комплектов", min_value=0, max_value=max(0, int(max_sets)), value=0, step=1, key="manual_wip_pack_qty")
                         required_for_pack = int(manual_pack_qty) * pack_size
-                        st.caption(f"Будет списано {required_for_pack} отдельных болванок. Сырьё повторно не списывается.")
+                        st.caption(f"Будет списано {required_for_pack} отдельных заготовок. Сырьё повторно не списывается.")
                         manual_pack_date = st.date_input("Дата комплектации", value=today_msk, key="manual_wip_pack_date")
                         manual_pack_note = st.text_input("Примечание к комплектации", key="manual_wip_pack_note")
                         manual_pack_confirm = st.checkbox(f"Подтверждаю упаковку {int(manual_pack_qty)} комплектов", key="manual_wip_pack_confirm", disabled=int(manual_pack_qty) <= 0)
@@ -2050,7 +2067,7 @@ def render(ctx: dict) -> None:
                             else:
                                 st.session_state["movement_flash"] = (
                                     "success",
-                                    f"Оприходовано {int(pack_result.get('units',0) or 0)} комплектов; списано {int(pack_result.get('wip_units',0) or 0)} болванок; стоимость партии {money(float(pack_result.get('cost_rub',0) or 0))}."
+                                    f"Оприходовано {int(pack_result.get('units',0) or 0)} комплектов; списано {int(pack_result.get('wip_units',0) or 0)} заготовок; стоимость партии {money(float(pack_result.get('cost_rub',0) or 0))}."
                                 )
                             st.cache_data.clear()
                             st.rerun()
@@ -2065,7 +2082,7 @@ def render(ctx: dict) -> None:
                 else:
                     wip_movement_labels = {
                         "wip_material_issue": "Выдача сырья в НЗП",
-                        "wip_blank_receipt": "Оприходование болванок",
+                        "wip_blank_receipt": "Оприходование заготовок",
                         "production_receipt_wip": "Комплектация готового товара",
                     }
                     wip_movements["Операция"] = wip_movements["movement_type"].map(wip_movement_labels).fillna(wip_movements["movement_type"])
@@ -2091,7 +2108,7 @@ def render(ctx: dict) -> None:
                             for _, r in wip_cancel.iterrows()
                         }
                         wip_cancel_id = st.selectbox("Отменить ошибочное движение НЗП", list(wip_cancel_labels), format_func=lambda x: wip_cancel_labels[int(x)], key="cancel_wip_movement")
-                        st.caption("Отмена разрешена только в обратном порядке: сначала комплектация, затем выпуск болванок, затем выдача сырья.")
+                        st.caption("Отмена разрешена только в обратном порядке: сначала комплектация, затем выпуск заготовок, затем выдача сырья.")
                         cancel_wip_confirm = st.checkbox("Подтверждаю отмену выбранного движения", key="confirm_cancel_wip")
                         if st.button("Отменить движение НЗП", disabled=not cancel_wip_confirm, key="undo_wip_movement"):
                             undo_result = undo_inventory_movement(int(wip_cancel_id))
@@ -2101,7 +2118,7 @@ def render(ctx: dict) -> None:
 
                 wip_allocations = read_wip_blank_allocations(500)
                 if not wip_allocations.empty:
-                    with st.expander("Показать FIFO-списания болванок по партиям"):
+                    with st.expander("Показать FIFO-списания заготовок по партиям"):
                         st.dataframe(
                             wip_allocations[["id", "movement_id", "batch_id", "batch_date", "material_name", "blank_type", "units", "amount_rub", "supplier_article", "product_name", "status", "created_at"]],
                             hide_index=True, use_container_width=True,
@@ -2109,7 +2126,7 @@ def render(ctx: dict) -> None:
                                 "id": st.column_config.NumberColumn("Распределение", format="%d"),
                                 "movement_id": st.column_config.NumberColumn("Движение", format="%d"),
                                 "batch_id": st.column_config.NumberColumn("Партия НЗП", format="%d"),
-                                "batch_date": "Дата партии", "material_name": "Материал / цвет", "blank_type": "Тип болванки",
+                                "batch_date": "Дата партии", "material_name": "Материал / цвет", "blank_type": "Тип заготовки",
                                 "units": st.column_config.NumberColumn("Списано, шт.", format="%d"),
                                 "amount_rub": st.column_config.NumberColumn("Стоимость, ₽", format="%.2f"),
                                 "supplier_article": "Артикул продавца", "product_name": "Товар", "status": "Статус", "created_at": "Записано",
@@ -2144,11 +2161,11 @@ def render(ctx: dict) -> None:
         plan_columns = [
             "Приоритет", "Артикул продавца", "Товар", "Статус", "Остаток",
             "Готово учтено", "В пути учтено", "Дата прибытия", "Всего с поставками",
-            "Тип болванки", "Материал / цвет", "Штук в комплекте", "Продаж/день",
+            "Тип заготовки", "Материал / цвет", "Штук в комплекте", "Продаж/день",
             "Запас WB, дней", "Запас с готовым, дней", "Запас с поставками, дней", "Целевой запас, дней",
             "Потребность, компл.", "Мин. партия, компл.", "Рекомендовано, компл.",
             "Запланировано по наличию сырья, компл.", "Заблокировано сырьём, компл.",
-            "Плейсматов к производству", "Нужно материала, м", "Крайний срок производства",
+            "Штук к производству", "Нужно материала, м", "Крайний срок производства",
             "Плановая дата первого выпуска", "Плановая дата первого пополнения WB", "Плановая дата завершения",
             "Ближайшее пополнение WB", "Ожидаемый разрыв, дней", "Риск отгрузки",
             "Закрыть разрыв, компл.", "Цель первой отгрузки, компл.",
@@ -2171,7 +2188,7 @@ def render(ctx: dict) -> None:
                 "Потребность, компл.": st.column_config.NumberColumn(format="%.0f"),
                 "Мин. партия, компл.": st.column_config.NumberColumn(format="%.0f"),
                 "Рекомендовано, компл.": st.column_config.NumberColumn(format="%.0f"),
-                "Плейсматов к производству": st.column_config.NumberColumn(format="%.0f"),
+                "Штук к производству": st.column_config.NumberColumn(format="%.0f"),
                 "Нужно материала, м": st.column_config.NumberColumn(format="%.1f"),
                 "Крайний срок производства": st.column_config.DateColumn(format="DD.MM.YYYY"),
                 "Плановая дата первого выпуска": st.column_config.DateColumn(format="DD.MM.YYYY"),

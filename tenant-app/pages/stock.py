@@ -13,7 +13,7 @@ import plotly.express as px
 import streamlit as st
 
 from ui_helpers import (
-    money, num, pct, PRODUCTION_RULES, production_rule, apply_production_rules,
+    money, num, pct,
     infer_material_name, material_key, ceil_to_batch, kpi_card,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,

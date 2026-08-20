@@ -27,41 +27,13 @@ def pct(v: float) -> str:
     return f"{v:.1f}%"
 
 
-PRODUCTION_RULES: dict[tuple[str, int], tuple[float, int]] = {
-    ("Старые болванки", 2): (0.224, 20),
-    ("Старые болванки", 4): (0.447, 10),
-    ("Новые болванки", 4): (0.548, 10),
-}
-
-
-def production_rule(blank_type: str, pack_size: int) -> tuple[float, int] | None:
-    blank_type = str(blank_type or "")
-    pack_size = int(pack_size or 4)
-    if blank_type == "Новые болванки":
-        pack_size = 4
-    return PRODUCTION_RULES.get((blank_type, pack_size))
-
-
-def apply_production_rules(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    result = df.copy()
-    messages: list[str] = []
-    for idx, row in result.iterrows():
-        blank_type = str(row.get("blank_type", "") or "")
-        pack_size = int(float(row.get("pack_size", 4) or 4))
-        auto_rules = bool(row.get("auto_rules", False))
-        if blank_type == "Новые болванки" and pack_size != 4:
-            pack_size = 4
-            result.at[idx, "pack_size"] = 4
-            messages.append(f"{row.get('supplier_article', row.get('nm_id'))}: новые болванки переведены на комплект 4 шт.")
-        if auto_rules:
-            rule = production_rule(blank_type, pack_size)
-            if rule is None:
-                messages.append(f"{row.get('supplier_article', row.get('nm_id'))}: не выбрана поддерживаемая комбинация болванки и комплекта.")
-                continue
-            material, min_batch = rule
-            result.at[idx, "material_per_unit"] = material
-            result.at[idx, "min_batch"] = min_batch
-    return result, messages
+# NOTE: this used to also contain a PRODUCTION_RULES lookup table + an
+# "Автонормы" auto-fill feature (production_rule()/apply_production_rules())
+# that hardcoded one specific tenant's own material-consumption numbers for
+# two named blank types. Removed so the production module works for any
+# manufacturer of any physical product: blank type, pack size, material
+# consumption and minimum batch are now always plain fields the tenant
+# fills in themselves in Settings -- see pages/settings_page.py.
 
 
 def infer_material_name(supplier_article: str, product_name: str = "") -> str:
@@ -456,7 +428,7 @@ def build_data_quality_overview(
         rows.append(_quality_row(
             "Производство", "Производственные нормы", prod_status,
             f"Настроено {int(valid_prod.sum())} из {len(enabled_prod)} производимых карточек ({prod_coverage:.1f}%).",
-            "Ничего делать не нужно." if prod_status == "Готово" else "Заполнить тип болванки, комплект, материал и норму расхода.",
+            "Ничего делать не нужно." if prod_status == "Готово" else "Заполнить тип заготовки, комплект, материал и норму расхода.",
             8,
         ))
         required_materials = set(enabled_prod.get("material_name", pd.Series(dtype=str)).fillna("").astype(str).str.strip()) - {""}

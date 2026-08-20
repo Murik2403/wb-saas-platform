@@ -16,8 +16,6 @@ from config import DB_PATH
 from .core import connect
 
 
-WIP_BLANK_TYPES = ("Старые болванки", "Новые болванки")
-
 def _wip_module_enabled(conn: sqlite3.Connection) -> bool:
     row = conn.execute("SELECT value FROM app_meta WHERE key='wip_module_enabled'").fetchone()
     return bool(row and str(row["value"] or "0").strip() == "1")
@@ -117,7 +115,7 @@ def issue_wip_material(
         result["errors"].append("Не указан материал/цвет.")
         return result
     if not blank_type:
-        result["errors"].append("Не указан тип болванки.")
+        result["errors"].append("Не указан тип заготовки.")
         return result
     if meters <= 0.0005:
         result["errors"].append("Расход сырья должен быть больше нуля.")
@@ -195,7 +193,7 @@ def complete_wip_blank_batch(
     scrap = max(0, int(scrap_units or 0))
     result: dict[str, Any] = {"posted": 0, "skipped": 0, "errors": [], "units": 0, "cost_rub": 0.0, "batch_id": int(batch_id or 0)}
     if qty <= 0:
-        result["errors"].append("Количество годных болванок должно быть больше нуля.")
+        result["errors"].append("Количество годных заготовок должно быть больше нуля.")
         return result
     with connect() as conn:
         batch = conn.execute("SELECT * FROM wip_blank_batches WHERE id=?", (int(batch_id),)).fetchone()
@@ -304,7 +302,7 @@ def _consume_wip_fifo(
     available = _wip_available_units(conn, key, blank)
     if available < required:
         raise ValueError(
-            f"Недостаточно болванок «{material_name} / {blank}»: доступно {available} шт., требуется {required} шт."
+            f"Недостаточно заготовок «{material_name} / {blank}»: доступно {available} шт., требуется {required} шт."
         )
     rows = conn.execute(
         """
@@ -342,7 +340,7 @@ def _consume_wip_fifo(
         total += amount
         remaining -= take
     if remaining > 0:
-        raise ValueError(f"Не удалось списать {remaining} болванок по FIFO.")
+        raise ValueError(f"Не удалось списать {remaining} заготовок по FIFO.")
     return round(total, 2), allocations
 
 def _reverse_wip_allocations(conn: sqlite3.Connection, movement_id: int) -> None:
@@ -374,7 +372,7 @@ def _reverse_wip_issue_batch(conn: sqlite3.Connection, movement_id: int) -> None
     if batch is None:
         return
     if int(batch["completion_movement_id"] or 0) > 0 or str(batch["status"] or "") != "open":
-        raise ValueError("Сначала отмените выпуск болванок или все последующие комплектации из этой партии.")
+        raise ValueError("Сначала отмените выпуск заготовок или все последующие комплектации из этой партии.")
     now = datetime.now().isoformat(timespec="seconds")
     conn.execute(
         "UPDATE wip_blank_batches SET status='reversed',reversed_at=?,updated_at=? WHERE id=?",
@@ -390,7 +388,7 @@ def _reverse_wip_completion(conn: sqlite3.Connection, movement_id: int) -> None:
         (int(batch["id"]),),
     ).fetchone()
     if int(allocated["units"] or 0) > 0 or int(batch["remaining_units"] or 0) != int(batch["produced_units"] or 0):
-        raise ValueError("Сначала отмените комплектацию готовых комплектов, использовавшую эту партию болванок.")
+        raise ValueError("Сначала отмените комплектацию готовых комплектов, использовавшую эту партию заготовок.")
     now = datetime.now().isoformat(timespec="seconds")
     conn.execute(
         """
@@ -425,7 +423,7 @@ def _post_wip_packaging_conn(
     blank_type = str(cfg["blank_type"] or "").strip()
     pack_size = max(1, int(cfg["pack_size"] or 1))
     if not material_name or not blank_type:
-        raise ValueError("Для товара не заполнены материал/цвет или тип болванки.")
+        raise ValueError("Для товара не заполнены материал/цвет или тип заготовки.")
     required_blanks = qty * pack_size
     if _active_movement(conn, "production_receipt_wip", source_key) or _active_movement(conn, "production_receipt", source_key):
         return {"posted": 0, "skipped": 1, "units": 0, "wip_units": 0, "cost_rub": 0.0}
@@ -445,7 +443,7 @@ def _post_wip_packaging_conn(
         (
             event_key,"production_receipt_wip",int(nm_id),str(supplier_article or ""),str(product_name or ""),
             qty,qty,0,"",date_value,None,source_key,None,"applied",
-            f"Комплектация из НЗП: {required_blanks} болванок «{material_name} / {blank_type}»; {note}",
+            f"Комплектация из НЗП: {required_blanks} заготовок «{material_name} / {blank_type}»; {note}",
             now,None,material_key,material_name,0.0,0.0,0.0,0.0,0.0,
         ),
     )
@@ -472,7 +470,7 @@ def _post_wip_packaging_conn(
          WHERE id=?
         """,
         (wip_cost,unit_cost,total_cost,unit_cost,
-         f"Комплектация из НЗП: {required_blanks} болванок, FIFO {wip_cost:.2f} ₽; партия {unit_cost:.2f} ₽/компл.; {allocation_note}; {note}",
+         f"Комплектация из НЗП: {required_blanks} заготовок, FIFO {wip_cost:.2f} ₽; партия {unit_cost:.2f} ₽/компл.; {allocation_note}; {note}",
          movement_id),
     )
     conn.execute(
@@ -486,12 +484,12 @@ def _post_wip_packaging_conn(
         """,
         (movement_id,int(nm_id),str(supplier_article or ""),str(product_name or ""),date_value,qty,
          material_key,material_name,0.0,wip_cost,packaging_total,labor_total,other_total,total_cost,unit_cost,
-         f"Комплектация из НЗП; {required_blanks} болванок; {allocation_note}",now),
+         f"Комплектация из НЗП; {required_blanks} заготовок; {allocation_note}",now),
     )
     _create_finished_goods_layer(
         conn,int(nm_id),str(supplier_article or ""),str(product_name or ""),
         "production_wip",f"movement:{movement_id}",date_value,qty,unit_cost,"ready",
-        f"Оприходовано из НЗП; {required_blanks} болванок списано по FIFO.",
+        f"Оприходовано из НЗП; {required_blanks} заготовок списано по FIFO.",
     )
     return {"posted": 1, "skipped": 0, "units": qty, "wip_units": required_blanks, "cost_rub": total_cost, "movement_id": movement_id}
 
