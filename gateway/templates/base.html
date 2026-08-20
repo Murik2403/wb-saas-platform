@@ -4,61 +4,152 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}MARKETSHELPER{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  :root{
+    /* Design system agreed in the redesign pitch (see the "MARKETSHELPER:
+       новый стиль" artifact) -- a dark instrument-panel palette in the
+       wildbox/WB-analytics-tool niche, but with a single accent reserved
+       for interactive elements and a separate semantic set (good/warn/
+       critical) so "brand" and "needs attention" never look the same. */
+    --bg:#0a0b12; --surface:#12141e; --surface-2:#1a1d2c;
+    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+    --text:#eef0f7; --text-muted:#8d94aa; --text-faint:#5b6178;
+    --accent:#7c6cf6; --accent-strong:#9a8bff; --accent-soft:rgba(124,108,246,.14);
+    --good:#3ecf8e; --good-soft:rgba(62,207,142,.12);
+    --warn:#f2b84b; --warn-soft:rgba(242,184,75,.12);
+    --critical:#f2677a; --critical-soft:rgba(242,103,122,.12);
+    --font-display:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:"IBM Plex Mono","SF Mono",monospace;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(circle at 20% 0%, #17152b 0%, #0b0e14 36%, #090b10 100%);
-    color: #e7e9ee; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0; min-height: 100vh;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-display); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Default layout: a single centered card (login/register/billing/etc).
+     home.html overrides the whole "layout" block for a full-width
+     landing page instead -- see the "landing" rules further down. */
+  body.card-layout {
+    display: flex; align-items: center; justify-content: center;
   }
   .card {
     width: 100%; max-width: 400px; margin: 40px 16px;
-    background: linear-gradient(145deg, rgba(28,34,48,.96), rgba(17,22,32,.96));
-    border: 1px solid rgba(255,255,255,.075); border-radius: 18px; padding: 32px;
-    box-shadow: 0 12px 32px rgba(0,0,0,.25);
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--border); border-radius: 18px; padding: 32px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.35);
   }
   .card.card-wide { max-width: 720px; }
-  .card-wide h2 { font-size: 1.1rem; margin: 26px 0 8px; }
+  .card-wide h2 { font-size: 1.1rem; margin: 26px 0 8px; font-weight: 700; }
   .card-wide h2:first-of-type { margin-top: 0; }
-  .card-wide p, .card-wide li { color: #c4cad4; font-size: .93rem; line-height: 1.55; }
+  .card-wide p, .card-wide li { color: var(--text-muted); font-size: .93rem; line-height: 1.6; }
   .card-wide ul, .card-wide ol { padding-left: 20px; margin: 8px 0; }
   .card-wide table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: .9rem; }
-  .card-wide table td { padding: 6px 10px 6px 0; color: #c4cad4; vertical-align: top; }
-  .card-wide table td:first-child { color: #98a2b3; white-space: nowrap; }
-  .card-wide .back-link { display: inline-block; margin-top: 4px; color: #6d8dfa; text-decoration: none; font-size: .87rem; }
+  .card-wide table td { padding: 6px 10px 6px 0; color: var(--text-muted); vertical-align: top; }
+  .card-wide table td:first-child { color: var(--text-faint); white-space: nowrap; }
+  .card-wide .back-link { display: inline-block; margin-top: 4px; color: var(--accent-strong); text-decoration: none; font-size: .87rem; }
   .card-wide .back-link:hover { text-decoration: underline; }
   .nav-links { display: flex; gap: 16px; justify-content: center; margin-top: 18px; font-size: .82rem; }
-  .nav-links a { color: #98a2b3; text-decoration: none; }
-  .nav-links a:hover { color: #6d8dfa; }
-  h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; margin: 0 0 6px; }
-  .subtitle { color: #98a2b3; font-size: .9rem; margin: 0 0 22px; }
-  label { display: block; font-size: .82rem; color: #98a2b3; margin: 14px 0 5px; }
+  .nav-links a { color: var(--text-muted); text-decoration: none; }
+  .nav-links a:hover { color: var(--accent-strong); }
+  h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; margin: 0 0 6px; }
+  .subtitle { color: var(--text-muted); font-size: .9rem; margin: 0 0 22px; }
+  label { display: block; font-size: .82rem; color: var(--text-muted); margin: 14px 0 5px; }
   input[type=email], input[type=password], input[type=text] {
-    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
-    background: #0d1119; color: #e7e9ee; font-size: .95rem;
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong);
+    background: var(--bg); color: var(--text); font-size: .95rem; font-family: var(--font-display);
   }
-  input:focus { outline: none; border-color: #6d8dfa; }
+  input:focus { outline: none; border-color: var(--accent); }
   button {
     width: 100%; margin-top: 22px; padding: 11px; border: none; border-radius: 12px;
-    background: #6d8dfa; color: #0b0e14; font-weight: 700; font-size: .95rem; cursor: pointer;
+    background: var(--accent); color: #0a0b12; font-weight: 600; font-size: .95rem; cursor: pointer;
+    font-family: var(--font-display);
   }
-  button:hover { background: #86a0ff; }
-  .error { background: rgba(224,86,86,.1); border: 1px solid rgba(224,86,86,.3); color: #f0a3a3;
+  button:hover { background: var(--accent-strong); }
+  a { color: var(--accent-strong); }
+  .error { background: var(--critical-soft); border: 1px solid rgba(242,103,122,.3); color: var(--critical);
     border-radius: 10px; padding: 10px 12px; font-size: .87rem; margin-bottom: 8px; }
-  .info { background: rgba(87,211,145,.1); border: 1px solid rgba(87,211,145,.25); color: #79e2aa;
+  .info { background: var(--good-soft); border: 1px solid rgba(62,207,142,.25); color: var(--good);
     border-radius: 10px; padding: 10px 12px; font-size: .87rem; margin-bottom: 8px; }
-  .footer-link { text-align: center; margin-top: 18px; font-size: .87rem; color: #98a2b3; }
-  .footer-link a { color: #6d8dfa; text-decoration: none; }
+  .footer-link { text-align: center; margin-top: 18px; font-size: .87rem; color: var(--text-muted); }
+  .footer-link a { color: var(--accent-strong); text-decoration: none; }
   .footer-link a:hover { text-decoration: underline; }
-  .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,.12);
-    border-top-color: #6d8dfa; margin: 8px auto 18px; animation: spin 0.9s linear infinite; }
+  .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--border-strong);
+    border-top-color: var(--accent); margin: 8px auto 18px; animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- landing layout (home.html only) ---------- */
+  body.landing { display: block; }
+  .landing-wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+  .nav-bar { display: flex; justify-content: space-between; align-items: center; padding: 26px 0; }
+  .nav-bar .brand { font-weight: 700; font-size: 1.1rem; letter-spacing: -.01em; text-decoration: none; color: var(--text); }
+  .nav-bar .links { display: flex; gap: 22px; align-items: center; font-size: .89rem; }
+  .nav-bar .links a { color: var(--text-muted); text-decoration: none; }
+  .nav-bar .links a:hover { color: var(--text); }
+  .nav-bar .links a.cta { color: #0a0b12; background: var(--accent); padding: 8px 16px; border-radius: 9px; font-weight: 600; }
+  .nav-bar .links a.cta:hover { background: var(--accent-strong); }
+
+  .hero {
+    display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; align-items: center;
+    padding: 40px 0 76px;
+  }
+  .hero h1 { font-size: 2.6rem; line-height: 1.12; font-weight: 700; letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
+  .hero p.lead { color: var(--text-muted); font-size: 1.05rem; margin: 0 0 28px; max-width: 46ch; }
+  .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 22px;
+    border-radius: 11px; font-weight: 600; font-size: .93rem; text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+  .btn-primary { background: var(--accent); color: #0a0b12; }
+  .btn-primary:hover { background: var(--accent-strong); }
+  .btn-ghost { color: var(--text); border-color: var(--border-strong); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .trial-note { font-size: .82rem; color: var(--text-faint); margin-top: 14px; }
+
+  .mini-dash { border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2);
+    padding: 18px; box-shadow: 0 18px 46px rgba(0,0,0,.4); }
+  .mini-dash-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .mini-dash-head span { font-size: .74rem; color: var(--text-faint); font-family: var(--font-mono); }
+  .mini-dash-head .live { color: var(--good); }
+  .mini-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mini-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; }
+  .mini-kpi .l { font-size: .68rem; color: var(--text-faint); margin-bottom: 5px; }
+  .mini-kpi .v { font-family: var(--font-mono); font-weight: 600; font-size: 1.02rem; font-variant-numeric: tabular-nums; }
+  .mini-kpi .v.good { color: var(--good); }
+
+  .feature-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 28px; }
+  .feature { background: var(--surface); padding: 28px 26px; }
+  .feature .ic { width: 36px; height: 36px; border-radius: 9px; background: var(--accent-soft); color: var(--accent-strong);
+    display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 600; font-size: .82rem; margin-bottom: 14px; }
+  .feature h3 { font-size: .98rem; margin: 0 0 8px; font-weight: 600; }
+  .feature p { font-size: .87rem; color: var(--text-muted); margin: 0; line-height: 1.55; }
+
+  .price-strip { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+    padding: 26px 30px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 60px; }
+  .price-strip .p-left { font-size: .92rem; color: var(--text-muted); }
+  .price-strip .p-left b { color: var(--text); font-family: var(--font-mono); font-size: 1.15rem; font-weight: 600; }
+
+  .landing-footer { border-top: 1px solid var(--border); padding: 26px 0 60px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-size: .84rem; color: var(--text-faint); }
+  .landing-footer a { color: var(--text-muted); text-decoration: none; margin-right: 18px; }
+  .landing-footer a:hover { color: var(--accent-strong); }
+
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; padding-top: 10px; }
+    .feature-row { grid-template-columns: 1fr; }
+    .nav-bar .links { gap: 14px; }
+  }
 </style>
 {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}card-layout{% endblock %}">
+{% block layout %}
 <div class="card{% block card_extra_class %}{% endblock %}">
 {% block content %}{% endblock %}
 </div>
+{% endblock %}
 </body>
 </html>

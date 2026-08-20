@@ -15,6 +15,7 @@ before any paying customer touches it. See ../DEPLOY.md.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -78,7 +79,16 @@ def home(request: Request):
     account = _current_account(request)
     if account is not None:
         return _redirect_for_account(account)
-    return templates.TemplateResponse(request, "home.html")
+    return templates.TemplateResponse(
+        request,
+        "home.html",
+        {
+            "price_rub": config.SUBSCRIPTION_PRICE_RUB,
+            "period_days": config.BILLING_PERIOD_DAYS,
+            "trial_days": config.TRIAL_DAYS,
+            "current_year": datetime.now(timezone.utc).year,
+        },
+    )
 
 
 # Public informational pages -- required by YooKassa's site review before it

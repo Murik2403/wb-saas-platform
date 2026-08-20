@@ -1,14 +1,74 @@
 {% extends "base.html" %}
-{% block title %}MARKETSHELPER{% endblock %}
-{% block content %}
-<h1>MARKETSHELPER</h1>
-<p class="subtitle">Учёт себестоимости, FIFO, производство и остатки для продавцов Wildberries.</p>
-{% if error %}<div class="error">{{ error }}</div>{% endif %}
-<a href="/register"><button type="button">Начать бесплатно</button></a>
-<div class="footer-link">Уже есть аккаунт? <a href="/login">Войти</a></div>
-<div class="nav-links">
-  <a href="/pricing">Тарифы</a>
-  <a href="/offer">Оферта</a>
-  <a href="/contacts">Контакты и реквизиты</a>
+{% block title %}MARKETSHELPER — учёт себестоимости и остатков для продавцов Wildberries{% endblock %}
+{% block body_class %}landing{% endblock %}
+{% block layout %}
+<div class="landing-wrap">
+
+  <div class="nav-bar">
+    <a class="brand" href="/">MARKETSHELPER</a>
+    <div class="links">
+      <a href="/pricing">Тарифы</a>
+      <a href="/login">Войти</a>
+      <a class="cta" href="/register">Начать бесплатно</a>
+    </div>
+  </div>
+
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+  <div class="hero">
+    <div>
+      <h1>Учёт себестоимости, FIFO и остатков для продавцов Wildberries</h1>
+      <p class="lead">Отдельный, изолированный личный кабинет для вашего магазина: производство, закупки, сверка остатков склада WB — без Excel и ручных пересчётов.</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="/register">Начать бесплатно</a>
+        <a class="btn btn-ghost" href="/pricing">Тарифы</a>
+      </div>
+      <div class="trial-note">{{ trial_days }} дней пробного периода, карта не нужна</div>
+    </div>
+    <div class="mini-dash">
+      <div class="mini-dash-head"><span>app.marketshelper.ru</span><span class="live">● online</span></div>
+      <div class="mini-kpis">
+        <div class="mini-kpi"><div class="l">Выкупы сегодня</div><div class="v">142</div></div>
+        <div class="mini-kpi"><div class="l">Выручка</div><div class="v">184 320 ₽</div></div>
+        <div class="mini-kpi"><div class="l">Маржа</div><div class="v good">47,8%</div></div>
+        <div class="mini-kpi"><div class="l">Готово / в пути</div><div class="v">860 / 320</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="feature-row">
+    <div class="feature">
+      <div class="ic">FI</div>
+      <h3>FIFO себестоимость</h3>
+      <p>Сырьё и готовая продукция списываются партиями по факту закупки — а не по средней цене.</p>
+    </div>
+    <div class="feature">
+      <div class="ic">PR</div>
+      <h3>Производство</h3>
+      <p>Комплекты, партии, минимальные объёмы — автоматически по вашим правилам болванок.</p>
+    </div>
+    <div class="feature">
+      <div class="ic">СВ</div>
+      <h3>Сверка остатков</h3>
+      <p>Склад WB и внутренний учёт — расхождения видно сразу, а не в конце месяца.</p>
+    </div>
+  </div>
+
+  <div class="price-strip">
+    <div class="p-left">Пробный период {{ trial_days }} дней, затем <b>{{ price_rub|int }} ₽</b> / {{ period_days }} дней</div>
+    <a class="btn btn-primary" href="/register">Попробовать бесплатно</a>
+  </div>
+
+  <div class="footer-link">Уже есть аккаунт? <a href="/login">Войти</a></div>
+
+  <div class="landing-footer">
+    <div>
+      <a href="/pricing">Тарифы</a>
+      <a href="/offer">Оферта</a>
+      <a href="/contacts">Контакты и реквизиты</a>
+    </div>
+    <div>© {{ current_year }} MARKETSHELPER</div>
+  </div>
+
 </div>
 {% endblock %}
