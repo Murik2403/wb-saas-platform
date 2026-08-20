@@ -182,8 +182,17 @@ password` не покажет ошибку, просто ничего не пр�
 
 ```bash
 docker build -t wb-dashboard-tenant:latest ./tenant-app
-python3 scripts/upgrade_all_tenants.py
+docker compose exec -e PYTHONPATH=/app gateway python3 /app/scripts/upgrade_all_tenants.py
 ```
+
+Как и `run_billing_cycle.py`/`backup_tenant_volumes.py` (см. выше), этот
+скрипт тоже читает реальную базу аккаунтов через `logic/db.py` — она живёт
+только в `gateway_data`, томе контейнера `gateway`. Запуск голым `python3
+scripts/upgrade_all_tenants.py` с хоста откроет пустой файл из
+git-чекаута, увидит ноль клиентов и напечатает «No running tenants to
+upgrade», ничего не сделав — при этом выглядит как успешный запуск. Сама
+пересборка образа (`docker build ...`) — обычная команда докера на хосте,
+её это не касается.
 
 Скрипт останавливает и пересоздаёт контейнеры клиентов по одному,
 дожидаясь health-check перед следующим — если новый образ сломан, вы
