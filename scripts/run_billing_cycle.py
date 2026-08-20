@@ -6,8 +6,16 @@ accounts that have been past_due longer than the grace period allows.
 Meant to run once a day from cron on the VPS -- see DEPLOY.md for the
 crontab line. Idempotent to run more than once a day: accounts already
 billed for the current period won't show up in accounts_due_for_recurring_charge
-again until their new current_period_end passes, and record_payment_attempt
-is keyed on YooKassa's own payment id so a re-run can't double-charge.
+again until their new current_period_end passes, and create_payment() below
+is called with a deterministic Idempotence-Key derived from
+(account_id, current_period_end) -- so if this process dies after YooKassa
+already charged the card but before record_payment_attempt/
+apply_successful_payment ran (OOM-kill, host reboot mid-cron), tomorrow's
+run reuses the SAME key and gets back the SAME payment object from
+YooKassa instead of creating a brand new charge. Without this, a crash at
+exactly that point would double-charge the customer's real card on the
+next run, since accounts_due_for_recurring_charge would still see the
+account as due (current_period_end was never advanced).
 
 Exit code is nonzero if any recurring charge raised an exception talking to
 YooKassa (network/API failure) -- a plain "card declined" is NOT an error
@@ -47,6 +55,12 @@ def charge_due_accounts() -> int:
                 description=f"Продление подписки WB Control — {account['email']}",
                 payment_method_id=account["payment_method_id"],
                 metadata={"account_id": str(account_id)},
+                # Deterministic per (account, period being paid for) -- see
+                # module docstring. Stays stable across reruns until this
+                # account's current_period_end actually advances, which only
+                # happens once apply_successful_payment() has run for a
+                # 'succeeded' result.
+                idempotence_key=f"recurring:{account_id}:{account['current_period_end']}",
             )
         except yookassa_client.YooKassaError:
             logger.exception("YooKassa API call failed for account %s", account_id)

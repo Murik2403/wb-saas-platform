@@ -91,6 +91,24 @@ class SuccessfulPaymentTests(GatewayDbTestCase):
         expected = datetime.now(timezone.utc) + timedelta(days=30)
         self.assertLess(abs((period_end_after - expected).total_seconds()), 5)
 
+    def test_reapplying_same_payment_id_does_not_extend_period_twice(self) -> None:
+        # YooKassa's webhook delivery is at-least-once -- the same
+        # "succeeded" notification for the same payment id can and does
+        # arrive more than once in normal operation (retries, duplicate
+        # sends). Re-applying it must be a no-op the second time, not grant
+        # another free 30 days.
+        with self.connect() as conn:
+            billing.record_payment_attempt(conn, self.account_id, "yk-1", "initial", 2990.0)
+            billing.apply_successful_payment(conn, self.account_id, "yk-1", payment_method_id="pm-abc", period_days=30)
+            account_after_first = accounts.get_account_by_id(conn, self.account_id)
+            period_end_after_first = account_after_first["current_period_end"]
+
+            # Simulate YooKassa re-delivering the same webhook for "yk-1".
+            billing.apply_successful_payment(conn, self.account_id, "yk-1", payment_method_id="pm-abc", period_days=30)
+            account_after_second = accounts.get_account_by_id(conn, self.account_id)
+
+        self.assertEqual(account_after_second["current_period_end"], period_end_after_first)
+
     def test_reapplying_same_payment_id_does_not_duplicate_row(self) -> None:
         with self.connect() as conn:
             billing.record_payment_attempt(conn, self.account_id, "yk-1", "initial", 2990.0)

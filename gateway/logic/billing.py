@@ -103,15 +103,20 @@ def apply_successful_payment(
 ) -> None:
     """Extends the paid-through date and clears any past_due state.
 
-    Idempotent-ish: re-applying the same yookassa_payment_id just updates
-    that payment row's status (see record_payment_attempt's ON CONFLICT) --
-    it does NOT extend the period twice, because the caller (webhook
-    handler) should only call this once per payment id transitioning to
-    succeeded. The webhook handler is responsible for that check; this
-    function trusts its caller, same as the rest of this module trusts
-    being called with a server-verified payment status (see
-    yookassa_client.get_payment -- webhooks are never trusted directly).
+    Idempotent per yookassa_payment_id: YooKassa's webhook delivery is
+    at-least-once (it retries on any non-2xx response, a timeout, or just
+    its own duplicate-delivery behaviour), so this function WILL be called
+    more than once for the same payment id in normal operation -- that must
+    never extend current_period_end twice for one payment. Guarded below by
+    checking the payments row's own status before doing anything; only a
+    payment not already recorded as 'succeeded' actually extends the period.
     """
+    already_applied = conn.execute(
+        "SELECT status FROM payments WHERE yookassa_payment_id=?", (yookassa_payment_id,)
+    ).fetchone()
+    if already_applied is not None and already_applied["status"] == "succeeded":
+        return
+
     account = accounts.get_account_by_id(conn, account_id)
     if account is None:
         raise ValueError(f"Аккаунт {account_id} не найден.")
