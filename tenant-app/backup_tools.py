@@ -35,11 +35,36 @@ def _safe_sqlite_snapshot(target: Path) -> None:
         source.close()
 
 
+BACKUP_FILENAME_PREFIX = "marketshelper"
+# Old backups created before the MARKETSHELPER rebrand are still named with
+# this prefix. Discovery/pruning below matches both so existing backup
+# history keeps showing up (and getting cleaned up) after the rename -- only
+# the archive's own internal member name (see _validate_zip_names) has to
+# stay "wb_dashboard.sqlite3" forever, since that's what makes every backup
+# ever created, old or new, still restorable.
+_LEGACY_BACKUP_FILENAME_PREFIX = "wb_dashboard"
+
+
+def _backup_glob_patterns() -> list[str]:
+    return [f"{BACKUP_FILENAME_PREFIX}_*.zip", f"{_LEGACY_BACKUP_FILENAME_PREFIX}_*.zip"]
+
+
+def _all_backup_paths() -> list[Path]:
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for pattern in _backup_glob_patterns():
+        for path in BACKUP_DIR.glob(pattern):
+            if path.name not in seen:
+                seen.add(path.name)
+                paths.append(path)
+    return paths
+
+
 def create_backup(kind: str = "manual", keep: int = 14) -> Path:
     """Create a verified ZIP backup without the WB API token."""
     kind = "auto" if kind == "auto" else "manual"
     stamp = _timestamp()
-    final_path = BACKUP_DIR / f"wb_dashboard_{kind}_{stamp}.zip"
+    final_path = BACKUP_DIR / f"{BACKUP_FILENAME_PREFIX}_{kind}_{stamp}.zip"
 
     with tempfile.TemporaryDirectory(prefix="wb_backup_") as tmp_name:
         tmp = Path(tmp_name)
@@ -73,8 +98,8 @@ def create_backup(kind: str = "manual", keep: int = 14) -> Path:
 
 def ensure_daily_backup(keep: int = 14) -> Path | None:
     """Create at most one automatic backup per local calendar day."""
-    today_prefix = f"wb_dashboard_auto_{datetime.now():%Y%m%d}_"
-    if any(path.name.startswith(today_prefix) for path in BACKUP_DIR.glob("*.zip")):
+    today_suffix = f"_auto_{datetime.now():%Y%m%d}_"
+    if any(today_suffix in path.name for path in _all_backup_paths()):
         return None
     if not DB_PATH.exists():
         return None
@@ -82,7 +107,7 @@ def ensure_daily_backup(keep: int = 14) -> Path | None:
 
 
 def _prune_backups(keep: int) -> None:
-    backups = sorted(BACKUP_DIR.glob("wb_dashboard_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    backups = sorted(_all_backup_paths(), key=lambda p: p.stat().st_mtime, reverse=True)
     for path in backups[keep:]:
         try:
             path.unlink()
@@ -92,7 +117,7 @@ def _prune_backups(keep: int) -> None:
 
 def list_backups(limit: int = 30) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in sorted(BACKUP_DIR.glob("wb_dashboard_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]:
+    for path in sorted(_all_backup_paths(), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]:
         stat = path.stat()
         rows.append({
             "name": path.name,
@@ -117,7 +142,7 @@ def _validate_zip_names(zf: zipfile.ZipFile) -> None:
     allowed = {"wb_dashboard.sqlite3", "settings.json", "manifest.json"}
     names = set(zf.namelist())
     if "wb_dashboard.sqlite3" not in names:
-        raise ValueError("В архиве нет файла базы wb_dashboard.sqlite3.")
+        raise ValueError("В архиве нет файла базы данных.")
     unexpected = names - allowed
     if unexpected:
         raise ValueError(f"В архиве есть неподдерживаемые файлы: {', '.join(sorted(unexpected))}")
@@ -166,7 +191,7 @@ def restore_backup(payload: bytes, restore_settings: bool = True) -> dict[str, A
             required = {"orders", "sales", "stocks", "costs", "product_pipeline"}
             missing = required - tables
             if missing:
-                raise RuntimeError(f"Это не резервная копия WB Dashboard. Нет таблиц: {', '.join(sorted(missing))}")
+                raise RuntimeError(f"Это не резервная копия MARKETSHELPER. Нет таблиц: {', '.join(sorted(missing))}")
         finally:
             connection.close()
 

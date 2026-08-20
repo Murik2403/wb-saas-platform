@@ -210,8 +210,8 @@ def render(ctx: dict) -> None:
         "её к выбранным товарам."
     )
     st.caption(
-        "Прогноз новой партии учитывает полную стоимость рулона: цену поставщика, доставку, курс и прочие расходы. "
-        "Упаковка по умолчанию — 12 ₽ на комплект, значение можно изменить для каждого товара."
+        "Прогноз новой партии учитывает полную стоимость закупки сырья: цену поставщика, доставку, курс и прочие расходы. "
+        "Стоимость упаковки по умолчанию не задаётся — укажите её для каждого товара самостоятельно, она у всех разная."
     )
     production_for_cost = read_table("production_settings")
     material_rates = read_material_cost_rates()
@@ -230,7 +230,7 @@ def render(ctx: dict) -> None:
             available_cost_columns = [c for c in cost_columns if c in costs_detailed.columns]
             own_cost = own_cost.merge(costs_detailed[available_cost_columns], on="nm_id", how="left")
         for col, default in {
-            "cost_per_wb_unit": 0.0, "material_cost_rub": 0.0, "packaging_cost_rub": 12.0,
+            "cost_per_wb_unit": 0.0, "material_cost_rub": 0.0, "packaging_cost_rub": 0.0,
             "labor_cost_rub": 0.0, "other_cost_rub": 0.0,
             "forecast_material_cost_rub": 0.0, "forecast_total_cost_rub": 0.0,
             "forecast_rate_rub_m": 0.0,
@@ -238,7 +238,6 @@ def render(ctx: dict) -> None:
             if col not in own_cost.columns:
                 own_cost[col] = default
             own_cost[col] = pd.to_numeric(own_cost[col], errors="coerce").fillna(default)
-        own_cost["packaging_cost_rub"] = own_cost["packaging_cost_rub"].where(own_cost["packaging_cost_rub"] > 0, 12.0)
         if "forecast_source" not in own_cost.columns:
             own_cost["forecast_source"] = ""
         own_cost["forecast_source"] = own_cost["forecast_source"].fillna("").astype(str)
@@ -517,7 +516,8 @@ def render(ctx: dict) -> None:
         opening_rate_input = st.number_input(
             "Историческая ставка старого сырья, ₽/м", min_value=0.01, value=float(opening_rate),
             step=1.0, format="%.2f",
-            help="По согласованной старой себестоимости: 180 ₽ материала на комплект 4 шт. / 0,447 м ≈ 402,68 ₽/м."
+            help="Цена за метр сырья, по которой считается остаток, накопленный до включения FIFO. "
+                 "Возьмите вашу текущую согласованную себестоимость материала и разделите на его расход в метрах."
         )
     with fifo_action_col:
         st.write("")
@@ -847,7 +847,7 @@ def render(ctx: dict) -> None:
             "Мощность указана", value=bool(int(capacity.get("capacity_known", 0) or 0))
         )
         pieces_per_day_ui = st.number_input(
-            "Плейсматов в рабочий день", min_value=0, step=10,
+            "Изделий в рабочий день", min_value=0, step=1,
             value=max(0, int(capacity.get("pieces_per_day", 0) or 0))
         )
         emergency_cover_days_ui = st.number_input(
