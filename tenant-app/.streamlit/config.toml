@@ -8,3 +8,16 @@
 # changed across Streamlit releases): https://docs.streamlit.io/develop/api-reference/configuration/config.toml
 [client]
 showSidebarNavigation = false
+
+# MARKETSHELPER design system base colors, applied through the official
+# theme keys (stable across Streamlit releases) rather than CSS targeting
+# internal widget markup -- native controls (buttons, inputs, tabs,
+# segmented_control, dataframe header, checkboxes, sliders) all pick these
+# up automatically. Fonts, custom KPI cards, status pills, etc. are layered
+# on top via the CSS block in app.py, same as before.
+[theme]
+base = "dark"
+primaryColor = "#7c6cf6"
+backgroundColor = "#0a0b12"
+secondaryBackgroundColor = "#12141e"
+textColor = "#eef0f7"
