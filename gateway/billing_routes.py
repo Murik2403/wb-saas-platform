@@ -69,7 +69,7 @@ def billing_checkout(request: Request):
     try:
         payment = yookassa_client.create_payment(
             amount_rub=config.SUBSCRIPTION_PRICE_RUB,
-            description=f"Подписка WB Control — {account['email']}",
+            description=f"Подписка Marketshelper — {account['email']}",
             return_url=return_url,
             save_payment_method=True,
             metadata={"account_id": str(account["id"])},

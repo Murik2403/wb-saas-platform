@@ -28,7 +28,7 @@ PAGES = {
     "Настройки": settings_page,
 }
 
-st.set_page_config(page_title="WB Control", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Marketshelper", page_icon="📊", layout="wide")
 init_db()
 try:
     refresh_auto_costs()
@@ -67,7 +67,7 @@ div[data-testid="stDataFrame"] {border:1px solid rgba(255,255,255,.06); border-r
 settings = load_settings()
 
 with st.sidebar:
-    st.markdown("## WB Control")
+    st.markdown("## Marketshelper")
     page = st.radio("", ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Настройки"], label_visibility="collapsed")
     st.divider()
     token_exists = bool(get_token())

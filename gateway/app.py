@@ -29,7 +29,7 @@ from logic import accounts, db as control_db, password_reset
 
 logger = logging.getLogger("wb_saas_gateway")
 
-app = FastAPI(title="WB Control Gateway")
+app = FastAPI(title="Marketshelper Gateway")
 app.include_router(billing_router)
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
