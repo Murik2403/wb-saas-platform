@@ -8,6 +8,7 @@
     <a class="brand" href="/">MARKETSHELPER</a>
     <div class="links">
       <a class="section-link" href="#features">Возможности</a>
+      <a class="section-link" href="#calculator">Калькулятор</a>
       <a class="section-link" href="#compare">Сравнение</a>
       <a class="section-link" href="#faq">Вопросы</a>
       <a href="/pricing">Тарифы</a>
@@ -41,39 +42,39 @@
   </div>
 
   <div class="feature-row" id="features">
-    <div class="feature">
+    <div class="feature reveal">
       <div class="ic">FI</div>
       <h3>FIFO себестоимость</h3>
       <p>Сырьё и готовая продукция списываются партиями по факту закупки — а не по средней цене.</p>
     </div>
-    <div class="feature">
+    <div class="feature reveal">
       <div class="ic">PR</div>
       <h3>Производство</h3>
       <p>Комплекты, партии, минимальные объёмы — автоматически по вашим правилам производства.</p>
     </div>
-    <div class="feature">
+    <div class="feature reveal">
       <div class="ic">СВ</div>
       <h3>Сверка остатков</h3>
       <p>Склад WB и внутренний учёт — расхождения видно сразу, а не в конце месяца.</p>
     </div>
-    <div class="feature">
+    <div class="feature reveal">
       <div class="ic">ЗК</div>
       <h3>Закупки сырья</h3>
       <p>Вес, объём, штуки, упаковки — любой материал заводится в своей единице измерения. Заявки поставщикам и приёмка — в одном месте.</p>
     </div>
-    <div class="feature">
+    <div class="feature reveal">
       <div class="ic">НЗ</div>
       <h3>Незавершённое производство</h3>
       <p>Видно, что уже выпущено партиями, а что ещё в работе — до момента, пока товар не готов к отгрузке.</p>
     </div>
-    <div class="feature">
+    <div class="feature reveal">
       <div class="ic">КМ</div>
       <h3>Календарь мощности</h3>
       <p>План производства строится от вашей реальной мощности и от спроса на WB — не только от текущих остатков.</p>
     </div>
   </div>
 
-  <div class="section">
+  <div class="section reveal">
     <div class="section-head">
       <div class="eyebrow">Для кого</div>
       <h2>Один и тот же кабинет — для продажи и для производства</h2>
@@ -110,7 +111,7 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section reveal">
     <div class="section-head">
       <div class="eyebrow">Как это выглядит</div>
       <h2>Сырьё и партии видно так же ясно, как продажи</h2>
@@ -138,7 +139,52 @@
     </div>
   </div>
 
-  <div class="section" id="compare">
+  <div class="section reveal" id="calculator">
+    <div class="section-head">
+      <div class="eyebrow">Калькулятор</div>
+      <h2>Посчитайте свою маржу за 10 секунд</h2>
+      <p>Введите свои цифры — никуда не отправляются, считается прямо в браузере. Это ровно то, что дальше в кабинете считается автоматически по каждому товару и по факту закупки сырья.</p>
+    </div>
+    <div class="calc-wrap">
+      <div class="calc-form">
+        <div class="calc-field">
+          <label for="calcPrice">Цена продажи, ₽</label>
+          <input type="number" id="calcPrice" inputmode="decimal" value="1200" min="0" step="1">
+        </div>
+        <div class="calc-field">
+          <label for="calcCost">Себестоимость, ₽</label>
+          <input type="number" id="calcCost" inputmode="decimal" value="420" min="0" step="1">
+          <span class="hint">сырьё и производство — или закупка, если перепродаёте</span>
+        </div>
+        <div class="calc-field">
+          <label for="calcCommission">Комиссия WB, %</label>
+          <input type="number" id="calcCommission" inputmode="decimal" value="17" min="0" max="100" step="0.5">
+          <span class="hint">зависит от категории — подставьте свою</span>
+        </div>
+        <div class="calc-field">
+          <label for="calcLogistics">Логистика и упаковка, ₽</label>
+          <input type="number" id="calcLogistics" inputmode="decimal" value="90" min="0" step="1">
+        </div>
+        <div class="calc-field wide">
+          <label for="calcAds">Реклама на единицу, ₽</label>
+          <input type="number" id="calcAds" inputmode="decimal" value="60" min="0" step="1">
+        </div>
+      </div>
+      <div class="calc-result">
+        <div>
+          <div class="label">Прибыль с единицы</div>
+          <div class="calc-big" id="calcProfit">0 ₽</div>
+        </div>
+        <div>
+          <div class="label">Маржа от цены продажи</div>
+          <div class="calc-sub" id="calcMargin">0%</div>
+        </div>
+        <p class="calc-note">Прикидка для быстрой оценки — без скидок, эквайринга и хранения. В кабинете расчёт идёт по фактической себестоимости из FIFO-слоёв сырья.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section reveal" id="compare">
     <div class="section-head">
       <div class="eyebrow">Сравнение</div>
       <h2>Чем это отличается от других вариантов</h2>
@@ -203,7 +249,7 @@
     <p class="compare-note">Сравнение по категориям сервисов, а не с конкретными брендами. Актуально на август 2026 года.</p>
   </div>
 
-  <div class="section" id="faq">
+  <div class="section reveal" id="faq">
     <div class="section-head">
       <div class="eyebrow">Вопросы</div>
       <h2>Частые вопросы</h2>
@@ -336,6 +382,48 @@
         entries.forEach(function (entry) { nearFooterCta = entry.isIntersecting; updateFloating(); });
       }, { threshold: 0 }).observe(priceStrip);
     }
+  }
+
+  /* ---- margin calculator: pure client-side, nothing sent anywhere ---- */
+  var calcIds = ["calcPrice", "calcCost", "calcCommission", "calcLogistics", "calcAds"];
+  var calcInputs = calcIds.map(function (id) { return document.getElementById(id); });
+  var calcProfitEl = document.getElementById("calcProfit");
+  var calcMarginEl = document.getElementById("calcMargin");
+  function runCalc() {
+    if (!calcProfitEl || !calcMarginEl) return;
+    function num(el) { var v = parseFloat(el && el.value); return isFinite(v) ? v : 0; }
+    var price = num(document.getElementById("calcPrice"));
+    var cost = num(document.getElementById("calcCost"));
+    var commissionPct = num(document.getElementById("calcCommission"));
+    var logistics = num(document.getElementById("calcLogistics"));
+    var ads = num(document.getElementById("calcAds"));
+    var commissionAmount = price * (commissionPct / 100);
+    var profit = price - cost - commissionAmount - logistics - ads;
+    var marginPct = price > 0 ? (profit / price) * 100 : 0;
+    calcProfitEl.textContent = Math.round(profit).toLocaleString("ru-RU") + " ₽";
+    calcMarginEl.textContent = marginPct.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
+    calcProfitEl.classList.remove("good", "warn", "critical");
+    if (profit <= 0) calcProfitEl.classList.add("critical");
+    else if (marginPct < 15) calcProfitEl.classList.add("warn");
+    else calcProfitEl.classList.add("good");
+  }
+  calcInputs.forEach(function (el) { if (el) el.addEventListener("input", runCalc); });
+  runCalc();
+
+  /* ---- scroll-reveal for sections and feature tiles ---- */
+  var revealEls = document.querySelectorAll(".reveal");
+  if (revealEls.length && "IntersectionObserver" in window && !reduceMotion) {
+    var revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+    revealEls.forEach(function (el) { revealObserver.observe(el); });
+  } else {
+    revealEls.forEach(function (el) { el.classList.add("is-visible"); });
   }
 })();
 </script>
