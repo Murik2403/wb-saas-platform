@@ -21,6 +21,11 @@ providers:
                               # otherwise every container on the shared network (including
                               # ones with no business being public) would get exposed.
     network: wbsaas_net
+  # Holds the wb-saas-auth ForwardAuth middleware -- kept out of the Docker
+  # provider deliberately so it isn't tied to the gateway container's
+  # lifecycle. See dynamic.yml for why.
+  file:
+    filename: /etc/traefik/dynamic.yml
 
 # While first testing DNS/TLS on a new domain, uncomment caServer below to
 # use Let's Encrypt's staging environment (untrusted certs, but no rate

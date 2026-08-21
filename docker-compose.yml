@@ -24,6 +24,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
       - traefik_letsencrypt:/letsencrypt
     environment:
       # Traefik reads TRAEFIK_* env vars as static config directly (unlike
@@ -60,7 +61,7 @@ services:
       - WB_SAAS_TENANT_CPU_QUOTA=${WB_SAAS_TENANT_CPU_QUOTA:-1.0}
       - WB_SAAS_PROVISION_TIMEOUT=${WB_SAAS_PROVISION_TIMEOUT:-180}
       - WB_SAAS_COOKIE_SECURE=${WB_SAAS_COOKIE_SECURE:-1}
-      - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@docker
+      - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@file
       - WB_SAAS_TLS_CERT_RESOLVER=letsencrypt
       # Billing (logic/billing.py, yookassa_client.py) -- previously missing
       # here entirely, so .env values for these never reached the container
@@ -90,9 +91,9 @@ services:
       - traefik.http.routers.gateway.entrypoints=websecure
       - traefik.http.routers.gateway.tls.certresolver=letsencrypt
       - traefik.http.services.gateway.loadbalancer.server.port=8000
-      # Defined once, here, and referenced by every tenant container's own
-      # labels (see gateway/provisioning.py container_labels()) as
-      # wb-saas-auth@docker -- Traefik's Docker provider merges routing
-      # config from every container's labels into one table, so a
-      # middleware defined on the gateway container is usable by any other.
-      - traefik.http.middlewares.wb-saas-auth.forwardauth.address=http://gateway:8000/auth/verify
+      # wb-saas-auth (referenced by every tenant container's own labels, see
+      # gateway/provisioning.py container_labels()) is defined in
+      # traefik/dynamic.yml, NOT here -- a middleware tied to this
+      # container's labels used to disappear from Traefik's config for a
+      # few seconds on every gateway redeploy, breaking every tenant
+      # request in that window. See dynamic.yml for the full story.

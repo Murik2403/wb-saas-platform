@@ -34,7 +34,7 @@ TENANT_CPU_QUOTA = float(os.environ.get("WB_SAAS_TENANT_CPU_QUOTA", "1.0"))  # i
 # Name of the Traefik ForwardAuth middleware (defined once, via labels on
 # the gateway service in docker-compose.yml) that every tenant router
 # references. Must match exactly what's in docker-compose.yml.
-FORWARD_AUTH_MIDDLEWARE = os.environ.get("WB_SAAS_FORWARD_AUTH_MIDDLEWARE", "wb-saas-auth@docker")
+FORWARD_AUTH_MIDDLEWARE = os.environ.get("WB_SAAS_FORWARD_AUTH_MIDDLEWARE", "wb-saas-auth@file")
 
 # Name of the Traefik certresolver configured in traefik/traefik.yml.
 TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "letsencrypt")

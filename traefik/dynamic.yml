@@ -1,0 +1,28 @@
+# Dynamic (file-provider) Traefik config. Holds the one piece of routing
+# config that must NOT be tied to any single container's lifecycle: the
+# wb-saas-auth ForwardAuth middleware every tenant router depends on.
+#
+# It used to be defined via Docker labels on the gateway service itself
+# (docker-compose.yml). That meant every gateway redeploy briefly removed
+# the middleware from Traefik's dynamic config while the old container was
+# gone and the new one wasn't labeled/discovered yet -- during that gap,
+# every tenant router referencing wb-saas-auth@docker failed with
+# "middleware does not exist" (502/404 for real client requests hitting a
+# tenant subdomain at exactly that moment). Defining it here instead makes
+# it permanent, independent of the gateway container's lifecycle -- the
+# ForwardAuth address still points at the gateway service by its stable
+# Docker network name, so this survives gateway restarts/rebuilds fine.
+#
+# Referenced as wb-saas-auth@file (not @docker) -- see
+# WB_SAAS_FORWARD_AUTH_MIDDLEWARE in docker-compose.yml and its Python-side
+# default in gateway/config.py.
+http:
+  middlewares:
+    wb-saas-auth:
+      forwardAuth:
+        address: "http://gateway:8000/auth/verify"
+        # Without this, Traefik logs a warning on every start that an
+        # unbounded auth-response body could be used for memory-exhaustion
+        # DoS. /auth/verify only ever returns an empty 2xx/redirect, so 64KB
+        # is generous headroom, not a real limit in practice.
+        maxResponseBodySize: 65536
