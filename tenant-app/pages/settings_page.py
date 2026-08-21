@@ -1011,7 +1011,7 @@ def render(ctx: dict) -> None:
 
     st.markdown("#### Восстановление")
     restore_file = st.file_uploader(
-        "Выберите ZIP-копию WB Dashboard", type=["zip"], key="restore_backup_file"
+        "Выберите ZIP-копию MARKETSHELPER", type=["zip"], key="restore_backup_file"
     )
     if restore_file is not None:
         restore_payload = restore_file.getvalue()
