@@ -145,6 +145,55 @@
   @media (max-width: 760px) {
     .hero-decor { display: none; }
   }
+
+  /* ---------- shared: any section with its own themed ambient decor ---------- */
+  .section-layers, .section-calc, .section-compare { position: relative; overflow: hidden; }
+  .section-layers > .section-decor, .section-calc > .section-decor, .section-compare > .section-decor {
+    position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  }
+  .section-layers > *:not(.section-decor), .section-calc > *:not(.section-decor),
+  .section-compare > *:not(.section-decor) { position: relative; z-index: 1; }
+
+  /* ---------- "Для кого": drifting translucent bands (FIFO layers) ---------- */
+  .layer-band { position: absolute; left: -8%; width: var(--w); top: var(--y); height: 34px;
+    border-radius: 8px; filter: blur(10px); opacity: .16;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: layerDrift 12s ease-in-out infinite alternate; animation-delay: var(--d); }
+  @keyframes layerDrift { from { transform: translateX(0); } to { transform: translateX(18%); } }
+
+  /* ---------- calculator: pulsing gauge arc + drifting currency symbols ---------- */
+  .calc-gauge { position: absolute; right: 4%; top: 8%; width: 260px; height: 260px; border-radius: 50%;
+    border: 22px solid transparent; border-top-color: var(--good); border-right-color: var(--good);
+    opacity: .14; filter: blur(2px); transform: rotate(-45deg);
+    animation: gaugeSpin 26s linear infinite; }
+  @keyframes gaugeSpin { to { transform: rotate(315deg); } }
+  .calc-sym { position: absolute; font-family: var(--font-mono); font-weight: 700; color: var(--accent-strong);
+    opacity: .16; filter: blur(1px); animation: symFloat 9s ease-in-out infinite; }
+  .calc-sym-a { left: 6%; top: 20%; font-size: 3.2rem; animation-delay: 0s; }
+  .calc-sym-b { left: 16%; top: 62%; font-size: 2.2rem; color: var(--good); animation-delay: 1.6s; }
+  .calc-sym-c { right: 30%; top: 74%; font-size: 2.6rem; animation-delay: 3.1s; }
+  @keyframes symFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-16px); }
+  }
+
+  /* ---------- compare: faint grid + drifting checkmarks ---------- */
+  .cmp-grid { position: absolute; inset: 0; opacity: .05;
+    background-image: linear-gradient(var(--text) 1px, transparent 1px),
+      linear-gradient(90deg, var(--text) 1px, transparent 1px);
+    background-size: 46px 46px; }
+  .cmp-check { position: absolute; font-weight: 700; color: var(--good); opacity: .14; filter: blur(1px);
+    animation: symFloat 8s ease-in-out infinite; }
+  .cmp-check-a { left: 8%; top: 16%; font-size: 2.6rem; animation-delay: .4s; }
+  .cmp-check-b { right: 12%; top: 30%; font-size: 3.4rem; animation-delay: 2.2s; }
+  .cmp-check-c { left: 40%; top: 74%; font-size: 2.2rem; animation-delay: 4s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .layer-band, .calc-gauge, .calc-sym, .cmp-check { animation: none; }
+  }
+  @media (max-width: 760px) {
+    .section-decor { display: none; }
+  }
   .hero h1 { font-size: 2.6rem; line-height: 1.12; font-weight: 700; letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
   .hero p.lead { color: var(--text-muted); font-size: 1.05rem; margin: 0 0 28px; max-width: 46ch; }
   .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
