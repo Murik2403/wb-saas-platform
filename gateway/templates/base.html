@@ -67,6 +67,11 @@
     background: var(--bg); color: var(--text); font-size: .95rem; font-family: var(--font-display);
   }
   input:focus { outline: none; border-color: var(--accent); }
+  .checkbox-line { display: flex; align-items: flex-start; gap: 9px; margin: 16px 0 0;
+    font-size: .82rem; color: var(--text-muted); line-height: 1.5; cursor: pointer; }
+  .checkbox-line input[type=checkbox] { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0;
+    accent-color: var(--accent); cursor: pointer; }
+  .checkbox-line a { color: var(--accent-strong); }
   button {
     width: 100%; margin-top: 22px; padding: 11px; border: none; border-radius: 12px;
     background: var(--accent); color: #0a0b12; font-weight: 600; font-size: .95rem; cursor: pointer;

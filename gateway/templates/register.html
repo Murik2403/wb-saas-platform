@@ -9,6 +9,11 @@
   <input type="email" id="email" name="email" value="{{ email or '' }}" required autofocus>
   <label for="password">Пароль</label>
   <input type="password" id="password" name="password" required minlength="8">
+  <label class="checkbox-line">
+    <input type="checkbox" id="pdn_consent" name="pdn_consent" required>
+    Согласен(на) с <a href="/offer" target="_blank">публичной офертой</a> и даю
+    <a href="/privacy" target="_blank">согласие на обработку персональных данных</a>
+  </label>
   <button type="submit">Зарегистрироваться</button>
 </form>
 <div class="footer-link">Уже есть аккаунт? <a href="/login">Войти</a></div>

@@ -107,13 +107,23 @@ def generate_unique_slug(conn: sqlite3.Connection, email: str, max_attempts: int
 # Accounts
 # --------------------------------------------------------------------------
 
-def create_account(conn: sqlite3.Connection, email: str, password: str) -> int:
+def create_account(conn: sqlite3.Connection, email: str, password: str, pdn_consent: bool = True) -> int:
+    # Defaults to True so the many tests/fixtures exercising unrelated
+    # behavior (billing, password reset, etc.) don't all need updating --
+    # the one caller that matters for real compliance is the actual
+    # registration route (gateway/app.py register_submit()), which always
+    # passes the real checkbox value, never this default.
     email = (email or "").strip().lower()
     if not validate_email(email):
         raise ValueError("Некорректный email.")
     issues = password_issues(password)
     if issues:
         raise ValueError(" ".join(issues))
+    if not pdn_consent:
+        # 152-ФЗ requires actual recorded consent, not just a client-side
+        # `required` attribute someone could strip -- enforced here too, not
+        # only in the HTML form (see gateway/templates/register.html).
+        raise ValueError("Нужно подтвердить согласие на обработку персональных данных.")
     existing = conn.execute("SELECT id FROM accounts WHERE email=?", (email,)).fetchone()
     if existing is not None:
         raise ValueError("Аккаунт с таким email уже существует.")
@@ -121,10 +131,10 @@ def create_account(conn: sqlite3.Connection, email: str, password: str) -> int:
     now = _now_iso()
     cur = conn.execute(
         """
-        INSERT INTO accounts(email, password_hash, password_salt, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'pending', ?, ?)
+        INSERT INTO accounts(email, password_hash, password_salt, status, pdn_consent_at, created_at, updated_at)
+        VALUES (?, ?, ?, 'pending', ?, ?, ?)
         """,
-        (email, password_hash, salt, now, now),
+        (email, password_hash, salt, now, now, now),
     )
     return int(cur.lastrowid)
 

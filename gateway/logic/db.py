@@ -58,6 +58,11 @@ def init_db(conn: sqlite3.Connection) -> None:
             current_period_end TEXT DEFAULT '',
             payment_method_id TEXT DEFAULT '',
             past_due_since TEXT DEFAULT '',
+            -- 152-ФЗ: timestamp of explicit consent to personal-data
+            -- processing, given via the required checkbox on the
+            -- registration form (see gateway/app.py register_submit()).
+            -- Empty for accounts created before this column existed.
+            pdn_consent_at TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -120,3 +125,12 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_account ON password_reset_tokens(account_id);
         """
     )
+    # Migration for databases created before pdn_consent_at existed --
+    # CREATE TABLE IF NOT EXISTS above is a no-op against an already-existing
+    # accounts table, so a real ALTER TABLE is needed for upgrades in place.
+    # Indexed access (not row["name"]) -- unlike the rest of this module,
+    # init_db() isn't guaranteed to be called on a connection with
+    # row_factory=sqlite3.Row set (see db.connect() vs. a bare sqlite3.connect()).
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(accounts)")}
+    if "pdn_consent_at" not in existing_columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")

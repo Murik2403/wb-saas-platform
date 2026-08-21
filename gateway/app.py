@@ -126,6 +126,11 @@ def contacts_page(request: Request):
     return templates.TemplateResponse(request, "contacts.html")
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page(request: Request):
+    return templates.TemplateResponse(request, "privacy.html")
+
+
 @app.get("/register", response_class=HTMLResponse)
 def register_form(request: Request):
     account = _current_account(request)
@@ -140,10 +145,14 @@ def register_submit(
     background_tasks: BackgroundTasks,
     email: str = Form(...),
     password: str = Form(...),
+    # A checkbox only appears in the POST body at all when checked -- an
+    # unchecked box means this arrives as None, not "false", hence Optional
+    # rather than a plain bool Form field (which would 422 on omission).
+    pdn_consent: str | None = Form(None),
 ):
     with control_db.connect() as conn:
         try:
-            account_id = accounts.create_account(conn, email, password)
+            account_id = accounts.create_account(conn, email, password, pdn_consent=bool(pdn_consent))
             slug = accounts.generate_unique_slug(conn, email)
             tenant_id = accounts.create_tenant_instance(conn, account_id, slug)
         except ValueError as exc:

@@ -97,6 +97,20 @@ class AccountLifecycleTests(GatewayDbTestCase):
             with self.assertRaises(ValueError):
                 accounts.create_account(conn, "seller@shop.ru", "short")
 
+    def test_missing_pdn_consent_rejected(self) -> None:
+        # 152-ФЗ: registration must not proceed without recorded consent to
+        # personal-data processing -- see the checkbox in register.html and
+        # the enforcement in create_account() itself.
+        with self.connect() as conn:
+            with self.assertRaises(ValueError):
+                accounts.create_account(conn, "seller@shop.ru", "password1234", pdn_consent=False)
+
+    def test_pdn_consent_timestamp_recorded(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(conn, "seller@shop.ru", "password1234", pdn_consent=True)
+            row = conn.execute("SELECT pdn_consent_at FROM accounts WHERE id=?", (account_id,)).fetchone()
+            self.assertTrue(row["pdn_consent_at"])
+
 
 class SessionTests(GatewayDbTestCase):
     def setUp(self) -> None:
