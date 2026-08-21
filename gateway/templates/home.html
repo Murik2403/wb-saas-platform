@@ -20,7 +20,23 @@
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
   <div class="hero">
-    <div>
+    <div class="hero-decor" aria-hidden="true">
+      <div class="hero-blob hero-blob-a"></div>
+      <div class="hero-blob hero-blob-b"></div>
+      <div class="hero-bars">
+        <span style="--h:38%; --d:0s"></span>
+        <span style="--h:62%; --d:.15s"></span>
+        <span style="--h:48%; --d:.3s"></span>
+        <span style="--h:80%; --d:.45s"></span>
+        <span style="--h:58%; --d:.6s"></span>
+        <span style="--h:70%; --d:.75s"></span>
+        <span style="--h:52%; --d:.9s"></span>
+      </div>
+      <svg class="hero-trend" viewBox="0 0 400 130" preserveAspectRatio="none">
+        <path d="M0,95 C40,78 65,100 105,62 C145,28 180,55 220,42 C260,28 300,48 340,18 C365,4 382,14 400,2" />
+      </svg>
+    </div>
+    <div class="hero-content">
       <div class="hero-badge">Продавцам WB — и тем, кто производит свой товар</div>
       <h1>Себестоимость, которая не врёт</h1>
       <p class="lead">Не «средняя по больнице», а партия за партией — как в бухгалтерии, а не в калькуляторе. FIFO по факту закупки для сырья и готовой продукции: видно, сколько реально стоит именно то, что уехало со склада сегодня. Плюс продажи, реклама и остатки — всё в одном изолированном кабинете под ваш магазин.</p>
