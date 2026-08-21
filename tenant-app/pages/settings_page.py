@@ -20,6 +20,7 @@ from ui_helpers import (
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
     build_consolidated_purchase_plan,
+    NO_PACKAGE_ROLL_LENGTH, is_packaged_material, packages_to_buy,
 )
 from backup_tools import (
     backup_bytes,
@@ -419,10 +420,14 @@ def render(ctx: dict) -> None:
             except Exception as exc:
                 st.error(str(exc))
 
-    st.markdown("### 5. Остатки сырья и рулоны")
+    st.markdown("### 5. Остатки сырья")
     st.caption(
-        "Склад сырья ведётся единообразно по цветам. Один и тот же рулон можно использовать для разных типов заготовок, "
-        "поэтому цвет вводится один раз. Пока флажок «Остаток указан» выключен, нулевой остаток в расчёт не подставляется."
+        "Склад сырья ведётся единообразно по цветам/позициям — один и тот же материал можно использовать для разных "
+        "типов заготовок, поэтому позиция вводится один раз. Пока флажок «Остаток указан» выключен, нулевой остаток "
+        "в расчёт не подставляется. Для материалов, которые закупаются упаковками/рулонами фиксированного размера, "
+        "выберите способ учёта «Упаковками» и укажите размер упаковки. Для материалов, которые вы просто считаете "
+        "количеством (килограммы, литры, штуки и т.п. без фиксированной упаковки), выберите «Просто по количеству» — "
+        "тогда поле «Полных упаковок» оставьте нулевым, а весь остаток указывайте в «Остаток вне упаковки»."
     )
     production_for_inventory = read_table("production_settings")
     if production_for_inventory.empty:
@@ -454,15 +459,18 @@ def render(ctx: dict) -> None:
         raw_materials["material_key"] = raw_materials["material_name"].apply(material_key)
         current_inventory = read_table("material_inventory_color")
         if not current_inventory.empty:
-            raw_materials = raw_materials.merge(
-                current_inventory[[
-                    "material_key", "balance_known", "full_rolls", "partial_meters",
-                    "roll_length", "note", "updated_at"
-                ]], on="material_key", how="left"
-            )
+            merge_cols = [
+                "material_key", "balance_known", "full_rolls", "partial_meters",
+                "roll_length", "note", "updated_at",
+            ]
+            for optional_col in ("unit", "tracking_mode", "opening_rate_rub"):
+                if optional_col in current_inventory.columns:
+                    merge_cols.append(optional_col)
+            raw_materials = raw_materials.merge(current_inventory[merge_cols], on="material_key", how="left")
         inventory_defaults = {
             "balance_known": False, "full_rolls": 0, "partial_meters": 0.0,
             "roll_length": 25.5, "note": "", "updated_at": "",
+            "unit": "м", "tracking_mode": "packaged", "opening_rate_rub": 0.0,
         }
         for col, default in inventory_defaults.items():
             if col not in raw_materials.columns:
@@ -472,13 +480,25 @@ def render(ctx: dict) -> None:
         raw_materials["full_rolls"] = pd.to_numeric(raw_materials["full_rolls"], errors="coerce").fillna(0).astype(int)
         raw_materials["partial_meters"] = pd.to_numeric(raw_materials["partial_meters"], errors="coerce").fillna(0.0)
         raw_materials["roll_length"] = pd.to_numeric(raw_materials["roll_length"], errors="coerce").fillna(25.5)
+        raw_materials.loc[
+            ~raw_materials["roll_length"].astype(float).lt(NO_PACKAGE_ROLL_LENGTH / 2), "roll_length"
+        ] = 25.5
+        raw_materials["unit"] = raw_materials["unit"].astype(str).str.strip().replace("", "м").fillna("м")
+        raw_materials["tracking_mode"] = raw_materials["tracking_mode"].astype(str).str.strip().replace("", "packaged")
+        raw_materials["tracking_mode"] = raw_materials["tracking_mode"].where(
+            raw_materials["tracking_mode"].isin(["packaged", "quantity"]), "packaged"
+        )
+        raw_materials["opening_rate_rub"] = pd.to_numeric(
+            raw_materials["opening_rate_rub"], errors="coerce"
+        ).fillna(0.0)
 
         if raw_materials.empty:
             st.info("Для производимых товаров пока не указан материал/цвет. Заполните колонку выше и сохраните параметры.")
         else:
             edited_inventory = st.data_editor(
                 raw_materials[[
-                    "material_name", "balance_known", "full_rolls", "partial_meters", "roll_length", "note"
+                    "material_name", "balance_known", "unit", "tracking_mode",
+                    "full_rolls", "roll_length", "partial_meters", "opening_rate_rub", "note",
                 ]],
                 num_rows="fixed", hide_index=True, use_container_width=True,
                 disabled=["material_name"],
@@ -487,12 +507,31 @@ def render(ctx: dict) -> None:
                     "balance_known": st.column_config.CheckboxColumn(
                         "Остаток указан", help="Включите после фактического подсчёта сырья."
                     ),
-                    "full_rolls": st.column_config.NumberColumn("Полных рулонов", min_value=0, step=1, format="%d"),
-                    "partial_meters": st.column_config.NumberColumn(
-                        "Остаток открытых рулонов, м", min_value=0.0, step=0.1, format="%.1f"
+                    "unit": st.column_config.TextColumn(
+                        "Ед. измерения", help="Например: м, кг, л, шт."
+                    ),
+                    "tracking_mode": st.column_config.SelectboxColumn(
+                        "Способ учёта",
+                        options=["packaged", "quantity"],
+                        help="«packaged» — упаковками/рулонами фиксированного размера. "
+                             "«quantity» — просто по количеству, без фиксированной упаковки.",
+                    ),
+                    "full_rolls": st.column_config.NumberColumn(
+                        "Полных упаковок", min_value=0, step=1, format="%d",
+                        help="Для способа учёта «quantity» оставьте 0.",
                     ),
                     "roll_length": st.column_config.NumberColumn(
-                        "Длина полного рулона, м", min_value=1.0, step=0.5, format="%.1f"
+                        "Размер упаковки", min_value=1.0, step=0.5, format="%.1f",
+                        help="Сколько единиц (в колонке «Ед. измерения») в одной упаковке. Не используется при «quantity».",
+                    ),
+                    "partial_meters": st.column_config.NumberColumn(
+                        "Остаток вне упаковки", min_value=0.0, step=0.1, format="%.2f",
+                        help="Для способа учёта «quantity» здесь указывайте весь остаток.",
+                    ),
+                    "opening_rate_rub": st.column_config.NumberColumn(
+                        "Ставка при инициализации, ₽", min_value=0.0, step=1.0, format="%.2f",
+                        help="Цена за единицу для этого материала при инициализации FIFO-слоёв. "
+                             "0 — использовать общую ставку из раздела 5.1 ниже.",
                     ),
                     "note": st.column_config.TextColumn("Примечание"),
                 },
@@ -500,24 +539,24 @@ def render(ctx: dict) -> None:
             if st.button("Сохранить остатки сырья"):
                 try:
                     save_material_inventory(edited_inventory)
-                    st.success("Остатки сырья сохранены. Один цвет учитывается общим запасом для всех типов заготовок.")
+                    st.success("Остатки сырья сохранены. Одна позиция учитывается общим запасом для всех типов заготовок.")
                     st.cache_data.clear()
                 except Exception as exc:
                     st.error(str(exc))
 
     st.markdown("### 5.1. Послойная стоимость сырья — FIFO")
     st.caption(
-        "Физический остаток по цвету хранится как раньше, а стоимость — отдельными слоями. "
-        "Сначала списывается самый ранний слой. Новые поступления создают слой по фактической полной цене рулона."
+        "Физический остаток по каждой позиции хранится как раньше, а стоимость — отдельными слоями. "
+        "Сначала списывается самый ранний слой. Новые поступления создают слой по фактической цене закупки."
     )
     opening_rate = get_fifo_opening_rate()
     fifo_rate_col, fifo_action_col = st.columns([1, 2])
     with fifo_rate_col:
         opening_rate_input = st.number_input(
-            "Историческая ставка старого сырья, ₽/м", min_value=0.01, value=float(opening_rate),
+            "Общая ставка старого сырья по умолчанию, ₽/ед.", min_value=0.01, value=float(opening_rate),
             step=1.0, format="%.2f",
-            help="Цена за метр сырья, по которой считается остаток, накопленный до включения FIFO. "
-                 "Возьмите вашу текущую согласованную себестоимость материала и разделите на его расход в метрах."
+            help="Используется только для материалов, у которых в разделе 5 не задана собственная «Ставка при "
+                 "инициализации». Возьмите вашу текущую согласованную себестоимость материала и разделите на его расход."
         )
     with fifo_action_col:
         st.write("")

@@ -20,6 +20,7 @@ from ui_helpers import (
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
     build_consolidated_purchase_plan,
+    NO_PACKAGE_ROLL_LENGTH, is_packaged_material, packages_to_buy,
 )
 from datetime import (
     date,
@@ -291,46 +292,50 @@ def render(ctx: dict) -> None:
         if inventory.empty:
             inventory = pd.DataFrame(columns=[
                 "material_key", "material_name", "balance_known", "full_rolls",
-                "partial_meters", "roll_length", "note", "updated_at"
+                "partial_meters", "roll_length", "unit", "tracking_mode", "note", "updated_at"
             ])
-        material_plan = material_plan.merge(
-            inventory[[
-                "material_key", "balance_known", "full_rolls", "partial_meters",
-                "roll_length", "note", "updated_at"
-            ]], on="material_key", how="left"
-        )
+        inventory_merge_cols = ["material_key", "balance_known", "full_rolls", "partial_meters", "roll_length", "note", "updated_at"]
+        for optional_col in ("unit", "tracking_mode"):
+            if optional_col in inventory.columns:
+                inventory_merge_cols.append(optional_col)
+        material_plan = material_plan.merge(inventory[inventory_merge_cols], on="material_key", how="left")
         material_plan["Остаток указан"] = pd.to_numeric(material_plan.get("balance_known"), errors="coerce").fillna(0).astype(int).eq(1)
-        material_plan["Полных рулонов"] = pd.to_numeric(material_plan.get("full_rolls"), errors="coerce").fillna(0).clip(lower=0).astype(int)
-        material_plan["Открытый остаток, м"] = pd.to_numeric(material_plan.get("partial_meters"), errors="coerce").fillna(0).clip(lower=0)
-        material_plan["Длина рулона, м"] = pd.to_numeric(material_plan.get("roll_length"), errors="coerce").fillna(25.5).clip(lower=0.1)
-        material_plan["На складе, м"] = material_plan["Полных рулонов"] * material_plan["Длина рулона, м"] + material_plan["Открытый остаток, м"]
-        material_plan["Покрыто складом, м"] = material_plan[["Потребность, м", "На складе, м"]].min(axis=1)
-        material_plan["Не хватает, м"] = (material_plan["Потребность, м"] - material_plan["На складе, м"]).clip(lower=0)
-        material_plan["Остаток после плана, м"] = material_plan["На складе, м"] - material_plan["Потребность, м"]
+        material_plan["Ед."] = material_plan.get("unit", "м")
+        material_plan["Ед."] = material_plan["Ед."].fillna("м").astype(str).str.strip().replace("", "м")
+        material_plan["Полных упаковок"] = pd.to_numeric(material_plan.get("full_rolls"), errors="coerce").fillna(0).clip(lower=0).astype(int)
+        material_plan["Остаток вне упаковки"] = pd.to_numeric(material_plan.get("partial_meters"), errors="coerce").fillna(0).clip(lower=0)
+        material_plan["Размер упаковки"] = pd.to_numeric(material_plan.get("roll_length"), errors="coerce").fillna(25.5).clip(lower=0.1)
+        material_plan["На складе"] = material_plan["Полных упаковок"] * material_plan["Размер упаковки"] + material_plan["Остаток вне упаковки"]
+        material_plan["Покрыто складом"] = material_plan[["Потребность, м", "На складе"]].min(axis=1)
+        material_plan["Не хватает"] = (material_plan["Потребность, м"] - material_plan["На складе"]).clip(lower=0)
+        material_plan["Остаток после плана"] = material_plan["На складе"] - material_plan["Потребность, м"]
 
-        def rolls_to_use(r: pd.Series) -> int:
-            if not bool(r["Остаток указан"]):
+        def packages_to_use(r: pd.Series) -> int:
+            if not bool(r["Остаток указан"]) or not is_packaged_material(r["Размер упаковки"]):
                 return 0
-            need_after_open = max(float(r["Потребность, м"]) - float(r["Открытый остаток, м"]), 0.0)
-            return min(int(r["Полных рулонов"]), int(math.ceil(need_after_open / float(r["Длина рулона, м"])))) if need_after_open > 0 else 0
+            need_after_open = max(float(r["Потребность, м"]) - float(r["Остаток вне упаковки"]), 0.0)
+            return min(int(r["Полных упаковок"]), int(math.ceil(need_after_open / float(r["Размер упаковки"])))) if need_after_open > 0 else 0
 
-        material_plan["Рулонов использовать"] = material_plan.apply(rolls_to_use, axis=1)
-        material_plan["Рулонов докупить"] = material_plan.apply(
-            lambda r: int(math.ceil(float(r["Не хватает, м"]) / float(r["Длина рулона, м"])))
-            if bool(r["Остаток указан"]) and float(r["Не хватает, м"]) > 0 else 0, axis=1
+        material_plan["Упаковок использовать"] = material_plan.apply(packages_to_use, axis=1)
+        material_plan["Упаковок докупить"] = material_plan.apply(
+            lambda r: packages_to_buy(r["Не хватает"], r["Размер упаковки"], bool(r["Остаток указан"])), axis=1
         )
 
         def material_status(r: pd.Series) -> str:
             if not bool(r["Остаток указан"]):
                 return "Остаток не указан"
-            if float(r["Не хватает, м"]) > 0.01:
+            if float(r["Не хватает"]) > 0.01:
                 return "Не хватает сырья"
-            if float(r["Остаток после плана, м"]) < float(r["Длина рулона, м"]) * 0.25:
+            if is_packaged_material(r["Размер упаковки"]):
+                low_stock_threshold = float(r["Размер упаковки"]) * 0.25
+            else:
+                low_stock_threshold = float(r["Потребность, м"]) * 0.25
+            if float(r["Остаток после плана"]) < low_stock_threshold:
                 return "Запаса почти не останется"
             return "Сырья достаточно"
 
         material_plan["Статус сырья"] = material_plan.apply(material_status, axis=1)
-        for col in ["На складе, м", "Покрыто складом, м", "Не хватает, м", "Остаток после плана, м"]:
+        for col in ["На складе", "Покрыто складом", "Не хватает", "Остаток после плана"]:
             material_plan.loc[~material_plan["Остаток указан"], col] = float("nan")
 
         # Capacity calendar v3.1. First create a bridge stock for every urgent SKU,
@@ -381,7 +386,7 @@ def render(ctx: dict) -> None:
                 known = bool(material_row.get("Остаток указан", False))
                 material_known_by_key[key] = known
                 if known:
-                    material_available_by_key[key] = max(0.0, float(material_row.get("На складе, м", 0) or 0))
+                    material_available_by_key[key] = max(0.0, float(material_row.get("На складе", 0) or 0))
 
         if capacity_known and pieces_per_day > 0:
             calendar_cursor = [first_schedule_date]
@@ -523,9 +528,9 @@ def render(ctx: dict) -> None:
             reserved_by_material: dict[str, float] = {}
             if not schedule.empty:
                 reserved_by_material = schedule.groupby("Материал / цвет")["Материал, м"].sum().to_dict()
-            material_plan["Зарезервировано календарём, м"] = material_plan["Материал / цвет"].map(reserved_by_material).fillna(0.0)
-            material_plan["Остаток после календаря, м"] = material_plan["На складе, м"] - material_plan["Зарезервировано календарём, м"]
-            material_plan.loc[~material_plan["Остаток указан"], "Остаток после календаря, м"] = float("nan")
+            material_plan["Зарезервировано календарём"] = material_plan["Материал / цвет"].map(reserved_by_material).fillna(0.0)
+            material_plan["Остаток после календаря"] = material_plan["На складе"] - material_plan["Зарезервировано календарём"]
+            material_plan.loc[~material_plan["Остаток указан"], "Остаток после календаря"] = float("nan")
 
         plan["Плановая дата первого выпуска"] = plan["Артикул WB"].map(first_production_dates)
         plan["Плановая дата завершения"] = plan["Артикул WB"].map(completion_dates)
@@ -814,9 +819,9 @@ def render(ctx: dict) -> None:
         norm_coverage = float((plan["Материал на ед., м"] > 0).mean() * 100) if len(plan) else 100.0
         material_groups = int(len(material_plan))
         known_material_groups = int(material_plan["Остаток указан"].sum()) if not material_plan.empty else 0
-        known_stock_total = float(material_plan.loc[material_plan["Остаток указан"], "На складе, м"].sum()) if known_material_groups else 0.0
-        known_shortage = float(material_plan.loc[material_plan["Остаток указан"], "Не хватает, м"].sum()) if known_material_groups else 0.0
-        rolls_to_buy_total = int(material_plan.loc[material_plan["Остаток указан"], "Рулонов докупить"].sum()) if known_material_groups else 0
+        known_stock_total = float(material_plan.loc[material_plan["Остаток указан"], "На складе"].sum()) if known_material_groups else 0.0
+        known_shortage = float(material_plan.loc[material_plan["Остаток указан"], "Не хватает"].sum()) if known_material_groups else 0.0
+        rolls_to_buy_total = int(material_plan.loc[material_plan["Остаток указан"], "Упаковок докупить"].sum()) if known_material_groups else 0
         unknown_need = float(material_plan.loc[~material_plan["Остаток указан"], "Потребность, м"].sum()) if material_groups else 0.0
 
         workdays_in_horizon = sum(
@@ -864,15 +869,16 @@ def render(ctx: dict) -> None:
 
         st.markdown("### Потребность по материалам и цветам")
         st.caption(
-            "Остаток сырья единый по цвету: один рулон может использоваться для любых типов заготовок. "
-            "Разбивка показывает, какая часть потребности приходится на каждый тип."
+            "Остаток сырья единый по позиции: один и тот же материал может использоваться для любых типов заготовок. "
+            "Разбивка показывает, какая часть потребности приходится на каждый тип. Столбец «Ед.» показывает единицу "
+            "измерения материала; для материалов с учётом «просто по количеству» столбцы про упаковки не применимы."
         )
         material_columns = [
-            "Материал / цвет", *breakdown_columns, "Потребность, м",
-            "Остаток указан", "Полных рулонов", "Открытый остаток, м", "На складе, м",
-            "Не хватает, м", "Рулонов использовать", "Рулонов докупить",
-            "Зарезервировано календарём, м", "Остаток после календаря, м",
-            "Остаток после плана, м", "Статус сырья"
+            "Материал / цвет", "Ед.", *breakdown_columns, "Потребность, м",
+            "Остаток указан", "Полных упаковок", "Остаток вне упаковки", "На складе",
+            "Не хватает", "Упаковок использовать", "Упаковок докупить",
+            "Зарезервировано календарём", "Остаток после календаря",
+            "Остаток после плана", "Статус сырья"
         ]
         if material_plan.empty:
             st.info("Материал пока не требуется по текущему плану.")
@@ -884,10 +890,10 @@ def render(ctx: dict) -> None:
                     **{column: st.column_config.NumberColumn(format="%.1f") for column in breakdown_columns},
                     "Потребность, м": st.column_config.NumberColumn(format="%.1f"),
                     "Остаток указан": st.column_config.CheckboxColumn("Остаток указан"),
-                    "Открытый остаток, м": st.column_config.NumberColumn(format="%.1f"),
-                    "На складе, м": st.column_config.NumberColumn(format="%.1f"),
-                    "Не хватает, м": st.column_config.NumberColumn(format="%.1f"),
-                    "Остаток после плана, м": st.column_config.NumberColumn(format="%.1f"),
+                    "Остаток вне упаковки": st.column_config.NumberColumn(format="%.2f"),
+                    "На складе": st.column_config.NumberColumn(format="%.1f"),
+                    "Не хватает": st.column_config.NumberColumn(format="%.1f"),
+                    "Остаток после плана": st.column_config.NumberColumn(format="%.1f"),
                 },
             )
             st.download_button(
@@ -898,11 +904,11 @@ def render(ctx: dict) -> None:
             )
         if known_material_groups < material_groups:
             st.info(
-                f"Остатки сырья указаны для {known_material_groups} из {material_groups} цветов. "
+                f"Остатки сырья указаны для {known_material_groups} из {material_groups} позиций. "
                 f"Потребность без известного остатка: {unknown_need:.1f} м."
             )
         elif known_shortage > 0:
-            st.warning(f"Известный дефицит сырья: {known_shortage:.1f} м, ориентировочно докупить {rolls_to_buy_total} рул.")
+            st.warning(f"Известный дефицит сырья: {known_shortage:.1f} м, ориентировочно докупить {rolls_to_buy_total} уп.")
         elif known_material_groups:
             st.success(f"Сырья по указанным цветам достаточно. На складе учтено {known_stock_total:.1f} м.")
 
@@ -1851,14 +1857,24 @@ def render(ctx: dict) -> None:
                                 wip_blank_type = st.text_input("Тип заготовки", key="wip_blank_type_text").strip()
                             selected_material_row = material_inventory_wip[material_inventory_wip["material_name"].astype(str).eq(str(wip_material_name))].head(1)
                             wip_roll_length = float(selected_material_row.iloc[0].get("roll_length", 25.5) or 25.5) if not selected_material_row.empty else 25.5
-                            wip_full_rolls = st.number_input("Полных рулонов израсходовано", min_value=0, max_value=10000, value=0, step=1, key="wip_full_rolls")
+                            wip_unit = str(selected_material_row.iloc[0].get("unit", "м") or "м").strip() if not selected_material_row.empty else "м"
+                            wip_unit = wip_unit or "м"
+                            wip_is_packaged = is_packaged_material(wip_roll_length)
+                            wip_full_rolls = st.number_input(
+                                "Полных упаковок израсходовано", min_value=0, max_value=10000, value=0, step=1,
+                                key="wip_full_rolls", disabled=not wip_is_packaged,
+                            )
                         with issue_cols[2]:
+                            partial_label = f"Дополнительно из открытой упаковки, {wip_unit}" if wip_is_packaged else f"Количество, {wip_unit}"
                             wip_partial_meters = st.number_input(
-                                "Дополнительно из открытого рулона, м", min_value=0.0, max_value=float(max(1000.0, wip_roll_length * 10)),
+                                partial_label, min_value=0.0, max_value=float(max(1000.0, wip_roll_length * 10)) if wip_is_packaged else 1_000_000.0,
                                 value=0.0, step=0.25, format="%.3f", key="wip_partial_meters",
                             )
-                            wip_total_meters = round(float(wip_full_rolls) * wip_roll_length + float(wip_partial_meters), 3)
-                            st.metric("Итого к списанию", f"{wip_total_meters:.3f} м", f"Длина рулона {wip_roll_length:g} м")
+                            wip_total_meters = round(float(wip_full_rolls if wip_is_packaged else 0) * wip_roll_length + float(wip_partial_meters), 3)
+                            if wip_is_packaged:
+                                st.metric("Итого к списанию", f"{wip_total_meters:.3f} {wip_unit}", f"Размер упаковки {wip_roll_length:g} {wip_unit}")
+                            else:
+                                st.metric("Итого к списанию", f"{wip_total_meters:.3f} {wip_unit}")
 
                         cfg_wip = read_table("production_settings")
                         theoretical_units = 0
@@ -1900,10 +1916,10 @@ def render(ctx: dict) -> None:
                             )
                         with output_cols[2]:
                             if immediate and int(wip_produced_units or 0) > 0 and wip_total_meters > 0:
-                                st.metric("Фактический выход", f"{float(wip_produced_units) / wip_total_meters:.2f} шт./м")
+                                st.metric("Фактический выход", f"{float(wip_produced_units) / wip_total_meters:.2f} шт./{wip_unit}")
                         wip_issue_note = st.text_input("Примечание к партии", key="wip_issue_note", placeholder="Смена, станок, причина брака, оператор")
                         wip_issue_confirm = st.checkbox(
-                            f"Подтверждаю списание {wip_total_meters:.3f} м материала «{wip_material_name}»",
+                            f"Подтверждаю списание {wip_total_meters:.3f} {wip_unit} материала «{wip_material_name}»",
                             key="wip_issue_confirm",
                             disabled=wip_total_meters <= 0,
                         )

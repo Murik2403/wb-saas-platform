@@ -62,23 +62,50 @@ def save_production_settings(df: pd.DataFrame) -> None:
             rows,
         )
 
+# Sentinel roll_length for materials tracked as a plain running quantity (no
+# fixed-size packaging) -- see ui_helpers.py's NO_PACKAGE_ROLL_LENGTH for the
+# full rationale. Duplicated as a plain constant here (rather than imported)
+# because ui_helpers.py imports from this db package, not the other way round.
+NO_PACKAGE_ROLL_LENGTH = 1_000_000_000.0
+
+
 def save_material_inventory(df: pd.DataFrame) -> None:
     from .core import connect
     required = {"material_name", "balance_known", "full_rolls", "partial_meters", "roll_length"}
     if not required.issubset(df.columns):
         raise ValueError("Не хватает колонок учёта сырья")
+    has_unit = "unit" in df.columns
+    has_mode = "tracking_mode" in df.columns
+    has_rate = "opening_rate_rub" in df.columns
     rows = []
     for _, r in df.iterrows():
         material_name = str(r.get("material_name", "") or "").strip()
         if not material_name:
             continue
         key = material_name.casefold()
+        tracking_mode = str(r.get("tracking_mode", "packaged") or "packaged").strip() if has_mode else "packaged"
+        if tracking_mode not in {"packaged", "quantity"}:
+            tracking_mode = "packaged"
+        if tracking_mode == "quantity":
+            # No fixed package size for this material -- the whole stock is one
+            # running number. Pin full_rolls at 0 and roll_length at the
+            # sentinel so downstream code (_apply_material_delta, FIFO opening
+            # totals, etc.) keeps treating partial_meters as the entire
+            # quantity, exactly like it already does for full_rolls=0 today.
+            full_rolls = 0
+            roll_length = NO_PACKAGE_ROLL_LENGTH
+        else:
+            full_rolls = max(0, int(float(r.get("full_rolls", 0) or 0)))
+            roll_length = max(0.1, float(r.get("roll_length", 25.5) or 25.5))
+        unit = (str(r.get("unit", "") or "").strip() or "м") if has_unit else "м"
+        opening_rate_rub = max(0.0, float(r.get("opening_rate_rub", 0) or 0)) if has_rate else 0.0
         rows.append((
             key, material_name,
             1 if bool(r.get("balance_known", False)) else 0,
-            max(0, int(float(r.get("full_rolls", 0) or 0))),
+            full_rolls,
             max(0.0, float(r.get("partial_meters", 0) or 0)),
-            max(0.1, float(r.get("roll_length", 25.5) or 25.5)),
+            roll_length,
+            unit, tracking_mode, opening_rate_rub,
             str(r.get("note", "") or ""),
             datetime.now().isoformat(timespec="seconds"),
         ))
@@ -86,14 +113,18 @@ def save_material_inventory(df: pd.DataFrame) -> None:
         conn.executemany(
             """
             INSERT INTO material_inventory_color(
-                material_key,material_name,balance_known,full_rolls,partial_meters,roll_length,note,updated_at
-            ) VALUES (?,?,?,?,?,?,?,?)
+                material_key,material_name,balance_known,full_rolls,partial_meters,roll_length,
+                unit,tracking_mode,opening_rate_rub,note,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(material_key) DO UPDATE SET
                 material_name=excluded.material_name,
                 balance_known=excluded.balance_known,
                 full_rolls=excluded.full_rolls,
                 partial_meters=excluded.partial_meters,
                 roll_length=excluded.roll_length,
+                unit=excluded.unit,
+                tracking_mode=excluded.tracking_mode,
+                opening_rate_rub=excluded.opening_rate_rub,
                 note=excluded.note,
                 updated_at=excluded.updated_at
             """,
@@ -431,12 +462,16 @@ def _apply_material_delta(
         raise ValueError(f"Для материала «{name}» остаток сырья не заведён.")
     if int(row["balance_known"] or 0) != 1:
         raise ValueError(f"Для материала «{name}» остаток сырья не подтверждён.")
+    try:
+        unit = str(row["unit"] or "").strip() or "м"
+    except (IndexError, KeyError):
+        unit = "м"
     roll_length = max(float(row["roll_length"] or 25.5), 0.1)
     current = max(0.0, int(row["full_rolls"] or 0) * roll_length + float(row["partial_meters"] or 0))
     new_total = current + float(delta_meters or 0)
     if new_total < -0.005:
         raise ValueError(
-            f"Недостаточно сырья «{name}»: доступно {current:.1f} м, требуется {abs(float(delta_meters)):.1f} м."
+            f"Недостаточно сырья «{name}»: доступно {current:.1f} {unit}, требуется {abs(float(delta_meters)):.1f} {unit}."
         )
     new_total = max(0.0, new_total)
     full_rolls = int(new_total // roll_length)

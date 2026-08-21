@@ -169,6 +169,9 @@ def init_db() -> None:
                 full_rolls INTEGER DEFAULT 0,
                 partial_meters REAL DEFAULT 0,
                 roll_length REAL DEFAULT 25.5,
+                unit TEXT DEFAULT 'м',
+                tracking_mode TEXT DEFAULT 'packaged',
+                opening_rate_rub REAL DEFAULT 0,
                 note TEXT,
                 updated_at TEXT
             );
@@ -928,6 +931,23 @@ def init_db() -> None:
         for column, definition in prod_migrations.items():
             if column not in prod_columns:
                 conn.execute(f"ALTER TABLE production_settings ADD COLUMN {column} {definition}")
+
+        # Raw-material unit-of-measure generalization: existing rows default to
+        # unit='м'/tracking_mode='packaged'/opening_rate_rub=0, which reproduces
+        # today's exact behaviour (rolls of meters, single tenant-wide FIFO
+        # opening rate) with zero change for any tenant who never touches the
+        # new fields. See pages/settings_page.py section "Остатки сырья" and
+        # ui_helpers.py's NO_PACKAGE_ROLL_LENGTH for how 'quantity' mode works.
+        material_inventory_columns = {
+            str(row["name"]) for row in conn.execute("PRAGMA table_info(material_inventory_color)").fetchall()
+        }
+        for column, definition in {
+            "unit": "TEXT DEFAULT 'м'",
+            "tracking_mode": "TEXT DEFAULT 'packaged'",
+            "opening_rate_rub": "REAL DEFAULT 0",
+        }.items():
+            if column not in material_inventory_columns:
+                conn.execute(f"ALTER TABLE material_inventory_color ADD COLUMN {column} {definition}")
 
         # Infer the user's three established production profiles from the
         # previously entered material norms. Only rows without a profile are

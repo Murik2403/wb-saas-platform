@@ -239,9 +239,11 @@ def create_procurement_order(
                 material_name = str(row.get("material_name", "") or "").strip()
                 if not material_name:
                     continue
-                unit = str(row.get("unit", "рулон") or "рулон").strip()
-                if unit not in {"рулон", "м"}:
-                    unit = "рулон"
+                # Any unit is accepted -- only "рулон" triggers roll-length conversion math
+                # elsewhere (create_procurement_order's receipt/costing logic, _apply_material_delta).
+                # Every other value (м, кг, л, шт, упаковка, or a tenant's own free text) is treated
+                # as a direct quantity, so this must not clamp unrecognized units back to "рулон".
+                unit = str(row.get("unit", "рулон") or "рулон").strip() or "рулон"
                 roll_length = max(0.1, float(row.get("roll_length", 25.5) or 25.5))
                 item_rate = max(0.000001, float(row.get("exchange_rate", exchange_rate) or exchange_rate or 1))
                 supplier_price = max(0.0, float(row.get("supplier_unit_price", 0) or 0))

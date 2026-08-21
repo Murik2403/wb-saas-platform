@@ -20,6 +20,7 @@ from ui_helpers import (
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
     build_consolidated_purchase_plan,
+    NO_PACKAGE_ROLL_LENGTH, is_packaged_material, packages_to_buy,
 )
 from config import (
     load_settings,
@@ -112,23 +113,29 @@ def render(ctx: dict) -> None:
             st.success("Дефицита сырья по текущему производственному плану нет.")
         else:
             material_view = material_recommendations[[
-                "Материал / цвет", "Нужно материала, м", "На складе, м", "Не хватает, м",
-                "Рулонов докупить", "Артикул продавца"
-            ]].copy()
+                "Материал / цвет", "unit", "Нужно материала, м", "На складе, м", "Не хватает, м",
+                "Упаковок докупить", "Артикул продавца"
+            ]].rename(columns={"unit": "Ед."}).copy()
             st.dataframe(
                 material_view, hide_index=True, use_container_width=True,
                 column_config={
                     "Нужно материала, м": st.column_config.NumberColumn(format="%.1f"),
                     "На складе, м": st.column_config.NumberColumn(format="%.1f"),
                     "Не хватает, м": st.column_config.NumberColumn(format="%.1f"),
-                    "Рулонов докупить": st.column_config.NumberColumn(format="%d"),
+                    "Упаковок докупить": st.column_config.NumberColumn(format="%d"),
                 },
             )
             if st.button("Создать заявку на сырьё из рекомендаций", type="primary", key="auto_material_procurement"):
+                is_packaged_row = material_recommendations.get("roll_length", 25.5).apply(is_packaged_material)
+                auto_quantity = pd.to_numeric(material_recommendations["Упаковок докупить"], errors="coerce").fillna(0).where(
+                    is_packaged_row, pd.to_numeric(material_recommendations["Не хватает, м"], errors="coerce").fillna(0)
+                )
+                auto_unit = material_recommendations.get("unit", "м").fillna("м").astype(str).str.strip().replace("", "м")
+                auto_unit = auto_unit.mask(is_packaged_row, "рулон")
                 auto_items = pd.DataFrame({
                     "material_name": material_recommendations["Материал / цвет"],
-                    "quantity": pd.to_numeric(material_recommendations["Рулонов докупить"], errors="coerce").fillna(0),
-                    "unit": "рулон",
+                    "quantity": auto_quantity,
+                    "unit": auto_unit,
                     "roll_length": pd.to_numeric(material_recommendations.get("roll_length", 25.5), errors="coerce").fillna(25.5),
                     "unit_price": 0.0,
                     "note": material_recommendations["Артикул продавца"].map(lambda x: f"Для производственного плана: {x}"),
@@ -249,11 +256,19 @@ def render(ctx: dict) -> None:
             for material_name_value in selected_materials:
                 inv_row = raw_map.get(material_name_value, {})
                 rec_row = rec_map.get(material_name_value, {})
+                row_roll_length = float(inv_row.get("roll_length", 25.5) or 25.5)
+                row_is_packaged = is_packaged_material(row_roll_length)
+                if row_is_packaged:
+                    row_quantity = max(1, int(rec_row.get("Упаковок докупить", 1) or 1))
+                    row_unit = "рулон"
+                else:
+                    row_quantity = max(0.0, float(rec_row.get("Не хватает, м", 0) or 0)) or 1.0
+                    row_unit = str(inv_row.get("unit", "м") or "м").strip() or "м"
                 raw_rows.append({
                     "material_name": material_name_value,
-                    "quantity": max(1, int(rec_row.get("Рулонов докупить", 1) or 1)),
-                    "unit": "рулон",
-                    "roll_length": float(inv_row.get("roll_length", 25.5) or 25.5),
+                    "quantity": row_quantity,
+                    "unit": row_unit,
+                    "roll_length": row_roll_length,
                     "supplier_unit_price": 0.0,
                     "delivery_unit_foreign": 0.0,
                     "extra_unit_rub": 0.0,
@@ -267,8 +282,15 @@ def render(ctx: dict) -> None:
                 column_config={
                     "material_name": st.column_config.TextColumn("Материал / цвет", required=True),
                     "quantity": st.column_config.NumberColumn("Количество", min_value=0.0, step=1.0),
-                    "unit": st.column_config.SelectboxColumn("Ед.", options=["рулон", "м"]),
-                    "roll_length": st.column_config.NumberColumn("Длина рулона, м", min_value=0.1, step=0.1, format="%.1f"),
+                    "unit": st.column_config.SelectboxColumn(
+                        "Ед.", options=["рулон", "м", "кг", "л", "шт", "упаковка"],
+                        help="«рулон» — закупка пересчитывается через «Размер упаковки» ниже. Любая другая единица — "
+                             "количество указывается напрямую.",
+                    ),
+                    "roll_length": st.column_config.NumberColumn(
+                        "Размер упаковки", min_value=0.1, step=0.1, format="%.2f",
+                        help="Используется только при единице «рулон».",
+                    ),
                     "supplier_unit_price": st.column_config.NumberColumn(f"Цена поставщика, {new_currency}", min_value=0.0, step=1.0, format="%.4f"),
                     "delivery_unit_foreign": st.column_config.NumberColumn(f"Доставка на ед., {new_currency}", min_value=0.0, step=1.0, format="%.4f"),
                     "extra_unit_rub": st.column_config.NumberColumn("Прочие на ед., ₽", min_value=0.0, step=10.0, format="%.2f"),
@@ -442,7 +464,10 @@ def render(ctx: dict) -> None:
                         "product_name": st.column_config.TextColumn("Товар", disabled=True),
                         "quantity": st.column_config.NumberColumn("Заказать", min_value=0.0, step=1.0),
                         "unit": st.column_config.TextColumn("Ед.", disabled=True),
-                        "roll_length": st.column_config.NumberColumn("Длина рулона, м", min_value=0.1, step=0.1, format="%.1f"),
+                        "roll_length": st.column_config.NumberColumn(
+                            "Размер упаковки", min_value=0.1, step=0.1, format="%.2f",
+                            help="Используется только при единице «рулон».",
+                        ),
                         "supplier_unit_price": st.column_config.NumberColumn(f"Цена поставщика, {edit_currency}", min_value=0.0, step=1.0, format="%.4f"),
                         "delivery_unit_foreign": st.column_config.NumberColumn(f"Доставка на ед., {edit_currency}", min_value=0.0, step=1.0, format="%.4f"),
                         "extra_unit_rub": st.column_config.NumberColumn("Прочие на ед., ₽", min_value=0.0, step=10.0, format="%.2f"),

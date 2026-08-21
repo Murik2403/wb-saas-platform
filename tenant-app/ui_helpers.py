@@ -36,6 +36,54 @@ def pct(v: float) -> str:
 # fills in themselves in Settings -- see pages/settings_page.py.
 
 
+# Raw material can be tracked two ways per material_inventory_color row (see
+# db/core.py schema and pages/settings_page.py section "Остатки сырья"):
+#   - 'packaged': stock is N whole packages of a fixed size (roll_length) plus a
+#     partial leftover -- the original model, named for rolls of fabric/film/etc.
+#     but equally applies to bags, boxes, spools of any other fixed-size unit.
+#   - 'quantity': stock is just one running number, for material that isn't sold
+#     in fixed-size packages (loose kg, litres, pieces bought ad hoc, ...).
+# 'quantity' materials are stored with full_rolls pinned at 0 and roll_length
+# pinned at this sentinel (see db/production.py's save_material_inventory) so the
+# existing "full_rolls * roll_length + partial_meters" stock formula used
+# everywhere (db/production.py's _apply_material_delta, db/fifo_materials.py's
+# _physical_material_total, and every page below) keeps working completely
+# unchanged -- it degenerates to "partial_meters is the whole quantity" with no
+# code changes needed there. What DOES need to check for this sentinel is any
+# calculation that uses roll_length as a *scale* (a "buy N packages" suggestion,
+# or a "% of one package" low-stock threshold) rather than just as an additive
+# term, since dividing by/against the sentinel would silently produce nonsense
+# (e.g. math.ceil() of any tiny positive shortfall over the sentinel is still 1,
+# not 0). Use is_packaged_material()/packages_to_buy() below for that.
+NO_PACKAGE_ROLL_LENGTH = 1_000_000_000.0
+
+
+def is_packaged_material(roll_length) -> bool:
+    """True if roll_length reflects a real fixed package size, not the
+    NO_PACKAGE_ROLL_LENGTH sentinel used for plain-quantity tracking."""
+    try:
+        return float(roll_length or 0) < NO_PACKAGE_ROLL_LENGTH / 2
+    except (TypeError, ValueError):
+        return True
+
+
+def packages_to_buy(shortage: float, roll_length, balance_known: bool) -> int:
+    """How many whole packages to buy to cover `shortage`, or 0 when the
+    material isn't tracked in fixed-size packages (or stock isn't confirmed)."""
+    if not balance_known or not is_packaged_material(roll_length):
+        return 0
+    shortage = max(0.0, float(shortage or 0))
+    if shortage <= 0:
+        return 0
+    return int(math.ceil(shortage / max(float(roll_length or 0.1), 0.1)))
+
+
+def material_unit_label(unit) -> str:
+    """Normalize a possibly-blank unit label to a safe default for display."""
+    text = str(unit or "").strip()
+    return text or "м"
+
+
 def infer_material_name(supplier_article: str, product_name: str = "") -> str:
     text = f"{supplier_article} {product_name}".casefold()
     rules = [
@@ -1250,16 +1298,25 @@ def procurement_recommendations(products: pd.DataFrame) -> tuple[pd.DataFrame, p
         })
         material_df["material_key"] = material_df["Материал / цвет"].apply(material_key)
         if not raw_inventory.empty:
-            inv = raw_inventory[["material_key", "balance_known", "full_rolls", "partial_meters", "roll_length"]].copy()
+            inv = raw_inventory[[
+                "material_key", "balance_known", "full_rolls", "partial_meters", "roll_length", "unit", "tracking_mode"
+            ]].copy()
             material_df = material_df.merge(inv, on="material_key", how="left")
-        for col, default in [("balance_known", 0), ("full_rolls", 0), ("partial_meters", 0.0), ("roll_length", 25.5)]:
+        for col, default in [
+            ("balance_known", 0), ("full_rolls", 0), ("partial_meters", 0.0), ("roll_length", 25.5),
+            ("unit", "м"), ("tracking_mode", "packaged"),
+        ]:
             if col not in material_df.columns:
                 material_df[col] = default
-            material_df[col] = pd.to_numeric(material_df[col], errors="coerce").fillna(default)
+            if col in {"unit", "tracking_mode"}:
+                material_df[col] = material_df[col].fillna(default).astype(str)
+                material_df.loc[material_df[col].str.strip().eq(""), col] = default
+            else:
+                material_df[col] = pd.to_numeric(material_df[col], errors="coerce").fillna(default)
         material_df["На складе, м"] = material_df["full_rolls"] * material_df["roll_length"] + material_df["partial_meters"]
         material_df["Не хватает, м"] = (material_df["Нужно материала, м"] - material_df["На складе, м"]).clip(lower=0)
-        material_df["Рулонов докупить"] = material_df.apply(
-            lambda r: int(math.ceil(float(r["Не хватает, м"]) / max(float(r["roll_length"]), 0.1))) if int(r["balance_known"]) == 1 else 0, axis=1
+        material_df["Упаковок докупить"] = material_df.apply(
+            lambda r: packages_to_buy(r["Не хватает, м"], r["roll_length"], int(r["balance_known"]) == 1), axis=1
         )
         material_df = material_df[(material_df["balance_known"].eq(1)) & (material_df["Не хватает, м"] > 0.01)].copy()
     return material_df, pd.DataFrame(purchase_rows)

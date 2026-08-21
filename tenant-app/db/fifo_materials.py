@@ -16,7 +16,10 @@ from config import DB_PATH
 from .core import connect
 
 
-DEFAULT_OPENING_MATERIAL_RATE_RUB_M = 402.68
+# Neutral floor, not a plausible-looking guess -- deliberately not a real
+# material's historic rate, so a brand-new tenant is never silently handed
+# someone else's business numbers before they've entered their own.
+DEFAULT_OPENING_MATERIAL_RATE_RUB_M = 0.01
 
 def _fifo_opening_rate(conn: sqlite3.Connection) -> float:
     row = conn.execute("SELECT value FROM app_meta WHERE key='fifo_opening_rate_rub_m'").fetchone()
@@ -130,9 +133,14 @@ def initialize_material_fifo(opening_rate_rub_m: float | None = None) -> dict[st
             diff = round(physical - layered, 6)
             if diff > 0.0005:
                 source_ref = f"opening:{key}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                try:
+                    material_rate = float(row["opening_rate_rub"] or 0)
+                except (TypeError, ValueError, IndexError, KeyError):
+                    material_rate = 0.0
+                effective_rate = material_rate if material_rate > 0 else rate
                 _create_material_layer(
                     conn, key, name, "opening", source_ref, datetime.now().date().isoformat(),
-                    diff, rate,
+                    diff, effective_rate,
                     "Стартовый остаток до послойного учёта; ставка рассчитана из исторической себестоимости.",
                 )
                 result["created"] += 1
@@ -359,9 +367,15 @@ def read_material_cost_rates() -> pd.DataFrame:
     """
     from .core import connect
     with connect() as conn:
+        # "рулон" purchases are priced per roll -- cost_per_meter_rub converts that
+        # to a per-base-unit rate via roll_length. Any other unit (м, кг, л, шт, or
+        # free text) is already priced per the base unit it's tracked in, so the
+        # landed price is used as-is; dividing it by roll_length would corrupt the
+        # rate (and, for quantity-mode materials, roll_length is the huge
+        # NO_PACKAGE_ROLL_LENGTH sentinel, collapsing the rate to ~0).
         frame = pd.read_sql_query(
             """
-            SELECT i.material_key,i.material_name,i.roll_length,
+            SELECT i.material_key,i.material_name,i.roll_length,i.unit,
                    CASE WHEN COALESCE(i.supplier_unit_price,0)>0
                               OR COALESCE(i.delivery_unit_foreign,0)>0
                               OR COALESCE(i.extra_unit_rub,0)>0
@@ -369,20 +383,30 @@ def read_material_cost_rates() -> pd.DataFrame:
                              *CASE WHEN COALESCE(i.exchange_rate,0)>0 THEN i.exchange_rate ELSE 1 END
                              +COALESCE(i.extra_unit_rub,0)
                         ELSE COALESCE(i.unit_price,0) END AS unit_price,
-                   CASE WHEN COALESCE(i.roll_length,0)>0 THEN
-                        (CASE WHEN COALESCE(i.supplier_unit_price,0)>0
-                                   OR COALESCE(i.delivery_unit_foreign,0)>0
-                                   OR COALESCE(i.extra_unit_rub,0)>0
-                              THEN (COALESCE(i.supplier_unit_price,0)+COALESCE(i.delivery_unit_foreign,0))
-                                   *CASE WHEN COALESCE(i.exchange_rate,0)>0 THEN i.exchange_rate ELSE 1 END
-                                   +COALESCE(i.extra_unit_rub,0)
-                              ELSE COALESCE(i.unit_price,0) END)/i.roll_length
-                        ELSE 0 END AS cost_per_meter_rub,
+                   CASE WHEN LOWER(TRIM(COALESCE(i.unit,''))) = 'рулон' THEN
+                        CASE WHEN COALESCE(i.roll_length,0)>0 THEN
+                             (CASE WHEN COALESCE(i.supplier_unit_price,0)>0
+                                        OR COALESCE(i.delivery_unit_foreign,0)>0
+                                        OR COALESCE(i.extra_unit_rub,0)>0
+                                   THEN (COALESCE(i.supplier_unit_price,0)+COALESCE(i.delivery_unit_foreign,0))
+                                        *CASE WHEN COALESCE(i.exchange_rate,0)>0 THEN i.exchange_rate ELSE 1 END
+                                        +COALESCE(i.extra_unit_rub,0)
+                                   ELSE COALESCE(i.unit_price,0) END)/i.roll_length
+                             ELSE 0 END
+                        ELSE
+                             (CASE WHEN COALESCE(i.supplier_unit_price,0)>0
+                                        OR COALESCE(i.delivery_unit_foreign,0)>0
+                                        OR COALESCE(i.extra_unit_rub,0)>0
+                                   THEN (COALESCE(i.supplier_unit_price,0)+COALESCE(i.delivery_unit_foreign,0))
+                                        *CASE WHEN COALESCE(i.exchange_rate,0)>0 THEN i.exchange_rate ELSE 1 END
+                                        +COALESCE(i.extra_unit_rub,0)
+                                   ELSE COALESCE(i.unit_price,0) END)
+                        END AS cost_per_meter_rub,
                    i.posted_quantity,o.id AS order_id,o.order_number,o.status,o.order_date,o.expected_date,
                    o.currency,o.exchange_rate,o.updated_at
               FROM procurement_items i
               JOIN procurement_orders o ON o.id=i.order_id
-             WHERE i.item_type='Сырьё' AND COALESCE(i.roll_length,0)>0
+             WHERE i.item_type='Сырьё'
                AND (COALESCE(i.unit_price,0)>0 OR COALESCE(i.supplier_unit_price,0)>0
                     OR COALESCE(i.delivery_unit_foreign,0)>0 OR COALESCE(i.extra_unit_rub,0)>0)
                AND o.status<>'Отменено'
@@ -400,7 +424,7 @@ def read_material_cost_rates() -> pd.DataFrame:
 def _material_rate_maps(conn: sqlite3.Connection) -> tuple[dict[str, float], float, dict[str, str], str]:
     rows = conn.execute(
         """
-        SELECT i.material_key,i.roll_length,o.order_date,o.id,o.order_number,
+        SELECT i.material_key,i.roll_length,i.unit,o.order_date,o.id,o.order_number,
                CASE WHEN COALESCE(i.supplier_unit_price,0)>0
                           OR COALESCE(i.delivery_unit_foreign,0)>0
                           OR COALESCE(i.extra_unit_rub,0)>0
@@ -409,7 +433,7 @@ def _material_rate_maps(conn: sqlite3.Connection) -> tuple[dict[str, float], flo
                          +COALESCE(i.extra_unit_rub,0)
                     ELSE COALESCE(i.unit_price,0) END AS landed_unit_price
           FROM procurement_items i JOIN procurement_orders o ON o.id=i.order_id
-         WHERE i.item_type='Сырьё' AND COALESCE(i.roll_length,0)>0
+         WHERE i.item_type='Сырьё'
            AND (COALESCE(i.unit_price,0)>0 OR COALESCE(i.supplier_unit_price,0)>0
                 OR COALESCE(i.delivery_unit_foreign,0)>0 OR COALESCE(i.extra_unit_rub,0)>0)
            AND o.status<>'Отменено'
@@ -421,7 +445,17 @@ def _material_rate_maps(conn: sqlite3.Connection) -> tuple[dict[str, float], flo
     fallback = 0.0
     fallback_source = ""
     for row in rows:
-        rate = float(row["landed_unit_price"] or 0) / max(0.000001, float(row["roll_length"] or 0))
+        # "рулон" purchases are priced per roll -- convert to a per-base-unit rate
+        # via roll_length. Every other unit (м, кг, л, шт, or a tenant's own free
+        # text) is already priced per the base unit it's tracked in, so the price
+        # must be used as-is; dividing it by roll_length would silently corrupt
+        # the rate (and, for quantity-mode materials, roll_length is the huge
+        # NO_PACKAGE_ROLL_LENGTH sentinel, which would collapse the rate to ~0).
+        is_roll_item = str(row["unit"] or "").strip().casefold() == "рулон"
+        if is_roll_item:
+            rate = float(row["landed_unit_price"] or 0) / max(0.000001, float(row["roll_length"] or 0))
+        else:
+            rate = float(row["landed_unit_price"] or 0)
         key = str(row["material_key"] or "").strip().casefold()
         source = str(row["order_number"] or "")
         if fallback <= 0 and rate > 0:

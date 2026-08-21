@@ -20,6 +20,7 @@ from ui_helpers import (
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
     build_consolidated_purchase_plan,
+    NO_PACKAGE_ROLL_LENGTH, is_packaged_material, packages_to_buy,
 )
 from datetime import (
     date,
@@ -144,17 +145,24 @@ def render(ctx: dict) -> None:
         })
         material_procurement_today["material_key"] = material_procurement_today["Материал / цвет"].apply(material_key)
         if not raw_inventory_today.empty:
-            raw_join = raw_inventory_today[["material_key", "balance_known", "full_rolls", "partial_meters", "roll_length"]].copy()
+            raw_join_cols = ["material_key", "balance_known", "full_rolls", "partial_meters", "roll_length"]
+            for optional_col in ("unit",):
+                if optional_col in raw_inventory_today.columns:
+                    raw_join_cols.append(optional_col)
+            raw_join = raw_inventory_today[raw_join_cols].copy()
             material_procurement_today = material_procurement_today.merge(raw_join, on="material_key", how="left")
         for col, default in [("balance_known", 0), ("full_rolls", 0), ("partial_meters", 0.0), ("roll_length", 25.5)]:
             if col not in material_procurement_today.columns:
                 material_procurement_today[col] = default
             material_procurement_today[col] = pd.to_numeric(material_procurement_today[col], errors="coerce").fillna(default)
+        if "unit" not in material_procurement_today.columns:
+            material_procurement_today["unit"] = "м"
+        material_procurement_today["unit"] = material_procurement_today["unit"].fillna("м").astype(str).str.strip().replace("", "м")
         material_procurement_today["Остаток указан"] = material_procurement_today["balance_known"].astype(int).eq(1)
         material_procurement_today["На складе, м"] = material_procurement_today["full_rolls"] * material_procurement_today["roll_length"] + material_procurement_today["partial_meters"]
         material_procurement_today["Не хватает, м"] = (material_procurement_today["Нужно материала, м"] - material_procurement_today["На складе, м"]).clip(lower=0)
-        material_procurement_today["Рулонов докупить"] = material_procurement_today.apply(
-            lambda row: int(math.ceil(float(row["Не хватает, м"]) / max(float(row["roll_length"]), 0.1))) if bool(row["Остаток указан"]) and float(row["Не хватает, м"]) > 0 else 0, axis=1
+        material_procurement_today["Упаковок докупить"] = material_procurement_today.apply(
+            lambda row: packages_to_buy(row["Не хватает, м"], row["roll_length"], bool(row["Остаток указан"])), axis=1
         )
         material_procurement_today["Статус"] = material_procurement_today.apply(
             lambda row: "Остаток не указан" if not bool(row["Остаток указан"]) else ("Закупить" if float(row["Не хватает, м"]) > 0.01 else "Достаточно"), axis=1
@@ -165,9 +173,9 @@ def render(ctx: dict) -> None:
         shortage_names = set(material_buy_today["Материал / цвет"].astype(str))
         blocked_products_today = production_need_today[production_need_today["Материал / цвет"].isin(shortage_names) & production_need_today["Нужно произвести, компл."].gt(0)].copy()
         shortage_lookup = material_buy_today.set_index("Материал / цвет")["Не хватает, м"].to_dict()
-        rolls_lookup = material_buy_today.set_index("Материал / цвет")["Рулонов докупить"].to_dict()
+        rolls_lookup = material_buy_today.set_index("Материал / цвет")["Упаковок докупить"].to_dict()
         blocked_products_today["Дефицит материала, м"] = blocked_products_today["Материал / цвет"].map(shortage_lookup).fillna(0.0)
-        blocked_products_today["Рулонов докупить"] = blocked_products_today["Материал / цвет"].map(rolls_lookup).fillna(0).astype(int)
+        blocked_products_today["Упаковок докупить"] = blocked_products_today["Материал / цвет"].map(rolls_lookup).fillna(0).astype(int)
 
     if not execution_today.empty:
         execution_today["task_date_dt"] = pd.to_datetime(execution_today["task_date"], errors="coerce").dt.date
@@ -209,7 +217,21 @@ def render(ctx: dict) -> None:
         shift_material["Остаток указан"] = shift_material["balance_known"].astype(int).eq(1)
         shift_material["На складе, м"] = shift_material["full_rolls"]*shift_material["roll_length"]+shift_material["partial_meters"]
         shift_material["После смены, м"] = shift_material["На складе, м"]-shift_material["Потребность, м"]
-        shift_material["Статус"] = shift_material.apply(lambda r: "Остаток не указан" if not bool(r["Остаток указан"]) else ("Не хватает" if float(r["После смены, м"]) < -0.01 else ("Критический остаток" if float(r["После смены, м"]) < float(r["roll_length"])*0.25 else "Достаточно")), axis=1)
+
+        def _shift_material_status(r: pd.Series) -> str:
+            if not bool(r["Остаток указан"]):
+                return "Остаток не указан"
+            if float(r["После смены, м"]) < -0.01:
+                return "Не хватает"
+            if is_packaged_material(r["roll_length"]):
+                low_stock_threshold = float(r["roll_length"]) * 0.25
+            else:
+                low_stock_threshold = float(r["Потребность, м"]) * 0.25
+            if float(r["После смены, м"]) < low_stock_threshold:
+                return "Критический остаток"
+            return "Достаточно"
+
+        shift_material["Статус"] = shift_material.apply(_shift_material_status, axis=1)
         material_shortages=shift_material[shift_material["Статус"].eq("Не хватает")].copy(); material_unknown=shift_material[shift_material["Статус"].eq("Остаток не указан")].copy()
 
     shift_material_covered_units = 0
@@ -272,11 +294,13 @@ def render(ctx: dict) -> None:
             material_shortage = material_shortage_lookup_today.get(material_name_value)
             if material_shortage and float(material_shortage.get("Не хватает, м", 0) or 0) > 0:
                 missing_meters = float(material_shortage.get("Не хватает, м", 0) or 0)
-                rolls = int(material_shortage.get("Рулонов докупить", 0) or 0)
+                shortage_unit = str(material_shortage.get("unit", "м") or "м").strip() or "м"
+                packages_needed = int(material_shortage.get("Упаковок докупить", 0) or 0)
+                packages_hint = f" ({packages_needed} уп.)" if packages_needed > 0 else ""
                 action_rows.append({
                     "Приоритет":"Критично", "Тип":"Собственное производство", "Артикул продавца":article,
                     "Сигнал":f"Запас {days:.1f} дн.; производство заблокировано сырьём",
-                    "Действие":f"Закупить {material_name_value}: не хватает {missing_meters:.1f} м ({rolls} рул.); после поступления поставить в смену",
+                    "Действие":f"Закупить {material_name_value}: не хватает {missing_meters:.1f} {shortage_unit}{packages_hint}; после поступления поставить в смену",
                 })
             else:
                 action_rows.append({
@@ -296,10 +320,17 @@ def render(ctx: dict) -> None:
     for _,row in unposted_dispatch.iterrows(): action_rows.append({"Приоритет":"Критично","Тип":"Отгрузка","Артикул продавца":row.get("supplier_article",""),"Сигнал":"Статус «Отгружено», движение не проведено","Действие":"Открыть Производство → Отгрузки и провести"})
     for _,row in pending_receipt.iterrows(): action_rows.append({"Приоритет":"Высокий","Тип":"Приёмка WB","Артикул продавца":row.get("supplier_article",""),"Сигнал":"Приёмка отмечена, локальный учёт не закрыт","Действие":"Зафиксировать приёмку WB"})
     for _,row in material_buy_today.iterrows():
+        buy_unit = str(row.get('unit', 'м') or 'м').strip() or 'м'
+        buy_packages = int(row.get('Упаковок докупить', 0) or 0)
+        buy_action = (
+            f"Докупить {buy_packages} уп."
+            if buy_packages > 0
+            else f"Докупить {float(row.get('Не хватает, м', 0)):.1f} {buy_unit}"
+        )
         action_rows.append({
             "Приоритет":"Критично", "Тип":"Закупка сырья", "Артикул продавца":"",
             "Сигнал":f"{row.get('Материал / цвет','')}: не хватает {float(row.get('Не хватает, м',0)):.1f} м",
-            "Действие":f"Докупить {int(row.get('Рулонов докупить',0) or 0)} рул.; затронуты: {row.get('Артикул продавца','')}",
+            "Действие":f"{buy_action}; затронуты: {row.get('Артикул продавца','')}",
         })
     for _, row in overdue_procurement_today.iterrows():
         action_rows.append({
@@ -375,13 +406,13 @@ def render(ctx: dict) -> None:
             st.markdown("#### Не вошли в план из-за дефицита сырья")
             blocked_view = blocked_products_today[[
                 "Артикул продавца", "Товар", "Материал / цвет", "Нужно произвести, компл.",
-                "Дефицит материала, м", "Рулонов докупить"
+                "Дефицит материала, м", "Упаковок докупить"
             ]].copy()
             st.dataframe(
                 blocked_view, hide_index=True, use_container_width=True,
                 column_config={
                     "Дефицит материала, м": st.column_config.NumberColumn(format="%.1f"),
-                    "Рулонов докупить": st.column_config.NumberColumn(format="%d"),
+                    "Упаковок докупить": st.column_config.NumberColumn(format="%d"),
                 },
             )
     with today_tabs[2]:
@@ -404,7 +435,7 @@ def render(ctx: dict) -> None:
         else:
             material_buy_view = material_buy_today[[
                 "Материал / цвет", "Нужно материала, м", "На складе, м", "Не хватает, м",
-                "Рулонов докупить", "Артикул продавца"
+                "Упаковок докупить", "Артикул продавца"
             ]].copy()
             st.dataframe(
                 material_buy_view, hide_index=True, use_container_width=True,
@@ -412,7 +443,7 @@ def render(ctx: dict) -> None:
                     "Нужно материала, м": st.column_config.NumberColumn(format="%.1f"),
                     "На складе, м": st.column_config.NumberColumn(format="%.1f"),
                     "Не хватает, м": st.column_config.NumberColumn(format="%.1f"),
-                    "Рулонов докупить": st.column_config.NumberColumn(format="%d"),
+                    "Упаковок докупить": st.column_config.NumberColumn(format="%d"),
                 },
             )
         st.markdown("#### Закупаемые товары")
