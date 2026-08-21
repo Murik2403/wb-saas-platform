@@ -7,6 +7,9 @@
   <div class="nav-bar">
     <a class="brand" href="/">MARKETSHELPER</a>
     <div class="links">
+      <a class="section-link" href="#features">Возможности</a>
+      <a class="section-link" href="#compare">Сравнение</a>
+      <a class="section-link" href="#faq">Вопросы</a>
       <a href="/pricing">Тарифы</a>
       <a href="/login">Войти</a>
       <a class="cta" href="/register">Начать бесплатно</a>
@@ -26,18 +29,18 @@
       </div>
       <div class="trial-note">{{ trial_days }} дней пробного периода, карта не нужна</div>
     </div>
-    <div class="mini-dash">
+    <div class="mini-dash" id="heroDash">
       <div class="mini-dash-head"><span>app.marketshelper.ru</span><span class="live">● online</span></div>
       <div class="mini-kpis">
-        <div class="mini-kpi"><div class="l">Выкупы сегодня</div><div class="v">142</div></div>
-        <div class="mini-kpi"><div class="l">Выручка</div><div class="v">184 320 ₽</div></div>
-        <div class="mini-kpi"><div class="l">Маржа</div><div class="v good">47,8%</div></div>
-        <div class="mini-kpi"><div class="l">Готово / в пути</div><div class="v">860 / 320</div></div>
+        <div class="mini-kpi"><div class="l">Выкупы сегодня</div><div class="v" data-count="142" data-format="int">0</div></div>
+        <div class="mini-kpi"><div class="l">Выручка</div><div class="v" data-count="184320" data-format="rub">0 ₽</div></div>
+        <div class="mini-kpi"><div class="l">Маржа</div><div class="v good" data-count="47.8" data-format="pct">0%</div></div>
+        <div class="mini-kpi"><div class="l">Готово / в пути</div><div class="v"><span data-count="860" data-format="int">0</span> / <span data-count="320" data-format="int">0</span></div></div>
       </div>
     </div>
   </div>
 
-  <div class="feature-row">
+  <div class="feature-row" id="features">
     <div class="feature">
       <div class="ic">FI</div>
       <h3>FIFO себестоимость</h3>
@@ -56,7 +59,7 @@
     <div class="feature">
       <div class="ic">ЗК</div>
       <h3>Закупки сырья</h3>
-      <p>Рулоны, вес, объём, штуки — любой материал заводится в своей единице измерения. Заявки поставщикам и приёмка — в одном месте.</p>
+      <p>Вес, объём, штуки, упаковки — любой материал заводится в своей единице измерения. Заявки поставщикам и приёмка — в одном месте.</p>
     </div>
     <div class="feature">
       <div class="ic">НЗ</div>
@@ -76,8 +79,12 @@
       <h2>Один и тот же кабинет — для продажи и для производства</h2>
       <p>Если вы просто перепродаёте товар, вам не нужен модуль производства — аналитика продаж и финансовый учёт работают и без него. Но если вы сами шьёте, режете, печатаете или льёте свой товар, то же самое пространство закрывает и это.</p>
     </div>
-    <div class="audience-row">
-      <div class="audience-card">
+    <div class="audience-toggle" role="group" aria-label="Кто вы">
+      <button type="button" class="at-btn" data-audience="seller">Я продавец</button>
+      <button type="button" class="at-btn" data-audience="producer">Я произвожу товар</button>
+    </div>
+    <div class="audience-row" id="audienceRow">
+      <div class="audience-card" data-audience="seller">
         <div class="tag">Продавец</div>
         <h3>Закупаете готовый товар</h3>
         <p>Перепродаёте на Wildberries и следите за продажами, рекламой и остатками.</p>
@@ -88,7 +95,7 @@
           <li>Контроль рекламы и цен</li>
         </ul>
       </div>
-      <div class="audience-card highlight">
+      <div class="audience-card highlight" data-audience="producer">
         <div class="tag">Продавец-производитель</div>
         <h3>Производите товар сами</h3>
         <p>Кроме продаж нужен учёт сырья, партий и мощности — а это редко где есть вместе с аналитикой WB.</p>
@@ -96,7 +103,7 @@
           <li>Всё то же, что у продавца, плюс:</li>
           <li>FIFO себестоимость сырья по факту закупки</li>
           <li>Учёт незавершённого производства</li>
-          <li>Закупка сырья в любых единицах — не только рулонами</li>
+          <li>Закупка сырья в любых единицах измерения</li>
           <li>Календарь мощности под спрос WB</li>
         </ul>
       </div>
@@ -131,11 +138,11 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="compare">
     <div class="section-head">
       <div class="eyebrow">Сравнение</div>
       <h2>Чем это отличается от других вариантов</h2>
-      <p>Мы изучили рынок сервисов для продавцов Wildberries. Специализированные сервисы аналитики закрывают только продажи. Тяжёлые ERP-системы вроде 1С умеют считать производство, но это отдельное внедрение с программистом. Готового сервиса «из коробки», который сочетает и то, и другое, мы на рынке не нашли — но не утверждаем, что проверили вообще все существующие продукты.</p>
+      <p>Мы изучили рынок сервисов для продавцов Wildberries. Специализированные сервисы аналитики закрывают только продажи. Тяжёлые ERP-системы вроде 1С умеют считать производство, но это отдельное внедрение с программистом. Готового сервиса «из коробки», который сочетает и то, и другое, мы на рынке не нашли.</p>
     </div>
     <div class="compare-wrap">
       <table class="compare-table">
@@ -173,7 +180,7 @@
             <td class="ms-col yes">есть</td>
           </tr>
           <tr>
-            <td>Закупка сырья в любых единицах, не только рулонами</td>
+            <td>Закупка сырья в любых единицах измерения</td>
             <td class="no">нет</td>
             <td class="maybe">при доработке</td>
             <td class="ms-col yes">есть</td>
@@ -193,10 +200,10 @@
         </tbody>
       </table>
     </div>
-    <p class="compare-note">Сравнение по категориям сервисов, по открытым данным на август 2026 года — не сравнение с конкретными брендами. Если вы знаете сервис, который закрывает оба сценария из коробки, напишите нам через <a href="/contacts">контакты</a> — уточним таблицу.</p>
+    <p class="compare-note">Сравнение по категориям сервисов, а не с конкретными брендами. Актуально на август 2026 года.</p>
   </div>
 
-  <div class="section">
+  <div class="section" id="faq">
     <div class="section-head">
       <div class="eyebrow">Вопросы</div>
       <h2>Частые вопросы</h2>
@@ -211,12 +218,12 @@
         <p>Модуль производства просто не понадобится. Аналитика продаж WB, юнит-экономика и финансовый учёт работают независимо от него.</p>
       </details>
       <details class="faq-item">
-        <summary>Что если моё сырьё — не рулоны, а ткань, гранулы, краска?</summary>
-        <p>Каждый материал заводится в своей единице измерения — метры, килограммы, литры, штуки — и в своём способе учёта: упаковками фиксированного размера (рулоны, бухты, коробки) или просто по количеству, без фиксированной упаковки.</p>
+        <summary>В каких единицах можно учитывать сырьё?</summary>
+        <p>В любых. Каждый материал заводится в своей единице измерения — метры, килограммы, литры, штуки — и в своём способе учёта: фиксированными упаковками заданного размера или просто по количеству, без фиксированной упаковки.</p>
       </details>
       <details class="faq-item">
         <summary>Данные разных продавцов где-то пересекаются?</summary>
-        <p>Нет. У каждого клиента отдельный изолированный контейнер и своя база данных — это не общая таблица с разделением по строкам, а физически отдельная копия сервиса.</p>
+        <p>Нет. Каждый клиент работает в собственном изолированном контейнере с отдельной базой данных — окружения разных аккаунтов физически разделены.</p>
       </details>
       <details class="faq-item">
         <summary>Нужна ли карта для пробного периода?</summary>
@@ -242,4 +249,94 @@
   </div>
 
 </div>
+
+<a href="/register" class="floating-cta" id="floatingCta">Начать бесплатно</a>
+
+<script>
+(function () {
+  "use strict";
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- hero KPI count-up ---- */
+  function formatValue(n, format) {
+    if (format === "rub") return Math.round(n).toLocaleString("ru-RU") + " ₽";
+    if (format === "pct") return n.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
+    return Math.round(n).toLocaleString("ru-RU");
+  }
+  function animateCount(el) {
+    var target = parseFloat(el.getAttribute("data-count"));
+    var format = el.getAttribute("data-format") || "int";
+    if (!isFinite(target)) return;
+    if (reduceMotion) { el.textContent = formatValue(target, format); return; }
+    var duration = 900, start = null;
+    function step(ts) {
+      if (start === null) start = ts;
+      var progress = Math.min(1, (ts - start) / duration);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = formatValue(target * eased, format);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var heroDash = document.getElementById("heroDash");
+  if (heroDash && "IntersectionObserver" in window) {
+    var counted = false;
+    var dashObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting && !counted) {
+          counted = true;
+          heroDash.querySelectorAll("[data-count]").forEach(animateCount);
+          dashObserver.disconnect();
+        }
+      });
+    }, { threshold: 0.4 });
+    dashObserver.observe(heroDash);
+  } else if (heroDash) {
+    heroDash.querySelectorAll("[data-count]").forEach(animateCount);
+  }
+
+  /* ---- audience toggle: highlight the matching card ---- */
+  var toggleButtons = document.querySelectorAll(".at-btn");
+  var audienceCards = document.querySelectorAll(".audience-card");
+  toggleButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var selected = btn.getAttribute("data-audience");
+      var alreadyActive = btn.classList.contains("active");
+      toggleButtons.forEach(function (b) { b.classList.remove("active"); });
+      if (alreadyActive) {
+        // clicking the active option again resets to the neutral (both-equal) view
+        audienceCards.forEach(function (c) { c.classList.remove("highlight", "muted"); });
+        if (document.querySelector('.audience-card[data-audience="producer"]')) {
+          document.querySelector('.audience-card[data-audience="producer"]').classList.add("highlight");
+        }
+        return;
+      }
+      btn.classList.add("active");
+      audienceCards.forEach(function (c) {
+        var match = c.getAttribute("data-audience") === selected;
+        c.classList.toggle("highlight", match);
+        c.classList.toggle("muted", !match);
+      });
+    });
+  });
+
+  /* ---- floating CTA: appears once the hero scrolls out of view, hides again near the final CTA ---- */
+  var floatingCta = document.getElementById("floatingCta");
+  var priceStrip = document.querySelector(".price-strip");
+  if (floatingCta && heroDash && "IntersectionObserver" in window) {
+    var pastHero = false, nearFooterCta = false;
+    function updateFloating() {
+      floatingCta.classList.toggle("visible", pastHero && !nearFooterCta);
+    }
+    new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) { pastHero = !entry.isIntersecting; updateFloating(); });
+    }, { threshold: 0 }).observe(heroDash);
+    if (priceStrip) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) { nearFooterCta = entry.isIntersecting; updateFloating(); });
+      }, { threshold: 0 }).observe(priceStrip);
+    }
+  }
+})();
+</script>
 {% endblock %}

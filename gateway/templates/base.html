@@ -25,6 +25,9 @@
     --font-mono:"IBM Plex Mono","SF Mono",monospace;
   }
   * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
   body {
     margin: 0; min-height: 100vh;
     background: var(--bg); color: var(--text);
@@ -208,9 +211,33 @@
   .faq-item summary { cursor: pointer; list-style: none; padding: 18px 22px; font-weight: 600; font-size: .93rem;
     display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .faq-item summary::-webkit-details-marker { display: none; }
-  .faq-item summary::after { content: "+"; color: var(--text-faint); font-size: 1.1rem; font-weight: 400; flex-shrink: 0; }
-  .faq-item[open] summary::after { content: "–"; color: var(--accent-strong); }
+  .faq-item summary::after { content: "+"; color: var(--text-faint); font-size: 1.1rem; font-weight: 400; flex-shrink: 0;
+    display: inline-block; transition: transform .2s ease, color .2s ease; }
+  .faq-item[open] summary::after { color: var(--accent-strong); transform: rotate(45deg); }
   .faq-item p { margin: 0; padding: 0 22px 20px; color: var(--text-muted); font-size: .88rem; line-height: 1.6; max-width: 70ch; }
+
+  /* ---------- landing: in-page nav anchors ---------- */
+  .nav-bar .links a.section-link { display: none; }
+  @media (min-width: 900px) { .nav-bar .links a.section-link { display: inline; } }
+  #features, #compare, #faq { scroll-margin-top: 20px; }
+
+  /* ---------- landing: audience toggle (interactive) ---------- */
+  .audience-toggle { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 20px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .at-btn { padding: 8px 16px; border: none; border-radius: 9px; background: transparent; color: var(--text-muted);
+    font-family: var(--font-display); font-size: .84rem; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease; }
+  .at-btn:hover { color: var(--text); }
+  .at-btn.active { background: var(--accent); color: #0a0b12; }
+  .audience-card { transition: opacity .2s ease, border-color .2s ease; }
+  .audience-card.muted { opacity: .55; }
+
+  /* ---------- landing: floating CTA for a long page ---------- */
+  .floating-cta { position: fixed; bottom: 22px; right: 22px; z-index: 40;
+    padding: 13px 22px; border-radius: 12px; background: var(--accent); color: #0a0b12;
+    font-weight: 700; font-size: .89rem; text-decoration: none; box-shadow: 0 14px 34px rgba(0,0,0,.45);
+    opacity: 0; transform: translateY(14px); pointer-events: none; transition: opacity .25s ease, transform .25s ease, background .15s ease; }
+  .floating-cta.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .floating-cta:hover { background: var(--accent-strong); }
 
   @media (max-width: 760px) {
     .hero { grid-template-columns: 1fr; padding-top: 10px; }
@@ -221,6 +248,9 @@
     .product-shots { grid-template-columns: 1fr; }
     .compare-table { font-size: .78rem; }
     .compare-table th, .compare-table td { padding: 10px 8px; }
+  }
+  @media (max-width: 480px) {
+    .floating-cta { left: 14px; right: 14px; bottom: 14px; text-align: center; }
   }
 </style>
 {% block head %}{% endblock %}
