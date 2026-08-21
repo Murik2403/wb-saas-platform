@@ -21,6 +21,7 @@ from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import config
@@ -32,6 +33,11 @@ logger = logging.getLogger("wb_saas_gateway")
 
 app = FastAPI(title="MARKETSHELPER Gateway")
 app.include_router(billing_router)
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    name="static",
+)
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 

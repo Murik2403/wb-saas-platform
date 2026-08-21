@@ -204,6 +204,19 @@
   .compare-table .no { color: var(--text-faint); }
   .compare-note { font-size: .8rem; color: var(--text-faint); margin: 0 0 64px; line-height: 1.6; }
 
+  /* ---------- landing: quote ---------- */
+  .quote-block { margin: 0 0 64px; padding: 40px 44px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; }
+  .quote-mark { font-family: Georgia, "Times New Roman", serif; font-size: 3rem; line-height: 1; color: var(--accent);
+    opacity: .55; margin: 0 0 2px; }
+  .quote-text { font-size: 1.26rem; line-height: 1.55; color: var(--text); margin: 0 0 26px; font-weight: 500;
+    max-width: 720px; }
+  .quote-author { display: flex; align-items: center; gap: 14px; }
+  .quote-photo { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+    border: 1px solid var(--border); }
+  .quote-author-name { font-weight: 600; font-size: .92rem; color: var(--text); }
+  .quote-author-role { font-size: .8rem; color: var(--text-faint); }
+
   /* ---------- landing: FAQ ---------- */
   .faq { display: flex; flex-direction: column; gap: 1px; background: var(--border); border: 1px solid var(--border);
     border-radius: 16px; overflow: hidden; margin-bottom: 60px; }
@@ -276,6 +289,8 @@
     .calc-wrap { grid-template-columns: 1fr; }
     .calc-form { grid-template-columns: 1fr; padding: 22px 20px; }
     .calc-result { padding: 22px 20px; }
+    .quote-block { padding: 26px 22px; }
+    .quote-text { font-size: 1.08rem; }
   }
   @media (max-width: 480px) {
     .floating-cta { left: 14px; right: 14px; bottom: 14px; text-align: center; }
