@@ -76,10 +76,14 @@ def _run_tenant_container(client, slug: str, container_name: str):
         restart_policy={"Name": "unless-stopped"},
         mem_limit=config.TENANT_MEM_LIMIT,
         nano_cpus=int(config.TENANT_CPU_QUOTA * 1_000_000_000),
-        # Lets the dashboard itself render a "Subscription" link back to the
-        # gateway's /billing page -- the tenant container has no other way
-        # to know its own parent domain. Read by tenant-app/config.py.
-        environment={"WB_SAAS_BILLING_URL": config.billing_url()},
+        # Lets the dashboard itself render a "Subscription" link and a
+        # "Log out" control back to the gateway -- the tenant container has
+        # no other way to know its own parent domain. Read by
+        # tenant-app/config.py.
+        environment={
+            "WB_SAAS_BILLING_URL": config.billing_url(),
+            "WB_SAAS_LOGOUT_URL": config.logout_url(),
+        },
     )
 
 

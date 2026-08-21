@@ -7,7 +7,7 @@ import streamlit as st
 
 from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
-from config import BILLING_URL, get_token, load_settings
+from config import BILLING_URL, LOGOUT_URL, get_token, load_settings
 from db import init_db, last_sync, refresh_auto_costs, table_count
 
 from pages import (
@@ -115,6 +115,22 @@ with st.sidebar:
     if BILLING_URL:
         st.divider()
         st.link_button("💳 Подписка", BILLING_URL, use_container_width=True)
+    if LOGOUT_URL:
+        # /logout on the gateway is POST-only (it revokes the session, not
+        # just a navigation) -- st.link_button only ever does a GET, so this
+        # needs a real HTML form instead. The session cookie is scoped to
+        # the parent domain (see gateway/config.py cookie_domain()), so a
+        # plain cross-origin form POST from this subdomain still carries it.
+        st.markdown(
+            f'''<form action="{LOGOUT_URL}" method="post" style="margin-top: 8px;">
+                <button type="submit" style="width:100%; padding:0.5rem 1rem; border-radius:12px;
+                    font-weight:600; font-family: var(--font-display); cursor:pointer;
+                    background: var(--surface); color: var(--text); border: 1px solid var(--border);">
+                    Выйти
+                </button>
+            </form>''',
+            unsafe_allow_html=True,
+        )
 
 if page not in {"Настройки", "Контроль"}:
     st.markdown('<div class="wb-title">Панель управления Wildberries</div>', unsafe_allow_html=True)

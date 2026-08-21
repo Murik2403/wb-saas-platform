@@ -103,6 +103,11 @@ def billing_url() -> str:
     return f"{scheme}://{PARENT_DOMAIN}/billing"
 
 
+def logout_url() -> str:
+    scheme = "https" if COOKIE_SECURE else "http"
+    return f"{scheme}://{PARENT_DOMAIN}/logout"
+
+
 def base_url() -> str:
     scheme = "https" if COOKIE_SECURE else "http"
     return f"{scheme}://{PARENT_DOMAIN}"

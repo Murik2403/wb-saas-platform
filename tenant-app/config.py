@@ -20,6 +20,11 @@ KEYRING_USER = "wb_api_token"
 # simply doesn't show a subscription link, since there's nothing to link to.
 BILLING_URL = os.environ.get("WB_SAAS_BILLING_URL", "")
 
+# Same reasoning as BILLING_URL: points back at the gateway's own /logout
+# (session cookie lives on the parent domain, not this container). Empty
+# when run standalone -- nothing to log out of without a gateway.
+LOGOUT_URL = os.environ.get("WB_SAAS_LOGOUT_URL", "")
+
 DEFAULT_SETTINGS: dict[str, Any] = {
     "sync_interval_minutes": 30,
     "initial_history_days": 90,
