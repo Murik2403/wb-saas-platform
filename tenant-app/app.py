@@ -129,16 +129,24 @@ with st.sidebar:
     page = st.radio("", nav_options, label_visibility="collapsed")
     st.divider()
     token_exists = bool(get_token())
-    if token_exists:
-        st.markdown('<span class="status-pill">● API подключён</span>', unsafe_allow_html=True)
+    sync_info = None
+    backup_info = None
+    if IS_DEMO:
+        # A real seller's sidebar shows API-connection/sync/backup status --
+        # none of that applies to fake demo data, and an "API не подключён"
+        # warning here would just look like something is broken.
+        st.markdown('<span class="status-pill">● Демо-данные</span>', unsafe_allow_html=True)
     else:
-        st.warning("API пока не подключён")
-    sync_info = last_sync()
-    if sync_info:
-        st.caption(f"Последняя синхронизация: {sync_info.get('finished_at') or sync_info.get('started_at')}")
-    backup_info = latest_backup()
-    if backup_info:
-        st.caption(f"Резервная копия: {backup_info['modified_at']:%d.%m.%Y %H:%M}")
+        if token_exists:
+            st.markdown('<span class="status-pill">● API подключён</span>', unsafe_allow_html=True)
+        else:
+            st.warning("API пока не подключён")
+        sync_info = last_sync()
+        if sync_info:
+            st.caption(f"Последняя синхронизация: {sync_info.get('finished_at') or sync_info.get('started_at')}")
+        backup_info = latest_backup()
+        if backup_info:
+            st.caption(f"Резервная копия: {backup_info['modified_at']:%d.%m.%Y %H:%M}")
     if BILLING_URL:
         st.divider()
         st.link_button("💳 Подписка", BILLING_URL, use_container_width=True)
