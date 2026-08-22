@@ -275,8 +275,19 @@
   .badge-critical { color: var(--critical); background: var(--critical-soft); }
   .shot-caption { font-size: .78rem; color: var(--text-faint); margin: 12px 2px 0; }
   .shot-card-real { padding: 10px; overflow: hidden; }
-  .shot-card-real img { display: block; width: 100%; height: auto; border-radius: 8px; }
+  .shot-card-real img { display: block; width: 100%; height: auto; border-radius: 8px; cursor: zoom-in; }
   .shot-card-real .shot-caption { padding: 0 4px; }
+
+  /* ---------- lightbox for real product screenshots ---------- */
+  .lightbox { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+    padding: 40px; background: rgba(5,6,10,.88); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+  .lightbox.open { opacity: 1; pointer-events: auto; }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,.5); cursor: default; }
+  .lightbox-close { position: absolute; top: 20px; right: 24px; width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+    font-size: 1.1rem; cursor: pointer; }
+  .lightbox-close:hover { background: var(--surface-2); border-color: var(--accent); }
 
   /* ---------- landing: comparison table ---------- */
   .compare-wrap { position: relative; border: 1px solid var(--border); border-radius: 16px; background: var(--surface);

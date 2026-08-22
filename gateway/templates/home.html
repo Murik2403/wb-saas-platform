@@ -351,6 +351,11 @@
 
 <a href="/register" class="floating-cta" id="floatingCta">Начать бесплатно</a>
 
+<div class="lightbox" id="shotLightbox" role="dialog" aria-modal="true" aria-hidden="true">
+  <button type="button" class="lightbox-close" id="lightboxClose" aria-label="Закрыть">✕</button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -478,6 +483,33 @@
   } else {
     revealEls.forEach(function (el) { el.classList.add("is-visible"); });
   }
+
+  /* ---- lightbox for real product screenshots ---- */
+  var lightbox = document.getElementById("shotLightbox");
+  var lightboxImg = document.getElementById("lightboxImg");
+  var lightboxClose = document.getElementById("lightboxClose");
+  function openLightbox(src, alt) {
+    lightboxImg.src = src;
+    lightboxImg.alt = alt || "";
+    lightbox.classList.add("open");
+    lightbox.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+  }
+  function closeLightbox() {
+    lightbox.classList.remove("open");
+    lightbox.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+  }
+  document.querySelectorAll(".shot-card-real img").forEach(function (img) {
+    img.addEventListener("click", function () { openLightbox(img.src, img.alt); });
+  });
+  if (lightboxClose) lightboxClose.addEventListener("click", closeLightbox);
+  if (lightbox) {
+    lightbox.addEventListener("click", function (e) { if (e.target === lightbox) closeLightbox(); });
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeLightbox();
+  });
 })();
 </script>
 {% endblock %}
