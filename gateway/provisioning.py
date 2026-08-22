@@ -140,6 +140,11 @@ def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> N
 def _mark_failed(tenant_id: int, note: str) -> None:
     with control_db.connect() as conn:
         accounts.set_tenant_status(conn, tenant_id, "failed", note=note)
+    try:
+        from telegram_notifier import send_telegram_alert
+        send_telegram_alert(f"<b>Provisioning Failed</b>\nTenant ID: {tenant_id}\nNote: {note}")
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------
@@ -153,14 +158,62 @@ def stop_tenant(slug: str) -> None:
     container_name = f"wb-tenant-{slug}"
     try:
         container = client.containers.get(container_name)
+        container.stop(timeout=15)
     except Exception:
-        logger.warning("stop_tenant: container %s not found", container_name)
-        return
-    container.stop(timeout=15)
+        logger.warning("stop_tenant: container %s not found or already stopped", container_name)
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_by_slug(conn, slug)
         if tenant is not None:
             accounts.set_tenant_status(conn, int(tenant["id"]), "stopped")
+
+
+def wake_tenant(slug: str) -> bool:
+    """Wakes up a stopped tenant container and waits for it to become healthy."""
+    client = _client()
+    container_name = f"wb-tenant-{slug}"
+    try:
+        container = client.containers.get(container_name)
+        if container.status != "running":
+            logger.info("Waking up idle tenant container %s", container_name)
+            container.start()
+    except Exception:
+        logger.info("Container %s not found during wake, re-running container", container_name)
+        try:
+            _run_tenant_container(client, slug, container_name)
+        except Exception as exc:
+            logger.exception("Failed to run tenant container %s during wake: %s", container_name, exc)
+            return False
+
+    healthy = _wait_until_healthy(client, container_name, config.PROVISION_HEALTH_TIMEOUT_SECONDS)
+    if healthy:
+        with control_db.connect() as conn:
+            tenant = accounts.get_tenant_by_slug(conn, slug)
+            if tenant is not None:
+                accounts.mark_tenant_provisioned(conn, int(tenant["id"]), int(tenant["account_id"]))
+    return healthy
+
+
+def stop_idle_tenants(idle_minutes: int | None = None) -> int:
+    """Stops containers for tenants that have been idle longer than idle_minutes."""
+    if idle_minutes is None:
+        idle_minutes = config.TENANT_IDLE_TIMEOUT_MINUTES
+    if not config.IDLE_AUTO_STOP_ENABLED:
+        return 0
+
+    with control_db.connect() as conn:
+        idle_list = accounts.get_idle_tenants(conn, idle_minutes)
+
+    stopped_count = 0
+    for tenant in idle_list:
+        slug = tenant["slug"]
+        logger.info("Stopping idle tenant %s (inactive for > %d minutes)", slug, idle_minutes)
+        try:
+            stop_tenant(slug)
+            stopped_count += 1
+        except Exception:
+            logger.exception("Failed to stop idle tenant %s", slug)
+
+    return stopped_count
 
 
 def upgrade_tenant(slug: str, image: str | None = None) -> bool:

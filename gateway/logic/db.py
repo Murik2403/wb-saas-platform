@@ -102,6 +102,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             container_name TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'provisioning',
             note TEXT DEFAULT '',
+            last_active_at TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
@@ -134,3 +135,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(accounts)")}
     if "pdn_consent_at" not in existing_columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")
+
+    tenant_columns = {row[1] for row in conn.execute("PRAGMA table_info(tenant_instances)")}
+    if "last_active_at" not in tenant_columns:
+        conn.execute("ALTER TABLE tenant_instances ADD COLUMN last_active_at TEXT DEFAULT ''")

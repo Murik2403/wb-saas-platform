@@ -28,8 +28,12 @@ TENANT_INTERNAL_PORT = int(os.environ.get("WB_SAAS_TENANT_INTERNAL_PORT", "8501"
 
 # Per-tenant resource caps, so one client's runaway sync/report can't starve
 # every other client sharing the same host. Tune to your VPS size.
-TENANT_MEM_LIMIT = os.environ.get("WB_SAAS_TENANT_MEM_LIMIT", "768m")
+TENANT_MEM_LIMIT = os.environ.get("WB_SAAS_TENANT_MEM_LIMIT", "384m")
 TENANT_CPU_QUOTA = float(os.environ.get("WB_SAAS_TENANT_CPU_QUOTA", "1.0"))  # in CPU cores
+
+# Idle-sleep auto stop & wake up configuration (for hosting hundreds of tenants)
+IDLE_AUTO_STOP_ENABLED = os.environ.get("WB_SAAS_IDLE_AUTO_STOP_ENABLED", "1") == "1"
+TENANT_IDLE_TIMEOUT_MINUTES = int(os.environ.get("WB_SAAS_TENANT_IDLE_TIMEOUT_MINUTES", "30"))
 
 # Name of the Traefik ForwardAuth middleware (defined once, via labels on
 # the gateway service in docker-compose.yml) that every tenant router
@@ -45,6 +49,13 @@ PROVISION_HEALTH_TIMEOUT_SECONDS = int(os.environ.get("WB_SAAS_PROVISION_TIMEOUT
 COOKIE_SECURE = os.environ.get("WB_SAAS_COOKIE_SECURE", "0") == "1"
 
 SESSION_COOKIE_NAME = "wb_saas_session"
+
+# Comma-separated list of admin email addresses with access to /admin
+ADMIN_EMAILS = [
+    email.strip().lower()
+    for email in os.environ.get("WB_SAAS_ADMIN_EMAILS", "").split(",")
+    if email.strip()
+]
 
 # --------------------------------------------------------------------------
 # Billing (see logic/billing.py + yookassa_client.py)

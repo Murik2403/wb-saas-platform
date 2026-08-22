@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Панель администратора | MARKETSHELPER{% endblock %}
+
+{% block body_class %}card-layout{% endblock %}
+{% block card_extra_class %} card-wide{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <div>
+    <h1>Панель управления SaaS</h1>
+    <p class="subtitle" style="margin-bottom: 0;">Клиенты, контейнеры и статусы подписок</p>
+  </div>
+  <div>
+    <a href="/" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.85rem;">На сайт</a>
+  </div>
+</div>
+
+{% if message %}
+  <div class="info">{{ message }}</div>
+{% endif %}
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+  <div style="background: var(--surface-2); padding: 14px; border-radius: 12px; border: 1px solid var(--border);">
+    <div style="font-size: 0.75rem; color: var(--text-faint);">Всего аккаунтов</div>
+    <div style="font-size: 1.4rem; font-weight: 700; color: var(--text);">{{ tenants|length }}</div>
+  </div>
+  <div style="background: var(--surface-2); padding: 14px; border-radius: 12px; border: 1px solid var(--border);">
+    <div style="font-size: 0.75rem; color: var(--text-faint);">Запущенных (running)</div>
+    <div style="font-size: 1.4rem; font-weight: 700; color: var(--good);">
+      {{ tenants|selectattr('tenant_status', 'equalto', 'running')|list|length }}
+    </div>
+  </div>
+  <div style="background: var(--surface-2); padding: 14px; border-radius: 12px; border: 1px solid var(--border);">
+    <div style="font-size: 0.75rem; color: var(--text-faint);">Спят (stopped)</div>
+    <div style="font-size: 1.4rem; font-weight: 700; color: var(--warn);">
+      {{ tenants|selectattr('tenant_status', 'equalto', 'stopped')|list|length }}
+    </div>
+  </div>
+  <div style="background: var(--surface-2); padding: 14px; border-radius: 12px; border: 1px solid var(--border);">
+    <div style="font-size: 0.75rem; color: var(--text-faint);">Активных подписок</div>
+    <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent-strong);">
+      {{ tenants|selectattr('account_status', 'equalto', 'active')|list|length }}
+    </div>
+  </div>
+</div>
+
+<div style="overflow-x: auto;">
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--border-strong); text-align: left; color: var(--text-faint);">
+        <th style="padding: 8px;">Email / Slug</th>
+        <th style="padding: 8px;">Аккаунт</th>
+        <th style="padding: 8px;">Контейнер</th>
+        <th style="padding: 8px;">Подписка до</th>
+        <th style="padding: 8px;">Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tenants %}
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 10px 8px;">
+          <div style="font-weight: 600; color: var(--text);">{{ t.email }}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">
+            <a href="http://{{ t.slug }}.{{ parent_domain }}" target="_blank" style="color: var(--accent-strong);">{{ t.slug }}</a>
+          </div>
+        </td>
+        <td style="padding: 10px 8px;">
+          {% if t.account_status in ['active', 'trialing'] %}
+            <span class="badge badge-good">{{ t.account_status }}</span>
+          {% elif t.account_status == 'past_due' %}
+            <span class="badge badge-warn">{{ t.account_status }}</span>
+          {% else %}
+            <span class="badge badge-critical">{{ t.account_status }}</span>
+          {% endif %}
+        </td>
+        <td style="padding: 10px 8px;">
+          {% if t.tenant_status == 'running' %}
+            <span class="badge badge-good">running</span>
+          {% elif t.tenant_status == 'stopped' %}
+            <span class="badge badge-warn">stopped</span>
+          {% else %}
+            <span class="badge badge-critical">{{ t.tenant_status }}</span>
+          {% endif %}
+          {% if t.last_active_at %}
+            <div style="font-size: 0.7rem; color: var(--text-faint); margin-top: 2px;">
+              Активен: {{ t.last_active_at[:16].replace('T', ' ') }}
+            </div>
+          {% endif %}
+        </td>
+        <td style="padding: 10px 8px; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.8rem;">
+          {{ t.current_period_end[:10] if t.current_period_end else '—' }}
+        </td>
+        <td style="padding: 10px 8px;">
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            {% if t.tenant_status == 'stopped' %}
+              <form action="/admin/tenant/{{ t.slug }}/action" method="POST" style="margin: 0;">
+                <input type="hidden" name="action" value="wake">
+                <button type="submit" style="margin: 0; padding: 4px 8px; font-size: 0.75rem; background: var(--good); color: #000;">
+                  Разбудить
+                </button>
+              </form>
+            {% elif t.tenant_status == 'running' %}
+              <form action="/admin/tenant/{{ t.slug }}/action" method="POST" style="margin: 0;">
+                <input type="hidden" name="action" value="stop">
+                <button type="submit" style="margin: 0; padding: 4px 8px; font-size: 0.75rem; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text);">
+                  Остановить
+                </button>
+              </form>
+            {% endif %}
+
+            <form action="/admin/account/{{ t.account_id }}/extend" method="POST" style="margin: 0;">
+              <input type="hidden" name="days" value="30">
+              <button type="submit" style="margin: 0; padding: 4px 8px; font-size: 0.75rem; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent-strong);">
+                +30 дн.
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
