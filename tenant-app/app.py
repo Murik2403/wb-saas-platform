@@ -83,6 +83,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
 .status-pill.warn {background: var(--warn-soft); color: var(--warn); border-color: rgba(242,184,75,.3);}
 .status-pill.critical {background: var(--critical-soft); color: var(--critical); border-color: rgba(242,103,122,.3);}
 .warning-box {background: var(--warn-soft); border:1px solid rgba(242,184,75,.3); border-radius:14px; padding:13px 15px; color: var(--warn); font-size:.9rem;}
+.kpi-card-hero {min-height:158px; padding:22px 22px 18px;}
+.kpi-card-hero .kpi-label {font-size:.86rem;}
+.kpi-card-hero .kpi-value {font-size:2.4rem;}
+.problem-row {border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:8px; background: var(--surface);}
+.problem-note {color: var(--text-muted); font-size:.82rem; margin-top:.3rem;}
 div[data-testid="stDataFrame"] {border:1px solid var(--border); border-radius:14px; overflow:hidden;}
 div[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;}
 div[data-testid="stMetricValue"] {font-family: var(--font-mono); font-variant-numeric: tabular-nums;}

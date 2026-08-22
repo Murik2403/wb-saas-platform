@@ -15,6 +15,7 @@ import streamlit as st
 from ui_helpers import (
     money, num, pct,
     infer_material_name, material_key, ceil_to_batch, kpi_card,
+    render_problem_products_panel,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
@@ -27,7 +28,17 @@ def render(ctx: dict) -> None:
     data = ctx['data']
     period = ctx['period']
 
-    cols = st.columns(6)
+    # F-pattern: the single most consequential number (profit) sits large in the
+    # top-left, where a scanning eye lands first; the rest of the operational KPIs
+    # trail off to the right in decreasing importance.
+    hero_col, *cols = st.columns([1.4, 1, 1, 1, 1, 1, 1])
+    with hero_col:
+        kpi_card(
+            "Прибыль по товарам (оценка)",
+            money(data.financial.get("product_allocated_profit", 0.0)),
+            "Расчётная, за период · точная цифра — в «Финансы»",
+            hero=True,
+        )
     with cols[0]: kpi_card("Заказы", num(data.kpi["orders"]), money(data.kpi["order_amount"]))
     with cols[1]: kpi_card("Выкупы", num(data.kpi["sales"]), f"Оперативный API · {pct(data.kpi['buyout'])}")
     with cols[2]: kpi_card("Возвраты", num(data.kpi["returns"]), "За выбранный период")
@@ -54,13 +65,10 @@ def render(ctx: dict) -> None:
     fig.for_each_trace(lambda t: t.update(name={"order_amount":"Сумма заказов","revenue":"Выручка","ad_spend":"Реклама"}.get(t.name,t.name)))
     st.plotly_chart(fig, use_container_width=True)
 
-    c1, c2 = st.columns([1.1, 1.9])
+    c1, c2 = st.columns([1.2, 1.8])
     with c1:
         st.markdown("### Требует внимания")
-        if data.alerts.empty:
-            st.success("Критичных сигналов за выбранный период нет.")
-        else:
-            st.dataframe(data.alerts, hide_index=True, use_container_width=True)
+        render_problem_products_panel(data.financial_products, data.alerts)
     with c2:
         st.markdown("### Товары")
         view = data.products[["Артикул WB", "Артикул продавца", "Заказы", "Продажи", "Выручка", "ДРР, %", "Остаток", "Запас, дней"]].copy() if not data.products.empty else data.products

@@ -4,6 +4,7 @@ import hashlib
 import math
 import time
 from datetime import date, datetime, timedelta
+from html import escape
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -114,11 +115,54 @@ def ceil_to_batch(value: float, batch: int) -> int:
     return int(math.ceil(value / batch) * batch) if value > 0 else 0
 
 
-def kpi_card(label: str, value: str, note: str = "") -> None:
+def kpi_card(label: str, value: str, note: str = "", hero: bool = False) -> None:
+    css_class = "kpi-card kpi-card-hero" if hero else "kpi-card"
     st.markdown(
-        f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-note">{note}</div></div>',
+        f'<div class="{css_class}"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-note">{note}</div></div>',
         unsafe_allow_html=True,
     )
+
+
+_PROBLEM_STATUS_SEVERITY = {"Убыточный": "critical", "Низкая маржа": "warn"}
+
+
+def render_problem_products_panel(
+    financial_products: pd.DataFrame,
+    alerts: pd.DataFrame,
+    max_items: int = 5,
+) -> None:
+    """Surfaces the worst-off products (loss-making / low-margin) plus operational
+    alerts (low stock, high ad spend, low buyout) as ranked status-pill rows,
+    instead of a raw dataframe -- the underlying risk_reason/status classification
+    already happens in calculations.py, this just makes it scannable at a glance.
+    """
+    problems = pd.DataFrame()
+    if financial_products is not None and not financial_products.empty:
+        problems = financial_products[financial_products["Статус"].isin(_PROBLEM_STATUS_SEVERITY)].copy()
+        problems = problems.sort_values("Расчётная прибыль").head(max_items)
+
+    if problems.empty and (alerts is None or alerts.empty):
+        st.success("Критичных сигналов за выбранный период нет.")
+        return
+
+    for _, row in problems.iterrows():
+        severity = _PROBLEM_STATUS_SEVERITY.get(row["Статус"], "warn")
+        name = escape(str(row.get("Товар") or row.get("Артикул продавца") or row.get("Артикул WB")))
+        profit = money(row["Расчётная прибыль"])
+        reason = escape(str(row.get("Основная причина") or ""))
+        action = escape(str(row.get("Рекомендация") or ""))
+        st.markdown(
+            f'<div class="problem-row">'
+            f'<span class="status-pill {severity}">{escape(row["Статус"])}</span> '
+            f'<strong>{name}</strong> · {profit}'
+            f'<div class="problem-note">{reason}. {action}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    if alerts is not None and not alerts.empty:
+        with st.expander(f"Ещё операционные сигналы ({len(alerts)})", expanded=problems.empty):
+            st.dataframe(alerts, hide_index=True, use_container_width=True)
 
 
 def _parse_local_datetime(value: object) -> datetime | None:
