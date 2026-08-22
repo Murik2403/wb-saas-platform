@@ -1,6 +1,20 @@
 networks:
   wbsaas_net:
     name: ${WB_SAAS_DOCKER_NETWORK:-wbsaas_net}
+    # IPv6 alongside the default IPv4 config (not instead of it) -- added so
+    # containers have a working route to services blocked/degraded over
+    # IPv4 for this host's network (confirmed live: api.telegram.org, see
+    # gateway/telegram_bot.py). ULA range, NAT66'd out through the host's
+    # own IPv6 the same way container IPv4 is already NAT'd -- requires
+    # "ip6tables": true in the Docker daemon's /etc/docker/daemon.json
+    # (a daemon restart, not just `docker compose up`, is what actually
+    # enables that; this block alone only takes effect on containers,
+    # existing ones must be recreated since a live network's IPAM can't be
+    # changed in place).
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:dead:beef::/64
 
 volumes:
   traefik_letsencrypt:

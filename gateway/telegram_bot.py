@@ -17,29 +17,20 @@ so the gateway container doesn't need Telegram set up to start.
 from __future__ import annotations
 
 import logging
-import socket
 import time
 
 import requests
 
 import config
 
-# The gateway container has no IPv6 route (Docker's default bridge network
-# is IPv4-only unless explicitly configured), but api.telegram.org resolves
-# to both an A and an AAAA record. getaddrinfo() (and therefore requests/
-# urllib3, which don't expose a "force IPv4" option) picks the AAAA record
-# first on this host, so every call failed immediately with "Network is
-# unreachable" instead of falling back to IPv4. Filtering AAAA out at the
-# source is the standard workaround -- confirmed live on the production
-# host, see the container-vs-host curl comparison in the deploy notes.
-_original_getaddrinfo = socket.getaddrinfo
-
-
-def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    return _original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
-
-
-socket.getaddrinfo = _ipv4_only_getaddrinfo
+# Note on connectivity: this host's network path to api.telegram.org over
+# plain IPv4 was observed to be unreliable (confirmed live: connect()
+# timeouts straight from the bare host, not just this container) --
+# apparently intermittent, not a hard block. wbsaas_net is dual-stack
+# (see docker-compose.yml) specifically so getaddrinfo()'s default
+# ordering (IPv6 first) gives this process a second path to fall back on;
+# don't force either family here, since forcing IPv4 removes exactly the
+# fallback that makes this resilient to that intermittency.
 
 logger = logging.getLogger("wb_saas_gateway.telegram_bot")
 
