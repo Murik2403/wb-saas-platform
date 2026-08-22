@@ -28,8 +28,13 @@ import config
 import mailer
 from billing_routes import router as billing_router
 from logic import accounts, db as control_db, password_reset
+from rate_limiter import RateLimiter
+from telegram_notifier import send_telegram_alert
 
 logger = logging.getLogger("wb_saas_gateway")
+
+# Limits auth POST routes to 10 requests per 60 seconds per client IP
+auth_rate_limiter = RateLimiter(requests_per_window=10, window_seconds=60)
 
 app = FastAPI(title="MARKETSHELPER Gateway")
 app.include_router(billing_router)
@@ -71,9 +76,23 @@ def _clear_session_cookie(response: Response) -> None:
 
 
 @app.on_event("startup")
-def _startup() -> None:
+async def _startup() -> None:
     with control_db.connect() as conn:
         control_db.init_db(conn)
+
+    # Background task to periodically check and stop idle tenant containers
+    import asyncio
+    async def _idle_check_loop():
+        import provisioning
+        while True:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, provisioning.stop_idle_tenants)
+            except Exception as exc:
+                logger.error("Error in background idle stop check: %s", exc)
+
+    asyncio.create_task(_idle_check_loop())
 
 
 # --------------------------------------------------------------------------
@@ -150,6 +169,11 @@ def register_submit(
     # rather than a plain bool Form field (which would 422 on omission).
     pdn_consent: str | None = Form(None),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    if not auth_rate_limiter.is_allowed(f"register:{client_ip}"):
+        return templates.TemplateResponse(
+            request, "register.html", {"error": "Слишком много попыток. Попробуйте позже.", "email": email}, status_code=429
+        )
     with control_db.connect() as conn:
         try:
             account_id = accounts.create_account(conn, email, password, pdn_consent=bool(pdn_consent))
@@ -185,6 +209,14 @@ def login_form(request: Request, next: str = "", reset: str = ""):
 
 @app.post("/login")
 def login_submit(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form("")):
+    client_ip = request.client.host if request.client else "unknown"
+    if not auth_rate_limiter.is_allowed(f"login:{client_ip}"):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Слишком много попыток входа. Пожалуйста, подождите минуту.", "email": email, "next": next},
+            status_code=429,
+        )
     with control_db.connect() as conn:
         account = accounts.authenticate_account(conn, email, password)
         if account is None:
@@ -222,6 +254,14 @@ def forgot_password_form(request: Request):
 
 @app.post("/forgot-password")
 def forgot_password_submit(request: Request, background_tasks: BackgroundTasks, email: str = Form(...)):
+    client_ip = request.client.host if request.client else "unknown"
+    if not auth_rate_limiter.is_allowed(f"forgot:{client_ip}"):
+        return templates.TemplateResponse(
+            request,
+            "forgot_password.html",
+            {"error": "Слишком много запросов на сброс пароля. Попробуйте позже."},
+            status_code=429,
+        )
     # Always show the exact same confirmation regardless of whether the
     # email is registered -- see logic/password_reset.py's module docstring
     # for why. The only difference between "known" and "unknown" email is
@@ -302,6 +342,83 @@ def _redirect_for_account(account) -> RedirectResponse:
 
 
 # --------------------------------------------------------------------------
+# Admin Dashboard
+# --------------------------------------------------------------------------
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_dashboard(request: Request, msg: str = "", err: str = ""):
+    account = _current_account(request)
+    if account is None or not accounts.is_admin_account(account):
+        return RedirectResponse("/login", status_code=303)
+
+    with control_db.connect() as conn:
+        tenants = accounts.list_all_tenants_overview(conn)
+
+    return templates.TemplateResponse(
+        request,
+        "admin_dashboard.html",
+        {
+            "tenants": tenants,
+            "parent_domain": config.PARENT_DOMAIN,
+            "message": msg,
+            "error": err,
+        },
+    )
+
+
+@app.post("/admin/tenant/{slug}/action")
+def admin_tenant_action(request: Request, slug: str, action: str = Form(...)):
+    account = _current_account(request)
+    if account is None or not accounts.is_admin_account(account):
+        return RedirectResponse("/login", status_code=303)
+
+    import provisioning
+    msg = ""
+    err = ""
+
+    if action == "wake":
+        ok = provisioning.wake_tenant(slug)
+        if ok:
+            msg = f"Контейнер {slug} успешно запущен."
+        else:
+            err = f"Не удалось запустить контейнер {slug}."
+    elif action == "stop":
+        provisioning.stop_tenant(slug)
+        msg = f"Контейнер {slug} остановлен."
+
+    from urllib.parse import urlencode
+    query = urlencode({k: v for k, v in [("msg", msg), ("err", err)] if v})
+    return RedirectResponse(f"/admin?{query}" if query else "/admin", status_code=303)
+
+
+@app.post("/admin/account/{account_id}/extend")
+def admin_account_extend(request: Request, account_id: int, days: int = Form(30)):
+    account = _current_account(request)
+    if account is None or not accounts.is_admin_account(account):
+        return RedirectResponse("/login", status_code=303)
+
+    with control_db.connect() as conn:
+        acc = accounts.get_account_by_id(conn, account_id)
+        if acc is not None:
+            from datetime import datetime, timedelta, timezone
+            current_end_str = acc["current_period_end"]
+            try:
+                current_dt = datetime.fromisoformat(current_end_str) if current_end_str else datetime.now(timezone.utc)
+            except Exception:
+                current_dt = datetime.now(timezone.utc)
+            if current_dt < datetime.now(timezone.utc):
+                current_dt = datetime.now(timezone.utc)
+
+            new_end = (current_dt + timedelta(days=days)).isoformat(timespec="seconds")
+            conn.execute(
+                "UPDATE accounts SET current_period_end=?, status='active', past_due_since='', updated_at=? WHERE id=?",
+                (new_end, datetime.now(timezone.utc).isoformat(timespec="seconds"), account_id),
+            )
+
+    return RedirectResponse("/admin?msg=" + urlencode({"m": f"Подписка продлена на {days} дней."})[2:], status_code=303)
+
+
+# --------------------------------------------------------------------------
 # Traefik ForwardAuth: gates every request to *.{TENANT_SUBDOMAIN_PREFIX}.{PARENT_DOMAIN}
 # --------------------------------------------------------------------------
 
@@ -325,10 +442,20 @@ def auth_verify(request: Request):
 
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_for_account(conn, account["id"])
-    if tenant is None or tenant["slug"] != slug or tenant["status"] != "running":
-        # Logged in, but not as the owner of THIS subdomain -- never let the
-        # session for tenant A grant access to tenant B's container.
-        return _redirect_to_login(login_url, forwarded_proto, forwarded_host, forwarded_uri)
+        if tenant is None or tenant["slug"] != slug:
+            return _redirect_to_login(login_url, forwarded_proto, forwarded_host, forwarded_uri)
+
+        # If tenant is stopped (e.g. idle auto-sleep), attempt on-demand auto-wake
+        if tenant["status"] == "stopped":
+            import provisioning
+            if not provisioning.wake_tenant(slug):
+                return RedirectResponse(f"{config.base_url()}/provisioning", status_code=302)
+            tenant = accounts.get_tenant_for_account(conn, account["id"])
+
+        if tenant is None or tenant["status"] != "running":
+            return _redirect_to_login(login_url, forwarded_proto, forwarded_host, forwarded_uri)
+
+        accounts.touch_tenant_activity(conn, tenant["id"])
 
     return Response(status_code=200)
 

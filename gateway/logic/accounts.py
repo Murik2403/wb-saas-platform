@@ -171,6 +171,39 @@ def account_has_access(account: sqlite3.Row | dict[str, Any] | None) -> bool:
     return str(account["status"]) in ACCESS_ALLOWED_STATUSES
 
 
+def is_admin_account(account: sqlite3.Row | dict[str, Any] | None) -> bool:
+    if account is None:
+        return False
+    import config
+    email = str(account.get("email", "")).strip().lower()
+    return email in config.ADMIN_EMAILS if config.ADMIN_EMAILS else False
+
+
+def list_all_tenants_overview(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Returns detailed overview of all tenants and associated account/billing data."""
+    rows = conn.execute(
+        """
+        SELECT
+            t.id as tenant_id,
+            t.slug,
+            t.container_name,
+            t.status as tenant_status,
+            t.note as tenant_note,
+            t.last_active_at,
+            t.created_at as tenant_created_at,
+            a.id as account_id,
+            a.email,
+            a.status as account_status,
+            a.current_period_end,
+            a.past_due_since
+        FROM tenant_instances t
+        JOIN accounts a ON t.account_id = a.id
+        ORDER BY t.created_at DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 # --------------------------------------------------------------------------
 # Sessions
 # --------------------------------------------------------------------------
@@ -248,6 +281,28 @@ def set_tenant_status(conn: sqlite3.Connection, tenant_id: int, status: str, not
     )
 
 
+def touch_tenant_activity(conn: sqlite3.Connection, tenant_id: int) -> None:
+    """Updates the last_active_at timestamp for a tenant to prevent auto-sleeping."""
+    now = _now_iso()
+    conn.execute(
+        "UPDATE tenant_instances SET last_active_at=?, updated_at=? WHERE id=?",
+        (now, now, int(tenant_id)),
+    )
+
+
+def get_idle_tenants(conn: sqlite3.Connection, idle_minutes: int) -> list[sqlite3.Row]:
+    """Returns running tenant instances that have been inactive longer than idle_minutes."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=idle_minutes)).isoformat(timespec="seconds")
+    return conn.execute(
+        """
+        SELECT * FROM tenant_instances
+        WHERE status = 'running'
+          AND (last_active_at = '' OR last_active_at < ?)
+        """,
+        (cutoff,),
+    ).fetchall()
+
+
 def mark_tenant_provisioned(conn: sqlite3.Connection, tenant_id: int, account_id: int) -> None:
     """Called once the tenant's container is confirmed healthy.
 
@@ -259,7 +314,11 @@ def mark_tenant_provisioned(conn: sqlite3.Connection, tenant_id: int, account_id
     this module) and keeps "is the container running" distinct from "does
     this account get to use it".
     """
-    set_tenant_status(conn, tenant_id, "running")
+    now = _now_iso()
+    conn.execute(
+        "UPDATE tenant_instances SET status=?, last_active_at=?, updated_at=? WHERE id=?",
+        ("running", now, now, int(tenant_id)),
+    )
 
 
 def get_tenant_for_account(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | None:
