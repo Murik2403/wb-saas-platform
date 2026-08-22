@@ -13,15 +13,19 @@ Usage (from tenant-app/, with its venv/deps active):
 """
 from __future__ import annotations
 
-import json
 import random
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from db.core import connect, ensure_financial_schema, init_db
 
 random.seed(42)  # deterministic output -- redeploying the demo shouldn't reshuffle it
 
-TODAY = date.today()
+# The dashboard's "Сегодня" page buckets rows by Moscow-time date (see
+# app.py's today_msk); seeding with the container's own (usually UTC) date
+# can land "today" a day off from what the UI asks for, making the Сегодня
+# tab show all zeros right after a redeploy.
+TODAY = datetime.now(ZoneInfo("Europe/Moscow")).date()
 DAYS_OF_HISTORY = 60
 COMMISSION_RATE = 0.17
 LOGISTICS_FEE = 55.0
