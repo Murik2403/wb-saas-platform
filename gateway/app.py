@@ -28,6 +28,7 @@ import config
 import mailer
 from billing_routes import router as billing_router
 from logic import accounts, csrf, db as control_db, password_reset
+from rate_limiter import RateLimiter
 
 logger = logging.getLogger("wb_saas_gateway")
 
@@ -39,6 +40,27 @@ app.mount(
     name="static",
 )
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+
+# Brute-force protection on /login, /register, /forgot-password. In-memory
+# (see rate_limiter.py) rather than Redis -- a single gateway process is
+# the whole deployment, and a restart resetting counters is an acceptable
+# trade-off for not adding infrastructure.
+auth_rate_limiter = RateLimiter(requests_per_window=10, window_seconds=60)
+
+
+def _client_ip(request: Request) -> str:
+    """The gateway only ever receives traffic through Traefik (see
+    docker-compose.yml -- there's no ports mapping that would let a request
+    reach it directly), so request.client.host is always Traefik's own
+    container IP, never the real visitor's -- using it directly here would
+    rate-limit every visitor as a single shared bucket instead of per-IP.
+    Traefik already forwards the real address (auth_verify() below relies
+    on its other X-Forwarded-* headers the same way), so read that instead,
+    falling back to request.client for the local-dev-without-a-proxy case."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def _current_account(request: Request):
@@ -154,6 +176,12 @@ def register_submit(
     pdn_consent: str | None = Form(None),
     csrf_token: str = Form(""),
 ):
+    if not auth_rate_limiter.is_allowed(f"register:{_client_ip(request)}"):
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"error": "Слишком много попыток. Попробуйте позже.", "email": email, "csrf_token": csrf.get_or_create_token(request)},
+            status_code=429,
+        )
     if not csrf.verify(request, csrf_token):
         return templates.TemplateResponse(
             request, "register.html",
@@ -206,6 +234,12 @@ def login_submit(
     next: str = Form(""),
     csrf_token: str = Form(""),
 ):
+    if not auth_rate_limiter.is_allowed(f"login:{_client_ip(request)}"):
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"error": "Слишком много попыток входа. Пожалуйста, подождите минуту.", "email": email, "next": next, "csrf_token": csrf.get_or_create_token(request)},
+            status_code=429,
+        )
     if not csrf.verify(request, csrf_token):
         return templates.TemplateResponse(
             request, "login.html",
@@ -249,6 +283,12 @@ def forgot_password_form(request: Request):
 
 @app.post("/forgot-password")
 def forgot_password_submit(request: Request, background_tasks: BackgroundTasks, email: str = Form(...)):
+    if not auth_rate_limiter.is_allowed(f"forgot:{_client_ip(request)}"):
+        return templates.TemplateResponse(
+            request, "forgot_password.html",
+            {"error": "Слишком много запросов на сброс пароля. Попробуйте позже."},
+            status_code=429,
+        )
     # Always show the exact same confirmation regardless of whether the
     # email is registered -- see logic/password_reset.py's module docstring
     # for why. The only difference between "known" and "unknown" email is
