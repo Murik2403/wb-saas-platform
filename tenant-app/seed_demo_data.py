@@ -80,6 +80,9 @@ def main() -> None:
         for table in (
             "orders", "sales", "stocks", "ads_daily", "costs", "products_catalog",
             "financial_report", "finished_goods_cost_layers",
+            "production_settings", "material_inventory_color", "production_capacity",
+            "product_pipeline", "execution_tasks",
+            "procurement_payments", "procurement_items", "procurement_orders", "suppliers",
         ):
             conn.execute(f"DELETE FROM {table}")
 
@@ -110,6 +113,107 @@ def main() -> None:
                 (nm_id, article, name, f"demo-seed-{nm_id}", now_iso, stock_qty, stock_qty, cost,
                  stock_qty * cost, now_iso, now_iso),
             )
+
+        # ---- Production: mark 3 products as own manufacturing, seed their
+        # shared material's stock, a produced/in-transit pipeline snapshot,
+        # and one in-progress shift -- so the Сегодня page's "Смена" and
+        # "Готово / в пути" widgets show something instead of "0/0". Current
+        # stock already covers each product's target_days, so this
+        # deliberately does not trigger any new "Требует внимания" signal.
+        MATERIAL_NAME = "ПВХ-кромка 2мм белая"
+        material_key = MATERIAL_NAME.strip().casefold()
+        own_production = {100001: 0.4, 100002: 0.15, 100003: 1.2}
+        for nm_id, rate in own_production.items():
+            article = next(p[1] for p in PRODUCTS if p[0] == nm_id)
+            conn.execute(
+                "INSERT INTO production_settings (nm_id, supplier_article, enabled, material_per_unit, "
+                "target_days, min_batch, pack_size, material_name) VALUES (?, ?, 1, ?, 21, 10, 4, ?)",
+                (nm_id, article, rate, MATERIAL_NAME),
+            )
+        conn.execute(
+            "INSERT INTO material_inventory_color (material_key, material_name, balance_known, full_rolls, "
+            "partial_meters, roll_length, unit, tracking_mode, updated_at) VALUES (?, ?, 1, 12, 8.5, 100, 'м', 'packaged', ?)",
+            (material_key, MATERIAL_NAME, now_iso),
+        )
+        conn.execute(
+            "INSERT INTO production_capacity (id, capacity_known, pieces_per_day, workdays, horizon_days, "
+            "fulfillment_lead_days, emergency_cover_days, expedited_fbo_lead_days) "
+            "VALUES (1, 1, 120, '0,1,2,3,4,5', 14, 5, 10, 3)"
+        )
+        pipeline = {
+            100001: (45, 120, 5),  # ready_units, inbound_units, inbound in N days
+            100002: (80, 0, 0),
+            100003: (15, 30, 7),
+            100005: (0, 50, 4),
+            100010: (0, 20, 6),
+        }
+        for nm_id, (ready, inbound, lead) in pipeline.items():
+            article = next(p[1] for p in PRODUCTS if p[0] == nm_id)
+            inbound_date = (TODAY + timedelta(days=lead)).isoformat() if inbound else ""
+            conn.execute(
+                "INSERT INTO product_pipeline (nm_id, supplier_article, local_known, ready_units, "
+                "inbound_known, inbound_units, inbound_date, updated_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
+                (nm_id, article, ready, 1 if inbound else 0, inbound, inbound_date, now_iso),
+            )
+        conn.execute(
+            "INSERT INTO execution_tasks (task_key, task_type, task_date, stage, nm_id, supplier_article, "
+            "product_name, planned_units, actual_units, status, updated_at) "
+            "VALUES ('demo-shift-1', 'production', ?, 'Изготовление', 100001, 'SPICE-ORG-01', "
+            "'Органайзер для специй настенный', 40, 25, 'В работе', ?)",
+            (now_iso, now_iso),
+        )
+
+        # ---- Procurement: one settled historical order plus one active,
+        # already-fully-paid order in transit -- shows a real-looking supply
+        # pipeline without tripping the overdue/payment-due alerts (which
+        # only fire when money or a delivery date is actually late).
+        conn.execute(
+            "INSERT INTO suppliers (name, contact_person, phone, country, default_currency, "
+            "payment_terms_days, lead_time_days, active, created_at, updated_at) "
+            "VALUES ('ООО Кромка+', 'Ирина', '+7 900 000-00-00', 'Россия', 'RUB', 7, 10, 1, ?, ?)",
+            (now_iso, now_iso),
+        )
+        supplier_id = conn.execute("SELECT id FROM suppliers WHERE name='ООО Кромка+'").fetchone()[0]
+
+        conn.execute(
+            "INSERT INTO procurement_orders (order_number, procurement_type, supplier_name, supplier_id, "
+            "status, order_date, expected_date, received_date, currency, exchange_rate, created_at, updated_at) "
+            "VALUES ('DEMO-001', 'Сырьё', 'ООО Кромка+', ?, 'Получено', ?, ?, ?, 'RUB', 1, ?, ?)",
+            (supplier_id, (TODAY - timedelta(days=30)).isoformat(), (TODAY - timedelta(days=23)).isoformat(),
+             (TODAY - timedelta(days=22)).isoformat(), now_iso, now_iso),
+        )
+        order1_id = conn.execute("SELECT id FROM procurement_orders WHERE order_number='DEMO-001'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO procurement_items (order_id, item_type, material_key, material_name, quantity, unit, "
+            "roll_length, supplier_unit_price, exchange_rate, unit_price, received_quantity, posted_quantity, "
+            "created_at, updated_at) VALUES (?, 'material', ?, ?, 400, 'м', 100, 42, 1, 42, 400, 400, ?, ?)",
+            (order1_id, material_key, MATERIAL_NAME, now_iso, now_iso),
+        )
+        conn.execute(
+            "INSERT INTO procurement_payments (order_id, payment_date, amount, method, status, created_at) "
+            "VALUES (?, ?, 16800, 'Банк', 'applied', ?)",
+            (order1_id, (TODAY - timedelta(days=25)).isoformat(), now_iso),
+        )
+
+        conn.execute(
+            "INSERT INTO procurement_orders (order_number, procurement_type, supplier_name, supplier_id, "
+            "status, order_date, payment_due_date, expected_date, currency, exchange_rate, created_at, updated_at) "
+            "VALUES ('DEMO-002', 'Сырьё', 'ООО Кромка+', ?, 'В пути', ?, ?, ?, 'RUB', 1, ?, ?)",
+            (supplier_id, (TODAY - timedelta(days=3)).isoformat(), (TODAY + timedelta(days=2)).isoformat(),
+             (TODAY + timedelta(days=5)).isoformat(), now_iso, now_iso),
+        )
+        order2_id = conn.execute("SELECT id FROM procurement_orders WHERE order_number='DEMO-002'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO procurement_items (order_id, item_type, material_key, material_name, quantity, unit, "
+            "roll_length, supplier_unit_price, exchange_rate, unit_price, created_at, updated_at) "
+            "VALUES (?, 'material', ?, ?, 500, 'м', 100, 45, 1, 45, ?, ?)",
+            (order2_id, material_key, MATERIAL_NAME, now_iso, now_iso),
+        )
+        conn.execute(
+            "INSERT INTO procurement_payments (order_id, payment_date, amount, method, status, created_at) "
+            "VALUES (?, ?, 22500, 'Банк', 'applied', ?)",
+            (order2_id, (TODAY - timedelta(days=2)).isoformat(), now_iso),
+        )
 
         rrd_id = 1
         campaign_id = 900001
