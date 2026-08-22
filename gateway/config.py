@@ -88,6 +88,19 @@ SMTP_PASSWORD = os.environ.get("WB_SAAS_SMTP_PASSWORD", "")
 SMTP_USE_STARTTLS = os.environ.get("WB_SAAS_SMTP_USE_STARTTLS", "1") == "1"
 SMTP_FROM_EMAIL = os.environ.get("WB_SAAS_SMTP_FROM_EMAIL", "no-reply@" + PARENT_DOMAIN)
 
+# --------------------------------------------------------------------------
+# Telegram support relay (see telegram_bot.py)
+# --------------------------------------------------------------------------
+
+# From @BotFather. Empty disables the relay entirely -- telegram_bot.py's
+# polling loop exits immediately instead of erroring, same pattern as an
+# unconfigured SMTP_HOST in mailer.py.
+TELEGRAM_BOT_TOKEN = os.environ.get("WB_SAAS_TELEGRAM_BOT_TOKEN", "")
+
+# The operator's own numeric Telegram chat id (from @userinfobot) -- every
+# message a customer sends the bot is relayed here so a human sees it.
+TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
+
 
 def tenant_host(slug: str) -> str:
     return f"{slug}.{TENANT_SUBDOMAIN_PREFIX}.{PARENT_DOMAIN}"

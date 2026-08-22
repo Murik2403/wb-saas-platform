@@ -85,6 +85,11 @@ services:
       # os.environ.get() treats as "set" and returns as-is, silently
       # overriding that smarter default with a blank From address.
       - WB_SAAS_SMTP_FROM_EMAIL=${WB_SAAS_SMTP_FROM_EMAIL:-no-reply@${WB_SAAS_PARENT_DOMAIN}}
+      # Telegram support relay (telegram_bot.py) -- see docker-entrypoint.sh.
+      # Empty token disables the relay; gateway starts and runs normally
+      # either way.
+      - WB_SAAS_TELEGRAM_BOT_TOKEN=${WB_SAAS_TELEGRAM_BOT_TOKEN:-}
+      - WB_SAAS_TELEGRAM_OWNER_CHAT_ID=${WB_SAAS_TELEGRAM_OWNER_CHAT_ID:-}
     labels:
       - traefik.enable=true
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)

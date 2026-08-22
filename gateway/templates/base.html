@@ -395,6 +395,14 @@
   .floating-cta.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
   .floating-cta:hover { background: var(--accent-strong); }
 
+  .floating-tg { position: fixed; bottom: 22px; left: 22px; z-index: 40;
+    width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--accent-strong);
+    font-size: 1.4rem; text-decoration: none; box-shadow: 0 14px 34px rgba(0,0,0,.4);
+    transition: transform .15s ease, border-color .15s ease; }
+  .floating-tg:hover { transform: scale(1.06); border-color: var(--accent); }
+  @media (max-width: 480px) { .floating-tg { left: 14px; bottom: 14px; width: 46px; height: 46px; font-size: 1.2rem; } }
+
   @media (max-width: 760px) {
     .hero { grid-template-columns: 1fr; padding-top: 10px; }
     .feature-row { grid-template-columns: 1fr; }
