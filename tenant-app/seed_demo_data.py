@@ -77,23 +77,38 @@ def main() -> None:
     ensure_financial_schema()
 
     with connect() as conn:
-        for table in ("orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "financial_report"):
+        for table in (
+            "orders", "sales", "stocks", "ads_daily", "costs", "products_catalog",
+            "financial_report", "finished_goods_cost_layers",
+        ):
             conn.execute(f"DELETE FROM {table}")
 
-        for nm_id, article, name, subject, price, cost, _, _, _, _ in PRODUCTS:
+        now_iso = TODAY.isoformat()
+        for nm_id, article, name, subject, price, cost, _, _, _, stock_qty in PRODUCTS:
             conn.execute(
                 "INSERT INTO products_catalog (nm_id, supplier_article, product_name, brand, subject_name, updated_at, raw_json) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (nm_id, article, name, BRAND, subject, TODAY.isoformat(), "{}"),
+                (nm_id, article, name, BRAND, subject, now_iso, "{}"),
             )
             conn.execute(
                 "INSERT INTO costs (nm_id, supplier_article, cost_per_wb_unit, updated_at) VALUES (?, ?, ?, ?)",
-                (nm_id, article, cost, TODAY.isoformat()),
+                (nm_id, article, cost, now_iso),
             )
             conn.execute(
                 "INSERT INTO stocks (snapshot_at, nm_id, chrt_id, warehouse_id, warehouse_name, region_name, quantity, raw_json) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (TODAY.isoformat(), nm_id, nm_id, 1, WAREHOUSE, REGION, PRODUCTS[[p[0] for p in PRODUCTS].index(nm_id)][9], "{}"),
+                (now_iso, nm_id, nm_id, 1, WAREHOUSE, REGION, stock_qty, "{}"),
+            )
+            # The WB-warehouse FIFO reconciliation (see db/wb_fifo_reconciliation.py)
+            # flags every article as a discrepancy if physical stock (above) has no
+            # matching FIFO cost layer at all -- seed one so the demo's Сегодня
+            # page doesn't open on a false "расхождения по 13 артикулам" alert.
+            conn.execute(
+                "INSERT INTO finished_goods_cost_layers (nm_id, supplier_article, product_name, source_type, "
+                "source_ref, source_date, original_units, wb_units, unit_cost_rub, original_amount_rub, "
+                "status, created_at, updated_at) VALUES (?, ?, ?, 'opening', ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+                (nm_id, article, name, f"demo-seed-{nm_id}", now_iso, stock_qty, stock_qty, cost,
+                 stock_qty * cost, now_iso, now_iso),
             )
 
         rrd_id = 1
