@@ -8,6 +8,7 @@
 {% if password_was_reset %}<div class="info">Пароль изменён. Войдите с новым паролем.</div>{% endif %}
 <form method="post" action="/login">
   <input type="hidden" name="next" value="{{ next or '' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label for="email">Email</label>
   <input type="email" id="email" name="email" value="{{ email or '' }}" required autofocus>
   <label for="password">Пароль</label>

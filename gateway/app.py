@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 import config
 import mailer
 from billing_routes import router as billing_router
-from logic import accounts, db as control_db, password_reset
+from logic import accounts, csrf, db as control_db, password_reset
 
 logger = logging.getLogger("wb_saas_gateway")
 
@@ -136,7 +136,10 @@ def register_form(request: Request):
     account = _current_account(request)
     if account is not None:
         return _redirect_for_account(account)
-    return templates.TemplateResponse(request, "register.html")
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(request, "register.html", {"csrf_token": csrf_token})
+    csrf.set_cookie(response, csrf_token)
+    return response
 
 
 @app.post("/register")
@@ -149,7 +152,14 @@ def register_submit(
     # unchecked box means this arrives as None, not "false", hence Optional
     # rather than a plain bool Form field (which would 422 on omission).
     pdn_consent: str | None = Form(None),
+    csrf_token: str = Form(""),
 ):
+    if not csrf.verify(request, csrf_token):
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"error": "Форма устарела, попробуйте ещё раз.", "email": email, "csrf_token": csrf.get_or_create_token(request)},
+            status_code=400,
+        )
     with control_db.connect() as conn:
         try:
             account_id = accounts.create_account(conn, email, password, pdn_consent=bool(pdn_consent))
@@ -157,7 +167,9 @@ def register_submit(
             tenant_id = accounts.create_tenant_instance(conn, account_id, slug)
         except ValueError as exc:
             return templates.TemplateResponse(
-                request, "register.html", {"error": str(exc), "email": email}, status_code=400
+                request, "register.html",
+                {"error": str(exc), "email": email, "csrf_token": csrf.get_or_create_token(request)},
+                status_code=400,
             )
         token = accounts.create_session(conn, account_id)
 
@@ -178,20 +190,35 @@ def login_form(request: Request, next: str = "", reset: str = ""):
     account = _current_account(request)
     if account is not None:
         return _redirect_for_account(account)
-    return templates.TemplateResponse(
-        request, "login.html", {"next": next, "password_was_reset": bool(reset)}
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(
+        request, "login.html", {"next": next, "password_was_reset": bool(reset), "csrf_token": csrf_token}
     )
+    csrf.set_cookie(response, csrf_token)
+    return response
 
 
 @app.post("/login")
-def login_submit(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form("")):
+def login_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+):
+    if not csrf.verify(request, csrf_token):
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"error": "Форма устарела, попробуйте ещё раз.", "email": email, "next": next, "csrf_token": csrf.get_or_create_token(request)},
+            status_code=400,
+        )
     with control_db.connect() as conn:
         account = accounts.authenticate_account(conn, email, password)
         if account is None:
             return templates.TemplateResponse(
                 request,
                 "login.html",
-                {"error": "Неверный email или пароль.", "email": email, "next": next},
+                {"error": "Неверный email или пароль.", "email": email, "next": next, "csrf_token": csrf.get_or_create_token(request)},
                 status_code=400,
             )
         token = accounts.create_session(conn, account["id"])

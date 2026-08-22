@@ -13,13 +13,13 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import config
 import yookassa_client
-from logic import accounts, billing, db as control_db
+from logic import accounts, billing, csrf, db as control_db
 
 logger = logging.getLogger("wb_saas_gateway.billing")
 
@@ -48,22 +48,28 @@ def billing_status(request: Request):
     elif account["status"] == "past_due":
         days_left = billing.days_left_in_grace_period(account)
 
-    return templates.TemplateResponse(
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(
         request,
         "billing.html",
         {
             "account": account,
             "days_left": days_left,
             "price_rub": config.SUBSCRIPTION_PRICE_RUB,
+            "csrf_token": csrf_token,
         },
     )
+    csrf.set_cookie(response, csrf_token)
+    return response
 
 
 @router.post("/billing/checkout")
-def billing_checkout(request: Request):
+def billing_checkout(request: Request, csrf_token: str = Form("")):
     account = _current_account(request)
     if account is None:
         return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return RedirectResponse("/billing", status_code=303)
 
     return_url = f"{'https' if config.COOKIE_SECURE else 'http'}://{config.PARENT_DOMAIN}/billing/return"
     try:
@@ -126,14 +132,19 @@ def billing_cancel_confirm(request: Request):
         return RedirectResponse("/login", status_code=303)
     if account["status"] == "canceled":
         return RedirectResponse("/billing", status_code=303)
-    return templates.TemplateResponse(request, "billing_cancel.html", {"account": account})
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(request, "billing_cancel.html", {"account": account, "csrf_token": csrf_token})
+    csrf.set_cookie(response, csrf_token)
+    return response
 
 
 @router.post("/billing/cancel")
-def billing_cancel_submit(request: Request, background_tasks: BackgroundTasks):
+def billing_cancel_submit(request: Request, background_tasks: BackgroundTasks, csrf_token: str = Form("")):
     account = _current_account(request)
     if account is None:
         return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return RedirectResponse("/billing", status_code=303)
     if account["status"] != "canceled":
         with control_db.connect() as conn:
             billing.cancel_account(conn, account["id"])

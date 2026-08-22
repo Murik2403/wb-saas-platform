@@ -10,6 +10,7 @@
 <p class="subtitle">Это действие нельзя отменить самостоятельно через сайт — напишите нам, если передумаете.</p>
 
 <form method="post" action="/billing/cancel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button type="submit" style="background:#e05656;color:#fff;">Да, отменить подписку</button>
 </form>
 <div class="footer-link"><a href="/billing">Назад</a></div>

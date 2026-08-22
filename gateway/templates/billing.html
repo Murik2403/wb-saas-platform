@@ -17,6 +17,7 @@
 <p class="subtitle">{{ price_rub|int }} ₽ / {{ "30" }} дней. Оплата картой через ЮKassa — данные карты не передаются нам и не хранятся на наших серверах.</p>
 
 <form method="post" action="/billing/checkout">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button type="submit">
     {% if account.status == "active" %}Обновить способ оплаты{% else %}Оплатить{% endif %}
   </button>
