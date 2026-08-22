@@ -7,7 +7,7 @@ import streamlit as st
 
 from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
-from config import BILLING_URL, LOGOUT_URL, get_token, load_settings, save_settings
+from config import BILLING_URL, IS_DEMO, LOGOUT_URL, get_token, load_settings, save_settings
 from db import init_db, last_sync, refresh_auto_costs, table_count
 
 from pages import (
@@ -119,7 +119,13 @@ with st.sidebar:
     if new_ui_mode != settings.get("ui_mode"):
         settings["ui_mode"] = new_ui_mode
         save_settings(settings)
-    nav_options = NOVICE_NAV if new_ui_mode == "novice" else FULL_NAV
+    if IS_DEMO:
+        # Publicly reachable (no login, no ForwardAuth) -- keep it to the
+        # read-only headline pages only. No Настройки (token/cost editing),
+        # no Товары/Производство/Закупки/etc.
+        nav_options = ["Сегодня", "Обзор", "Финансы"]
+    else:
+        nav_options = NOVICE_NAV if new_ui_mode == "novice" else FULL_NAV
     page = st.radio("", nav_options, label_visibility="collapsed")
     st.divider()
     token_exists = bool(get_token())
@@ -156,6 +162,8 @@ with st.sidebar:
 if page not in {"Настройки", "Контроль"}:
     st.markdown('<div class="wb-title">Панель управления Wildberries</div>', unsafe_allow_html=True)
     st.markdown('<div class="wb-subtitle">Продажи, финансы, производство, реклама и остатки</div>', unsafe_allow_html=True)
+    if IS_DEMO:
+        st.info("Это демонстрационный кабинет с вымышленными товарами и цифрами — чтобы показать, как выглядит настоящий рабочий дашборд.")
 
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     if page == "Сегодня":

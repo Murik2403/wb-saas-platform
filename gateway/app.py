@@ -115,6 +115,7 @@ def home(request: Request):
             "period_days": config.BILLING_PERIOD_DAYS,
             "trial_days": config.TRIAL_DAYS,
             "current_year": datetime.now(timezone.utc).year,
+            "demo_url": config.tenant_url("demo"),
         },
     )
 

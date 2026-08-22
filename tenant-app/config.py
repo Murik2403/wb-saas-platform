@@ -25,6 +25,13 @@ BILLING_URL = os.environ.get("WB_SAAS_BILLING_URL", "")
 # when run standalone -- nothing to log out of without a gateway.
 LOGOUT_URL = os.environ.get("WB_SAAS_LOGOUT_URL", "")
 
+# Set on the one public "demo" tenant (see ../scripts/provision_demo_tenant.py)
+# that the marketing site embeds for anonymous visitors. That tenant's
+# Traefik router intentionally has no ForwardAuth middleware, so anyone can
+# open it -- the dashboard itself must not expose anything writable
+# (token/cost editing) or any page beyond the read-only headline ones.
+IS_DEMO = os.environ.get("WB_SAAS_IS_DEMO", "0") == "1"
+
 DEFAULT_SETTINGS: dict[str, Any] = {
     "sync_interval_minutes": 30,
     "initial_history_days": 90,

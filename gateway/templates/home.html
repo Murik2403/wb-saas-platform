@@ -146,27 +146,18 @@
   <div class="section reveal">
     <div class="section-head">
       <div class="eyebrow">Как это выглядит</div>
-      <h2>Не мокап — реальный кабинет</h2>
-      <p>Скриншоты настоящего рабочего кабинета MARKETSHELPER — данные реального продавца (названия отдельных артикулов размыты).</p>
+      <h2>Живой кабинет — не мокап</h2>
+      <p>Настоящий дашборд MARKETSHELPER прямо здесь, на вымышленных товарах и цифрах — покрутите сами, без регистрации.</p>
     </div>
-    <div class="product-shots">
-      <div class="shot-card shot-card-real">
-        <img src="/static/images/shot-finance.png" alt="Финансовый результат в реальном кабинете MARKETSHELPER" loading="lazy">
-        <div class="shot-caption">Финансовый результат: выкупы, расходы WB, прибыль, себестоимость по партиям — сведено в одном месте</div>
+    <div class="device-frame">
+      <div class="device-frame-bar">
+        <span class="device-dot"></span><span class="device-dot"></span><span class="device-dot"></span>
+        <span class="device-url">{{ demo_url }}</span>
+        <span class="device-live">живой демо-кабинет</span>
       </div>
-      <div class="shot-card shot-card-real">
-        <img src="/static/images/shot-ranking.png" alt="Рейтинг товаров по прибыли в реальном кабинете MARKETSHELPER" loading="lazy">
-        <div class="shot-caption">Рейтинг товаров по прибыли — сразу видно лидеров и что тянет экономику вниз</div>
-      </div>
-      <div class="shot-card shot-card-real">
-        <img src="/static/images/shot-margin.png" alt="Маржа по каждому артикулу в реальном кабинете MARKETSHELPER" loading="lazy">
-        <div class="shot-caption">Маржа по каждому артикулу — сверена с общей прибылью по FIFO до копейки</div>
-      </div>
-      <div class="shot-card shot-card-real">
-        <img src="/static/images/shot-control.png" alt="Контроль качества данных в реальном кабинете MARKETSHELPER" loading="lazy">
-        <div class="shot-caption">Контроль качества данных — видно, что посчитано надёжно, а что требует внимания</div>
-      </div>
+      <iframe src="{{ demo_url }}" loading="lazy" title="Демо-кабинет MARKETSHELPER"></iframe>
     </div>
+    <p class="device-note">Данные вымышленные — товары и цифры не принадлежат реальному продавцу. В своём кабинете вы увидите собственные показатели WB.</p>
   </div>
 
   <div class="section reveal section-calc" id="calculator">
