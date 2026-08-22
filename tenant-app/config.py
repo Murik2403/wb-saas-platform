@@ -32,6 +32,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "default_period_days": 30,
     "currency": "RUB",
     "demo_mode": False,
+    # "novice" hides the advanced pages (Производство/Закупки/Реклама/Остатки/
+    # Контроль) so a first-time seller isn't dropped into the full instrument
+    # panel on day one; "expert" (default) is the full dashboard as before.
+    "ui_mode": "expert",
 }
 
 

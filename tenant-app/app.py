@@ -7,7 +7,7 @@ import streamlit as st
 
 from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
-from config import BILLING_URL, LOGOUT_URL, get_token, load_settings
+from config import BILLING_URL, LOGOUT_URL, get_token, load_settings, save_settings
 from db import init_db, last_sync, refresh_auto_costs, table_count
 
 from pages import (
@@ -27,6 +27,11 @@ PAGES = {
     "Остатки": stock,
     "Настройки": settings_page,
 }
+FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Настройки"]
+# Novice keeps only the headline pages plus Настройки (needed to connect the
+# WB token in the first place) -- everything production/procurement/ads-
+# related is expert-only complexity a first-time seller doesn't need yet.
+NOVICE_NAV = ["Сегодня", "Обзор", "Финансы", "Настройки"]
 
 st.set_page_config(page_title="MARKETSHELPER", page_icon="📊", layout="wide")
 init_db()
@@ -104,7 +109,18 @@ settings = load_settings()
 
 with st.sidebar:
     st.markdown('<div class="sidebar-brand">MARKETSHELPER</div>', unsafe_allow_html=True)
-    page = st.radio("", ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Настройки"], label_visibility="collapsed")
+    mode_choice = st.segmented_control(
+        "Режим",
+        ["Новичок", "Опытный"],
+        default=("Новичок" if settings.get("ui_mode") == "novice" else "Опытный"),
+        key="ui_mode_toggle",
+    )
+    new_ui_mode = "novice" if mode_choice == "Новичок" else "expert"
+    if new_ui_mode != settings.get("ui_mode"):
+        settings["ui_mode"] = new_ui_mode
+        save_settings(settings)
+    nav_options = NOVICE_NAV if new_ui_mode == "novice" else FULL_NAV
+    page = st.radio("", nav_options, label_visibility="collapsed")
     st.divider()
     token_exists = bool(get_token())
     if token_exists:
