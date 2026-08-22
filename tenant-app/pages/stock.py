@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from ui_helpers import (
@@ -82,6 +83,26 @@ def render(ctx: dict) -> None:
         if data.stocks.empty:
             st.info("Остатки отсутствуют или категория «Аналитика» не включена в токене.")
         else:
+            warehouse_totals = data.stocks.groupby("Склад", as_index=False)["Остаток"].sum().sort_values("Остаток", ascending=False)
+            if len(warehouse_totals) > 1:
+                donut_colors = ["#7c6cf6", "#9a8bff", "#3ecf8e", "#f2b84b", "#f2677a"]
+                fig = go.Figure(go.Pie(
+                    labels=warehouse_totals["Склад"], values=warehouse_totals["Остаток"],
+                    hole=0.65, sort=False, textinfo="none",
+                    marker=dict(colors=donut_colors * (len(warehouse_totals) // len(donut_colors) + 1)),
+                ))
+                fig.update_layout(
+                    height=280,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    legend=dict(font=dict(color="#eef0f7")),
+                    annotations=[dict(
+                        text=num(float(warehouse_totals["Остаток"].sum())),
+                        x=0.5, y=0.5, font=dict(size=22, color="#eef0f7"), showarrow=False,
+                    )],
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             st.dataframe(data.stocks, hide_index=True, use_container_width=True)
 
     with stock_tabs[1]:

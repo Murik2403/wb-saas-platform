@@ -8,6 +8,7 @@ from html import escape
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from db import (
@@ -121,6 +122,30 @@ def kpi_card(label: str, value: str, note: str = "", hero: bool = False) -> None
         f'<div class="{css_class}"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-note">{note}</div></div>',
         unsafe_allow_html=True,
     )
+
+
+def kpi_card_with_sparkline(label: str, value: str, note: str, series: pd.Series, key: str, color: str = "#7c6cf6") -> None:
+    """Same as kpi_card, plus a tiny bar sparkline of the period's daily trend
+    directly beneath it -- the one element worth borrowing from the Trackify
+    CRM reference the user linked, adapted to our dark palette instead of
+    copying its light theme wholesale.
+    """
+    kpi_card(label, value, note)
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0) if series is not None else pd.Series(dtype=float)
+    if values.empty or values.abs().sum() == 0:
+        return
+    fig = go.Figure(go.Bar(x=list(range(len(values))), y=values.tolist(), marker_color=color, marker_line_width=0))
+    fig.update_layout(
+        height=36,
+        margin=dict(l=0, r=0, t=0, b=0),
+        showlegend=False,
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        bargap=0.25,
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=key)
 
 
 _PROBLEM_STATUS_SEVERITY = {"Убыточный": "critical", "Низкая маржа": "warn"}

@@ -14,7 +14,7 @@ import streamlit as st
 
 from ui_helpers import (
     money, num, pct,
-    infer_material_name, material_key, ceil_to_batch, kpi_card,
+    infer_material_name, material_key, ceil_to_batch, kpi_card, kpi_card_with_sparkline,
     render_problem_products_panel,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
@@ -39,11 +39,12 @@ def render(ctx: dict) -> None:
             "Расчётная, за период · точная цифра — в «Финансы»",
             hero=True,
         )
-    with cols[0]: kpi_card("Заказы", num(data.kpi["orders"]), money(data.kpi["order_amount"]))
-    with cols[1]: kpi_card("Выкупы", num(data.kpi["sales"]), f"Оперативный API · {pct(data.kpi['buyout'])}")
+    daily_trend = data.daily
+    with cols[0]: kpi_card_with_sparkline("Заказы", num(data.kpi["orders"]), money(data.kpi["order_amount"]), daily_trend.get("orders"), key="spark_orders")
+    with cols[1]: kpi_card_with_sparkline("Выкупы", num(data.kpi["sales"]), f"Оперативный API · {pct(data.kpi['buyout'])}", daily_trend.get("sales"), key="spark_sales")
     with cols[2]: kpi_card("Возвраты", num(data.kpi["returns"]), "За выбранный период")
-    with cols[3]: kpi_card("Выручка", money(data.kpi["revenue"]), "Оперативные данные")
-    with cols[4]: kpi_card("Реклама", money(data.kpi["ad_spend"]), f"ДРР {pct(data.kpi['drr'])}")
+    with cols[3]: kpi_card_with_sparkline("Выручка", money(data.kpi["revenue"]), "Оперативные данные", daily_trend.get("revenue"), key="spark_revenue")
+    with cols[4]: kpi_card_with_sparkline("Реклама", money(data.kpi["ad_spend"]), f"ДРР {pct(data.kpi['drr'])}", daily_trend.get("ad_spend"), key="spark_ad_spend", color="#f2b84b")
     with cols[5]: kpi_card("Остаток", num(data.kpi["stock"]), "На складах WB")
 
     st.caption("Оперативные заказы и выкупы могут обновляться с задержкой и временно отличаться от главной страницы кабинета WB. Для бухгалтерской прибыли используйте раздел «Финансы».")
