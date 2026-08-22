@@ -87,6 +87,19 @@ def main() -> None:
             conn.execute(f"DELETE FROM {table}")
 
         now_iso = TODAY.isoformat()
+        # Ready/in-transit units per product (ready_units, inbound_units, inbound
+        # lead days) -- defined here so both product_pipeline (further below) and
+        # the FIFO cost layer seeded per product agree on the same ready/inbound
+        # counts. Disagreeing between the two is exactly what the FIFO
+        # reconciliation on Остатки/Сегодня is designed to catch, so seeding them
+        # inconsistently would trigger a false "Расхождения по N артикулам" alert.
+        pipeline = {
+            100001: (45, 120, 5),
+            100002: (80, 0, 0),
+            100003: (15, 30, 7),
+            100005: (0, 50, 4),
+            100010: (0, 20, 6),
+        }
         for nm_id, article, name, subject, price, cost, _, _, _, stock_qty in PRODUCTS:
             conn.execute(
                 "INSERT INTO products_catalog (nm_id, supplier_article, product_name, brand, subject_name, updated_at, raw_json) "
@@ -103,15 +116,19 @@ def main() -> None:
                 (now_iso, nm_id, nm_id, 1, WAREHOUSE, REGION, stock_qty, "{}"),
             )
             # The WB-warehouse FIFO reconciliation (see db/wb_fifo_reconciliation.py)
-            # flags every article as a discrepancy if physical stock (above) has no
-            # matching FIFO cost layer at all -- seed one so the demo's Сегодня
-            # page doesn't open on a false "расхождения по 13 артикулам" alert.
+            # flags every article as a discrepancy if physical stock/pipeline units
+            # have no matching FIFO cost layer at all -- seed one per product,
+            # including its ready/inbound units, so the demo's Сегодня page
+            # doesn't open on a false "расхождения по N артикулам" alert.
+            ready_units, inbound_units, _lead = pipeline.get(nm_id, (0, 0, 0))
+            total_units = stock_qty + ready_units + inbound_units
             conn.execute(
                 "INSERT INTO finished_goods_cost_layers (nm_id, supplier_article, product_name, source_type, "
-                "source_ref, source_date, original_units, wb_units, unit_cost_rub, original_amount_rub, "
-                "status, created_at, updated_at) VALUES (?, ?, ?, 'opening', ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
-                (nm_id, article, name, f"demo-seed-{nm_id}", now_iso, stock_qty, stock_qty, cost,
-                 stock_qty * cost, now_iso, now_iso),
+                "source_ref, source_date, original_units, ready_units, inbound_units, wb_units, unit_cost_rub, "
+                "original_amount_rub, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'opening', ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+                (nm_id, article, name, f"demo-seed-{nm_id}", now_iso, total_units, ready_units, inbound_units,
+                 stock_qty, cost, total_units * cost, now_iso, now_iso),
             )
 
         # ---- Production: mark 3 products as own manufacturing, seed their
@@ -140,13 +157,6 @@ def main() -> None:
             "fulfillment_lead_days, emergency_cover_days, expedited_fbo_lead_days) "
             "VALUES (1, 1, 120, '0,1,2,3,4,5', 14, 5, 10, 3)"
         )
-        pipeline = {
-            100001: (45, 120, 5),  # ready_units, inbound_units, inbound in N days
-            100002: (80, 0, 0),
-            100003: (15, 30, 7),
-            100005: (0, 50, 4),
-            100010: (0, 20, 6),
-        }
         for nm_id, (ready, inbound, lead) in pipeline.items():
             article = next(p[1] for p in PRODUCTS if p[0] == nm_id)
             inbound_date = (TODAY + timedelta(days=lead)).isoformat() if inbound else ""
