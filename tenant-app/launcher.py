@@ -20,6 +20,7 @@ def _stop(proc: subprocess.Popen) -> None:
 def main() -> None:
     worker = subprocess.Popen([sys.executable, str(ROOT / "sync.py"), "--loop"], cwd=ROOT)
     agent_worker = subprocess.Popen([sys.executable, str(ROOT / "agent_sync.py"), "--loop"], cwd=ROOT)
+    report_worker = subprocess.Popen([sys.executable, str(ROOT / "report_scheduler.py"), "--loop"], cwd=ROOT)
     try:
         dashboard = subprocess.Popen(
             [
@@ -37,6 +38,7 @@ def main() -> None:
     finally:
         _stop(worker)
         _stop(agent_worker)
+        _stop(report_worker)
         time.sleep(0.5)
 
 

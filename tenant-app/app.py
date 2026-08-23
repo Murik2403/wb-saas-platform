@@ -14,7 +14,7 @@ from ui_helpers import render_setup_checklist
 from pages import (
     control, today, overview, finance, production as production_page,
     procurement as procurement_page, products, ads, stock, settings_page,
-    agents_page,
+    agents_page, reports_page,
 )
 
 PAGES = {
@@ -28,9 +28,10 @@ PAGES = {
     "Реклама": ads,
     "Остатки": stock,
     "Агенты": agents_page,
+    "Отчёты": reports_page,
     "Настройки": settings_page,
 }
-FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Агенты", "Настройки"]
+FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Агенты", "Отчёты", "Настройки"]
 # Novice keeps only the headline pages plus Настройки (needed to connect the
 # WB token in the first place) -- everything production/procurement/ads-
 # related is expert-only complexity a first-time seller doesn't need yet.
@@ -191,7 +192,7 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-if page not in {"Настройки", "Контроль", "Агенты"}:
+if page not in {"Настройки", "Контроль", "Агенты", "Отчёты"}:
     st.markdown('<div class="wb-title">Панель управления Wildberries</div>', unsafe_allow_html=True)
     st.markdown('<div class="wb-subtitle">Продажи, финансы, производство, реклама и остатки</div>', unsafe_allow_html=True)
     if IS_DEMO:
