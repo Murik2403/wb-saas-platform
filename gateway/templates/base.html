@@ -288,8 +288,12 @@
   .shot-card-real .shot-caption { padding: 0 4px; }
 
   /* ---------- landing: live demo tenant embed ---------- */
+  /* Ambient accent glow layered under the usual elevation shadow -- borrowed
+     from a dark fintech dashboard style reference (Fey) where the hero
+     product-preview card floats with a soft colored halo instead of a plain
+     drop shadow, to make the live demo read as a premium centerpiece. */
   .device-frame { border: 1px solid var(--border-strong); border-radius: 18px; background: var(--surface-2);
-    box-shadow: 0 24px 64px rgba(0,0,0,.35); overflow: hidden; margin-bottom: 20px; }
+    box-shadow: 0 24px 64px rgba(0,0,0,.35), 0 0 90px rgba(124,108,246,.22); overflow: hidden; margin-bottom: 20px; }
   .device-frame-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
     background: var(--surface); border-bottom: 1px solid var(--border); }
   .device-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); }
