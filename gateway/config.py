@@ -36,6 +36,12 @@ TENANT_CPU_QUOTA = float(os.environ.get("WB_SAAS_TENANT_CPU_QUOTA", "1.0"))  # i
 # references. Must match exactly what's in docker-compose.yml.
 FORWARD_AUTH_MIDDLEWARE = os.environ.get("WB_SAAS_FORWARD_AUTH_MIDDLEWARE", "wb-saas-auth@file")
 
+# Compose's default container-naming convention (<project>-<service>-1) for
+# the traefik service in docker-compose.yml -- provisioning.py needs the
+# real container to attach it to each tenant's dedicated network (see
+# ensure_tenant_network/_attach_traefik).
+TRAEFIK_CONTAINER_NAME = os.environ.get("WB_SAAS_TRAEFIK_CONTAINER_NAME", "wb-saas-traefik-1")
+
 # Name of the Traefik certresolver configured in traefik/traefik.yml.
 TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "letsencrypt")
 

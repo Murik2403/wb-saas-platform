@@ -31,12 +31,69 @@ def _volume_name(slug: str) -> str:
     return f"wb-tenant-data-{slug}"
 
 
-def ensure_network(client) -> None:
+def _tenant_network_name(slug: str) -> str:
+    return f"wbsaas-tenant-{slug}"
+
+
+def ensure_tenant_network(client, slug: str):
+    """One dedicated bridge network per tenant, joined only by that tenant's
+    own container and Traefik (see _attach_traefik). Docker allows any two
+    containers on the same bridge network to talk to each other directly by
+    default (inter-container communication is on unless the whole network
+    opts out, and opting out would also block Traefik's own routing since
+    Traefik is just another container on the network) -- putting every
+    tenant on its own network is what actually stops tenant-to-tenant
+    traffic, since containers on different networks simply have no route to
+    each other at all.
+    """
+    name = _tenant_network_name(slug)
     try:
-        client.networks.get(config.DOCKER_NETWORK)
+        return client.networks.get(name)
     except Exception:
-        logger.info("Creating docker network %s", config.DOCKER_NETWORK)
-        client.networks.create(config.DOCKER_NETWORK, driver="bridge")
+        logger.info("Creating docker network %s", name)
+        return client.networks.create(name, driver="bridge")
+
+
+def _attach_traefik(client, network_name: str) -> None:
+    """Traefik's Docker provider load-balances directly to a container's IP,
+    so it needs L3 reachability into every tenant's dedicated network even
+    though tenants no longer share one flat network with each other."""
+    try:
+        traefik = client.containers.get(config.TRAEFIK_CONTAINER_NAME)
+    except Exception:
+        logger.warning(
+            "_attach_traefik: container %s not found -- network %s will not be routable",
+            config.TRAEFIK_CONTAINER_NAME, network_name,
+        )
+        return
+    network = client.networks.get(network_name)
+    try:
+        network.connect(traefik)
+    except Exception as exc:
+        # Already-connected is the expected case on every upgrade_tenant
+        # call (Traefik stays attached across container recreations) --
+        # docker-py has no dedicated exception for it, just log and move on.
+        logger.debug("_attach_traefik: %s already on %s (%s)", config.TRAEFIK_CONTAINER_NAME, network_name, exc)
+
+
+def _detach_traefik_and_remove_network(client, slug: str) -> None:
+    """Cleanup counterpart to ensure_tenant_network/_attach_traefik, called
+    when a tenant is stopped -- otherwise Traefik accumulates one network
+    interface per churned client forever."""
+    network_name = _tenant_network_name(slug)
+    try:
+        network = client.networks.get(network_name)
+    except Exception:
+        return
+    try:
+        traefik = client.containers.get(config.TRAEFIK_CONTAINER_NAME)
+        network.disconnect(traefik, force=True)
+    except Exception:
+        pass
+    try:
+        network.remove()
+    except Exception as exc:
+        logger.warning("Could not remove tenant network %s: %s", network_name, exc)
 
 
 def ensure_volume(client, slug: str):
@@ -48,31 +105,39 @@ def ensure_volume(client, slug: str):
         return client.volumes.create(name)
 
 
-def container_labels(slug: str) -> dict[str, str]:
+def container_labels(slug: str, require_auth: bool = True) -> dict[str, str]:
     router = f"tenant-{slug}"
     host = config.tenant_host(slug)
-    return {
+    labels = {
         "traefik.enable": "true",
         f"traefik.http.routers.{router}.rule": f"Host(`{host}`)",
         f"traefik.http.routers.{router}.entrypoints": "websecure",
         f"traefik.http.routers.{router}.tls.certresolver": config.TLS_CERT_RESOLVER,
-        f"traefik.http.routers.{router}.middlewares": config.FORWARD_AUTH_MIDDLEWARE,
         f"traefik.http.services.{router}.loadbalancer.server.port": str(config.TENANT_INTERNAL_PORT),
+        # Traefik ends up attached to every per-tenant network plus its own
+        # wbsaas_net -- this label removes any ambiguity about which network
+        # to route this specific backend through.
+        "traefik.docker.network": _tenant_network_name(slug),
         # Purely informational -- lets you find "which client is this container" from `docker ps`/`docker inspect`.
         "wb-saas.slug": slug,
     }
+    if require_auth:
+        labels[f"traefik.http.routers.{router}.middlewares"] = config.FORWARD_AUTH_MIDDLEWARE
+    return labels
 
 
-def _run_tenant_container(client, slug: str, container_name: str):
-    ensure_network(client)
+def _run_tenant_container(client, slug: str, container_name: str, require_auth: bool = True):
+    network_name = _tenant_network_name(slug)
+    ensure_tenant_network(client, slug)
+    _attach_traefik(client, network_name)
     volume = ensure_volume(client, slug)
     return client.containers.run(
         config.TENANT_IMAGE,
         name=container_name,
         detach=True,
-        network=config.DOCKER_NETWORK,
+        network=network_name,
         volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
-        labels=container_labels(slug),
+        labels=container_labels(slug, require_auth=require_auth),
         restart_policy={"Name": "unless-stopped"},
         mem_limit=config.TENANT_MEM_LIMIT,
         nano_cpus=int(config.TENANT_CPU_QUOTA * 1_000_000_000),
@@ -157,6 +222,7 @@ def stop_tenant(slug: str) -> None:
         logger.warning("stop_tenant: container %s not found", container_name)
         return
     container.stop(timeout=15)
+    _detach_traefik_and_remove_network(client, slug)
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_by_slug(conn, slug)
         if tenant is not None:

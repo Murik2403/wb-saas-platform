@@ -29,33 +29,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 
 import config  # noqa: E402
-from provisioning import _client, ensure_network, ensure_volume, _wait_until_healthy  # noqa: E402
+import provisioning  # noqa: E402
+from provisioning import _client, ensure_volume, _wait_until_healthy  # noqa: E402
 
 SLUG = "demo"
 CONTAINER_NAME = f"wb-tenant-{SLUG}"
 SEED_CONTAINER_NAME = f"{CONTAINER_NAME}-seed"
 
 
-def _demo_labels() -> dict[str, str]:
-    router = f"tenant-{SLUG}"
-    host = config.tenant_host(SLUG)
-    return {
-        "traefik.enable": "true",
-        f"traefik.http.routers.{router}.rule": f"Host(`{host}`)",
-        f"traefik.http.routers.{router}.entrypoints": "websecure",
-        f"traefik.http.routers.{router}.tls.certresolver": config.TLS_CERT_RESOLVER,
-        # Deliberately no ForwardAuth middleware here -- every other tenant
-        # router gets config.FORWARD_AUTH_MIDDLEWARE (see
-        # provisioning.container_labels), this one must not.
-        f"traefik.http.services.{router}.loadbalancer.server.port": str(config.TENANT_INTERNAL_PORT),
-        "wb-saas.slug": SLUG,
-        "wb-saas.demo": "true",
-    }
-
-
 def main() -> int:
     client = _client()
-    ensure_network(client)
     volume = ensure_volume(client, SLUG)
 
     print("Seeding demo data...")
@@ -68,7 +51,9 @@ def main() -> int:
         config.TENANT_IMAGE,
         name=SEED_CONTAINER_NAME,
         remove=True,
-        network=config.DOCKER_NETWORK,
+        # seed_demo_data.py makes no network calls at all -- no need to put
+        # this one-off container on any network, let alone a tenant network.
+        network_mode="none",
         volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
         entrypoint=["python3", "seed_demo_data.py"],
     )
@@ -81,13 +66,22 @@ def main() -> int:
     except Exception:
         pass
 
+    # Same per-tenant network isolation as every real customer tenant (see
+    # provisioning.ensure_tenant_network) -- the demo being public doesn't
+    # mean it should be able to reach (or be reached by) any other tenant.
+    network_name = provisioning._tenant_network_name(SLUG)
+    provisioning.ensure_tenant_network(client, SLUG)
+    provisioning._attach_traefik(client, network_name)
     client.containers.run(
         config.TENANT_IMAGE,
         name=CONTAINER_NAME,
         detach=True,
-        network=config.DOCKER_NETWORK,
+        network=network_name,
         volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
-        labels=_demo_labels(),
+        # require_auth=False: every other tenant's router gets
+        # config.FORWARD_AUTH_MIDDLEWARE, this one deliberately doesn't --
+        # it's meant to be reachable without a login.
+        labels=provisioning.container_labels(SLUG, require_auth=False),
         restart_policy={"Name": "unless-stopped"},
         mem_limit=config.TENANT_MEM_LIMIT,
         nano_cpus=int(config.TENANT_CPU_QUOTA * 1_000_000_000),
