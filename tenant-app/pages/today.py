@@ -367,7 +367,12 @@ def render(ctx: dict) -> None:
         action_df["_order"]=action_df["Приоритет"].map({"Критично":0,"Высокий":1,"Средний":2}).fillna(9); action_df=action_df.sort_values(["_order","Тип","Артикул продавца"]).drop(columns="_order")
     alert_count=len(action_df)
     kpis=st.columns(6)
-    with kpis[0]: kpi_card("Заказы сегодня",num(data.kpi["orders"]),money(data.kpi["order_amount"]))
+    # "Заказы сегодня" counts only non-cancelled orders (is_cancel=0), while the
+    # WB cabinet's headline counter includes cancels -- surface the cancel count
+    # in the note so that definition difference is visible, not a mystery gap.
+    canceled_today = int(data.kpi.get("canceled", 0) or 0)
+    orders_note = money(data.kpi["order_amount"]) + (f" · отмен: {num(canceled_today)}" if canceled_today else "")
+    with kpis[0]: kpi_card("Заказы сегодня",num(data.kpi["orders"]),orders_note)
     with kpis[1]: kpi_card("Выкупы сегодня",num(data.kpi["sales"]),money(data.kpi["revenue"]))
     with kpis[2]: kpi_card("Реклама сегодня",money(data.kpi["ad_spend"]),f"ДРР {pct(data.kpi['drr'])}")
     shift_note=f"Смена {displayed_shift_date:%d.%m.%Y}" if displayed_shift_date is not None and pd.notna(displayed_shift_date) else "Смена не сформирована"
@@ -380,6 +385,11 @@ def render(ctx: dict) -> None:
     with kpis[4]: kpi_card("Готово / в пути",f"{num(ready_total)} / {num(inbound_total)}","Комплектов")
     with kpis[5]: kpi_card("Требует внимания",num(alert_count),f"WB: {sync_age_text} · копия: {backup_age_text}")
     if sync_stale: st.error("Данные WB давно не обновлялись. Выполните синхронизацию.")
+    st.caption(
+        "Цифры берутся из статистики WB (API), которая обновляется с задержкой — обычно около получаса и пачками. "
+        "Счётчик «Заказы за сегодня» на главной странице кабинета WB работает в реальном времени, поэтому днём он может "
+        "быть выше: свежие заказы появляются в статистике позже. Также здесь показаны заказы без учёта отмен. К концу дня цифры сходятся."
+    )
     if alert_count == 0:
         st.success("Критичных действий на сегодня нет.")
     else:
