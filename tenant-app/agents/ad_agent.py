@@ -44,6 +44,9 @@ def _propose(campaign: Campaign, rules: AdRules) -> tuple[str, object, object, s
 
     drr_pct = drr * 100
 
+    spend_revenue = f"расход {campaign.spend_7d:.0f}₽ / выручка {campaign.revenue_7d:.0f}₽"
+    ctr_part = f", CTR {campaign.ctr:.1f}%" if campaign.ctr is not None else ""
+
     if drr_pct > rules.max_drr_pct:
         if campaign.daily_budget:
             target_budget = clamp_budget_step(
@@ -51,9 +54,12 @@ def _propose(campaign: Campaign, rules: AdRules) -> tuple[str, object, object, s
             )
             return (
                 "set_budget", campaign.daily_budget, target_budget,
-                f"ДРР {drr_pct:.1f}% выше целевых {rules.max_drr_pct}% — снижаем бюджет",
+                f"ДРР {drr_pct:.1f}% выше целевых {rules.max_drr_pct}% ({spend_revenue}{ctr_part}) — снижаем бюджет",
             )
-        return ("pause", campaign.status, "paused", f"ДРР {drr_pct:.1f}% выше {rules.max_drr_pct}%, бюджет не задан")
+        return (
+            "pause", campaign.status, "paused",
+            f"ДРР {drr_pct:.1f}% выше {rules.max_drr_pct}% ({spend_revenue}{ctr_part}), бюджет не задан",
+        )
 
     if drr_pct < rules.min_drr_pct and campaign.daily_budget:
         target_budget = clamp_budget_step(
@@ -61,7 +67,7 @@ def _propose(campaign: Campaign, rules: AdRules) -> tuple[str, object, object, s
         )
         return (
             "set_budget", campaign.daily_budget, target_budget,
-            f"ДРР {drr_pct:.1f}% ниже {rules.min_drr_pct}% — кампания эффективна, наращиваем бюджет",
+            f"ДРР {drr_pct:.1f}% ниже {rules.min_drr_pct}% ({spend_revenue}{ctr_part}) — кампания эффективна, наращиваем бюджет",
         )
 
     return None
