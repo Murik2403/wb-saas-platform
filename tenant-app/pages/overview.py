@@ -12,10 +12,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from calculations import build_dashboard
 from ui_helpers import (
-    money, num, pct,
+    money, num, pct, delta_pct,
     infer_material_name, material_key, ceil_to_batch, kpi_card, kpi_card_with_sparkline,
-    render_problem_products_panel,
+    render_problem_products_panel, render_funnel_bars,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
@@ -27,6 +28,17 @@ from ui_helpers import (
 def render(ctx: dict) -> None:
     data = ctx['data']
     period = ctx['period']
+    start, end = ctx['start'], ctx['end']
+
+    # vs-previous-period trend badges on the KPI cards (see kpi_card's `delta`
+    # param) need a second, equal-length window immediately before the
+    # current one -- e.g. "30 дней" compares to the 30 days before that.
+    prev_length = (end - start).days + 1
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=prev_length - 1)
+    prev_data = build_dashboard(prev_start, prev_end) if prev_end >= prev_start else None
+    prev_kpi = prev_data.kpi if prev_data is not None else {}
+    prev_profit = prev_data.financial.get("product_allocated_profit") if prev_data is not None else None
 
     # F-pattern: the single most consequential number (profit) sits large in the
     # top-left, where a scanning eye lands first; the rest of the operational KPIs
@@ -38,16 +50,25 @@ def render(ctx: dict) -> None:
             money(data.financial.get("product_allocated_profit", 0.0)),
             "Расчётная, за период · точная цифра — в «Финансы»",
             hero=True,
+            delta=delta_pct(data.financial.get("product_allocated_profit", 0.0), prev_profit),
         )
     daily_trend = data.daily
-    with cols[0]: kpi_card_with_sparkline("Заказы", num(data.kpi["orders"]), money(data.kpi["order_amount"]), daily_trend.get("orders"), key="spark_orders")
-    with cols[1]: kpi_card_with_sparkline("Выкупы", num(data.kpi["sales"]), f"Оперативный API · {pct(data.kpi['buyout'])}", daily_trend.get("sales"), key="spark_sales")
-    with cols[2]: kpi_card("Возвраты", num(data.kpi["returns"]), "За выбранный период")
-    with cols[3]: kpi_card_with_sparkline("Выручка", money(data.kpi["revenue"]), "Оперативные данные", daily_trend.get("revenue"), key="spark_revenue")
-    with cols[4]: kpi_card_with_sparkline("Реклама", money(data.kpi["ad_spend"]), f"ДРР {pct(data.kpi['drr'])}", daily_trend.get("ad_spend"), key="spark_ad_spend", color="#f2b84b")
+    with cols[0]: kpi_card_with_sparkline("Заказы", num(data.kpi["orders"]), money(data.kpi["order_amount"]), daily_trend.get("orders"), key="spark_orders", delta=delta_pct(data.kpi["orders"], prev_kpi.get("orders")))
+    with cols[1]: kpi_card_with_sparkline("Выкупы", num(data.kpi["sales"]), f"Оперативный API · {pct(data.kpi['buyout'])}", daily_trend.get("sales"), key="spark_sales", delta=delta_pct(data.kpi["sales"], prev_kpi.get("sales")))
+    with cols[2]: kpi_card("Возвраты", num(data.kpi["returns"]), "За выбранный период", delta=delta_pct(data.kpi["returns"], prev_kpi.get("returns")))
+    with cols[3]: kpi_card_with_sparkline("Выручка", money(data.kpi["revenue"]), "Оперативные данные", daily_trend.get("revenue"), key="spark_revenue", delta=delta_pct(data.kpi["revenue"], prev_kpi.get("revenue")))
+    with cols[4]: kpi_card_with_sparkline("Реклама", money(data.kpi["ad_spend"]), f"ДРР {pct(data.kpi['drr'])}", daily_trend.get("ad_spend"), key="spark_ad_spend", color="#f2b84b", delta=delta_pct(data.kpi["ad_spend"], prev_kpi.get("ad_spend")))
     with cols[5]: kpi_card("Остаток", num(data.kpi["stock"]), "На складах WB")
 
+    st.caption(f"Относительно предыдущего периода той же длины ({prev_start:%d.%m}–{prev_end:%d.%m})." if prev_data is not None else "")
     st.caption("Оперативные заказы и выкупы могут обновляться с задержкой и временно отличаться от главной страницы кабинета WB. Для бухгалтерской прибыли используйте раздел «Финансы».")
+
+    st.markdown("### Воронка заказов")
+    render_funnel_bars([
+        ("Заказано", data.kpi["orders"], "#7c6cf6"),
+        ("Выкуплено", data.kpi["sales"], "#3ecf8e"),
+        ("Возврат", data.kpi["returns"], "#f2677a"),
+    ])
     st.markdown("### Динамика")
     chart_df = data.hourly.copy() if period == "Сегодня" else data.daily.copy()
     if period == "Сегодня":

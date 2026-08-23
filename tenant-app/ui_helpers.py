@@ -116,21 +116,44 @@ def ceil_to_batch(value: float, batch: int) -> int:
     return int(math.ceil(value / batch) * batch) if value > 0 else 0
 
 
-def kpi_card(label: str, value: str, note: str = "", hero: bool = False) -> None:
+def delta_pct(current: float, previous: float | None) -> float | None:
+    """% change vs. a comparable previous period. None (not 0%) when there's no
+    baseline to compare against, so callers can skip the badge instead of
+    showing a misleading "+inf%"."""
+    if previous is None or abs(previous) < 1e-9:
+        return None
+    return (float(current) - float(previous)) / abs(float(previous)) * 100
+
+
+def _delta_badge_html(value: float | None) -> str:
+    if value is None:
+        return ""
+    cls = "good" if value > 0.05 else ("critical" if value < -0.05 else "neutral")
+    arrow = "▲" if value > 0.05 else ("▼" if value < -0.05 else "•")
+    return f'<span class="kpi-delta {cls}">{arrow} {abs(value):.1f}%</span>'
+
+
+def kpi_card(label: str, value: str, note: str = "", hero: bool = False, delta: float | None = None) -> None:
     css_class = "kpi-card kpi-card-hero" if hero else "kpi-card"
     st.markdown(
-        f'<div class="{css_class}"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-note">{note}</div></div>',
+        f'<div class="{css_class}"><div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value">{value} {_delta_badge_html(delta)}</div>'
+        f'<div class="kpi-note">{note}</div></div>',
         unsafe_allow_html=True,
     )
 
 
-def kpi_card_with_sparkline(label: str, value: str, note: str, series: pd.Series, key: str, color: str = "#7c6cf6") -> None:
+def kpi_card_with_sparkline(
+    label: str, value: str, note: str, series: pd.Series, key: str,
+    color: str = "#7c6cf6", delta: float | None = None,
+) -> None:
     """Same as kpi_card, plus a tiny bar sparkline of the period's daily trend
-    directly beneath it -- the one element worth borrowing from the Trackify
-    CRM reference the user linked, adapted to our dark palette instead of
-    copying its light theme wholesale.
+    directly beneath it -- borrowed (adapted to our dark palette, not copied
+    wholesale) from two CRM dashboard references the user linked: the
+    sparkline+card from Trackify, and the vs-previous-period trend badge
+    from Oripio's Nexo Co sales dashboard.
     """
-    kpi_card(label, value, note)
+    kpi_card(label, value, note, delta=delta)
     values = pd.to_numeric(series, errors="coerce").fillna(0.0) if series is not None else pd.Series(dtype=float)
     if values.empty or values.abs().sum() == 0:
         return
@@ -188,6 +211,25 @@ def render_problem_products_panel(
     if alerts is not None and not alerts.empty:
         with st.expander(f"Ещё операционные сигналы ({len(alerts)})", expanded=problems.empty):
             st.dataframe(alerts, hide_index=True, use_container_width=True)
+
+
+def render_funnel_bars(stages: list[tuple[str, float, str]]) -> None:
+    """Horizontal gradient-bar funnel (label, value, color per stage), widest
+    stage first -- e.g. Заказано -> Выкуплено -> Возврат. Adapted from the
+    pipeline-stage bars in Oripio's Nexo Co sales dashboard reference.
+    """
+    max_value = max((v for _, v, _ in stages), default=0) or 1
+    rows = []
+    for label, value, color in stages:
+        width_pct = max(4.0, min(100.0, value / max_value * 100))
+        rows.append(
+            f'<div class="funnel-row">'
+            f'<div class="funnel-label">{escape(label)}</div>'
+            f'<div class="funnel-track"><div class="funnel-fill" style="width:{width_pct:.1f}%; background:{color};"></div></div>'
+            f'<div class="funnel-value">{num(value)}</div>'
+            f'</div>'
+        )
+    st.markdown('<div class="funnel">' + "".join(rows) + "</div>", unsafe_allow_html=True)
 
 
 def _parse_local_datetime(value: object) -> datetime | None:

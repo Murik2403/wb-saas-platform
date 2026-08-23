@@ -93,6 +93,15 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
 .kpi-card-hero .kpi-value {font-size:2.4rem;}
 .problem-row {border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:8px; background: var(--surface);}
 .problem-note {color: var(--text-muted); font-size:.82rem; margin-top:.3rem;}
+.kpi-delta {font-size:.72rem; font-weight:600; white-space:nowrap; vertical-align:middle;}
+.kpi-delta.good {color: var(--good);}
+.kpi-delta.critical {color: var(--critical);}
+.kpi-delta.neutral {color: var(--text-faint);}
+.funnel-row {display:flex; align-items:center; gap:12px; margin-bottom:10px;}
+.funnel-label {width:120px; flex-shrink:0; color: var(--text-muted); font-size:.82rem;}
+.funnel-track {flex:1; background: var(--surface); border:1px solid var(--border); border-radius:999px; height:22px; overflow:hidden;}
+.funnel-fill {height:100%; border-radius:999px;}
+.funnel-value {width:76px; text-align:right; font-family: var(--font-mono); font-variant-numeric:tabular-nums; color: var(--text); font-size:.85rem;}
 div[data-testid="stDataFrame"] {border:1px solid var(--border); border-radius:14px; overflow:hidden;}
 div[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;}
 div[data-testid="stMetricValue"] {font-family: var(--font-mono); font-variant-numeric: tabular-nums;}
