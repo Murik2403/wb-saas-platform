@@ -30,8 +30,11 @@ from backup_tools import (
     restore_backup,
 )
 from config import (
+    delete_ozon_credentials,
     delete_token,
+    get_ozon_credentials,
     get_token,
+    save_ozon_credentials,
     save_settings,
     save_token,
 )
@@ -75,6 +78,7 @@ from sync import (
 from wb_api import (
     WBAPI,
 )
+from agents.marketplaces.ozon_client import OzonAgentClient
 
 
 def render(ctx: dict) -> None:
@@ -111,12 +115,48 @@ def render(ctx: dict) -> None:
             delete_token()
             st.success("Токен удалён")
 
+    st.markdown("### 1.1 Ключи Ozon Seller API")
+    st.caption(
+        "Для агента цен Ozon. Возьмите в кабинете Ozon → Настройки → Seller API. "
+        "Реклама Ozon требует отдельные ключи Performance API — их сюда вставлять не нужно."
+    )
+    ozon_client_id_input = st.text_input("Client-Id", placeholder="123456")
+    ozon_api_key_input = st.text_input("Api-Key", type="password", placeholder="xxxxxxxx-xxxx-...")
+    oc1, oc2, oc3 = st.columns([1, 1, 2])
+    with oc1:
+        if st.button("Сохранить ключи Ozon", type="primary", use_container_width=True):
+            try:
+                save_ozon_credentials(ozon_client_id_input, ozon_api_key_input)
+                st.success("Ключи Ozon сохранены")
+            except Exception as exc:
+                st.error(str(exc))
+    with oc2:
+        if st.button("Проверить подключение", key="ozon_check_connection", use_container_width=True):
+            creds = get_ozon_credentials()
+            client_id = ozon_client_id_input.strip() or (creds[0] if creds else "")
+            api_key = ozon_api_key_input.strip() or (creds[1] if creds else "")
+            if not client_id or not api_key:
+                st.error("Сначала укажите Client-Id и Api-Key")
+            else:
+                try:
+                    with st.spinner("Проверяю доступ к ценам Ozon..."):
+                        rows = OzonAgentClient(client_id, api_key).get_prices()
+                    st.success(f"Подключение работает, товаров: {len(rows)}")
+                except Exception as exc:
+                    st.error(str(exc))
+    with oc3:
+        if st.button("Удалить сохранённые ключи Ozon"):
+            delete_ozon_credentials()
+            st.success("Ключи Ozon удалены")
+
     st.markdown("### 2. Обновление данных")
     sync_minutes = st.number_input("Интервал автоматического обновления, минут", min_value=15, max_value=1440, value=int(settings.get("sync_interval_minutes", 30)), step=15)
     history_days = st.number_input("История заказов и продаж при первом запуске, дней", min_value=7, max_value=90, value=int(settings.get("initial_history_days", 90)))
+    agent_minutes = st.number_input("Интервал обновления рекомендаций агентов, минут", min_value=15, max_value=1440, value=int(settings.get("agent_interval_minutes", 60)), step=15, help="Агенты только предлагают изменения в фоне — применяет их человек на странице «Агенты».")
     if st.button("Сохранить параметры"):
         settings["sync_interval_minutes"] = int(sync_minutes)
         settings["initial_history_days"] = int(history_days)
+        settings["agent_interval_minutes"] = int(agent_minutes)
         save_settings(settings)
         st.success("Параметры сохранены")
 

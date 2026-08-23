@@ -1,0 +1,19 @@
+# Скопируйте в config.yaml (в .gitignore) и заполните реальными ключами,
+# когда получите их в личных кабинетах WB и Ozon.
+
+wb:
+  token: ""          # Кабинет продавца WB → Настройки → Доступ к API. Нужны scope: "Цены и скидки", "Продвижение", "Аналитика".
+
+ozon:
+  client_id: ""       # Кабинет продавца Ozon → Настройки → Seller API
+  api_key: ""
+
+price_agent:
+  min_margin_pct: 15
+  max_step_pct: 5
+  undercut_competitor_pct: 1
+
+ad_agent:
+  max_drr_pct: 25
+  min_drr_pct: 5
+  max_budget_step_pct: 20

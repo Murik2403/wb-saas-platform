@@ -7,13 +7,14 @@ import streamlit as st
 
 from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
-from config import BILLING_URL, IS_DEMO, LOGOUT_URL, get_token, load_settings, save_settings
+from config import BILLING_URL, IS_DEMO, LOGOUT_URL, get_ozon_credentials, get_token, load_settings, save_settings
 from db import init_db, last_sync, refresh_auto_costs, table_count
 from ui_helpers import render_setup_checklist
 
 from pages import (
     control, today, overview, finance, production as production_page,
     procurement as procurement_page, products, ads, stock, settings_page,
+    agents_page,
 )
 
 PAGES = {
@@ -26,9 +27,10 @@ PAGES = {
     "Товары": products,
     "Реклама": ads,
     "Остатки": stock,
+    "Агенты": agents_page,
     "Настройки": settings_page,
 }
-FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Настройки"]
+FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производство", "Закупки", "Товары", "Реклама", "Остатки", "Контроль", "Агенты", "Настройки"]
 # Novice keeps only the headline pages plus Настройки (needed to connect the
 # WB token in the first place) -- everything production/procurement/ads-
 # related is expert-only complexity a first-time seller doesn't need yet.
@@ -189,7 +191,7 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-if page not in {"Настройки", "Контроль"}:
+if page not in {"Настройки", "Контроль", "Агенты"}:
     st.markdown('<div class="wb-title">Панель управления Wildberries</div>', unsafe_allow_html=True)
     st.markdown('<div class="wb-subtitle">Продажи, финансы, производство, реклама и остатки</div>', unsafe_allow_html=True)
     if IS_DEMO:
@@ -238,6 +240,7 @@ else:
 ctx = {
     "settings": settings,
     "token_exists": token_exists,
+    "ozon_connected": bool(get_ozon_credentials()),
     "sync_info": sync_info,
     "backup_info": backup_info,
     "period": period,

@@ -8,8 +8,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+def _stop(proc: subprocess.Popen) -> None:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
 def main() -> None:
     worker = subprocess.Popen([sys.executable, str(ROOT / "sync.py"), "--loop"], cwd=ROOT)
+    agent_worker = subprocess.Popen([sys.executable, str(ROOT / "agent_sync.py"), "--loop"], cwd=ROOT)
     try:
         dashboard = subprocess.Popen(
             [
@@ -25,12 +35,8 @@ def main() -> None:
         )
         dashboard.wait()
     finally:
-        if worker.poll() is None:
-            worker.terminate()
-            try:
-                worker.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                worker.kill()
+        _stop(worker)
+        _stop(agent_worker)
         time.sleep(0.5)
 
 

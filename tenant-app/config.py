@@ -14,6 +14,9 @@ TOKEN_FALLBACK_PATH = DATA_DIR / ".wb_token"
 KEYRING_SERVICE = "WB Dashboard Local"
 KEYRING_USER = "wb_api_token"
 
+TOKEN_FALLBACK_PATH_OZON = DATA_DIR / ".ozon_credentials"
+KEYRING_USER_OZON = "ozon_api_credentials"
+
 # Set by the SaaS gateway (provisioning.py) when this container is one of
 # its tenants, pointing back at https://<parent-domain>/billing. Empty when
 # the dashboard is run standalone (no gateway) -- in that case the sidebar
@@ -43,6 +46,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Контроль) so a first-time seller isn't dropped into the full instrument
     # panel on day one; "expert" (default) is the full dashboard as before.
     "ui_mode": "expert",
+    "agent_interval_minutes": 60,
 }
 
 
@@ -113,5 +117,64 @@ def delete_token() -> None:
         pass
     try:
         TOKEN_FALLBACK_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def save_ozon_credentials(client_id: str, api_key: str) -> None:
+    client_id = client_id.strip()
+    api_key = api_key.strip()
+    if not client_id or not api_key:
+        raise ValueError("Client-Id и Api-Key обязательны")
+    blob = json.dumps({"client_id": client_id, "api_key": api_key})
+    try:
+        import keyring
+
+        keyring.set_password(KEYRING_SERVICE, KEYRING_USER_OZON, blob)
+        if TOKEN_FALLBACK_PATH_OZON.exists():
+            TOKEN_FALLBACK_PATH_OZON.unlink()
+        return
+    except Exception:
+        TOKEN_FALLBACK_PATH_OZON.write_text(blob, encoding="utf-8")
+        try:
+            os.chmod(TOKEN_FALLBACK_PATH_OZON, 0o600)
+        except OSError:
+            pass
+
+
+def get_ozon_credentials() -> tuple[str, str] | None:
+    blob = None
+    try:
+        import keyring
+
+        blob = keyring.get_password(KEYRING_SERVICE, KEYRING_USER_OZON)
+    except Exception:
+        pass
+    if not blob and TOKEN_FALLBACK_PATH_OZON.exists():
+        try:
+            blob = TOKEN_FALLBACK_PATH_OZON.read_text(encoding="utf-8")
+        except OSError:
+            blob = None
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+        client_id, api_key = data.get("client_id", ""), data.get("api_key", "")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if not client_id or not api_key:
+        return None
+    return client_id, api_key
+
+
+def delete_ozon_credentials() -> None:
+    try:
+        import keyring
+
+        keyring.delete_password(KEYRING_SERVICE, KEYRING_USER_OZON)
+    except Exception:
+        pass
+    try:
+        TOKEN_FALLBACK_PATH_OZON.unlink(missing_ok=True)
     except OSError:
         pass

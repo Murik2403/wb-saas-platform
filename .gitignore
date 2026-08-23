@@ -7,12 +7,15 @@ venv/
 
 # Local secrets / runtime config
 .env
+standalone/config.yaml
 
 # Local/dev data (production data lives in per-tenant Docker volumes, not in git)
-tenant-app/data/*.sqlite3
-tenant-app/data/*.db
+tenant-app/data/
 *.sqlite3
 *.db
+
+# Local Claude Code dev-server launch config (per-machine paths)
+.claude/
 
 # OS/editor
 .DS_Store
