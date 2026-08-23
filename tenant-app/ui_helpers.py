@@ -171,31 +171,6 @@ def kpi_card_with_sparkline(
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=key)
 
 
-def kpi_card_with_gauge(
-    label: str, value: str, note: str, gauge_pct: float, key: str,
-    color: str = "#7c6cf6", delta: float | None = None,
-) -> None:
-    """Same as kpi_card, plus a radial arc gauge (0-100%) beneath it --
-    borrowed from Airzon Agency's dark-mode analytics dashboard reference.
-    Best for metrics that are naturally a percentage (buyout rate, quota
-    coverage) rather than an absolute count.
-    """
-    kpi_card(label, value, note, delta=delta)
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=max(0.0, min(100.0, float(gauge_pct))),
-        number={"suffix": "%", "font": {"size": 20, "color": "#eef0f7"}},
-        gauge={
-            "axis": {"range": [0, 100], "visible": False},
-            "bar": {"color": color, "thickness": 0.3},
-            "bgcolor": "rgba(255,255,255,0.08)",
-            "borderwidth": 0,
-        },
-    ))
-    fig.update_layout(height=110, margin=dict(l=6, r=6, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=key)
-
-
 _PROBLEM_STATUS_SEVERITY = {"Убыточный": "critical", "Низкая маржа": "warn"}
 
 
