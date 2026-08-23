@@ -164,7 +164,21 @@ def render(ctx: dict) -> None:
 
     with tabs[1]:
         st.markdown("### Обновление данных")
-        sync_minutes = st.number_input("Интервал автоматического обновления, минут", min_value=15, max_value=1440, value=int(settings.get("sync_interval_minutes", 30)), step=15)
+        # Minimum is 15 min on purpose: WB's statistics API rate-limits per
+        # method (~1 request/minute) AND only refreshes its own data roughly
+        # every 30 minutes, so polling more often gives no fresher numbers --
+        # it just burns the rate-limit budget and risks throttling. 30 is the
+        # sweet spot; the floor of 15 leaves headroom without being reckless.
+        sync_minutes = st.number_input(
+            "Интервал автоматического обновления, минут", min_value=15, max_value=1440,
+            value=int(settings.get("sync_interval_minutes", 30)), step=15,
+            help="Статистика WB сама обновляется примерно раз в 30 минут, поэтому опрашивать чаще смысла нет — "
+                 "свежее не станет, а частые запросы упираются в лимиты WB. Рекомендуется 30 минут.",
+        )
+        st.caption(
+            "⚠️ Чаще чем раз в 15 минут WB не даёт опрашивать не случайно: у статистического API строгие лимиты "
+            "запросов, а данные всё равно обновляются на стороне WB лишь раз в ~30 минут. Оптимально — 30 минут."
+        )
         history_days = st.number_input("История заказов и продаж при первом запуске, дней", min_value=7, max_value=90, value=int(settings.get("initial_history_days", 90)))
         agent_minutes = st.number_input("Интервал обновления рекомендаций агентов, минут", min_value=15, max_value=1440, value=int(settings.get("agent_interval_minutes", 60)), step=15, help="Агенты только предлагают изменения в фоне — применяет их человек на странице «Агенты».")
         if st.button("Сохранить параметры"):
