@@ -55,6 +55,34 @@ def test_step_is_clamped_per_cycle(tmp_path):
     assert proposed == 950.0  # 1000 - 5%
 
 
+def test_cost_lookup_fills_in_missing_cost_and_raises_under_margin_price(tmp_path):
+    # API never returns cost=... on its own -- cost_lookup is how a caller
+    # (MARKETSHELPER's own себестоимость table) supplies it.
+    client = MockClient(prices=[
+        PriceRow(sku="A1", name="Товар", current_price=700, cost=None, competitor_price=None)
+    ])
+    store = make_store(tmp_path)
+    ids = price_agent.evaluate(
+        client, store, PriceRules(min_margin_pct=15, max_step_pct=100),
+        cost_lookup={"A1": 700},
+    )
+    assert len(ids) == 1
+    candidate = store.list_candidates(status="pending")[0]
+    proposed = json.loads(candidate["proposed_value"])
+    assert proposed == 805.0  # 700 * 1.15 -- price was below the margin floor
+
+
+def test_cost_lookup_miss_leaves_row_untouched(tmp_path):
+    client = MockClient(prices=[
+        PriceRow(sku="A1", name="Товар", current_price=1000, cost=None, competitor_price=None)
+    ])
+    store = make_store(tmp_path)
+    ids = price_agent.evaluate(
+        client, store, PriceRules(), cost_lookup={"OTHER_SKU": 700},
+    )
+    assert ids == []
+
+
 def test_apply_candidate_dry_run_does_not_hit_network(tmp_path):
     client = MockClient(prices=[
         PriceRow(sku="A1", name="Товар", current_price=1000, cost=700, competitor_price=900)

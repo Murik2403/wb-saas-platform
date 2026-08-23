@@ -13,10 +13,21 @@ from .rules import PriceRules, clamp_price_step, floor_price_by_margin
 from .store import AgentStore
 
 
-def evaluate(client: MarketplaceClient, store: AgentStore, rules: PriceRules = PriceRules()) -> list[int]:
-    """Fetch current prices, propose changes, return new candidate ids."""
+def evaluate(
+    client: MarketplaceClient, store: AgentStore, rules: PriceRules = PriceRules(),
+    cost_lookup: dict[str, float] | None = None,
+) -> list[int]:
+    """Fetch current prices, propose changes, return new candidate ids.
+
+    cost_lookup maps sku -> cost, for callers that have cost data the
+    marketplace API itself doesn't provide (e.g. MARKETSHELPER's own
+    per-nm_id `costs` table). Rows without a matching entry keep
+    row.cost as-is (None from every current client).
+    """
     candidate_ids: list[int] = []
     for row in client.get_prices():
+        if cost_lookup and row.sku in cost_lookup:
+            row.cost = cost_lookup[row.sku]
         proposal = _propose(row, rules)
         if proposal is None:
             continue

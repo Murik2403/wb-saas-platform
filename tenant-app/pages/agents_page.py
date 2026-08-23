@@ -9,6 +9,7 @@ from agents.marketplaces.ozon_client import OzonAgentClient
 from agents.marketplaces.wb_client import WBAgentClient
 from agents.rules import AdRules, PriceRules
 from agents.store import AgentStore
+from agent_sync import wb_cost_lookup
 from config import DB_PATH, get_ozon_credentials, get_token
 from ui_helpers import render_empty_state
 
@@ -27,8 +28,9 @@ def _build_clients() -> dict[str, object]:
 def _refresh_recommendations(clients: dict[str, object], store: AgentStore) -> list[str]:
     warnings: list[str] = []
     for marketplace, client in clients.items():
+        cost_lookup = wb_cost_lookup() if marketplace == "wb" else None
         try:
-            price_agent.evaluate(client, store, PriceRules())
+            price_agent.evaluate(client, store, PriceRules(), cost_lookup=cost_lookup)
         except Exception as exc:
             warnings.append(f"{marketplace}: цены — {exc}")
         try:
@@ -74,9 +76,11 @@ def render(ctx: dict) -> None:
 
     store = AgentStore(DB_PATH)
 
+    cost_count = len(wb_cost_lookup())
     st.caption(
         "Подключено: " + ", ".join(sorted(k.upper() for k in clients))
-        + ". Реклама Ozon требует отдельные ключи Performance API — если их нет, эта часть просто ничего не найдёт."
+        + f". Себестоимость WB: заполнена для {cost_count} товаров (Настройки → 3. Себестоимость)."
+        + " Реклама Ozon требует отдельные ключи Performance API — если их нет, эта часть просто ничего не найдёт."
     )
 
     if st.button("Обновить рекомендации", type="primary"):

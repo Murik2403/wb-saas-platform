@@ -17,6 +17,21 @@ from agents.marketplaces.wb_client import WBAgentClient
 from agents.rules import AdRules, PriceRules
 from agents.store import AgentStore
 from config import DB_PATH, get_ozon_credentials, get_token, load_settings
+from db import read_table
+
+
+def wb_cost_lookup() -> dict[str, float]:
+    """nm_id -> cost_per_wb_unit, from MARKETSHELPER's own себестоимость table
+    (Настройки → 3. Себестоимость) -- the WB API itself never provides cost."""
+    costs = read_table("costs")
+    if costs.empty:
+        return {}
+    lookup = {}
+    for _, row in costs.iterrows():
+        cost = row.get("cost_per_wb_unit")
+        if cost and float(cost) > 0:
+            lookup[str(int(row["nm_id"]))] = float(cost)
+    return lookup
 
 
 def run_once() -> dict:
@@ -26,7 +41,7 @@ def run_once() -> dict:
     wb_token = get_token()
     if wb_token:
         client = WBAgentClient(wb_token)
-        counts["wb_price"] = len(price_agent.evaluate(client, store, PriceRules()))
+        counts["wb_price"] = len(price_agent.evaluate(client, store, PriceRules(), cost_lookup=wb_cost_lookup()))
         counts["wb_ad"] = len(ad_agent.evaluate(client, store, AdRules()))
 
     ozon_creds = get_ozon_credentials()
