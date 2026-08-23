@@ -15,7 +15,7 @@ import streamlit as st
 from calculations import build_dashboard
 from ui_helpers import (
     money, num, pct, delta_pct,
-    infer_material_name, material_key, ceil_to_batch, kpi_card, kpi_card_with_sparkline,
+    infer_material_name, material_key, ceil_to_batch, kpi_card, kpi_card_with_sparkline, kpi_card_with_gauge,
     render_problem_products_panel, render_funnel_bars,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
@@ -54,7 +54,7 @@ def render(ctx: dict) -> None:
         )
     daily_trend = data.daily
     with cols[0]: kpi_card_with_sparkline("Заказы", num(data.kpi["orders"]), money(data.kpi["order_amount"]), daily_trend.get("orders"), key="spark_orders", delta=delta_pct(data.kpi["orders"], prev_kpi.get("orders")))
-    with cols[1]: kpi_card_with_sparkline("Выкупы", num(data.kpi["sales"]), f"Оперативный API · {pct(data.kpi['buyout'])}", daily_trend.get("sales"), key="spark_sales", delta=delta_pct(data.kpi["sales"], prev_kpi.get("sales")))
+    with cols[1]: kpi_card_with_gauge("Выкупы", num(data.kpi["sales"]), "Оперативный API", data.kpi["buyout"], key="gauge_buyout", color="#3ecf8e", delta=delta_pct(data.kpi["sales"], prev_kpi.get("sales")))
     with cols[2]: kpi_card("Возвраты", num(data.kpi["returns"]), "За выбранный период", delta=delta_pct(data.kpi["returns"], prev_kpi.get("returns")))
     with cols[3]: kpi_card_with_sparkline("Выручка", money(data.kpi["revenue"]), "Оперативные данные", daily_trend.get("revenue"), key="spark_revenue", delta=delta_pct(data.kpi["revenue"], prev_kpi.get("revenue")))
     with cols[4]: kpi_card_with_sparkline("Реклама", money(data.kpi["ad_spend"]), f"ДРР {pct(data.kpi['drr'])}", daily_trend.get("ad_spend"), key="spark_ad_spend", color="#f2b84b", delta=delta_pct(data.kpi["ad_spend"], prev_kpi.get("ad_spend")))
@@ -74,6 +74,19 @@ def render(ctx: dict) -> None:
     if period == "Сегодня":
         chart_df["hour"] = chart_df["hour"].map(lambda h: f"{int(h):02d}:00")
     fig = px.line(chart_df, x=("hour" if period == "Сегодня" else "day"), y=(["order_amount", "revenue"] if period == "Сегодня" else ["order_amount", "revenue", "ad_spend"]), markers=False)
+    # Faint dashed overlay of the previous equal-length period's revenue,
+    # aligned by position (day 1 vs. day 1 of the prior window) rather than
+    # calendar date -- borrowed from Airzon Agency's dark-mode analytics
+    # dashboard reference, using the prev_data already fetched for the KPI
+    # trend badges above.
+    prev_chart_df = (prev_data.hourly if period == "Сегодня" else prev_data.daily) if prev_data is not None else None
+    if prev_chart_df is not None and not prev_chart_df.empty and len(prev_chart_df) == len(chart_df):
+        fig.add_scatter(
+            x=chart_df["hour" if period == "Сегодня" else "day"],
+            y=prev_chart_df["revenue"].values,
+            mode="lines", name="Выручка (пред. период)",
+            line=dict(color="#8d94aa", dash="dot", width=1.5),
+        )
     fig.update_layout(
         height=390,
         margin=dict(l=10, r=10, t=20, b=10),
