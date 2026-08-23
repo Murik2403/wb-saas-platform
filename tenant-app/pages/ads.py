@@ -14,7 +14,7 @@ import streamlit as st
 
 from ui_helpers import (
     money, num, pct,
-    infer_material_name, material_key, ceil_to_batch, kpi_card,
+    infer_material_name, material_key, ceil_to_batch, kpi_card, render_empty_state,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
@@ -40,7 +40,10 @@ def render(ctx: dict) -> None:
     st.caption("Общие показатели считаются по итоговой строке каждой кампании за день — без суммирования дублей по приложениям и товарам.")
     st.markdown("### Рекламные кампании")
     if data.ads.empty:
-        st.info("Рекламная статистика отсутствует или категория «Продвижение» не включена в токене.")
+        render_empty_state(
+            "Рекламных кампаний пока нет",
+            "Статистика появится после первой синхронизации с включённой категорией «Продвижение» в токене WB, либо когда запустите рекламу в кабинете WB.",
+        )
     else:
         st.dataframe(
             data.ads,

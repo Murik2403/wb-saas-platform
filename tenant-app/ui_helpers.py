@@ -232,6 +232,44 @@ def render_funnel_bars(stages: list[tuple[str, float, str]]) -> None:
     st.markdown('<div class="funnel">' + "".join(rows) + "</div>", unsafe_allow_html=True)
 
 
+def render_setup_checklist(token_exists: bool, sync_info: dict | None) -> None:
+    """First-run onboarding checklist shown instead of a flat "нет данных"
+    message when no orders/sales exist yet -- a new seller landing on an
+    empty dashboard should see concrete next steps and their progress, not
+    just one line of text. Borrowed from setup-checklist patterns common in
+    SaaS onboarding dashboards (e.g. Wix's post-signup "welcome" checklist).
+    """
+    steps = [
+        ("Подключить токен Wildberries", bool(token_exists), "Настройки → API токен"),
+        ("Дождаться первой синхронизации", sync_info is not None, "Обычно занимает несколько минут после подключения токена"),
+        ("Проверить себестоимость товаров", False, "Настройки → Себестоимость — сверьте автозаполненные значения"),
+    ]
+    rows = []
+    for label, done, note in steps:
+        cls = "good" if done else "neutral"
+        icon = "✓" if done else "○"
+        rows.append(
+            f'<div class="checklist-row">'
+            f'<span class="checklist-icon {cls}">{icon}</span>'
+            f'<div><div class="checklist-label">{escape(label)}</div><div class="checklist-note">{escape(note)}</div></div>'
+            f'</div>'
+        )
+    st.markdown('<div class="checklist">' + "".join(rows) + "</div>", unsafe_allow_html=True)
+
+
+def render_empty_state(title: str, note: str, icon: str = "○") -> None:
+    """A centered, slightly more considered "nothing here yet" panel than a
+    plain st.info() -- for pages like Реклама/Закупки with no data yet."""
+    st.markdown(
+        f'<div class="empty-state">'
+        f'<div class="empty-state-icon">{icon}</div>'
+        f'<div class="empty-state-title">{escape(title)}</div>'
+        f'<div class="empty-state-note">{escape(note)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _parse_local_datetime(value: object) -> datetime | None:
     if value in (None, ""):
         return None

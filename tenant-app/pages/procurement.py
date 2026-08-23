@@ -14,7 +14,7 @@ import streamlit as st
 
 from ui_helpers import (
     money, num, pct,
-    infer_material_name, material_key, ceil_to_batch, kpi_card,
+    infer_material_name, material_key, ceil_to_batch, kpi_card, render_empty_state,
     _parse_local_datetime, _quality_row, _normalize_supplier_article,
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
@@ -368,7 +368,10 @@ def render(ctx: dict) -> None:
 
     with procurement_tabs[2]:
         if procurement_orders.empty:
-            st.info("Заявок пока нет. Создайте первую закупку или сформируйте её из рекомендаций.")
+            render_empty_state(
+                "Заявок на закупку пока нет",
+                "Создайте первую закупку вручную или сформируйте её из рекомендаций во вкладке «Рекомендации».",
+            )
         else:
             orders_view = procurement_orders.copy()
             orders_view["Сумма, ₽"] = pd.to_numeric(orders_view["total_amount"], errors="coerce").fillna(0)

@@ -9,6 +9,7 @@ from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
 from config import BILLING_URL, IS_DEMO, LOGOUT_URL, get_token, load_settings, save_settings
 from db import init_db, last_sync, refresh_auto_costs, table_count
+from ui_helpers import render_setup_checklist
 
 from pages import (
     control, today, overview, finance, production as production_page,
@@ -102,6 +103,18 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
 .funnel-track {flex:1; background: var(--surface); border:1px solid var(--border); border-radius:999px; height:22px; overflow:hidden;}
 .funnel-fill {height:100%; border-radius:999px;}
 .funnel-value {width:76px; text-align:right; font-family: var(--font-mono); font-variant-numeric:tabular-nums; color: var(--text); font-size:.85rem;}
+.checklist {max-width:520px; margin-top:8px;}
+.checklist-row {display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid var(--border);}
+.checklist-row:last-child {border-bottom:none;}
+.checklist-icon {flex-shrink:0; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.8rem; font-weight:700; margin-top:1px;}
+.checklist-icon.good {background: var(--good-soft); color: var(--good);}
+.checklist-icon.neutral {background: var(--surface); color: var(--text-faint); border:1px solid var(--border-strong);}
+.checklist-label {color: var(--text); font-weight:600; font-size:.92rem;}
+.checklist-note {color: var(--text-faint); font-size:.8rem; margin-top:2px;}
+.empty-state {text-align:center; padding:48px 20px; color: var(--text-muted);}
+.empty-state-icon {font-size:1.8rem; color: var(--text-faint); margin-bottom:10px;}
+.empty-state-title {font-weight:600; color: var(--text); font-size:1.02rem; margin-bottom:6px;}
+.empty-state-note {font-size:.86rem; color: var(--text-faint); max-width:420px; margin:0 auto;}
 div[data-testid="stDataFrame"] {border:1px solid var(--border); border-radius:14px; overflow:hidden;}
 div[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;}
 div[data-testid="stMetricValue"] {font-family: var(--font-mono); font-variant-numeric: tabular-nums;}
@@ -213,7 +226,8 @@ if page not in {"Настройки", "Контроль"}:
         st.caption(f"Период данных: {start:%d.%m.%Y}–{end:%d.%m.%Y} (московское время)")
 
     if table_count("orders") == 0 and table_count("sales") == 0:
-        st.info("Данных пока нет. Откройте «Настройки», сохраните токен и нажмите «Синхронизировать», либо загрузите демонстрационные данные.")
+        st.markdown("### Первые шаги")
+        render_setup_checklist(token_exists, sync_info)
         st.stop()
 
     data = build_dashboard(start, end)
