@@ -8,6 +8,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -1123,11 +1124,24 @@ def max_value(table: str, column: str) -> str | None:
         row = conn.execute(f"SELECT MAX({column}) AS v FROM {table}").fetchone()
         return row["v"] if row else None
 
+def _now_msk_naive_iso() -> str:
+    """Moscow-local naive timestamp, matching this project's convention for
+    every other stored timestamp (see wb_fbw_evidence._wb_msk_naive_iso's
+    docstring). start_sync_log/finish_sync_log used to store plain
+    datetime.now() -- the server's own OS clock, which is UTC on the VPS --
+    while every reader (pages/today.py's staleness check, control.py's FIFO
+    guard, ui_helpers._parse_local_datetime) treats a naive sync_log
+    timestamp as already being Moscow time. That mismatch made "last sync"
+    always appear ~180 minutes (the MSK-UTC offset) older than it really
+    was, regardless of how recently a sync actually finished."""
+    return datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds")
+
+
 def start_sync_log() -> int:
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO sync_log(started_at,status) VALUES (?,?)",
-            (datetime.now().isoformat(timespec="seconds"), "running"),
+            (_now_msk_naive_iso(), "running"),
         )
         return int(cur.lastrowid)
 
@@ -1135,7 +1149,7 @@ def finish_sync_log(log_id: int, status: str, details: str) -> None:
     with connect() as conn:
         conn.execute(
             "UPDATE sync_log SET finished_at=?, status=?, details=? WHERE id=?",
-            (datetime.now().isoformat(timespec="seconds"), status, details, log_id),
+            (_now_msk_naive_iso(), status, details, log_id),
         )
 
 def last_sync() -> dict[str, Any] | None:
