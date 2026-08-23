@@ -143,6 +143,26 @@ def apply_successful_payment(
     )
 
 
+def admin_extend_period(conn: sqlite3.Connection, account_id: int, days: int) -> None:
+    """Manual comp/goodwill extension from the admin panel -- same
+    later-of-now-or-current-period-end extension rule as
+    apply_successful_payment, but with no payment record backing it (no
+    yookassa_payment_id to guard idempotency with, since this is a one-off
+    operator action, not a retried webhook)."""
+    account = accounts.get_account_by_id(conn, account_id)
+    if account is None:
+        raise ValueError(f"Аккаунт {account_id} не найден.")
+
+    current_end = _parse_iso(account["current_period_end"]) or _now()
+    base = max(current_end, _now())
+    new_period_end = (base + timedelta(days=int(days))).isoformat(timespec="seconds")
+
+    conn.execute(
+        "UPDATE accounts SET status='active', current_period_end=?, past_due_since='', updated_at=? WHERE id=?",
+        (new_period_end, _now_iso(), int(account_id)),
+    )
+
+
 def apply_failed_payment(conn: sqlite3.Connection, account_id: int, yookassa_payment_id: str, error: str = "") -> None:
     conn.execute(
         "UPDATE payments SET status='failed', error_message=?, updated_at=? WHERE yookassa_payment_id=?",

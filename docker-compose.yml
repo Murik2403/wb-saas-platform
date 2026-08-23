@@ -104,6 +104,9 @@ services:
       # either way.
       - WB_SAAS_TELEGRAM_BOT_TOKEN=${WB_SAAS_TELEGRAM_BOT_TOKEN:-}
       - WB_SAAS_TELEGRAM_OWNER_CHAT_ID=${WB_SAAS_TELEGRAM_OWNER_CHAT_ID:-}
+      # Admin panel (/admin) -- comma-separated allowlist, empty disables it
+      # entirely even for a logged-in account. See config.py's ADMIN_EMAILS.
+      - WB_SAAS_ADMIN_EMAILS=${WB_SAAS_ADMIN_EMAILS:-}
     labels:
       - traefik.enable=true
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)

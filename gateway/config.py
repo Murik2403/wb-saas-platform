@@ -107,6 +107,16 @@ TELEGRAM_BOT_TOKEN = os.environ.get("WB_SAAS_TELEGRAM_BOT_TOKEN", "")
 # message a customer sends the bot is relayed here so a human sees it.
 TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 
+# --------------------------------------------------------------------------
+# Admin panel (see admin_routes.py, logic/accounts.py's is_admin_account)
+# --------------------------------------------------------------------------
+
+# Comma-separated allowlist. Empty (the default) means nobody can reach
+# /admin, even a logged-in account -- there is no role column, just this
+# allowlist, since this is a single-operator tool rather than a
+# multi-admin permission system.
+ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("WB_SAAS_ADMIN_EMAILS", "").split(",") if e.strip()]
+
 
 def tenant_host(slug: str) -> str:
     return f"{slug}.{TENANT_SUBDOMAIN_PREFIX}.{PARENT_DOMAIN}"

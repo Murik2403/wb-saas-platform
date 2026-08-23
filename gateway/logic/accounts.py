@@ -24,6 +24,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import config
+
 PBKDF2_ITERATIONS = 260_000
 SESSION_TOKEN_BYTES = 32
 SESSION_TTL_HOURS = 24 * 30  # 30 days
@@ -270,3 +272,40 @@ def get_tenant_for_account(conn: sqlite3.Connection, account_id: int) -> sqlite3
 
 def get_tenant_by_slug(conn: sqlite3.Connection, slug: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM tenant_instances WHERE slug=?", (slug,)).fetchone()
+
+
+# --------------------------------------------------------------------------
+# Admin panel
+# --------------------------------------------------------------------------
+
+def is_admin_account(account: sqlite3.Row | None) -> bool:
+    """True only for a logged-in account whose email is in the
+    WB_SAAS_ADMIN_EMAILS allowlist -- no dedicated role column, this is a
+    single-operator tool, not a multi-admin permission system. `account` is
+    a sqlite3.Row from resolve_session/get_account_by_id (not a dict), so
+    indexing must use row["email"], not .get()."""
+    if account is None or not config.ADMIN_EMAILS:
+        return False
+    try:
+        email = str(account["email"]).strip().lower()
+    except (IndexError, KeyError):
+        return False
+    return email in config.ADMIN_EMAILS
+
+
+def list_all_tenants_overview(conn: sqlite3.Connection) -> list[dict]:
+    """Every tenant joined with its owning account, newest first -- the data
+    behind the admin dashboard's overview table."""
+    rows = conn.execute(
+        """
+        SELECT
+            t.id AS tenant_id, t.slug, t.container_name,
+            t.status AS tenant_status, t.note AS tenant_note, t.created_at AS tenant_created_at,
+            a.id AS account_id, a.email, a.status AS account_status,
+            a.current_period_end, a.past_due_since
+        FROM tenant_instances t
+        JOIN accounts a ON a.id = t.account_id
+        ORDER BY t.created_at DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]

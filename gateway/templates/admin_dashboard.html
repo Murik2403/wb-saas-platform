@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Админ-панель — MARKETSHELPER{% endblock %}
+{% block card_extra_class %} card-wide{% endblock %}
+{% block content %}
+<h1>Админ-панель</h1>
+<p class="subtitle">Все аккаунты и их тенанты, {{ tenants|length }} шт.</p>
+
+<table>
+  <thead>
+    <tr>
+      <td>Email</td>
+      <td>Аккаунт</td>
+      <td>Период до</td>
+      <td>Тенант</td>
+      <td>Статус</td>
+      <td>Действия</td>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tenants %}
+    <tr>
+      <td>{{ t.email }}</td>
+      <td>
+        <span class="badge {% if t.account_status in ['active', 'trialing'] %}badge-good{% elif t.account_status == 'past_due' %}badge-warn{% elif t.account_status == 'canceled' %}badge-critical{% endif %}">{{ t.account_status }}</span>
+      </td>
+      <td>{{ t.current_period_end[:10] if t.current_period_end else '—' }}</td>
+      <td>{{ t.slug }}</td>
+      <td>
+        <span class="badge {% if t.tenant_status == 'running' %}badge-good{% elif t.tenant_status == 'failed' %}badge-critical{% else %}badge-warn{% endif %}">{{ t.tenant_status }}</span>
+      </td>
+      <td>
+        {% if t.tenant_status == 'running' %}
+        <form method="post" action="/admin/tenant/{{ t.slug }}/stop" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Стоп</button>
+        </form>
+        {% else %}
+        <form method="post" action="/admin/tenant/{{ t.slug }}/start" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Старт</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/admin/account/{{ t.account_id }}/extend" style="display:inline; margin-left:6px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="number" name="days" value="30" min="1" style="width:60px">
+          <button type="submit">Продлить</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="footer-link"><a href="/">На главную</a></div>
+{% endblock %}
