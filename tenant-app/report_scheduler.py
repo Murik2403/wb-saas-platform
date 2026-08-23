@@ -25,8 +25,13 @@ def _now_msk() -> datetime:
 
 
 def _is_due(definition: dict, now: datetime) -> bool:
+    # Checked every CHECK_INTERVAL_SECONDS (5 min), not every minute, so an
+    # exact-minute match would silently never fire for most schedule_time
+    # values depending on container start offset. ">=" plus the once-per-day
+    # guard below means it fires at the first check after schedule_time,
+    # up to 5 minutes late, but reliably.
     hh, mm = (int(x) for x in definition["schedule_time"].split(":"))
-    if (now.hour, now.minute) != (hh, mm):
+    if (now.hour, now.minute) < (hh, mm):
         return False
 
     last_run_at = definition.get("last_run_at")

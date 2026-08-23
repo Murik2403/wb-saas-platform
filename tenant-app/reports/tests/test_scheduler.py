@@ -17,9 +17,17 @@ def test_daily_fires_at_exact_minute():
     assert _is_due(base_definition(), now) is True
 
 
-def test_daily_does_not_fire_other_minute():
-    now = datetime(2026, 8, 23, 9, 1)
+def test_daily_does_not_fire_before_scheduled_time():
+    now = datetime(2026, 8, 23, 8, 59)
     assert _is_due(base_definition(), now) is False
+
+
+def test_daily_fires_late_if_check_missed_exact_minute():
+    # Checks run every 5 min, not every minute, so an exact-minute match
+    # would miss most schedules entirely -- catching up within the day is
+    # the whole point of the ">=" comparison.
+    now = datetime(2026, 8, 23, 9, 3)
+    assert _is_due(base_definition(), now) is True
 
 
 def test_daily_does_not_fire_twice_same_day():
