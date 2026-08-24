@@ -196,11 +196,15 @@ def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> N
         healthy = _wait_until_healthy(client, container_name, config.PROVISION_HEALTH_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001 -- any Docker failure must not crash the background task silently
         logger.exception("Provisioning failed for account %s (slug=%s)", account_id, slug)
+        _cleanup_failed_tenant(slug)
         _mark_failed(tenant_id, f"Docker error: {exc}")
         return
 
     if not healthy:
         logger.error("Tenant container %s never became healthy within timeout", container_name)
+        # Leave nothing half-provisioned behind: an unhealthy container plus its
+        # dedicated network would otherwise collide by name on the next retry.
+        _cleanup_failed_tenant(slug)
         _mark_failed(tenant_id, "Контейнер не прошёл health-check вовремя.")
         return
 
@@ -213,6 +217,25 @@ def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> N
 def _mark_failed(tenant_id: int, note: str) -> None:
     with control_db.connect() as conn:
         accounts.set_tenant_status(conn, tenant_id, "failed", note=note)
+
+
+def _cleanup_failed_tenant(slug: str) -> None:
+    """Best-effort teardown after a failed/timed-out provision, so a retry
+    doesn't hit a container-name or network conflict. Removes the (likely
+    unhealthy) container and its dedicated per-tenant network. Never raises --
+    it runs in a background task whose only job left is to record the failure."""
+    try:
+        client = _client()
+    except Exception:
+        return
+    container_name = f"wb-tenant-{slug}"
+    try:
+        container = client.containers.get(container_name)
+        container.stop(timeout=10)
+        container.remove(force=True)
+    except Exception:
+        pass
+    _detach_traefik_and_remove_network(client, slug)
 
 
 # --------------------------------------------------------------------------
@@ -260,4 +283,17 @@ def upgrade_tenant(slug: str, image: str | None = None) -> bool:
     except Exception:
         logger.info("upgrade_tenant: pull skipped for %s (using locally-built image)", target_image)
     _run_tenant_container(client, slug, container_name)
-    return _wait_until_healthy(client, container_name, config.PROVISION_HEALTH_TIMEOUT_SECONDS)
+    healthy = _wait_until_healthy(client, container_name, config.PROVISION_HEALTH_TIMEOUT_SECONDS)
+    if healthy:
+        # Persist 'running' so Traefik's ForwardAuth (app.py's auth_verify,
+        # which only lets the owner through when status=='running') actually
+        # opens the door. Without this, a tenant started from the admin panel
+        # after a stop had its container up but stayed 'stopped' in the DB,
+        # silently locking the customer out. Demo tenant isn't tracked in the
+        # accounts DB, so get_tenant_by_slug returns None and this is a no-op
+        # for it.
+        with control_db.connect() as conn:
+            tenant = accounts.get_tenant_by_slug(conn, slug)
+            if tenant is not None:
+                accounts.set_tenant_status(conn, int(tenant["id"]), "running")
+    return healthy

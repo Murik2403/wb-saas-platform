@@ -97,6 +97,21 @@ class RequestTests(unittest.TestCase):
             with self.assertRaises(WBAPIError):
                 self.api._request("GET", "https://example.test")
 
+    def test_5xx_is_retried_then_succeeds(self) -> None:
+        # A transient 502/503 must not fail the whole call on the first blip --
+        # it should back off and retry, unlike a 4xx which raises immediately.
+        server_error = _fake_response(503, text="Service Unavailable")
+        ok = _fake_response(200, json_body={"ok": True})
+        with mock.patch.object(self.api.session, "request", side_effect=[server_error, ok]):
+            result = self.api._request("GET", "https://example.test")
+        self.assertEqual(result, {"ok": True})
+
+    def test_persistent_5xx_eventually_raises(self) -> None:
+        server_error = _fake_response(500, text="Internal Error")
+        with mock.patch.object(self.api.session, "request", return_value=server_error):
+            with self.assertRaises(WBAPIError):
+                self.api._request("GET", "https://example.test")
+
 
 class EndpointMethodTests(unittest.TestCase):
     def setUp(self) -> None:

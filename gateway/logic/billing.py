@@ -111,11 +111,23 @@ def apply_successful_payment(
     checking the payments row's own status before doing anything; only a
     payment not already recorded as 'succeeded' actually extends the period.
     """
-    already_applied = conn.execute(
-        "SELECT status FROM payments WHERE yookassa_payment_id=?", (yookassa_payment_id,)
-    ).fetchone()
-    if already_applied is not None and already_applied["status"] == "succeeded":
-        return
+    # Idempotency as an atomic claim, not a read-then-write. YooKassa delivers
+    # webhooks at-least-once and can retry them concurrently; a plain
+    # "SELECT status; if succeeded return" guard lets two concurrent calls both
+    # pass the check and each extend the period (60 days for one payment).
+    # Flipping the row to 'succeeded' in one UPDATE ... WHERE status!='succeeded'
+    # lets exactly one caller win (rowcount==1); the loser gets rowcount==0 and
+    # returns without extending. SQLite's write lock (with the busy_timeout from
+    # db.connect) serializes the two connections so the claim is atomic. If the
+    # account lookup below fails, the whole transaction rolls back (db.connect
+    # only commits on clean exit), un-claiming the payment too.
+    claimed = conn.execute(
+        "UPDATE payments SET status='succeeded', updated_at=? "
+        "WHERE yookassa_payment_id=? AND status != 'succeeded'",
+        (_now_iso(), yookassa_payment_id),
+    )
+    if claimed.rowcount == 0:
+        return  # already applied, or no matching payment row -- nothing to extend
 
     account = accounts.get_account_by_id(conn, account_id)
     if account is None:
@@ -136,10 +148,6 @@ def apply_successful_payment(
          WHERE id=?
         """,
         (new_period_end, payment_method_id, _now_iso(), int(account_id)),
-    )
-    conn.execute(
-        "UPDATE payments SET status='succeeded', updated_at=? WHERE yookassa_payment_id=?",
-        (_now_iso(), yookassa_payment_id),
     )
 
 

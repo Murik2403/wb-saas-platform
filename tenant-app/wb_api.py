@@ -56,6 +56,14 @@ class WBAPI:
                     retry_after = float(response.headers.get("Retry-After", 20))
                     time.sleep(min(max(retry_after, 2), 60))
                     break
+                if response.status_code >= 500:
+                    # 502/503/504 happen regularly on WB's side. Treat them as
+                    # transient like a 429: break out to the backoff below and
+                    # retry the whole attempt, instead of failing the entire sync
+                    # on the very first blip. Only 4xx (client errors -- bad
+                    # token, bad request) fall through to raise immediately.
+                    last_error = WBAPIError(f"WB API {response.status_code}: {response.text[:200]}")
+                    break
                 if response.status_code >= 400:
                     body = response.text[:800]
                     raise WBAPIError(f"WB API {response.status_code}: {body}")

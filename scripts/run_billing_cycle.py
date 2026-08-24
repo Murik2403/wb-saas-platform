@@ -115,10 +115,18 @@ def cancel_overdue_accounts() -> None:
             logger.exception("Failed to stop container for cancelled account %s (slug=%s)", account_id, tenant["slug"])
 
 
+def purge_expired_sessions() -> None:
+    with control_db.connect() as conn:
+        removed = accounts.purge_expired_sessions(conn)
+    if removed:
+        logger.info("Purged %d expired session(s)", removed)
+
+
 def main() -> int:
     api_failures = charge_due_accounts()
     expire_unpaid_trials()
     cancel_overdue_accounts()
+    purge_expired_sessions()
     if api_failures:
         logger.error("%d account(s) could not be billed due to YooKassa API failures -- will retry next run", api_failures)
         return 1

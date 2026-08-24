@@ -187,7 +187,14 @@ async def yookassa_webhook(request: Request):
     if not account_id_raw:
         logger.error("YooKassa payment %s has no account_id in metadata", payment_id)
         return JSONResponse({"error": "no account_id"}, status_code=200)  # ack -- retrying won't fix a bad payment
-    account_id = int(account_id_raw)
+    try:
+        account_id = int(account_id_raw)
+    except (TypeError, ValueError):
+        # A payment created outside our checkout (e.g. manually in the YooKassa
+        # dashboard) could carry a non-numeric account_id -- ack it so YooKassa
+        # stops retrying rather than 500-ing on every delivery.
+        logger.error("YooKassa payment %s has non-numeric account_id metadata: %r", payment_id, account_id_raw)
+        return JSONResponse({"error": "invalid account_id"}, status_code=200)
 
     status = payment.get("status")
     with control_db.connect() as conn:

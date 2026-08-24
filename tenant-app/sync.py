@@ -136,9 +136,19 @@ def sync_all() -> dict[str, int | str]:
         ad_start = ad_end - timedelta(days=ad_days - 1)
         stats = api.get_ad_stats(campaign_ids, ad_start, ad_end)
         # Replace the requested interval so rows produced by older parser
-        # versions cannot remain and distort totals.
-        delete_ads_period(ad_start.isoformat(), ad_end.isoformat())
-        result["ads"] = upsert_ads(flatten_ad_stats(stats))
+        # versions cannot remain and distort totals -- but ONLY when the API
+        # actually returned data. A transient WB advert-API glitch that returns
+        # an empty list (HTTP 200, no rows) while live campaigns exist would
+        # otherwise wipe a month of real ad-spend history and replace it with
+        # nothing. If there genuinely are campaigns but zero rows came back,
+        # skip the destructive delete and leave the existing data untouched.
+        flattened = flatten_ad_stats(stats)
+        if flattened or not campaign_ids:
+            delete_ads_period(ad_start.isoformat(), ad_end.isoformat())
+            result["ads"] = upsert_ads(flattened)
+        else:
+            result["ads"] = 0
+            result["ads_skipped"] = "empty API response with live campaigns -- kept existing data"
         result["campaigns"] = len(campaign_ids)
         result["cleaned_cost_rows"] = cleanup_orphan_zero_costs()
 
