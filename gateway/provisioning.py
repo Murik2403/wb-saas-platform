@@ -112,7 +112,12 @@ def container_labels(slug: str, require_auth: bool = True) -> dict[str, str]:
         "traefik.enable": "true",
         f"traefik.http.routers.{router}.rule": f"Host(`{host}`)",
         f"traefik.http.routers.{router}.entrypoints": "websecure",
-        f"traefik.http.routers.{router}.tls.certresolver": config.TLS_CERT_RESOLVER,
+        # Request wildcard cert (*.app.marketshelper.ru) via DNS-01, not per-domain HTTP-01.
+        # This cert is issued once and reused across all tenant subdomains, eliminating
+        # the self-signed window on first visit. Requires dns-resolver (Timeweb Cloud DNS-01)
+        # and marketshelper.ru NS delegation to ns1/ns2.timeweb.ru only.
+        f"traefik.http.routers.{router}.tls.certresolver": "dns-resolver",
+        f"traefik.http.routers.{router}.tls.domains[0].main": f"*.{config.TENANT_SUBDOMAIN_PREFIX}.{config.PARENT_DOMAIN}",
         f"traefik.http.services.{router}.loadbalancer.server.port": str(config.TENANT_INTERNAL_PORT),
         # Traefik ends up attached to every per-tenant network plus its own
         # wbsaas_net -- this label removes any ambiguity about which network

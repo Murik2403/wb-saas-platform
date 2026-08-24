@@ -35,26 +35,31 @@ providers:
 # NOT expand ${VAR} placeholders inside this static config file (that's a
 # docker-compose-only feature) -- a literal "${WB_SAAS_ACME_EMAIL}" string
 # would be sent to Let's Encrypt as the contact email and rejected. Instead
-# it's set via the TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL
-# environment variable on the traefik service in docker-compose.yml, which
-# Traefik reads natively and merges with this file.
+# it's set via the TRAEFIK_CERTIFICATESRESOLVERS_*_ACME_EMAIL environment
+# variables on the traefik service in docker-compose.yml, which Traefik reads
+# natively and merges with this file.
 certificatesResolvers:
-  letsencrypt:
+  # HTTP-01 resolver for apex domain (marketshelper.ru)
+  http-resolver:
     acme:
-      storage: /letsencrypt/acme.json
-      # NOTE: a wildcard *.app.<domain> cert via DNS-01 would be the ideal fix
-      # for the brief self-signed window a brand-new tenant subdomain shows
-      # before its on-demand cert is issued -- but it needs a DNS provider lego
-      # can write _acme-challenge TXT records to. The domain's DNS lives on
-      # CLASSIC Timeweb (ns1.timeweb.ru), and lego only ships a "timewebcloud"
-      # provider (Timeweb *Cloud* API) -- different system, can't touch these
-      # records, so DNS-01 propagation times out. Until the domain's DNS is
-      # moved into Timeweb Cloud (or Cloudflare), stay on HTTP-01 per-domain
-      # issuance, which works; the first-visit warning window is handled at the
-      # app layer instead (gateway waits for the cert before releasing the
-      # tenant -- see provisioning.py).
+      storage: /letsencrypt/acme_http.json
       httpChallenge:
         entryPoint: web
+
+  # DNS-01 resolver for wildcard tenant domain (*.app.marketshelper.ru)
+  # Uses Timeweb Cloud API via lego's timewebcloud provider. TIMEWEBCLOUD_AUTH_TOKEN
+  # must be set in docker-compose.yml traefik service environment.
+  # Prerequisite: marketshelper.ru domain must be delegated to ns1/ns2.timeweb.ru
+  # only (not ns3/ns4.timeweb.org) for DNS propagation to be deterministic.
+  dns-resolver:
+    acme:
+      storage: /letsencrypt/acme_dns.json
+      dnsChallenge:
+        provider: timewebcloud
+        # Use reliable public resolvers for propagation self-check before validation
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
       # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 api:
