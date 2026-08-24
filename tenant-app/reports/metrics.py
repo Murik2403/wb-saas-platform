@@ -12,6 +12,7 @@ from typing import Callable
 
 import matplotlib
 matplotlib.use("Agg")  # headless -- no display available in a container
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -118,11 +119,57 @@ def _style_twin_axis(ax: plt.Axes, ax2: plt.Axes) -> None:
     ax2.yaxis.label.set_fontsize(8.5)
 
 
+def _label_line_points(
+    ax: plt.Axes,
+    x_values: pd.Series | list,
+    y_values: pd.Series | list,
+    color: str,
+    fmt: str = "{:.0f}",
+) -> None:
+    """Annotates data points on a line chart. If there are > 10 points, only
+    labels the start, end, minimum, and maximum points to avoid clutter."""
+    x_list = list(x_values)
+    y_list = list(y_values)
+    n = len(y_list)
+    if n == 0:
+        return
+
+    if n <= 10:
+        indices = set(range(n))
+    else:
+        indices = {0, n - 1}
+        clean_y = pd.Series(y_list).dropna()
+        if not clean_y.empty:
+            indices.add(int(clean_y.idxmin()))
+            indices.add(int(clean_y.idxmax()))
+
+    for i in sorted(indices):
+        val = y_list[i]
+        if pd.isna(val):
+            continue
+        formatted_val = fmt.format(val).replace(",", " ")
+        ax.annotate(
+            formatted_val,
+            (x_list[i], val),
+            textcoords="offset points",
+            xytext=(0, 6),
+            ha="center",
+            fontsize=7,
+            color=color,
+            fontweight="bold",
+        )
+
+
 def _sales_orders(start: date, end: date) -> MetricResult:
     daily = build_dashboard(start, end).daily
     fig, ax = plt.subplots(figsize=(7, 3.2))
     ax.plot(daily["day"], daily["orders"], label="Заказы, шт.", color=COLOR_ACCENT, marker="o", linewidth=2, markersize=4)
     ax.plot(daily["day"], daily["sales"], label="Продажи, шт.", color=COLOR_GOOD, marker="o", linewidth=2, markersize=4)
+    
+    _label_line_points(ax, daily["day"], daily["orders"], COLOR_ACCENT)
+    _label_line_points(ax, daily["day"], daily["sales"], COLOR_GOOD)
+    ax.margins(y=0.15)
+
     ax.set_xlabel("Дата")
     ax.set_ylabel("Штук")
     ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
@@ -139,9 +186,25 @@ def _sales_orders(start: date, end: date) -> MetricResult:
 def _ads(start: date, end: date) -> MetricResult:
     daily = build_dashboard(start, end).daily
     fig, ax = plt.subplots(figsize=(7, 3.2))
-    ax.bar(daily["day"], daily["ad_spend"], color=COLOR_ACCENT, alpha=0.85, label="Расход, ₽")
+    bars = ax.bar(daily["day"], daily["ad_spend"], color=COLOR_ACCENT, alpha=0.85, label="Расход, ₽")
     ax2 = ax.twinx()
     ax2.plot(daily["day"], daily["drr"], color=COLOR_CRITICAL, label="ДРР, %", marker="o", linewidth=2, markersize=4)
+    
+    max_spend = daily["ad_spend"].max() if not daily.empty else 0
+    for bar in bars:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + (max_spend * 0.01),
+                f"{h:,.0f}".replace(",", " "),
+                ha="center", va="bottom", fontsize=6, color=COLOR_TEXT, rotation=45,
+            )
+
+    _label_line_points(ax2, daily["day"], daily["drr"], COLOR_CRITICAL, fmt="{:.1f}%")
+    ax.margins(y=0.15)
+    ax2.margins(y=0.15)
+
     ax.set_xlabel("Дата")
     ax.set_ylabel("Расход, ₽")
     ax2.set_ylabel("ДРР, %")
@@ -169,9 +232,6 @@ def _stocks(start: date, end: date) -> MetricResult:
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["stocks"], figure=fig, summary="Данных об остатках нет.")
 
-    # `stocks` accumulates one row per sync snapshot, not just the latest --
-    # grouping by nm_id without filtering to the newest snapshot_at first
-    # sums quantities across every past snapshot, wildly inflating totals.
     latest_snapshot = stocks["snapshot_at"].max()
     stocks = stocks[stocks["snapshot_at"] == latest_snapshot]
 
@@ -182,9 +242,16 @@ def _stocks(start: date, end: date) -> MetricResult:
         grouped = grouped.merge(catalog[["nm_id", "supplier_article"]], on="nm_id", how="left")
     grouped["label"] = grouped.get("supplier_article").fillna(grouped["nm_id"].astype(str)) if "supplier_article" in grouped.columns else grouped["nm_id"].astype(str)
 
-    ax.barh(grouped["label"].astype(str), grouped["quantity"], color=COLOR_GOOD, alpha=0.9)
+    bars = ax.barh(grouped["label"].astype(str), grouped["quantity"], color=COLOR_GOOD, alpha=0.9)
     ax.set_xlabel("Остаток, шт.")
     ax.invert_yaxis()
+
+    max_q = grouped["quantity"].max() if not grouped.empty else 0
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(w + (max_q * 0.01), bar.get_y() + bar.get_height() / 2, f"{int(w):,.0f}".replace(",", " "), va="center", ha="left", fontsize=8, color=COLOR_TEXT)
+
+    ax.margins(x=0.15)
     fig.tight_layout()
     total_qty = int(grouped["quantity"].sum())
     return MetricResult(
@@ -194,10 +261,6 @@ def _stocks(start: date, end: date) -> MetricResult:
 
 
 def _pnl(start: date, end: date) -> MetricResult:
-    # Reuses build_dashboard()'s already-computed store-level P&L (fallback
-    # commission fields, WB expense definitions, etc.) rather than re-deriving
-    # it from raw tables here -- see calculations.py's financial dict, which
-    # is the same source the Финансы page shows the user.
     data = build_dashboard(start, end)
     fin = data.financial
     fig, ax = plt.subplots(figsize=(7, 3.5))
@@ -230,6 +293,7 @@ def _pnl(start: date, end: date) -> MetricResult:
             va="center", ha="left" if w >= 0 else "right", fontsize=8, color=COLOR_TEXT,
         )
 
+    ax.margins(x=0.15)
     fig.tight_layout()
     summary = (
         f"Выручка: {sales:,.0f}₽, удержания WB: {wb_exp:,.0f}₽, "
@@ -258,8 +322,6 @@ def _abc_analysis(start: date, end: date) -> MetricResult:
     total_profit = df["Расчётная прибыль"].sum()
     df["cum_profit_pct"] = (df["Расчётная прибыль"].cumsum() / total_profit) * 100
     df["group"] = df["cum_profit_pct"].apply(lambda p: "A" if p <= 80 else ("B" if p <= 95 else "C"))
-    # A single dominant top item can cross the 80% line on its own row --
-    # it's still the whole of group A in that case, not group B/C.
     if not df.empty:
         df.iloc[0, df.columns.get_loc("group")] = "A"
 
@@ -269,10 +331,21 @@ def _abc_analysis(start: date, end: date) -> MetricResult:
     top_df = df.head(15)
     labels = top_df["Артикул продавца"].fillna(top_df["Артикул WB"].astype(str)).astype(str)
 
-    ax.bar(labels, top_df["Расчётная прибыль"], color=COLOR_ACCENT, alpha=0.85, label="Прибыль, ₽")
+    bars = ax.bar(labels, top_df["Расчётная прибыль"], color=COLOR_ACCENT, alpha=0.85, label="Прибыль, ₽")
     ax.set_ylabel("Прибыль, ₽")
     ax.set_xticks(range(len(labels)))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+
+    max_prof = top_df["Расчётная прибыль"].max() if not top_df.empty else 0
+    for bar in bars:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + (max_prof * 0.01),
+                f"{h:,.0f}".replace(",", " "),
+                ha="center", va="bottom", fontsize=6.5, color=COLOR_TEXT, rotation=30,
+            )
 
     ax2 = ax.twinx()
     ax2.plot(labels, top_df["cum_profit_pct"], color=COLOR_CRITICAL, marker="o", linewidth=2, markersize=4, label="Накопленная доля, %")
@@ -280,6 +353,9 @@ def _abc_analysis(start: date, end: date) -> MetricResult:
     ax2.set_ylim(0, 105)
     ax2.axhline(80, color=COLOR_MUTED, linestyle="--", alpha=0.5)
     ax2.axhline(95, color=COLOR_MUTED, linestyle=":", alpha=0.5)
+
+    _label_line_points(ax2, labels, top_df["cum_profit_pct"], COLOR_CRITICAL, fmt="{:.0f}%")
+    ax.margins(y=0.2)
 
     _apply_chart_style(fig, ax, hide_top_right_spines=False)
     _style_twin_axis(ax, ax2)
@@ -368,7 +444,7 @@ def _oos_risk(start: date, end: date) -> MetricResult:
 def _wb_deductions(start: date, end: date) -> MetricResult:
     data = build_dashboard(start, end)
     fin = data.financial
-    fig, ax = plt.subplots(figsize=(7, 3.5))
+    fig, ax = plt.subplots(figsize=(7.5, 4))
 
     categories = {
         "Логистика": float(fin.get("logistics", 0.0)) + float(fin.get("rebill_logistics", 0.0)),
@@ -387,19 +463,22 @@ def _wb_deductions(start: date, end: date) -> MetricResult:
     labels = list(items.keys())
     values = list(items.values())
     pie_colors = [COLOR_ACCENT, "#38bdf8", COLOR_WARN, COLOR_CRITICAL, COLOR_GOOD][: len(values)]
+    total_exp = sum(values)
 
-    wedges, texts, autotexts = ax.pie(
-        values, labels=labels, autopct="%1.1f%%", startangle=140, colors=pie_colors,
+    wedges, _texts, autotexts = ax.pie(
+        values,
+        autopct=lambda pct: f"{pct:.0f}%\n({pct / 100 * total_exp:,.0f}₽)".replace(",", " ") if pct >= 3 else "",
+        startangle=140,
+        colors=pie_colors,
         wedgeprops=dict(width=0.4, edgecolor="w", linewidth=1.5),
     )
-    plt.setp(autotexts, size=8, weight="bold", color="#ffffff")
-    plt.setp(texts, size=8, color=COLOR_TEXT)
+    plt.setp(autotexts, size=8, weight="bold", color="#ffffff", path_effects=[pe.withStroke(linewidth=2, foreground="#000000")])
+    ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=8, frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID)
 
     fig.patch.set_facecolor(COLOR_BG)
     ax.set_facecolor(COLOR_BG)
 
     fig.tight_layout()
-    total_exp = sum(values)
     top_cat = max(items, key=items.get)
     summary = (
         f"Сумма удержаний WB: {total_exp:,.0f}₽. Основная статья: {top_cat} ({items[top_cat]:,.0f}₽)."
@@ -428,14 +507,29 @@ def _ad_performance(start: date, end: date) -> MetricResult:
     labels = ads["Кампания"].astype(str)
     x = range(len(labels))
 
-    ax.bar(x, ads["Расход"], color=COLOR_ACCENT, alpha=0.85, label="Расход, ₽")
+    bars = ax.bar(x, ads["Расход"], color=COLOR_ACCENT, alpha=0.85, label="Расход, ₽")
     ax.set_ylabel("Расход, ₽")
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
 
+    max_spend = ads["Расход"].max() if not ads.empty else 0
+    for bar in bars:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + (max_spend * 0.01),
+                f"{h:,.0f}₽".replace(",", " "),
+                ha="center", va="bottom", fontsize=7, color=COLOR_TEXT,
+            )
+
     ax2 = ax.twinx()
     ax2.plot(x, ads["CPO"], color=COLOR_CRITICAL, marker="o", linewidth=2, markersize=4, label="CPO, ₽")
     ax2.set_ylabel("CPO (стоимость заказа), ₽")
+
+    _label_line_points(ax2, list(x), ads["CPO"], COLOR_CRITICAL, fmt="{:.0f}₽")
+    ax.margins(y=0.15)
+    ax2.margins(y=0.15)
 
     _apply_chart_style(fig, ax, hide_top_right_spines=False)
     _style_twin_axis(ax, ax2)
@@ -557,6 +651,11 @@ def _returns_cancellations(start: date, end: date) -> MetricResult:
 
     ax.plot(all_days, cancel_series.values, label="Отмены, шт.", color=COLOR_CRITICAL, marker="o", linewidth=2, markersize=4)
     ax.plot(all_days, return_series.values, label="Возвраты, шт.", color=COLOR_WARN, marker="o", linewidth=2, markersize=4)
+
+    _label_line_points(ax, all_days, cancel_series.values, COLOR_CRITICAL)
+    _label_line_points(ax, all_days, return_series.values, COLOR_WARN)
+    ax.margins(y=0.15)
+
     ax.set_xlabel("Дата")
     ax.set_ylabel("Штук")
     ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
@@ -572,7 +671,7 @@ def _organic_vs_ads(start: date, end: date) -> MetricResult:
     data = build_dashboard(start, end)
     daily = data.daily
     ads = data.ads.copy()
-    fig, ax = plt.subplots(figsize=(7, 3.5))
+    fig, ax = plt.subplots(figsize=(7.5, 4))
 
     total_orders = int(daily["orders"].sum()) if not daily.empty else 0
     if total_orders == 0:
@@ -581,9 +680,6 @@ def _organic_vs_ads(start: date, end: date) -> MetricResult:
         return MetricResult(title=METRIC_LABELS["organic_vs_ads"], figure=fig, summary="Заказов за период не было.")
 
     ad_orders_raw = int(ads["Заказы"].sum()) if not ads.empty and "Заказы" in ads.columns else 0
-    # Ad-attributed orders come from a different report (advert stats) than
-    # the daily order count, so they can technically exceed it in edge cases
-    # (attribution lag, etc.) -- clip so organic never goes negative.
     ad_orders = min(ad_orders_raw, total_orders)
     organic_orders = total_orders - ad_orders
 
@@ -591,12 +687,16 @@ def _organic_vs_ads(start: date, end: date) -> MetricResult:
     values = [organic_orders, ad_orders]
     pie_colors = [COLOR_GOOD, COLOR_ACCENT]
 
-    wedges, texts, autotexts = ax.pie(
-        values, labels=labels, autopct="%1.1f%%", startangle=140, colors=pie_colors,
+    wedges, _texts, autotexts = ax.pie(
+        values,
+        autopct=lambda pct: f"{pct:.0f}%\n({pct / 100 * total_orders:,.0f} шт.)".replace(",", " ") if pct > 0 else "",
+        startangle=140,
+        colors=pie_colors,
         wedgeprops=dict(width=0.4, edgecolor="w", linewidth=1.5),
     )
-    plt.setp(autotexts, size=8, weight="bold", color="#ffffff")
-    plt.setp(texts, size=8, color=COLOR_TEXT)
+    plt.setp(autotexts, size=8, weight="bold", color="#ffffff", path_effects=[pe.withStroke(linewidth=2, foreground="#000000")])
+    ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=8, frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID)
+
     fig.patch.set_facecolor(COLOR_BG)
     ax.set_facecolor(COLOR_BG)
     fig.tight_layout()
@@ -681,6 +781,20 @@ def _cost_structure(start: date, end: date) -> MetricResult:
     ax.barh(labels, df["packaging"], left=df["material"], color=COLOR_ACCENT_STRONG, label="Упаковка", alpha=0.85)
     ax.barh(labels, df["labor"], left=df["material"] + df["packaging"], color=COLOR_GOOD, label="Труд", alpha=0.85)
     ax.barh(labels, df["other"], left=df["material"] + df["packaging"] + df["labor"], color=COLOR_WARN, label="Прочее", alpha=0.85)
+
+    max_total = df["total_cost"].max() if not df.empty else 1.0
+    categories_cols = ["material", "packaging", "labor", "other"]
+    for idx, row in df.reset_index(drop=True).iterrows():
+        cum = 0.0
+        for col in categories_cols:
+            val = row[col]
+            if val > max_total * 0.05:
+                ax.text(
+                    cum + val / 2, idx, f"{val:,.0f}₽".replace(",", " "),
+                    va="center", ha="center", fontsize=7, color="#ffffff", fontweight="bold",
+                    path_effects=[pe.withStroke(linewidth=1.5, foreground="#000000")],
+                )
+            cum += val
 
     ax.set_xlabel("Себестоимость, ₽")
     ax.invert_yaxis()
@@ -795,6 +909,19 @@ def _stock_in_transit(start: date, end: date) -> MetricResult:
     ax.barh(wh_labels, grouped["in_way_to_client"], left=grouped["quantity"], color=COLOR_ACCENT, label="В пути к клиенту", alpha=0.85)
     ax.barh(wh_labels, grouped["in_way_from_client"], left=grouped["quantity"] + grouped["in_way_to_client"], color=COLOR_WARN, label="Возврат от клиента", alpha=0.85)
 
+    max_total = grouped["total_item_qty"].max() if not grouped.empty else 1.0
+    for idx, row in grouped.reset_index(drop=True).iterrows():
+        cum = 0.0
+        for col in ["quantity", "in_way_to_client", "in_way_from_client"]:
+            val = row[col]
+            if val > max_total * 0.05:
+                ax.text(
+                    cum + val / 2, idx, f"{int(val):,.0f}".replace(",", " "),
+                    va="center", ha="center", fontsize=7, color="#ffffff", fontweight="bold",
+                    path_effects=[pe.withStroke(linewidth=1.5, foreground="#000000")],
+                )
+            cum += val
+
     ax.set_xlabel("Количество, шт.")
     ax.invert_yaxis()
     _apply_chart_style(fig, ax)
@@ -839,8 +966,30 @@ def _weekday_pattern(start: date, end: date) -> MetricResult:
 
     x = range(7)
     width = 0.35
-    ax.bar([i - width/2 for i in x], total_orders.values, width, label="Всего заказов", color=COLOR_ACCENT, alpha=0.85)
-    ax.bar([i + width/2 for i in x], cancel_orders.values, width, label="Отмены", color=COLOR_CRITICAL, alpha=0.85)
+    bars1 = ax.bar([i - width/2 for i in x], total_orders.values, width, label="Всего заказов", color=COLOR_ACCENT, alpha=0.85)
+    bars2 = ax.bar([i + width/2 for i in x], cancel_orders.values, width, label="Отмены", color=COLOR_CRITICAL, alpha=0.85)
+
+    max_val = max(total_orders.max(), cancel_orders.max(), 1)
+    for bar in bars1:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + (max_val * 0.01),
+                f"{int(h)}",
+                ha="center", va="bottom", fontsize=7, color=COLOR_TEXT,
+            )
+    for bar in bars2:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + (max_val * 0.01),
+                f"{int(h)}",
+                ha="center", va="bottom", fontsize=7, color=COLOR_TEXT,
+            )
+
+    ax.margins(y=0.15)
     ax.set_xticks(list(x))
     ax.set_xticklabels(days_labels, fontsize=8)
     ax.set_ylabel("Штук")
