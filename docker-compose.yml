@@ -121,6 +121,13 @@ services:
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)
       - traefik.http.routers.gateway.entrypoints=websecure
       - traefik.http.routers.gateway.tls.certresolver=letsencrypt
+      # Request a single wildcard cert (main apex + *.app.<domain> SAN) via
+      # DNS-01 so every tenant subdomain is already covered the moment it exists
+      # -- no per-subdomain on-demand issuance, no self-signed first-visit
+      # window. Requires the letsencrypt resolver to use dnsChallenge
+      # (traefik/traefik.yml) and TIMEWEBCLOUD_AUTH_TOKEN on the traefik service.
+      - traefik.http.routers.gateway.tls.domains[0].main=${WB_SAAS_PARENT_DOMAIN}
+      - traefik.http.routers.gateway.tls.domains[0].sans=*.${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}.${WB_SAAS_PARENT_DOMAIN}
       - traefik.http.services.gateway.loadbalancer.server.port=8000
       # wb-saas-auth (referenced by every tenant container's own labels, see
       # gateway/provisioning.py container_labels()) is defined in
