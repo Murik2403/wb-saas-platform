@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from calculations import build_dashboard
-from db import read_table
+from db import read_table, read_wb_incident_cases
 
 # Branded palette adapted for print / light PDF background -- the app itself
 # is dark-themed (see app.py's CSS variables), but a PDF is read/printed on
@@ -51,6 +51,9 @@ METRIC_LABELS = {
     "wb_commission_rate": "Эффективная ставка комиссии WB по категориям",
     "stock_in_transit": "Остаток на складе vs в пути",
     "weekday_pattern": "Заказы и отмены по дням недели",
+    "wb_incident_losses": "Потери и компенсации на складах WB",
+    "frozen_capital": "Замороженный капитал в неликвидных остатках",
+    "roi_by_sku": "Рентабельность инвестиций по товарам (ROI)",
 }
 
 
@@ -1024,6 +1027,163 @@ def _weekday_pattern(start: date, end: date) -> MetricResult:
     return MetricResult(title=METRIC_LABELS["weekday_pattern"], figure=fig, summary=summary)
 
 
+def _wb_incident_losses(start: date, end: date) -> MetricResult:
+    cases = read_wb_incident_cases(limit=200)
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if cases.empty or "incident_date" not in cases.columns:
+        ax.text(0.5, 0.5, "Нет данных по инцидентам на складах WB", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["wb_incident_losses"], figure=fig, summary="Данных по инцидентам на складах WB за период нет.")
+
+    df = cases.copy()
+    df["inc_dt"] = pd.to_datetime(df["incident_date"], errors="coerce").dt.date
+    period_df = df[(df["inc_dt"] >= start) & (df["inc_dt"] <= end)].copy()
+
+    if period_df.empty:
+        ax.text(0.5, 0.5, "Нет данных по инцидентам за указанный период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["wb_incident_losses"], figure=fig, summary="Данных по инцидентам на складах WB за период нет.")
+
+    period_df["confirmed_loss_cost_rub"] = pd.to_numeric(period_df["confirmed_loss_cost_rub"], errors="coerce").fillna(0.0)
+    period_df["compensation_rub"] = pd.to_numeric(period_df["compensation_rub"], errors="coerce").fillna(0.0)
+    period_df["incident_result_rub"] = pd.to_numeric(period_df["incident_result_rub"], errors="coerce").fillna(0.0)
+
+    tot_loss = float(period_df["confirmed_loss_cost_rub"].sum())
+    tot_comp = float(period_df["compensation_rub"].sum())
+    uncovered_losses = float(abs(period_df[period_df["incident_result_rub"] < 0]["incident_result_rub"].sum()))
+
+    top_df = period_df.sort_values("confirmed_loss_cost_rub", ascending=False).head(10)
+
+    labels = []
+    for _, row in top_df.iterrows():
+        name = str(row.get("incident_name", ""))
+        key = str(row.get("incident_key", ""))
+        label = name if name and name.strip() and name != "nan" else key
+        labels.append(label)
+
+    y = list(range(len(top_df)))
+    height = 0.35
+
+    bars1 = ax.barh([i - height / 2 for i in y], top_df["confirmed_loss_cost_rub"], height, label="Убыток", color=COLOR_CRITICAL, alpha=0.85)
+    bars2 = ax.barh([i + height / 2 for i in y], top_df["compensation_rub"], height, label="Компенсировано", color=COLOR_GOOD, alpha=0.85)
+
+    max_val = max(top_df["confirmed_loss_cost_rub"].max(), top_df["compensation_rub"].max(), 1.0)
+    for bar in bars1:
+        w = bar.get_width()
+        if w > 0:
+            ax.text(w + (max_val * 0.01), bar.get_y() + bar.get_height() / 2, f"{w:,.0f} ₽".replace(",", " "), va="center", ha="left", fontsize=7, color=COLOR_TEXT)
+    for bar in bars2:
+        w = bar.get_width()
+        if w > 0:
+            ax.text(w + (max_val * 0.01), bar.get_y() + bar.get_height() / 2, f"{w:,.0f} ₽".replace(",", " "), va="center", ha="left", fontsize=7, color=COLOR_TEXT)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.invert_yaxis()
+    ax.set_xlabel("Сумма, ₽")
+
+    _apply_chart_style(fig, ax)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
+    ax.margins(x=0.15)
+    fig.tight_layout()
+
+    summary = (
+        f"Суммарный убыток: {tot_loss:,.0f}₽, компенсация: {tot_comp:,.0f}₽, "
+        f"непокрытый убыток: {uncovered_losses:,.0f}₽."
+    ).replace(",", " ")
+    return MetricResult(title=METRIC_LABELS["wb_incident_losses"], figure=fig, summary=summary)
+
+
+def _frozen_capital(start: date, end: date) -> MetricResult:
+    data = build_dashboard(start, end)
+    df = data.financial_products.copy()
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if df.empty or "Остаток" not in df.columns or "Себестоимость ед." not in df.columns or "Запас, дней" not in df.columns:
+        ax.text(0.5, 0.5, "Неликвидных остатков (запас >= 60 дней) не обнаружено", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["frozen_capital"], figure=fig, summary="Неликвидных остатков (запас >= 60 дней) не обнаружено.")
+
+    df["qty"] = pd.to_numeric(df["Остаток"], errors="coerce").fillna(0.0)
+    df["unit_cost"] = pd.to_numeric(df["Себестоимость ед."], errors="coerce").fillna(0.0)
+    df["days_supply"] = pd.to_numeric(df["Запас, дней"], errors="coerce").fillna(0.0)
+    df["frozen_capital"] = df["qty"] * df["unit_cost"]
+
+    illiquid_df = df[(df["days_supply"] >= 60) & (df["qty"] > 0)].copy()
+
+    if illiquid_df.empty:
+        ax.text(0.5, 0.5, "Неликвидных остатков (запас >= 60 дней) не обнаружено", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["frozen_capital"], figure=fig, summary="Неликвидных остатков (запас >= 60 дней) не обнаружено.")
+
+    total_illiquid_skus = len(illiquid_df)
+    top_df = illiquid_df.sort_values("frozen_capital", ascending=False).head(10)
+
+    art_labels = top_df.get("Артикул продавца", pd.Series(dtype=str)).fillna(top_df.get("Артикул WB", top_df.get("nm_id", "")).astype(str)).astype(str)
+    labels = [f"{art} ({days:.0f} дн.)" for art, days in zip(art_labels, top_df["days_supply"])]
+
+    bars = ax.barh(labels, top_df["frozen_capital"], color=COLOR_WARN, alpha=0.9)
+    ax.set_xlabel("Замороженный капитал, ₽")
+    ax.invert_yaxis()
+    _apply_chart_style(fig, ax)
+
+    max_val = top_df["frozen_capital"].max() if not top_df.empty else 0.0
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(w + (max_val * 0.01), bar.get_y() + bar.get_height() / 2, f"{w:,.0f} ₽".replace(",", " "), va="center", ha="left", fontsize=8, color=COLOR_TEXT)
+
+    ax.margins(x=0.15)
+    fig.tight_layout()
+
+    top_frozen = float(top_df["frozen_capital"].sum())
+    summary = f"Неликвидных SKU (запас >= 60 дн.): {total_illiquid_skus} шт. Замороженный капитал в топ-{len(top_df)}: {top_frozen:,.0f}₽.".replace(",", " ")
+    return MetricResult(title=METRIC_LABELS["frozen_capital"], figure=fig, summary=summary)
+
+
+def _roi_by_sku(start: date, end: date) -> MetricResult:
+    data = build_dashboard(start, end)
+    df = data.financial_products.copy()
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if df.empty or "Рентабельность затрат, %" not in df.columns or "Продано нетто" not in df.columns:
+        ax.text(0.5, 0.5, "Нет данных по ROI товаров", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["roi_by_sku"], figure=fig, summary="Данных по ROI товаров за период нет.")
+
+    df["sold_net"] = pd.to_numeric(df["Продано нетто"], errors="coerce").fillna(0.0)
+    df = df[df["sold_net"] > 0].sort_values("Рентабельность затрат, %", ascending=False).head(10)
+
+    if df.empty:
+        ax.text(0.5, 0.5, "Нет проданных товаров за период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["roi_by_sku"], figure=fig, summary="Данных по ROI товаров за период нет.")
+
+    labels = df.get("Артикул продавца", pd.Series(dtype=str)).fillna(df.get("Артикул WB", df.get("nm_id", "")).astype(str)).astype(str)
+    roi_vals = pd.to_numeric(df["Рентабельность затрат, %"], errors="coerce").fillna(0.0)
+    bar_colors = [COLOR_GOOD if v >= 0 else COLOR_CRITICAL for v in roi_vals]
+
+    bars = ax.barh(labels, roi_vals, color=bar_colors, alpha=0.9)
+    ax.set_xlabel("ROI (рентабельность затрат), %")
+    ax.invert_yaxis()
+    ax.margins(x=0.15)
+    _apply_chart_style(fig, ax)
+
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(
+            w + (1 if w >= 0 else -1), bar.get_y() + bar.get_height() / 2, f"{w:.1f}%",
+            va="center", ha="left" if w >= 0 else "right", fontsize=8, color=COLOR_TEXT,
+        )
+
+    fig.tight_layout()
+    avg_roi = float(roi_vals.mean())
+    top_label = labels.iloc[0]
+    top_roi = float(roi_vals.iloc[0])
+    summary = f"Средний ROI% по топ-{len(df)}: {avg_roi:.1f}%. Максимальный ROI: {top_label} ({top_roi:.1f}%)."
+    return MetricResult(title=METRIC_LABELS["roi_by_sku"], figure=fig, summary=summary)
+
+
 METRIC_BUILDERS: dict[str, Callable[[date, date], MetricResult]] = {
     "sales_orders": _sales_orders,
     "ads": _ads,
@@ -1043,6 +1203,9 @@ METRIC_BUILDERS: dict[str, Callable[[date, date], MetricResult]] = {
     "wb_commission_rate": _wb_commission_rate,
     "stock_in_transit": _stock_in_transit,
     "weekday_pattern": _weekday_pattern,
+    "wb_incident_losses": _wb_incident_losses,
+    "frozen_capital": _frozen_capital,
+    "roi_by_sku": _roi_by_sku,
 }
 
 
