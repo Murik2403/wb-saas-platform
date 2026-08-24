@@ -26,6 +26,7 @@ def fake_daily() -> pd.DataFrame:
 
 def fake_stocks() -> pd.DataFrame:
     return pd.DataFrame({
+        "snapshot_at": ["2026-08-05T12:00:00"] * 3,
         "nm_id": [111, 222, 333],
         "quantity": [10, 5, 20],
     })
@@ -63,6 +64,24 @@ def test_stocks_metric_with_data(monkeypatch):
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
     result = metrics.build_metric("stocks", date(2026, 8, 1), date(2026, 8, 5))
     assert "35" in result.summary  # 10+5+20
+
+
+def test_stocks_metric_only_uses_latest_snapshot(monkeypatch):
+    # `stocks` accumulates one row per sync snapshot -- an older snapshot
+    # (with a different quantity) sitting alongside the latest one must not
+    # get summed in, or totals balloon with every historical sync.
+    stale_and_fresh = pd.DataFrame({
+        "snapshot_at": ["2026-08-01T00:00:00", "2026-08-01T00:00:00", "2026-08-05T12:00:00", "2026-08-05T12:00:00", "2026-08-05T12:00:00"],
+        "nm_id": [111, 222, 111, 222, 333],
+        "quantity": [999, 999, 10, 5, 20],
+    })
+
+    def fake_read_table(name):
+        return stale_and_fresh if name == "stocks" else fake_catalog()
+    monkeypatch.setattr(metrics, "read_table", fake_read_table)
+    result = metrics.build_metric("stocks", date(2026, 8, 1), date(2026, 8, 5))
+    assert "35" in result.summary  # only the 2026-08-05 snapshot: 10+5+20
+    assert "999" not in result.summary
 
 
 def test_unknown_metric_raises():

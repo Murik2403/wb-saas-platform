@@ -78,6 +78,12 @@ def _stocks(start: date, end: date) -> MetricResult:
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["stocks"], figure=fig, summary="Данных об остатках нет.")
 
+    # `stocks` accumulates one row per sync snapshot, not just the latest --
+    # grouping by nm_id without filtering to the newest snapshot_at first
+    # sums quantities across every past snapshot, wildly inflating totals.
+    latest_snapshot = stocks["snapshot_at"].max()
+    stocks = stocks[stocks["snapshot_at"] == latest_snapshot]
+
     catalog = read_table("products_catalog")
     grouped = stocks.groupby("nm_id", as_index=False)["quantity"].sum()
     grouped = grouped.sort_values("quantity", ascending=False).head(20)
