@@ -31,13 +31,13 @@ def internal_api_is_configured() -> bool:
 email_is_configured = internal_api_is_configured
 
 
-def _post_to_gateway(path: str, report_name: str, pdf_bytes: bytes, filename: str) -> bool:
+def _post_to_gateway(path: str, report_name: str, pdf_bytes: bytes, filename: str, timeout: int = 30) -> bool:
     response = requests.post(
         f"{config.INTERNAL_API_URL}{path}",
         headers={"X-Internal-Secret": config.INTERNAL_API_SECRET},
         data={"slug": config.TENANT_SLUG, "report_name": report_name},
         files={"file": (filename, pdf_bytes, "application/pdf")},
-        timeout=30,
+        timeout=timeout,
     )
     if response.status_code != 200:
         logger.error("Gateway rejected %s: %s %s", path, response.status_code, response.text[:500])
@@ -102,12 +102,19 @@ def request_telegram_link_code() -> tuple[str, int] | None:
 
 
 def send_report_telegram(report_name: str, pdf_bytes: bytes, filename: str) -> bool:
-    """Same never-raises contract as send_report_email."""
+    """Same never-raises contract as send_report_email.
+
+    Longer timeout than the email path: the gateway's own call out to the
+    Telegram Bot API (telegram_bot.send_document) uses a 60s timeout on a
+    network path documented as intermittently slow (see telegram_bot.py's
+    module docstring) -- this must stay comfortably above that, or a
+    request that's still succeeding server-side gets reported as a failure
+    here just because this client gave up first."""
     if not internal_api_is_configured():
         logger.warning("Telegram delivery requested but gateway internal API is not configured -- skipping.")
         return False
     try:
-        return _post_to_gateway("/internal/send-report-telegram", report_name, pdf_bytes, filename)
+        return _post_to_gateway("/internal/send-report-telegram", report_name, pdf_bytes, filename, timeout=90)
     except Exception:
         logger.exception("Failed to reach gateway internal API for report Telegram delivery")
         return False

@@ -35,6 +35,7 @@ def test_send_report_email_posts_to_gateway_and_returns_true_on_200(monkeypatch)
         captured["headers"] = headers
         captured["data"] = data
         captured["files"] = files
+        captured["timeout"] = timeout
         return FakeResponse()
 
     monkeypatch.setattr(delivery.requests, "post", fake_post)
@@ -46,6 +47,7 @@ def test_send_report_email_posts_to_gateway_and_returns_true_on_200(monkeypatch)
     assert captured["data"]["slug"] == "acme"
     assert captured["data"]["report_name"] == "Еженедельная сводка"
     assert captured["files"]["file"][0] == "report.pdf"
+    assert captured["timeout"] == 30
 
 
 def test_send_report_email_returns_false_on_non_200(monkeypatch):
@@ -80,6 +82,7 @@ def test_send_report_telegram_posts_to_gateway_and_returns_true_on_200(monkeypat
     def fake_post(url, headers=None, data=None, files=None, timeout=None):
         captured["url"] = url
         captured["data"] = data
+        captured["timeout"] = timeout
         return FakeResponse()
 
     monkeypatch.setattr(delivery.requests, "post", fake_post)
@@ -88,6 +91,12 @@ def test_send_report_telegram_posts_to_gateway_and_returns_true_on_200(monkeypat
     assert ok is True
     assert captured["url"] == "https://marketshelper.ru/internal/send-report-telegram"
     assert captured["data"]["slug"] == "acme"
+    # Must stay comfortably above the gateway's own 60s Telegram Bot API
+    # call (telegram_bot.send_document) -- otherwise a request that's still
+    # succeeding server-side gets reported as a failure here just because
+    # this client gave up first (this is exactly what happened live before
+    # this timeout was raised from the shared 30s default).
+    assert captured["timeout"] == 90
 
 
 def test_send_report_telegram_returns_false_when_not_configured(monkeypatch):
