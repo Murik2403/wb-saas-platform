@@ -15,6 +15,19 @@ from ui_helpers import render_empty_state
 WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
 
+def _schedule_label(definition: dict) -> str:
+    # A dict-literal-then-index would eagerly evaluate every branch's
+    # f-string at construction time (including WEEKDAYS[None] for a
+    # daily/monthly definition, whose schedule_weekday is NULL) -- only
+    # build the one string actually needed.
+    schedule_type = definition["schedule_type"]
+    if schedule_type == "weekly":
+        return f"еженедельно по {WEEKDAYS[definition['schedule_weekday']].lower()}ам в {definition['schedule_time']}"
+    if schedule_type == "monthly":
+        return f"ежемесячно {definition['schedule_day']}-го числа в {definition['schedule_time']}"
+    return f"ежедневно в {definition['schedule_time']}"
+
+
 def _generate_now(store: ReportStore, definition: dict) -> None:
     try:
         run_definition(store, definition)
@@ -143,11 +156,7 @@ def render(ctx: dict) -> None:
     else:
         for definition in definitions:
             metric_names = ", ".join(METRIC_LABELS.get(c, c) for c in json.loads(definition["metrics"]))
-            schedule_label = {
-                "daily": f"ежедневно в {definition['schedule_time']}",
-                "weekly": f"еженедельно по {WEEKDAYS[definition['schedule_weekday']].lower()}ам в {definition['schedule_time']}",
-                "monthly": f"ежемесячно {definition['schedule_day']}-го числа в {definition['schedule_time']}",
-            }[definition["schedule_type"]]
+            schedule_label = _schedule_label(definition)
             with st.container(border=True):
                 cols = st.columns([3, 1, 1])
                 with cols[0]:

@@ -3,8 +3,10 @@ from datetime import date
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from zoneinfo import ZoneInfo
+
 from reports import metrics
-from reports.pdf_builder import build_report_pdf, format_page_number
+from reports.pdf_builder import build_report_pdf, format_page_number, generation_timestamp
 
 
 class FakeDashboardData:
@@ -123,6 +125,38 @@ def test_get_status_color():
     assert metrics.get_status_color("good") == metrics.COLOR_GOOD
     assert metrics.get_status_color("accent") == metrics.COLOR_ACCENT
     assert metrics.get_status_color("unknown") == metrics.COLOR_TEXT
+
+
+def test_build_report_pdf_handles_ampersand_and_angle_brackets_in_title(monkeypatch):
+    # Regression: reportlab's Paragraph interprets raw "&"/"<"/">" as its
+    # own mini-XML markup -- an unescaped title like "P&L" rendered visibly
+    # broken ("P&L;)") in production; a title with "<"/">" could raise
+    # outright. build_report_pdf must escape user-facing text before handing
+    # it to Paragraph().
+    monkeypatch.setattr(metrics, "build_dashboard", lambda start, end: FakeDashboardData(fake_daily()))
+
+    def fake_read_table(name):
+        return fake_stocks() if name == "stocks" else fake_catalog()
+    monkeypatch.setattr(metrics, "read_table", fake_read_table)
+
+    pdf_bytes = build_report_pdf("Отчёт A&B <тест>", ["sales_orders"], date(2026, 8, 1), date(2026, 8, 5))
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_generation_timestamp_uses_moscow_time_not_server_utc(monkeypatch):
+    import reports.pdf_builder as pdf_builder_module
+    from datetime import datetime as real_datetime
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed_utc = real_datetime(2026, 8, 24, 10, 0, tzinfo=ZoneInfo("UTC"))
+            return fixed_utc.astimezone(tz) if tz else fixed_utc.replace(tzinfo=None)
+
+    monkeypatch.setattr(pdf_builder_module, "datetime", FrozenDateTime)
+    # 10:00 UTC -> 13:00 MSK (UTC+3) -- a plain datetime.now() would have
+    # shown 10:00, three hours behind, which is exactly the bug reported live.
+    assert generation_timestamp() == "24.08.2026 13:00"
 
 
 def test_apply_chart_style_hides_top_right_spines_by_default():

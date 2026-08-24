@@ -9,6 +9,8 @@ from __future__ import annotations
 import io
 import os
 from datetime import date, datetime
+from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -42,6 +44,14 @@ pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", os.path.join(_FONTS_DIR, "Deja
 def format_page_number(current: int, total: int) -> str:
     """Formats the page-number string shown in the document footer."""
     return f"Стр. {current} из {total}"
+
+
+def generation_timestamp() -> str:
+    """Moscow-local generation time for the footer. The server OS clock is
+    UTC -- every timestamp in this project is shown as Moscow-local (see
+    report_scheduler.py's _now_msk_naive_iso), so a bare datetime.now()
+    here would display 3 hours behind, as it did before this existed."""
+    return datetime.now(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -88,8 +98,7 @@ class NumberedCanvas(canvas.Canvas):
         # Footer text
         self.setFont("DejaVuSans", 8)
         self.setFillColor(colors.HexColor("#64748b"))
-        gen_time = datetime.now().strftime("%d.%m.%Y %H:%M")
-        self.drawString(2 * cm, 1.0 * cm, f"MARKETSHELPER SaaS Platform • Сформировано: {gen_time}")
+        self.drawString(2 * cm, 1.0 * cm, f"MARKETSHELPER SaaS Platform • Сформировано: {generation_timestamp()}")
 
         page_str = format_page_number(self._pageNumber, page_count)
         self.drawRightString(21.0 * cm - 2 * cm, 1.0 * cm, page_str)
@@ -99,7 +108,7 @@ class NumberedCanvas(canvas.Canvas):
 
 def _create_summary_box(text: str, style: ParagraphStyle) -> Table:
     """Wraps a metric's summary text in a callout box with an accent left border."""
-    p = Paragraph(text, style)
+    p = Paragraph(escape(text), style)
     table = Table([[p]], colWidths=[17 * cm])
     table.setStyle(
         TableStyle(
@@ -169,8 +178,8 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
     # Document header card
     period_str = f"Период анализа: {start:%d.%m.%Y} — {end:%d.%m.%Y}"
     header_content = [
-        [Paragraph(name, title_style)],
-        [Paragraph(period_str, subtitle_style)],
+        [Paragraph(escape(name), title_style)],
+        [Paragraph(escape(period_str), subtitle_style)],
     ]
     header_table = Table(header_content, colWidths=[17 * cm])
     header_table.setStyle(
@@ -210,7 +219,7 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         plt.close(result.figure)
         img_buffer.seek(0)
 
-        story.append(Paragraph(result.title, heading_style))
+        story.append(Paragraph(escape(result.title), heading_style))
         story.append(RLImage(img_buffer, width=17 * cm, height=17 * cm * 0.45))
         story.append(Spacer(1, 0.2 * cm))
         story.append(_create_summary_box(result.summary, summary_style))
