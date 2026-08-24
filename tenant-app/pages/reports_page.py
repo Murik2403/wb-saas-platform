@@ -23,6 +23,50 @@ def _generate_now(store: ReportStore, definition: dict) -> None:
         st.session_state["reports_page_message"] = ("error", f"Не удалось сгенерировать: {exc}")
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _telegram_is_linked_cached() -> bool:
+    # A network round-trip to the gateway on every rerun (every widget
+    # interaction on this page) would be wasteful and slow -- 30s is short
+    # enough that a just-completed /link still shows up quickly if the user
+    # clicks "Обновить статус".
+    return delivery.telegram_is_linked()
+
+
+def _render_telegram_section() -> bool:
+    """Returns whether Telegram is currently linked, so the "Новый отчёт"
+    form below knows whether to offer the Telegram-delivery checkbox."""
+    st.markdown("### Telegram")
+    linked = _telegram_is_linked_cached()
+    if linked:
+        st.success("Telegram-чат привязан к аккаунту.")
+        return True
+
+    st.caption("Привяжите Telegram, чтобы получать отчёты сразу в чат с ботом поддержки.")
+    cols = st.columns([1, 1])
+    with cols[0]:
+        if st.button("Получить код для привязки"):
+            result = delivery.request_telegram_link_code()
+            if result is None:
+                st.session_state["reports_page_message"] = ("error", "Не удалось получить код привязки")
+            else:
+                code, ttl_minutes = result
+                st.session_state["telegram_link_code"] = (code, ttl_minutes)
+            st.rerun()
+    with cols[1]:
+        if st.button("Обновить статус"):
+            _telegram_is_linked_cached.clear()
+            st.rerun()
+
+    code_info = st.session_state.get("telegram_link_code")
+    if code_info:
+        code, ttl_minutes = code_info
+        st.info(
+            f"Откройте бота поддержки MARKETSHELPER в Telegram и отправьте команду:\n\n"
+            f"`/link {code}`\n\nКод действует {ttl_minutes} минут."
+        )
+    return False
+
+
 def render(ctx: dict) -> None:
     st.markdown('<div class="wb-title">Отчёты</div>', unsafe_allow_html=True)
     st.markdown(
@@ -36,6 +80,11 @@ def render(ctx: dict) -> None:
         (st.success if level == "success" else st.error)(text)
 
     store = ReportStore(DB_PATH)
+
+    if delivery.internal_api_is_configured():
+        telegram_linked = _render_telegram_section()
+    else:
+        telegram_linked = False
 
     with st.expander("Новый отчёт", expanded=False):
         name = st.text_input("Название отчёта", placeholder="Еженедельная сводка")
@@ -64,6 +113,12 @@ def render(ctx: dict) -> None:
         else:
             st.caption("Отправка на email недоступна: не настроен внутренний API шлюза.")
 
+        telegram_enabled = False
+        if telegram_linked:
+            telegram_enabled = st.checkbox("Также отправлять в Telegram")
+        elif delivery.internal_api_is_configured():
+            st.caption("Отправка в Telegram недоступна: сначала привяжите чат в разделе выше.")
+
         if st.button("Сохранить расписание", type="primary"):
             if not name.strip():
                 st.error("Укажите название отчёта")
@@ -76,7 +131,7 @@ def render(ctx: dict) -> None:
                     name=name.strip(), metrics=metric_choices, schedule_type=schedule_type,
                     schedule_time=schedule_time.strftime("%H:%M"),
                     schedule_weekday=schedule_weekday, schedule_day=schedule_day,
-                    email_enabled=email_enabled,
+                    email_enabled=email_enabled, telegram_enabled=telegram_enabled,
                 )
                 st.session_state["reports_page_message"] = ("success", "Расписание сохранено")
                 st.rerun()
@@ -97,8 +152,13 @@ def render(ctx: dict) -> None:
                 cols = st.columns([3, 1, 1])
                 with cols[0]:
                     st.markdown(f"**{definition['name']}** — {schedule_label}")
-                    email_note = ", также на email" if definition.get("email_enabled") else ""
-                    st.caption(f"Метрики: {metric_names}{email_note}. Последний запуск: {definition['last_run_at'] or 'ещё не было'}")
+                    delivery_notes = []
+                    if definition.get("email_enabled"):
+                        delivery_notes.append("на email")
+                    if definition.get("telegram_enabled"):
+                        delivery_notes.append("в Telegram")
+                    delivery_note = f", также {' и '.join(delivery_notes)}" if delivery_notes else ""
+                    st.caption(f"Метрики: {metric_names}{delivery_note}. Последний запуск: {definition['last_run_at'] or 'ещё не было'}")
                 with cols[1]:
                     if st.button("Сгенерировать сейчас", key=f"report_gen_{definition['id']}", use_container_width=True):
                         _generate_now(store, definition)

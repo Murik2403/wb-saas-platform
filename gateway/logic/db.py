@@ -102,11 +102,33 @@ def init_db(conn: sqlite3.Connection) -> None:
             container_name TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'provisioning',
             note TEXT DEFAULT '',
+            -- Telegram chat id linked via /link <code> in telegram_bot.py
+            -- (see telegram_link_codes below). Empty = not linked; a report
+            -- scheduled with Telegram delivery has nowhere to send until
+            -- this is set.
+            telegram_chat_id TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_tenant_instances_status ON tenant_instances(status);
+
+        -- One-time codes a tenant's dashboard generates (see
+        -- internal_routes.py's /internal/telegram-link-code) so its owner
+        -- can prove "I am this account" to the Telegram bot by sending
+        -- /link <code> -- the bot has no other way to associate a chat_id
+        -- with an account, since Telegram chat ids carry no email/account
+        -- identity. Single-use, short TTL (see logic/accounts.py's
+        -- TELEGRAM_LINK_CODE_TTL_MINUTES), same shape as password_reset_tokens.
+        CREATE TABLE IF NOT EXISTS telegram_link_codes (
+            code TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_account ON telegram_link_codes(account_id);
 
         -- "Forgot password" links. Only the SHA-256 hash of the raw token is
         -- stored (same pattern as sessions.token_hash) -- a leak of this
@@ -134,3 +156,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(accounts)")}
     if "pdn_consent_at" not in existing_columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")
+
+    tenant_columns = {row[1] for row in conn.execute("PRAGMA table_info(tenant_instances)")}
+    if "telegram_chat_id" not in tenant_columns:
+        conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")

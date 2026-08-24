@@ -109,3 +109,47 @@ def test_run_definition_skips_email_when_disabled(tmp_path, monkeypatch):
     run_definition(store, definition)
 
     assert called["count"] == 0
+
+
+def test_run_definition_sends_telegram_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(report_scheduler, "build_report_pdf", lambda name, codes, start, end: b"%PDF-1.4 fake")
+
+    captured = {}
+
+    def fake_send(report_name, pdf_bytes, filename):
+        captured["report_name"] = report_name
+        return True
+
+    monkeypatch.setattr(delivery, "send_report_telegram", fake_send)
+
+    store = ReportStore(tmp_path / "test_with_telegram.sqlite3")
+    store.add_definition(
+        name="Тест с Telegram", metrics=["stocks"], schedule_type="daily", schedule_time="09:00",
+        telegram_enabled=True,
+    )
+    definition = store.list_definitions()[0]
+
+    run_definition(store, definition)
+
+    assert captured["report_name"] == "Тест с Telegram"
+
+
+def test_run_definition_can_send_both_email_and_telegram(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(report_scheduler, "build_report_pdf", lambda name, codes, start, end: b"%PDF-1.4 fake")
+
+    calls = {"email": 0, "telegram": 0}
+    monkeypatch.setattr(delivery, "send_report_email", lambda *a, **k: calls.__setitem__("email", calls["email"] + 1) or True)
+    monkeypatch.setattr(delivery, "send_report_telegram", lambda *a, **k: calls.__setitem__("telegram", calls["telegram"] + 1) or True)
+
+    store = ReportStore(tmp_path / "test_with_both.sqlite3")
+    store.add_definition(
+        name="Оба канала", metrics=["ads"], schedule_type="daily", schedule_time="09:00",
+        email_enabled=True, telegram_enabled=True,
+    )
+    definition = store.list_definitions()[0]
+
+    run_definition(store, definition)
+
+    assert calls == {"email": 1, "telegram": 1}

@@ -210,6 +210,18 @@ def resolve_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     return get_account_by_id(conn, int(row["account_id"]))
 
 
+def purge_expired_sessions(conn: sqlite3.Connection) -> int:
+    """Bulk-delete every expired session, not just the one being presented.
+    resolve_session only prunes a token when its owner shows up with it, so
+    sessions from abandoned/logged-out devices linger forever. Call this
+    periodically (see scripts/run_billing_cycle.py) to keep the table small."""
+    cur = conn.execute(
+        "DELETE FROM sessions WHERE expires_at < ?",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"),),
+    )
+    return int(cur.rowcount or 0)
+
+
 def revoke_session(conn: sqlite3.Connection, token: str) -> None:
     if token:
         conn.execute("DELETE FROM sessions WHERE token_hash=?", (_hash_token(token),))
@@ -272,6 +284,70 @@ def get_tenant_for_account(conn: sqlite3.Connection, account_id: int) -> sqlite3
 
 def get_tenant_by_slug(conn: sqlite3.Connection, slug: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM tenant_instances WHERE slug=?", (slug,)).fetchone()
+
+
+# --------------------------------------------------------------------------
+# Telegram report delivery: linking a Telegram chat to an account
+# --------------------------------------------------------------------------
+
+TELEGRAM_LINK_CODE_TTL_MINUTES = 15
+# Excludes visually ambiguous characters (0/O, 1/I/L) -- a human is meant to
+# read this off their dashboard and type it into Telegram by hand.
+_LINK_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def create_telegram_link_code(conn: sqlite3.Connection, account_id: int, max_attempts: int = 20) -> str:
+    """Generates a short one-time code the account owner types into the
+    Telegram bot as `/link <code>` to associate their chat with this
+    account -- see telegram_link_codes' schema comment in logic/db.py for
+    why this indirection is needed at all."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=TELEGRAM_LINK_CODE_TTL_MINUTES)
+    for _ in range(max_attempts):
+        code = "".join(secrets.choice(_LINK_CODE_ALPHABET) for _ in range(6))
+        try:
+            conn.execute(
+                "INSERT INTO telegram_link_codes(code, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                (code, int(account_id), now.isoformat(timespec="seconds"), expires_at.isoformat(timespec="seconds")),
+            )
+            return code
+        except sqlite3.IntegrityError:
+            continue  # extremely unlikely code collision -- retry with a fresh one
+    raise RuntimeError("Не удалось сгенерировать код привязки Telegram.")
+
+
+def consume_telegram_link_code(conn: sqlite3.Connection, code: str, chat_id: str) -> bool:
+    """Returns True and links `chat_id` to the code's account if the code is
+    valid, unexpired, and unused; False otherwise. Single-use, same pattern
+    as password_reset.consume_reset_token."""
+    code = (code or "").strip().upper()
+    if not code:
+        return False
+    row = conn.execute("SELECT * FROM telegram_link_codes WHERE code=?", (code,)).fetchone()
+    if row is None or row["consumed_at"] is not None:
+        return False
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        return False
+
+    conn.execute(
+        "UPDATE telegram_link_codes SET consumed_at=? WHERE code=?",
+        (_now_iso(), code),
+    )
+    conn.execute(
+        "UPDATE tenant_instances SET telegram_chat_id=?, updated_at=? WHERE account_id=?",
+        (str(chat_id), _now_iso(), int(row["account_id"])),
+    )
+    return True
+
+
+def get_telegram_chat_id_for_slug(conn: sqlite3.Connection, slug: str) -> str:
+    tenant = get_tenant_by_slug(conn, slug)
+    if tenant is None:
+        return ""
+    return str(tenant["telegram_chat_id"] or "")
 
 
 # --------------------------------------------------------------------------

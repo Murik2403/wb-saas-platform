@@ -22,6 +22,7 @@ import time
 import requests
 
 import config
+from logic import accounts, db as control_db
 
 # Note on connectivity: this host's network path to api.telegram.org over
 # plain IPv4 was observed to be unreliable (confirmed live: connect()
@@ -50,6 +51,19 @@ def _call(method: str, **params) -> dict:
     return response.json()
 
 
+def send_document(chat_id: str, file_bytes: bytes, filename: str, caption: str = "") -> dict:
+    """Separate from _call() because sendDocument needs multipart/form-data
+    (a file part), not the plain JSON body every other method here uses."""
+    url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method="sendDocument")
+    data = {"chat_id": chat_id}
+    if caption:
+        data["caption"] = caption
+    files = {"document": (filename, file_bytes, "application/pdf")}
+    response = requests.post(url, data=data, files=files, timeout=60)
+    response.raise_for_status()
+    return response.json()
+
+
 def format_relay(message: dict) -> str:
     """Pure formatting, kept separate from _call so it's testable without
     a network mock."""
@@ -61,11 +75,49 @@ def format_relay(message: dict) -> str:
     return f"Новое сообщение в поддержку MARKETSHELPER\nОт: {name} ({contact})\n\n{text}"
 
 
+LINK_SUCCESS_REPLY = (
+    "Готово! Этот чат привязан к вашему аккаунту MARKETSHELPER — отчёты с "
+    "включённой доставкой в Telegram (страница «Отчёты» в кабинете) теперь "
+    "будут приходить сюда."
+)
+
+
+def _link_failure_reply() -> str:
+    return (
+        "Код не найден, уже использован или истёк "
+        f"(код действует {accounts.TELEGRAM_LINK_CODE_TTL_MINUTES} минут). "
+        "Получите новый код на странице «Отчёты» в кабинете и отправьте его "
+        "снова: /link <код>"
+    )
+
+
+def _handle_link_command(chat_id, text: str) -> None:
+    """/link <code> is how a user proves "I am this account" to the bot --
+    Telegram chat ids carry no account/email identity on their own, so this
+    one-time code (generated on the dashboard, see
+    logic/accounts.create_telegram_link_code) is the only bridge between the
+    two. Never relayed to the operator -- this is a self-service action, not
+    a support message."""
+    parts = text.split(maxsplit=1)
+    code = parts[1].strip() if len(parts) > 1 else ""
+    with control_db.connect() as conn:
+        ok = accounts.consume_telegram_link_code(conn, code, str(chat_id))
+    reply = LINK_SUCCESS_REPLY if ok else _link_failure_reply()
+    try:
+        _call("sendMessage", chat_id=chat_id, text=reply)
+    except Exception:
+        logger.exception("Failed to send Telegram /link result to chat %s", chat_id)
+
+
 def _handle_update(update: dict) -> None:
     message = update.get("message")
     if not message:
         return
     chat_id = message["chat"]["id"]
+    text = (message.get("text") or "").strip()
+    if text.startswith("/link"):
+        _handle_link_command(chat_id, text)
+        return
     try:
         _call("sendMessage", chat_id=chat_id, text=AUTO_REPLY)
     except Exception:

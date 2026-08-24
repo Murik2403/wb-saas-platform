@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS report_definitions (
     schedule_weekday INTEGER,       -- 0-6, только для weekly
     schedule_day INTEGER,           -- 1-31, только для monthly
     enabled INTEGER NOT NULL DEFAULT 1,
-    email_enabled INTEGER NOT NULL DEFAULT 0,  -- также отправлять на email аккаунта при генерации
+    email_enabled INTEGER NOT NULL DEFAULT 0,     -- также отправлять на email аккаунта при генерации
+    telegram_enabled INTEGER NOT NULL DEFAULT 0,  -- также отправлять в привязанный Telegram-чат
     created_at TEXT NOT NULL,
     last_run_at TEXT
 );
@@ -61,6 +62,8 @@ class ReportStore:
             existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(report_definitions)")}
             if "email_enabled" not in existing_columns:
                 conn.execute("ALTER TABLE report_definitions ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 0")
+            if "telegram_enabled" not in existing_columns:
+                conn.execute("ALTER TABLE report_definitions ADD COLUMN telegram_enabled INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -73,15 +76,17 @@ class ReportStore:
 
     def add_definition(
         self, *, name: str, metrics: list[str], schedule_type: str, schedule_time: str,
-        schedule_weekday: int | None = None, schedule_day: int | None = None, email_enabled: bool = False,
+        schedule_weekday: int | None = None, schedule_day: int | None = None,
+        email_enabled: bool = False, telegram_enabled: bool = False,
     ) -> int:
         with self._conn() as conn:
             cur = conn.execute(
                 """INSERT INTO report_definitions
-                   (name, metrics, schedule_type, schedule_time, schedule_weekday, schedule_day, enabled, email_enabled, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                   (name, metrics, schedule_type, schedule_time, schedule_weekday, schedule_day, enabled,
+                    email_enabled, telegram_enabled, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
                 (name, json.dumps(metrics), schedule_type, schedule_time, schedule_weekday, schedule_day,
-                 int(email_enabled), _now_msk_naive_iso()),
+                 int(email_enabled), int(telegram_enabled), _now_msk_naive_iso()),
             )
             return cur.lastrowid
 

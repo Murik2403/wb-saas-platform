@@ -70,6 +70,8 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int = 3
             # downloadable regardless (see delivery.send_report_email's
             # docstring for why it never raises).
             delivery.send_report_email(definition["name"], pdf_bytes, file_path.name)
+        if definition.get("telegram_enabled"):
+            delivery.send_report_telegram(definition["name"], pdf_bytes, file_path.name)
 
         store.finish_run(run_id, status="ok", file_path=str(file_path))
         store.set_last_run(definition["id"], datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds"))
