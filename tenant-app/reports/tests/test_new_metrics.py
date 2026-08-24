@@ -14,11 +14,12 @@ from reports import metrics
 
 
 class FakeDashboardData:
-    def __init__(self, financial=None, financial_products=None, ads=None, stocks=None):
+    def __init__(self, financial=None, financial_products=None, ads=None, stocks=None, daily=None):
         self.financial = financial or {}
         self.financial_products = financial_products if financial_products is not None else pd.DataFrame()
         self.ads = ads if ads is not None else pd.DataFrame()
         self.stocks = stocks if stocks is not None else pd.DataFrame()
+        self.daily = daily if daily is not None else pd.DataFrame()
 
 
 def fake_financial() -> dict:
@@ -218,7 +219,114 @@ def test_warehouse_stocks_handles_empty(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# All 10 metrics together in one PDF
+# unit_economics
+# --------------------------------------------------------------------------
+
+def test_unit_economics_ranks_by_margin_and_reports_best(monkeypatch):
+    df = pd.DataFrame({
+        "Артикул WB": [111, 222, 333],
+        "Артикул продавца": ["A1", "A2", "A3"],
+        "Продано нетто": [10, 20, 5],
+        "Маржинальность, %": [30.0, 60.0, -10.0],
+    })
+    monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: FakeDashboardData(financial_products=df))
+    result = metrics.build_metric("unit_economics", date(2026, 8, 1), date(2026, 8, 5))
+    assert "A2" in result.summary  # highest margin (60%) should be reported as the best
+
+
+def test_unit_economics_handles_empty(monkeypatch):
+    monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: FakeDashboardData())
+    result = metrics.build_metric("unit_economics", date(2026, 8, 1), date(2026, 8, 5))
+    assert "нет" in result.summary.lower()
+
+
+def test_unit_economics_excludes_zero_sold_items(monkeypatch):
+    df = pd.DataFrame({
+        "Артикул WB": [111, 222],
+        "Артикул продавца": ["A1", "A2"],
+        "Продано нетто": [0, 10],
+        "Маржинальность, %": [50.0, 20.0],
+    })
+    monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: FakeDashboardData(financial_products=df))
+    result = metrics.build_metric("unit_economics", date(2026, 8, 1), date(2026, 8, 5))
+    assert "A2" in result.summary
+    assert "20.0%" in result.summary
+
+
+# --------------------------------------------------------------------------
+# returns_cancellations
+# --------------------------------------------------------------------------
+
+def fake_orders_for_cancellations() -> pd.DataFrame:
+    return pd.DataFrame({
+        "order_date": ["2026-08-01", "2026-08-01", "2026-08-02", "2026-08-03"],
+        "is_cancel": [1, 0, 1, 0],
+    })
+
+
+def fake_sales_for_returns() -> pd.DataFrame:
+    return pd.DataFrame({
+        "sale_date": ["2026-08-01", "2026-08-02", "2026-08-02"],
+        "is_return": [0, 1, 1],
+    })
+
+
+def test_returns_cancellations_totals(monkeypatch):
+    def fake_read_table(name):
+        if name == "orders":
+            return fake_orders_for_cancellations()
+        if name == "sales":
+            return fake_sales_for_returns()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(metrics, "read_table", fake_read_table)
+    result = metrics.build_metric("returns_cancellations", date(2026, 8, 1), date(2026, 8, 3))
+    assert "отмен 2 шт" in result.summary
+    assert "возвратов 2 шт" in result.summary
+
+
+def test_returns_cancellations_handles_empty(monkeypatch):
+    monkeypatch.setattr(metrics, "read_table", lambda name: pd.DataFrame())
+    result = metrics.build_metric("returns_cancellations", date(2026, 8, 1), date(2026, 8, 3))
+    assert "нет" in result.summary.lower()
+
+
+# --------------------------------------------------------------------------
+# organic_vs_ads
+# --------------------------------------------------------------------------
+
+def test_organic_vs_ads_splits_orders(monkeypatch):
+    daily = pd.DataFrame({"day": pd.date_range("2026-08-01", periods=2).date, "orders": [30, 20]})
+    ads = pd.DataFrame({"Кампания": [1], "Заказы": [10]})
+    fake_data = FakeDashboardData(ads=ads, daily=daily)
+    monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: fake_data)
+    result = metrics.build_metric("organic_vs_ads", date(2026, 8, 1), date(2026, 8, 2))
+    # total orders = 50, ad orders = 10 -> organic = 40
+    assert "Всего заказов: 50" in result.summary
+    assert "Из рекламы: 10" in result.summary
+
+
+def test_organic_vs_ads_clips_ad_orders_at_total(monkeypatch):
+    # Ad-attributed orders can technically exceed the daily total order count
+    # (different report / attribution lag) -- organic must never go negative.
+    daily = pd.DataFrame({"day": pd.date_range("2026-08-01", periods=1).date, "orders": [5]})
+    ads = pd.DataFrame({"Кампания": [1], "Заказы": [999]})
+    fake_data = FakeDashboardData(ads=ads, daily=daily)
+    monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: fake_data)
+    result = metrics.build_metric("organic_vs_ads", date(2026, 8, 1), date(2026, 8, 1))
+    assert "Из рекламы: 5" in result.summary
+    assert "органика: 0" in result.summary
+
+
+def test_organic_vs_ads_handles_zero_orders(monkeypatch):
+    fake_data = FakeDashboardData(daily=pd.DataFrame({"day": [], "orders": []}))
+    monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: fake_data)
+    result = metrics.build_metric("organic_vs_ads", date(2026, 8, 1), date(2026, 8, 1))
+    assert "не было" in result.summary.lower()
+
+
+# --------------------------------------------------------------------------
+# All 13 metrics together in one PDF
 # --------------------------------------------------------------------------
 
 def test_all_ten_metrics_produce_a_valid_pdf(monkeypatch):
@@ -240,6 +348,10 @@ def test_all_ten_metrics_produce_a_valid_pdf(monkeypatch):
     def fake_read_table(name):
         if name == "stocks":
             return pd.DataFrame({"snapshot_at": ["2026-08-05"], "nm_id": [111], "quantity": [10]})
+        if name == "orders":
+            return fake_orders_for_cancellations()
+        if name == "sales":
+            return fake_sales_for_returns()
         return pd.DataFrame({"nm_id": [111], "supplier_article": ["A1"]})
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
 

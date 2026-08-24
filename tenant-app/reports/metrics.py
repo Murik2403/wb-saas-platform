@@ -42,6 +42,9 @@ METRIC_LABELS = {
     "wb_deductions": "Структура удержаний WB",
     "ad_performance": "Эффективность рекламы по кампаниям",
     "warehouse_stocks": "География остатков по складам",
+    "unit_economics": "Юнит-экономика по товарам",
+    "returns_cancellations": "Отмены и возвраты по дням",
+    "organic_vs_ads": "Органика vs Реклама",
 }
 
 
@@ -479,6 +482,125 @@ def _warehouse_stocks(start: date, end: date) -> MetricResult:
     return MetricResult(title=METRIC_LABELS["warehouse_stocks"], figure=fig, summary=summary)
 
 
+def _unit_economics(start: date, end: date) -> MetricResult:
+    data = build_dashboard(start, end)
+    df = data.financial_products.copy()
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if df.empty or "Маржинальность, %" not in df.columns:
+        ax.text(0.5, 0.5, "Нет данных для юнит-экономики", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["unit_economics"], figure=fig, summary="Нет данных для юнит-экономики.")
+
+    df = df[df["Продано нетто"] > 0].sort_values("Маржинальность, %", ascending=False).head(15)
+    if df.empty:
+        ax.text(0.5, 0.5, "Нет проданных товаров за период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["unit_economics"], figure=fig, summary="Проданных товаров за период не обнаружено.")
+
+    labels = df["Артикул продавца"].fillna(df["Артикул WB"].astype(str)).astype(str)
+    bar_colors = [COLOR_GOOD if v >= 0 else COLOR_CRITICAL for v in df["Маржинальность, %"]]
+
+    bars = ax.barh(labels, df["Маржинальность, %"], color=bar_colors, alpha=0.9)
+    ax.set_xlabel("Маржинальность, %")
+    ax.invert_yaxis()
+    _apply_chart_style(fig, ax)
+
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(
+            w + (1 if w >= 0 else -1), bar.get_y() + bar.get_height() / 2, f"{w:.1f}%",
+            va="center", ha="left" if w >= 0 else "right", fontsize=8, color=COLOR_TEXT,
+        )
+
+    fig.tight_layout()
+    avg_margin = float(df["Маржинальность, %"].mean())
+    top_label = labels.iloc[0]
+    top_margin = float(df.iloc[0]["Маржинальность, %"])
+    summary = f"Средняя маржинальность топ-{len(df)}: {avg_margin:.1f}%. Лучший товар: {top_label} ({top_margin:.1f}%)."
+    return MetricResult(title=METRIC_LABELS["unit_economics"], figure=fig, summary=summary)
+
+
+def _returns_cancellations(start: date, end: date) -> MetricResult:
+    orders = read_table("orders")
+    sales = read_table("sales")
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+    _apply_chart_style(fig, ax)
+
+    if orders.empty and sales.empty:
+        ax.text(0.5, 0.5, "Нет данных об отменах и возвратах", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["returns_cancellations"], figure=fig, summary="Данных об отменах и возвратах нет.")
+
+    all_days = pd.date_range(start, end).date
+
+    cancel_series = pd.Series(0, index=all_days)
+    if not orders.empty:
+        orders = orders.copy()
+        orders["order_date"] = pd.to_datetime(orders["order_date"], errors="coerce").dt.date
+        period_orders = orders[(orders["order_date"] >= start) & (orders["order_date"] <= end)]
+        daily_cancel = period_orders[period_orders["is_cancel"] == 1].groupby("order_date").size()
+        cancel_series = daily_cancel.reindex(all_days, fill_value=0)
+
+    return_series = pd.Series(0, index=all_days)
+    if not sales.empty:
+        sales = sales.copy()
+        sales["sale_date"] = pd.to_datetime(sales["sale_date"], errors="coerce").dt.date
+        period_sales = sales[(sales["sale_date"] >= start) & (sales["sale_date"] <= end)]
+        daily_return = period_sales[period_sales["is_return"] == 1].groupby("sale_date").size()
+        return_series = daily_return.reindex(all_days, fill_value=0)
+
+    ax.plot(all_days, cancel_series.values, label="Отмены, шт.", color=COLOR_CRITICAL, marker="o", linewidth=2, markersize=4)
+    ax.plot(all_days, return_series.values, label="Возвраты, шт.", color=COLOR_WARN, marker="o", linewidth=2, markersize=4)
+    ax.set_xlabel("Дата")
+    ax.set_ylabel("Штук")
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    fig.autofmt_xdate()
+
+    total_cancel = int(cancel_series.sum())
+    total_return = int(return_series.sum())
+    summary = f"Итого за период: отмен {total_cancel} шт., возвратов {total_return} шт."
+    return MetricResult(title=METRIC_LABELS["returns_cancellations"], figure=fig, summary=summary)
+
+
+def _organic_vs_ads(start: date, end: date) -> MetricResult:
+    data = build_dashboard(start, end)
+    daily = data.daily
+    ads = data.ads.copy()
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+
+    total_orders = int(daily["orders"].sum()) if not daily.empty else 0
+    if total_orders == 0:
+        ax.text(0.5, 0.5, "Заказов за период не было", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["organic_vs_ads"], figure=fig, summary="Заказов за период не было.")
+
+    ad_orders_raw = int(ads["Заказы"].sum()) if not ads.empty and "Заказы" in ads.columns else 0
+    # Ad-attributed orders come from a different report (advert stats) than
+    # the daily order count, so they can technically exceed it in edge cases
+    # (attribution lag, etc.) -- clip so organic never goes negative.
+    ad_orders = min(ad_orders_raw, total_orders)
+    organic_orders = total_orders - ad_orders
+
+    labels = ["Органика", "Реклама"]
+    values = [organic_orders, ad_orders]
+    pie_colors = [COLOR_GOOD, COLOR_ACCENT]
+
+    wedges, texts, autotexts = ax.pie(
+        values, labels=labels, autopct="%1.1f%%", startangle=140, colors=pie_colors,
+        wedgeprops=dict(width=0.4, edgecolor="w", linewidth=1.5),
+    )
+    plt.setp(autotexts, size=8, weight="bold", color="#ffffff")
+    plt.setp(texts, size=8, color=COLOR_TEXT)
+    fig.patch.set_facecolor(COLOR_BG)
+    ax.set_facecolor(COLOR_BG)
+    fig.tight_layout()
+
+    ad_share = (ad_orders / total_orders * 100) if total_orders else 0.0
+    summary = f"Всего заказов: {total_orders} шт. Из рекламы: {ad_orders} шт. ({ad_share:.1f}%), органика: {organic_orders} шт."
+    return MetricResult(title=METRIC_LABELS["organic_vs_ads"], figure=fig, summary=summary)
+
+
 METRIC_BUILDERS: dict[str, Callable[[date, date], MetricResult]] = {
     "sales_orders": _sales_orders,
     "ads": _ads,
@@ -490,6 +612,9 @@ METRIC_BUILDERS: dict[str, Callable[[date, date], MetricResult]] = {
     "wb_deductions": _wb_deductions,
     "ad_performance": _ad_performance,
     "warehouse_stocks": _warehouse_stocks,
+    "unit_economics": _unit_economics,
+    "returns_cancellations": _returns_cancellations,
+    "organic_vs_ads": _organic_vs_ads,
 }
 
 
