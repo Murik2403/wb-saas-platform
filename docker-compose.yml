@@ -107,6 +107,11 @@ services:
       # Admin panel (/admin) -- comma-separated allowlist, empty disables it
       # entirely even for a logged-in account. See config.py's ADMIN_EMAILS.
       - WB_SAAS_ADMIN_EMAILS=${WB_SAAS_ADMIN_EMAILS:-}
+      # Internal API (internal_routes.py) -- shared secret tenant containers
+      # present when calling back to the gateway (e.g. to email a scheduled
+      # report). Empty disables the feature entirely rather than accepting
+      # an empty string as a valid secret -- see config.py's INTERNAL_API_SECRET.
+      - WB_SAAS_INTERNAL_API_SECRET=${WB_SAAS_INTERNAL_API_SECRET:-}
     labels:
       - traefik.enable=true
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)

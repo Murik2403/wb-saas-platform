@@ -30,6 +30,52 @@ class BuildMessageTests(unittest.TestCase):
         self.assertEqual(msg.get_content().strip(), "Body text")
 
 
+class BuildMessageWithAttachmentTests(unittest.TestCase):
+    def test_attachment_is_added_as_pdf_part(self) -> None:
+        msg = mailer.build_message(
+            "client@example.com", "Subject", "Body", attachment=(b"%PDF-1.4 fake bytes", "report.pdf"),
+        )
+        attachments = list(msg.iter_attachments())
+        self.assertEqual(len(attachments), 1)
+        part = attachments[0]
+        self.assertEqual(part.get_content_type(), "application/pdf")
+        self.assertEqual(part.get_filename(), "report.pdf")
+        self.assertEqual(part.get_payload(decode=True), b"%PDF-1.4 fake bytes")
+
+    def test_no_attachment_means_plain_message(self) -> None:
+        msg = mailer.build_message("client@example.com", "Subject", "Body")
+        self.assertEqual(list(msg.iter_attachments()), [])
+
+
+class SendReportEmailTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_host = config.SMTP_HOST
+        config.SMTP_HOST = ""
+
+    def tearDown(self) -> None:
+        config.SMTP_HOST = self._original_host
+
+    def test_includes_report_name_and_attachment(self) -> None:
+        captured = {}
+        original_send = mailer.send_email
+
+        def _capture(to_email, subject, body_text, attachment=None):
+            captured["to"] = to_email
+            captured["subject"] = subject
+            captured["attachment"] = attachment
+            return True
+
+        mailer.send_email = _capture
+        try:
+            ok = mailer.send_report_email("client@example.com", "Еженедельная сводка", b"%PDF-1.4...", "report.pdf")
+        finally:
+            mailer.send_email = original_send
+        self.assertTrue(ok)
+        self.assertEqual(captured["to"], "client@example.com")
+        self.assertIn("Еженедельная сводка", captured["subject"])
+        self.assertEqual(captured["attachment"], (b"%PDF-1.4...", "report.pdf"))
+
+
 class SendEmailWithoutSmtpConfiguredTests(unittest.TestCase):
     def setUp(self) -> None:
         self._original_host = config.SMTP_HOST

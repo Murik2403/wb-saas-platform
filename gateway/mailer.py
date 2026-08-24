@@ -27,21 +27,29 @@ import config
 logger = logging.getLogger("wb_saas_gateway.mailer")
 
 
-def build_message(to_email: str, subject: str, body_text: str) -> EmailMessage:
+def build_message(
+    to_email: str, subject: str, body_text: str, attachment: tuple[bytes, str] | None = None,
+) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = config.SMTP_FROM_EMAIL
     msg["To"] = to_email
     msg.set_content(body_text)
+    if attachment is not None:
+        data, filename = attachment
+        msg.add_attachment(data, maintype="application", subtype="pdf", filename=filename)
     return msg
 
 
-def send_email(to_email: str, subject: str, body_text: str) -> bool:
+def send_email(to_email: str, subject: str, body_text: str, attachment: tuple[bytes, str] | None = None) -> bool:
     """Returns True if the message was handed off to an SMTP server (or
     logged, in the no-SMTP-configured fallback), False on a delivery
     failure. Never raises -- a mail outage must not turn into a 500 for the
     person requesting a password reset; the caller should show the same
-    "check your email" message regardless (see logic/password_reset.py)."""
+    "check your email" message regardless (see logic/password_reset.py).
+
+    `attachment`, if given, is (bytes, filename) and is sent as a PDF part --
+    the only attachment kind this sends today (see send_report_email)."""
     if not config.SMTP_HOST:
         logger.warning(
             "WB_SAAS_SMTP_HOST is not configured -- not sending email, logging instead. To: %s Subject: %s",
@@ -50,7 +58,7 @@ def send_email(to_email: str, subject: str, body_text: str) -> bool:
         logger.info("Email body that would have been sent:\n%s", body_text)
         return True
 
-    message = build_message(to_email, subject, body_text)
+    message = build_message(to_email, subject, body_text, attachment=attachment)
     try:
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=15) as smtp:
             if config.SMTP_USE_STARTTLS:
@@ -75,3 +83,12 @@ def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -
         "пароль останется прежним."
     )
     return send_email(to_email, subject, body)
+
+
+def send_report_email(to_email: str, report_name: str, pdf_bytes: bytes, filename: str) -> bool:
+    subject = f"Отчёт «{report_name}» — MARKETSHELPER"
+    body = (
+        f"Автоматический отчёт «{report_name}» из MARKETSHELPER во вложении (PDF).\n\n"
+        "Это письмо сгенерировано по расписанию, настроенному на странице «Отчёты» вашего кабинета."
+    )
+    return send_email(to_email, subject, body, attachment=(pdf_bytes, filename))

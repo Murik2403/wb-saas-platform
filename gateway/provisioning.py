@@ -144,10 +144,18 @@ def _run_tenant_container(client, slug: str, container_name: str, require_auth: 
         # Lets the dashboard itself render a "Subscription" link and a
         # "Log out" control back to the gateway -- the tenant container has
         # no other way to know its own parent domain. Read by
-        # tenant-app/config.py.
+        # tenant-app/config.py. WB_SAAS_TENANT_SLUG/INTERNAL_API_* let the
+        # container identify itself and authenticate to the gateway's
+        # internal API (see internal_routes.py) for report email delivery --
+        # the tenant is not on the gateway's docker network (see
+        # ensure_tenant_network's docstring), so this is the only way it
+        # knows how to reach the gateway at all.
         environment={
             "WB_SAAS_BILLING_URL": config.billing_url(),
             "WB_SAAS_LOGOUT_URL": config.logout_url(),
+            "WB_SAAS_TENANT_SLUG": slug,
+            "WB_SAAS_INTERNAL_API_URL": config.base_url(),
+            "WB_SAAS_INTERNAL_API_SECRET": config.INTERNAL_API_SECRET,
         },
     )
 

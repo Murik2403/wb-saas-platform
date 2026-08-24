@@ -108,6 +108,19 @@ TELEGRAM_BOT_TOKEN = os.environ.get("WB_SAAS_TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 
 # --------------------------------------------------------------------------
+# Internal API (see internal_routes.py): lets a tenant container ask the
+# gateway to email/relay a scheduled report on its behalf. Tenant containers
+# are deliberately NOT on the gateway's docker network (see provisioning.py's
+# per-tenant network isolation), so this is reached over the same public
+# HTTPS domain as everything else, authenticated by this shared secret
+# instead of a user session. Baked into every tenant container's environment
+# at provision time (see provisioning.py's _run_tenant_container). Empty
+# disables the feature -- internal_routes.py rejects every call until set.
+# --------------------------------------------------------------------------
+
+INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+
+# --------------------------------------------------------------------------
 # Admin panel (see admin_routes.py, logic/accounts.py's is_admin_account)
 # --------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ import streamlit as st
 
 from config import DB_PATH
 from report_scheduler import run_definition
+from reports import delivery
 from reports.metrics import METRIC_LABELS
 from reports.store import ReportStore
 from ui_helpers import render_empty_state
@@ -57,6 +58,12 @@ def render(ctx: dict) -> None:
             elif schedule_type == "monthly":
                 schedule_day = st.number_input("Число месяца", min_value=1, max_value=28, value=1)
 
+        email_enabled = False
+        if delivery.email_is_configured():
+            email_enabled = st.checkbox("Также отправлять на email аккаунта")
+        else:
+            st.caption("Отправка на email недоступна: не настроен внутренний API шлюза.")
+
         if st.button("Сохранить расписание", type="primary"):
             if not name.strip():
                 st.error("Укажите название отчёта")
@@ -69,6 +76,7 @@ def render(ctx: dict) -> None:
                     name=name.strip(), metrics=metric_choices, schedule_type=schedule_type,
                     schedule_time=schedule_time.strftime("%H:%M"),
                     schedule_weekday=schedule_weekday, schedule_day=schedule_day,
+                    email_enabled=email_enabled,
                 )
                 st.session_state["reports_page_message"] = ("success", "Расписание сохранено")
                 st.rerun()
@@ -89,7 +97,8 @@ def render(ctx: dict) -> None:
                 cols = st.columns([3, 1, 1])
                 with cols[0]:
                     st.markdown(f"**{definition['name']}** — {schedule_label}")
-                    st.caption(f"Метрики: {metric_names}. Последний запуск: {definition['last_run_at'] or 'ещё не было'}")
+                    email_note = ", также на email" if definition.get("email_enabled") else ""
+                    st.caption(f"Метрики: {metric_names}{email_note}. Последний запуск: {definition['last_run_at'] or 'ещё не было'}")
                 with cols[1]:
                     if st.button("Сгенерировать сейчас", key=f"report_gen_{definition['id']}", use_container_width=True):
                         _generate_now(store, definition)

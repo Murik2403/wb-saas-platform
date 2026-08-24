@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import DB_PATH
+from reports import delivery
 from reports.pdf_builder import build_report_pdf
 from reports.store import ReportStore
 
@@ -62,6 +63,13 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int = 3
         out_dir.mkdir(parents=True, exist_ok=True)
         file_path = out_dir / f"{datetime.now():%Y%m%d_%H%M%S}.pdf"
         file_path.write_bytes(pdf_bytes)
+
+        if definition.get("email_enabled"):
+            # Best-effort: a failed email must not turn a successful
+            # generation into a failed run -- the PDF is already saved and
+            # downloadable regardless (see delivery.send_report_email's
+            # docstring for why it never raises).
+            delivery.send_report_email(definition["name"], pdf_bytes, file_path.name)
 
         store.finish_run(run_id, status="ok", file_path=str(file_path))
         store.set_last_run(definition["id"], datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds"))

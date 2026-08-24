@@ -28,6 +28,7 @@ import config
 import mailer
 from admin_routes import router as admin_router
 from billing_routes import router as billing_router
+from internal_routes import router as internal_router
 from logic import accounts, csrf, db as control_db, password_reset
 from rate_limiter import RateLimiter
 
@@ -36,6 +37,7 @@ logger = logging.getLogger("wb_saas_gateway")
 app = FastAPI(title="MARKETSHELPER Gateway")
 app.include_router(billing_router)
 app.include_router(admin_router)
+app.include_router(internal_router)
 app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),

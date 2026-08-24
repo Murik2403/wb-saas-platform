@@ -35,6 +35,18 @@ LOGOUT_URL = os.environ.get("WB_SAAS_LOGOUT_URL", "")
 # (token/cost editing) or any page beyond the read-only headline ones.
 IS_DEMO = os.environ.get("WB_SAAS_IS_DEMO", "0") == "1"
 
+# Set by the gateway (provisioning.py) so this container can identify and
+# authenticate itself when calling back to the gateway's internal API (see
+# reports/delivery.py) -- e.g. emailing a scheduled report to the account
+# owner. This container is deliberately not on the gateway's docker network
+# (per-tenant network isolation), so INTERNAL_API_URL is the gateway's
+# public HTTPS domain, not a docker-internal hostname. All empty when run
+# standalone -- email delivery is then simply unavailable, same
+# graceful-degradation pattern as BILLING_URL above.
+TENANT_SLUG = os.environ.get("WB_SAAS_TENANT_SLUG", "")
+INTERNAL_API_URL = os.environ.get("WB_SAAS_INTERNAL_API_URL", "")
+INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+
 DEFAULT_SETTINGS: dict[str, Any] = {
     "sync_interval_minutes": 30,
     "initial_history_days": 90,
