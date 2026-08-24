@@ -42,33 +42,19 @@ certificatesResolvers:
   letsencrypt:
     acme:
       storage: /letsencrypt/acme.json
-      # DNS-01 wildcard (*.app.<domain>) -- eliminates the brief self-signed
-      # window a brand-new tenant subdomain shows before its on-demand cert is
-      # issued: one wildcard cert already covers every tenant, nothing is issued
-      # per-request.
-      #
-      # HISTORY: an earlier DNS-01 attempt failed with "did not return the
-      # expected TXT record". Root cause was NOT a provider mismatch -- the zone
-      # IS in Timeweb Cloud and the timewebcloud lego provider CAN write to it.
-      # The real cause: marketshelper.ru was delegated to 4 nameservers
-      # (ns1/ns2.timeweb.ru + ns3/ns4.timeweb.org); the Cloud API only pushes
-      # records to the .ru cluster instantly, while the .org secondaries lagged
-      # up to the SOA refresh (8h). Let's Encrypt sometimes validated against a
-      # stale .org server and failed. Fixed by narrowing the domain's delegation
-      # to ns1/ns2.timeweb.ru only (both serve the full, current zone), so every
-      # authoritative answer now comes from the Cloud-synced cluster.
-      #
-      # TIMEWEBCLOUD_AUTH_TOKEN is provided to the container via docker-compose
-      # (lego reads that exact env var). resolvers below are used for lego's own
-      # pre-flight propagation self-check.
-      #
-      # Rollback: replace this dnsChallenge block with `httpChallenge:
-      #   entryPoint: web` (known-good per-domain HTTP-01).
-      dnsChallenge:
-        provider: timewebcloud
-        resolvers:
-          - "1.1.1.1:53"
-          - "8.8.8.8:53"
+      # NOTE: a wildcard *.app.<domain> cert via DNS-01 would be the ideal fix
+      # for the brief self-signed window a brand-new tenant subdomain shows
+      # before its on-demand cert is issued -- but it needs a DNS provider lego
+      # can write _acme-challenge TXT records to. The domain's DNS lives on
+      # CLASSIC Timeweb (ns1.timeweb.ru), and lego only ships a "timewebcloud"
+      # provider (Timeweb *Cloud* API) -- different system, can't touch these
+      # records, so DNS-01 propagation times out. Until the domain's DNS is
+      # moved into Timeweb Cloud (or Cloudflare), stay on HTTP-01 per-domain
+      # issuance, which works; the first-visit warning window is handled at the
+      # app layer instead (gateway waits for the cert before releasing the
+      # tenant -- see provisioning.py).
+      httpChallenge:
+        entryPoint: web
       # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 api:
