@@ -19,6 +19,14 @@ from config import DB_PATH
 def connect():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    # synchronous is a per-connection setting, unlike journal_mode -- it does
+    # NOT persist in the database file, so init_db()'s one-time
+    # "PRAGMA synchronous=NORMAL" only ever applied to that single init
+    # connection. Every other connection (all ~200+ call sites across the
+    # app) silently fell back to SQLite's FULL default, fsyncing on every
+    # commit despite WAL mode making NORMAL safe. Set it here so it actually
+    # applies everywhere.
+    conn.execute("PRAGMA synchronous=NORMAL")
     try:
         yield conn
         conn.commit()
@@ -31,7 +39,6 @@ def init_db() -> None:
         conn.executescript(
             """
             PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
 
             CREATE TABLE IF NOT EXISTS orders (
                 id TEXT PRIMARY KEY,

@@ -13,3 +13,12 @@ keyring>=24.0
 openpyxl>=3.1
 matplotlib>=3.8,<4
 reportlab>=4.0,<5
+
+# Test-only, but installed unconditionally like everything else here (no
+# separate dev-requirements file in this repo). Needed because
+# agents/tests/ and reports/tests/ are written as plain pytest-style
+# test_*() functions (using the tmp_path fixture) -- unlike tenant-app/tests/,
+# which uses unittest.TestCase. `python -m unittest discover` silently finds
+# zero tests in those two directories; pytest picks up both styles at once
+# and is what CI now runs (see ../.github/workflows/ci.yml).
+pytest>=8,<9

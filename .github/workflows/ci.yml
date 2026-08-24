@@ -46,5 +46,10 @@ jobs:
           pip install -r tenant-app/requirements.txt
 
       - name: Run Tenant App Unit Tests
+        # pytest, not `unittest discover` -- agents/tests/ and reports/tests/
+        # are plain pytest-style test_*() functions (tmp_path fixture, bare
+        # assert), which `unittest discover` silently finds zero of. pytest
+        # also runs tenant-app/tests/'s unittest.TestCase suites natively, so
+        # one command covers all three test directories.
         run: |
-          python -m unittest discover -s tenant-app/tests -t tenant-app
+          cd tenant-app && python -m pytest -q
