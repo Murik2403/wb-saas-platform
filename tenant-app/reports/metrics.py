@@ -45,6 +45,11 @@ METRIC_LABELS = {
     "unit_economics": "Юнит-экономика по товарам",
     "returns_cancellations": "Отмены и возвраты по дням",
     "organic_vs_ads": "Органика vs Реклама",
+    "ad_funnel": "Воронка конверсии рекламных кампаний",
+    "cost_structure": "Структура себестоимости товаров",
+    "wb_commission_rate": "Эффективная ставка комиссии WB по категориям",
+    "stock_in_transit": "Остаток на складе vs в пути",
+    "weekday_pattern": "Заказы и отмены по дням недели",
 }
 
 
@@ -601,6 +606,262 @@ def _organic_vs_ads(start: date, end: date) -> MetricResult:
     return MetricResult(title=METRIC_LABELS["organic_vs_ads"], figure=fig, summary=summary)
 
 
+def _ad_funnel(start: date, end: date) -> MetricResult:
+    ads_daily = read_table("ads_daily")
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+
+    if ads_daily.empty or "day" not in ads_daily.columns:
+        ax.text(0.5, 0.5, "Нет данных по рекламным кампаниям", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["ad_funnel"], figure=fig, summary="Данных по рекламе за период нет.")
+
+    ads_daily = ads_daily.copy()
+    ads_daily["day_dt"] = pd.to_datetime(ads_daily["day"], errors="coerce").dt.date
+    period_ads = ads_daily[(ads_daily["day_dt"] >= start) & (ads_daily["day_dt"] <= end)]
+
+    views = int(period_ads["views"].sum()) if "views" in period_ads.columns else 0
+    clicks = int(period_ads["clicks"].sum()) if "clicks" in period_ads.columns else 0
+    atbs = int(period_ads["atbs"].sum()) if "atbs" in period_ads.columns else 0
+    orders_count = int(period_ads["orders_count"].sum()) if "orders_count" in period_ads.columns else 0
+
+    if period_ads.empty or (views == 0 and clicks == 0 and atbs == 0 and orders_count == 0):
+        ax.text(0.5, 0.5, "Нет данных по рекламным кампаниям", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["ad_funnel"], figure=fig, summary="Данных по рекламе за период нет.")
+
+    labels = ["Показы", "Клики", "В корзину", "Заказы"]
+    values = [views, clicks, atbs, orders_count]
+
+    bars = ax.barh(labels, values, color=COLOR_ACCENT, alpha=0.85)
+    ax.invert_yaxis()
+    ax.set_xlabel("Количество")
+    _apply_chart_style(fig, ax)
+
+    max_val = max(values) if values else 0
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(
+            w + (max_val * 0.01 if max_val > 0 else 0.1), bar.get_y() + bar.get_height() / 2,
+            f"{int(w):,.0f}".replace(",", " "), va="center", fontsize=8, color=COLOR_TEXT
+        )
+
+    fig.tight_layout()
+    ctr = (clicks / views * 100.0) if views > 0 else 0.0
+    cr_order = (orders_count / clicks * 100.0) if clicks > 0 else 0.0
+    summary = f"Показов: {views}, кликов: {clicks}, заказов: {orders_count}. Конверсия CTR: {ctr:.2f}%, клик->заказ: {cr_order:.2f}%."
+    return MetricResult(title=METRIC_LABELS["ad_funnel"], figure=fig, summary=summary)
+
+
+def _cost_structure(start: date, end: date) -> MetricResult:
+    costs = read_table("costs")
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if costs.empty:
+        ax.text(0.5, 0.5, "Нет данных о себестоимости товаров", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["cost_structure"], figure=fig, summary="Данных о себестоимости товаров нет.")
+
+    df = costs.copy()
+    df["material"] = pd.to_numeric(df["material_cost_rub"], errors="coerce").fillna(0.0) if "material_cost_rub" in df.columns else 0.0
+    df["packaging"] = pd.to_numeric(df["packaging_cost_rub"], errors="coerce").fillna(0.0) if "packaging_cost_rub" in df.columns else 0.0
+    df["labor"] = pd.to_numeric(df["labor_cost_rub"], errors="coerce").fillna(0.0) if "labor_cost_rub" in df.columns else 0.0
+    df["other"] = pd.to_numeric(df["other_cost_rub"], errors="coerce").fillna(0.0) if "other_cost_rub" in df.columns else 0.0
+    df["total_cost"] = df["material"] + df["packaging"] + df["labor"] + df["other"]
+
+    df = df[df["total_cost"] > 0].sort_values("total_cost", ascending=False).head(10)
+    if df.empty:
+        ax.text(0.5, 0.5, "Нет данных о себестоимости товаров", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["cost_structure"], figure=fig, summary="Данных о себестоимости товаров нет.")
+
+    labels = df.get("supplier_article").fillna(df["nm_id"].astype(str)) if "supplier_article" in df.columns else df["nm_id"].astype(str)
+    labels = labels.astype(str)
+
+    ax.barh(labels, df["material"], color=COLOR_ACCENT, label="Материалы", alpha=0.85)
+    ax.barh(labels, df["packaging"], left=df["material"], color=COLOR_ACCENT_STRONG, label="Упаковка", alpha=0.85)
+    ax.barh(labels, df["labor"], left=df["material"] + df["packaging"], color=COLOR_GOOD, label="Труд", alpha=0.85)
+    ax.barh(labels, df["other"], left=df["material"] + df["packaging"] + df["labor"], color=COLOR_WARN, label="Прочее", alpha=0.85)
+
+    ax.set_xlabel("Себестоимость, ₽")
+    ax.invert_yaxis()
+    _apply_chart_style(fig, ax)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
+    fig.tight_layout()
+
+    total_mat = df["material"].sum()
+    total_all = df["total_cost"].sum()
+    mat_pct = (total_mat / total_all * 100.0) if total_all > 0 else 0.0
+
+    summary = f"Средняя доля материалов в себестоимости по топ-{len(df)} товарам: {mat_pct:.1f}%."
+    return MetricResult(title=METRIC_LABELS["cost_structure"], figure=fig, summary=summary)
+
+
+def _wb_commission_rate(start: date, end: date) -> MetricResult:
+    fin = read_table("financial_report")
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if fin.empty or "operation_date" not in fin.columns:
+        ax.text(0.5, 0.5, "Нет данных отчёта реализации", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["wb_commission_rate"], figure=fig, summary="Данных отчёта реализации за период нет.")
+
+    fin = fin.copy()
+    fin["op_dt"] = pd.to_datetime(fin["operation_date"], errors="coerce").dt.date
+    period_fin = fin[(fin["op_dt"] >= start) & (fin["op_dt"] <= end)].copy()
+
+    if period_fin.empty:
+        ax.text(0.5, 0.5, "Нет данных отчёта реализации за период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["wb_commission_rate"], figure=fig, summary="Данных отчёта реализации за период нет.")
+
+    catalog = read_table("products_catalog")
+    if not catalog.empty and "nm_id" in catalog.columns and "subject_name" in catalog.columns:
+        period_fin = period_fin.merge(catalog[["nm_id", "subject_name"]], on="nm_id", how="left")
+
+    if "subject_name" not in period_fin.columns:
+        period_fin["subject_name"] = "Без категории"
+    else:
+        period_fin["subject_name"] = period_fin["subject_name"].fillna("Без категории")
+
+    period_fin["comm"] = pd.to_numeric(period_fin["commission"], errors="coerce").fillna(0.0) if "commission" in period_fin.columns else 0.0
+    period_fin["acq"] = pd.to_numeric(period_fin["acquiring_fee"], errors="coerce").fillna(0.0) if "acquiring_fee" in period_fin.columns else 0.0
+    period_fin["retail"] = pd.to_numeric(period_fin["retail_amount"], errors="coerce").fillna(0.0) if "retail_amount" in period_fin.columns else 0.0
+
+    grouped = period_fin.groupby("subject_name", as_index=False).agg({
+        "comm": "sum",
+        "acq": "sum",
+        "retail": "sum",
+    })
+
+    grouped = grouped[grouped["retail"] > 0].copy()
+    if grouped.empty:
+        ax.text(0.5, 0.5, "Нет данных с продажами в отчёте реализации", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["wb_commission_rate"], figure=fig, summary="Данных отчёта реализации за период нет.")
+
+    grouped["eff_rate"] = ((grouped["comm"] + grouped["acq"]) / grouped["retail"]) * 100.0
+    grouped = grouped.sort_values("retail", ascending=False).head(10)
+
+    bars = ax.barh(grouped["subject_name"].astype(str), grouped["eff_rate"], color=COLOR_ACCENT, alpha=0.85)
+    ax.set_xlabel("Эффективная ставка комиссии, %")
+    ax.invert_yaxis()
+    _apply_chart_style(fig, ax)
+
+    max_val = max(grouped["eff_rate"]) if not grouped.empty else 0
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(w + (max_val * 0.01 if max_val > 0 else 0.1), bar.get_y() + bar.get_height() / 2, f"{w:.1f}%", va="center", fontsize=8, color=COLOR_TEXT)
+
+    fig.tight_layout()
+    top_cat_row = grouped.loc[grouped["eff_rate"].idxmax()]
+    top_cat = str(top_cat_row["subject_name"])
+    top_rate = float(top_cat_row["eff_rate"])
+    summary = f"Категория с максимальной эффективной комиссией: {top_cat} ({top_rate:.1f}%)."
+    return MetricResult(title=METRIC_LABELS["wb_commission_rate"], figure=fig, summary=summary)
+
+
+def _stock_in_transit(start: date, end: date) -> MetricResult:
+    stocks = read_table("stocks")
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    if stocks.empty or "snapshot_at" not in stocks.columns or "warehouse_name" not in stocks.columns:
+        ax.text(0.5, 0.5, "Нет данных об остатках и товарах в пути", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["stock_in_transit"], figure=fig, summary="Данных об остатках на складах нет.")
+
+    latest_snapshot = stocks["snapshot_at"].max()
+    stocks = stocks[stocks["snapshot_at"] == latest_snapshot].copy()
+
+    stocks["quantity"] = pd.to_numeric(stocks["quantity"], errors="coerce").fillna(0.0) if "quantity" in stocks.columns else 0.0
+    stocks["in_way_to_client"] = pd.to_numeric(stocks["in_way_to_client"], errors="coerce").fillna(0.0) if "in_way_to_client" in stocks.columns else 0.0
+    stocks["in_way_from_client"] = pd.to_numeric(stocks["in_way_from_client"], errors="coerce").fillna(0.0) if "in_way_from_client" in stocks.columns else 0.0
+
+    grouped = stocks.groupby("warehouse_name", as_index=False).agg({
+        "quantity": "sum",
+        "in_way_to_client": "sum",
+        "in_way_from_client": "sum",
+    })
+
+    grouped["total_item_qty"] = grouped["quantity"] + grouped["in_way_to_client"] + grouped["in_way_from_client"]
+    grouped = grouped[grouped["total_item_qty"] > 0].sort_values("quantity", ascending=False).head(10)
+
+    if grouped.empty:
+        ax.text(0.5, 0.5, "Остатки и товары в пути равны 0", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["stock_in_transit"], figure=fig, summary="Данных об остатках на складах нет.")
+
+    wh_labels = grouped["warehouse_name"].astype(str)
+    ax.barh(wh_labels, grouped["quantity"], color=COLOR_GOOD, label="На складе", alpha=0.85)
+    ax.barh(wh_labels, grouped["in_way_to_client"], left=grouped["quantity"], color=COLOR_ACCENT, label="В пути к клиенту", alpha=0.85)
+    ax.barh(wh_labels, grouped["in_way_from_client"], left=grouped["quantity"] + grouped["in_way_to_client"], color=COLOR_WARN, label="Возврат от клиента", alpha=0.85)
+
+    ax.set_xlabel("Количество, шт.")
+    ax.invert_yaxis()
+    _apply_chart_style(fig, ax)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
+    fig.tight_layout()
+
+    total_transit = int(stocks["in_way_to_client"].sum() + stocks["in_way_from_client"].sum())
+    total_all = int(stocks["quantity"].sum() + total_transit)
+    transit_pct = (total_transit / total_all * 100.0) if total_all > 0 else 0.0
+
+    summary = f"В пути (клиенту + от клиента): {total_transit} шт. ({transit_pct:.1f}% от общего объёма)."
+    return MetricResult(title=METRIC_LABELS["stock_in_transit"], figure=fig, summary=summary)
+
+
+def _weekday_pattern(start: date, end: date) -> MetricResult:
+    orders = read_table("orders")
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+
+    if orders.empty or "order_date" not in orders.columns:
+        ax.text(0.5, 0.5, "Нет данных по заказам за период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["weekday_pattern"], figure=fig, summary="Данных о заказах за период нет.")
+
+    orders = orders.copy()
+    orders["order_dt"] = pd.to_datetime(orders["order_date"], errors="coerce")
+    period_orders = orders[(orders["order_dt"].dt.date >= start) & (orders["order_dt"].dt.date <= end)].copy()
+
+    if period_orders.empty:
+        ax.text(0.5, 0.5, "Нет данных по заказам за период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
+        ax.axis("off")
+        return MetricResult(title=METRIC_LABELS["weekday_pattern"], figure=fig, summary="Данных о заказах за период нет.")
+
+    period_orders["weekday"] = period_orders["order_dt"].dt.dayofweek
+    days_labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+    total_orders = period_orders.groupby("weekday").size().reindex(range(7), fill_value=0)
+
+    if "is_cancel" in period_orders.columns:
+        cancel_orders = period_orders[period_orders["is_cancel"] == 1].groupby("weekday").size().reindex(range(7), fill_value=0)
+    else:
+        cancel_orders = pd.Series(0, index=range(7))
+
+    x = range(7)
+    width = 0.35
+    ax.bar([i - width/2 for i in x], total_orders.values, width, label="Всего заказов", color=COLOR_ACCENT, alpha=0.85)
+    ax.bar([i + width/2 for i in x], cancel_orders.values, width, label="Отмены", color=COLOR_CRITICAL, alpha=0.85)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(days_labels, fontsize=8)
+    ax.set_ylabel("Штук")
+
+    _apply_chart_style(fig, ax)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
+    fig.tight_layout()
+
+    max_orders_idx = int(total_orders.values.argmax())
+    max_orders_day = days_labels[max_orders_idx]
+    max_orders_cnt = int(total_orders.iloc[max_orders_idx])
+
+    cancel_rates = [(c / t * 100.0) if t > 0 else 0.0 for c, t in zip(cancel_orders.values, total_orders.values)]
+    max_cancel_idx = int(pd.Series(cancel_rates).idxmax()) if any(r > 0 for r in cancel_rates) else 0
+    max_cancel_day = days_labels[max_cancel_idx]
+    max_cancel_rate = cancel_rates[max_cancel_idx]
+
+    summary = f"Пик заказов: {max_orders_day} ({max_orders_cnt} шт.). Макс. % отмен: {max_cancel_day} ({max_cancel_rate:.1f}%)."
+    return MetricResult(title=METRIC_LABELS["weekday_pattern"], figure=fig, summary=summary)
+
+
 METRIC_BUILDERS: dict[str, Callable[[date, date], MetricResult]] = {
     "sales_orders": _sales_orders,
     "ads": _ads,
@@ -615,6 +876,11 @@ METRIC_BUILDERS: dict[str, Callable[[date, date], MetricResult]] = {
     "unit_economics": _unit_economics,
     "returns_cancellations": _returns_cancellations,
     "organic_vs_ads": _organic_vs_ads,
+    "ad_funnel": _ad_funnel,
+    "cost_structure": _cost_structure,
+    "wb_commission_rate": _wb_commission_rate,
+    "stock_in_transit": _stock_in_transit,
+    "weekday_pattern": _weekday_pattern,
 }
 
 
