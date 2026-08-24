@@ -766,7 +766,15 @@ def _cost_structure(start: date, end: date) -> MetricResult:
     df["packaging"] = pd.to_numeric(df["packaging_cost_rub"], errors="coerce").fillna(0.0) if "packaging_cost_rub" in df.columns else 0.0
     df["labor"] = pd.to_numeric(df["labor_cost_rub"], errors="coerce").fillna(0.0) if "labor_cost_rub" in df.columns else 0.0
     df["other"] = pd.to_numeric(df["other_cost_rub"], errors="coerce").fillna(0.0) if "other_cost_rub" in df.columns else 0.0
-    df["total_cost"] = df["material"] + df["packaging"] + df["labor"] + df["other"]
+    df["breakdown_total"] = df["material"] + df["packaging"] + df["labor"] + df["other"]
+
+    # Многие продавцы указывают себестоимость одной суммой (cost_per_wb_unit) и не
+    # заполняют разбивку материалы/упаковка/труд/прочее -- тогда breakdown_total = 0,
+    # хотя реальная себестоимость есть. В этом случае показываем всю сумму единым
+    # сегментом "Не разбито" вместо пустого графика.
+    unit_cost = pd.to_numeric(df["cost_per_wb_unit"], errors="coerce").fillna(0.0) if "cost_per_wb_unit" in df.columns else 0.0
+    df["undetailed"] = (unit_cost - df["breakdown_total"]).clip(lower=0.0).where(df["breakdown_total"] <= 0, 0.0)
+    df["total_cost"] = df["breakdown_total"] + df["undetailed"]
 
     df = df[df["total_cost"] > 0].sort_values("total_cost", ascending=False).head(10)
     if df.empty:
@@ -781,9 +789,10 @@ def _cost_structure(start: date, end: date) -> MetricResult:
     ax.barh(labels, df["packaging"], left=df["material"], color=COLOR_ACCENT_STRONG, label="Упаковка", alpha=0.85)
     ax.barh(labels, df["labor"], left=df["material"] + df["packaging"], color=COLOR_GOOD, label="Труд", alpha=0.85)
     ax.barh(labels, df["other"], left=df["material"] + df["packaging"] + df["labor"], color=COLOR_WARN, label="Прочее", alpha=0.85)
+    ax.barh(labels, df["undetailed"], left=df["material"] + df["packaging"] + df["labor"] + df["other"], color=COLOR_MUTED, label="Не разбито", alpha=0.85)
 
     max_total = df["total_cost"].max() if not df.empty else 1.0
-    categories_cols = ["material", "packaging", "labor", "other"]
+    categories_cols = ["material", "packaging", "labor", "other", "undetailed"]
     for idx, row in df.reset_index(drop=True).iterrows():
         cum = 0.0
         for col in categories_cols:
@@ -803,10 +812,14 @@ def _cost_structure(start: date, end: date) -> MetricResult:
     fig.tight_layout()
 
     total_mat = df["material"].sum()
+    total_undetailed = df["undetailed"].sum()
     total_all = df["total_cost"].sum()
     mat_pct = (total_mat / total_all * 100.0) if total_all > 0 else 0.0
 
     summary = f"Средняя доля материалов в себестоимости по топ-{len(df)} товарам: {mat_pct:.1f}%."
+    if total_undetailed > 0:
+        undetailed_pct = total_undetailed / total_all * 100.0
+        summary += f" {undetailed_pct:.0f}% себестоимости указано одной суммой без разбивки по статьям."
     return MetricResult(title=METRIC_LABELS["cost_structure"], figure=fig, summary=summary)
 
 

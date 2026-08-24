@@ -56,6 +56,28 @@ def test_cost_structure_empty(monkeypatch):
     assert "нет" in res.summary.lower()
 
 
+def test_cost_structure_falls_back_to_cost_per_wb_unit_when_breakdown_is_zero(monkeypatch):
+    # Regression: sellers who fill in one combined per-unit cost (cost_per_wb_unit)
+    # instead of the material/packaging/labor/other breakdown got an empty "no data"
+    # chart, even though real cost data exists -- seen live in production 2026-08-25
+    # on an account with 37 priced products, none using the breakdown columns.
+    df = pd.DataFrame({
+        "nm_id": [101, 102],
+        "supplier_article": ["ART-1", "ART-2"],
+        "cost_per_wb_unit": [110.0, 50.0],
+        "material_cost_rub": [0.0, 0.0],
+        "packaging_cost_rub": [0.0, 0.0],
+        "labor_cost_rub": [0.0, 0.0],
+        "other_cost_rub": [0.0, 0.0],
+    })
+    monkeypatch.setattr(metrics, "read_table", lambda table_name: df if table_name == "costs" else pd.DataFrame())
+
+    res = build_metric("cost_structure", date(2025, 1, 1), date(2025, 1, 31))
+    assert isinstance(res, MetricResult)
+    assert "нет" not in res.summary.lower()
+    assert "без разбивки" in res.summary.lower()
+
+
 def test_wb_commission_rate_success(monkeypatch):
     fin_df = pd.DataFrame({
         "operation_date": ["2025-01-10", "2025-01-11"],
