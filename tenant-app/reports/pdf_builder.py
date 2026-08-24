@@ -7,15 +7,26 @@ document. No system packages needed beyond the two pip libraries.
 from __future__ import annotations
 
 import io
+import os
 from datetime import date
 
+import matplotlib
 import matplotlib.pyplot as plt
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet
 
 from .metrics import build_metric
+
+# reportlab's built-in fonts (Helvetica etc.) have no Cyrillic glyphs, so
+# Russian text renders as boxes. Reuse matplotlib's bundled DejaVu Sans
+# (which does have Cyrillic) instead of shipping a separate font file.
+_FONTS_DIR = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+pdfmetrics.registerFont(TTFont("DejaVuSans", os.path.join(_FONTS_DIR, "DejaVuSans.ttf")))
+pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", os.path.join(_FONTS_DIR, "DejaVuSans-Bold.ttf")))
 
 
 def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date) -> bytes:
@@ -25,6 +36,9 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         leftMargin=2 * cm, rightMargin=2 * cm, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
     )
     styles = getSampleStyleSheet()
+    for style_name, font_name in [("Title", "DejaVuSans-Bold"), ("Heading2", "DejaVuSans-Bold"), ("Normal", "DejaVuSans")]:
+        styles[style_name].fontName = font_name
+
     story = [
         Paragraph(name, styles["Title"]),
         Paragraph(f"Период: {start:%d.%m.%Y} — {end:%d.%m.%Y}", styles["Normal"]),
