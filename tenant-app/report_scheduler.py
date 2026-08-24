@@ -10,6 +10,7 @@ import argparse
 import json
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from config import DB_PATH
@@ -51,7 +52,13 @@ def _is_due(definition: dict, now: datetime) -> bool:
     return False
 
 
-def run_definition(store: ReportStore, definition: dict, *, period_days: int = 30) -> None:
+def generate_and_save(store: ReportStore, definition: dict, *, period_days: int = 30) -> tuple[bytes, Path]:
+    """Builds the PDF and saves it to disk; records the run either way.
+    Deliberately does NOT do email/Telegram delivery -- see deliver_report()
+    below, split out so a synchronous caller (reports_page.py's "Сгенерировать
+    сейчас" button) can run delivery in a background thread instead of
+    blocking on it (Telegram's network path is documented as intermittently
+    slow/unreachable from this host, see reports/delivery.py)."""
     end = date.today()
     start = end - timedelta(days=period_days - 1)
     run_id = store.start_run(definition["id"])
@@ -64,20 +71,31 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int = 3
         file_path = out_dir / f"{datetime.now():%Y%m%d_%H%M%S}.pdf"
         file_path.write_bytes(pdf_bytes)
 
-        if definition.get("email_enabled"):
-            # Best-effort: a failed email must not turn a successful
-            # generation into a failed run -- the PDF is already saved and
-            # downloadable regardless (see delivery.send_report_email's
-            # docstring for why it never raises).
-            delivery.send_report_email(definition["name"], pdf_bytes, file_path.name)
-        if definition.get("telegram_enabled"):
-            delivery.send_report_telegram(definition["name"], pdf_bytes, file_path.name)
-
         store.finish_run(run_id, status="ok", file_path=str(file_path))
         store.set_last_run(definition["id"], datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds"))
+        return pdf_bytes, file_path
     except Exception as exc:
         store.finish_run(run_id, status="error", error=str(exc))
         raise
+
+
+def deliver_report(definition: dict, pdf_bytes: bytes, filename: str) -> None:
+    """Best-effort side-channel delivery -- never raises (see
+    delivery.send_report_email/send_report_telegram's own contracts). A
+    failed delivery must not undo an already-successful, already-saved
+    generation."""
+    if definition.get("email_enabled"):
+        delivery.send_report_email(definition["name"], pdf_bytes, filename)
+    if definition.get("telegram_enabled"):
+        delivery.send_report_telegram(definition["name"], pdf_bytes, filename)
+
+
+def run_definition(store: ReportStore, definition: dict, *, period_days: int = 30) -> None:
+    """Synchronous generate + deliver -- used by the background scheduler
+    loop (check_once/loop), where blocking on a slow delivery is harmless
+    since it's already off the UI thread."""
+    pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days)
+    deliver_report(definition, pdf_bytes, file_path.name)
 
 
 def check_once() -> int:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import streamlit as st
 
 from config import DB_PATH
-from report_scheduler import run_definition
+from report_scheduler import deliver_report, generate_and_save
 from reports import delivery
 from reports.metrics import METRIC_LABELS
 from reports.store import ReportStore
@@ -30,10 +31,26 @@ def _schedule_label(definition: dict) -> str:
 
 def _generate_now(store: ReportStore, definition: dict) -> None:
     try:
-        run_definition(store, definition)
-        st.session_state["reports_page_message"] = ("success", f"Отчёт «{definition['name']}» сгенерирован")
+        pdf_bytes, file_path = generate_and_save(store, definition)
     except Exception as exc:
         st.session_state["reports_page_message"] = ("error", f"Не удалось сгенерировать: {exc}")
+        return
+
+    if definition.get("email_enabled") or definition.get("telegram_enabled"):
+        # Delivery runs in the background instead of blocking this click --
+        # Telegram's network path from this host is documented as
+        # intermittently slow/unreachable (see reports/delivery.py), which
+        # used to freeze the whole page for up to 90s. The PDF is already
+        # generated and downloadable regardless of whether delivery succeeds.
+        threading.Thread(
+            target=deliver_report, args=(definition, pdf_bytes, file_path.name), daemon=True,
+        ).start()
+        st.session_state["reports_page_message"] = (
+            "success",
+            f"Отчёт «{definition['name']}» сгенерирован. Доставка на email/в Telegram идёт в фоне.",
+        )
+    else:
+        st.session_state["reports_page_message"] = ("success", f"Отчёт «{definition['name']}» сгенерирован")
 
 
 @st.cache_data(ttl=30, show_spinner=False)

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 import report_scheduler
-from report_scheduler import _is_due, run_definition
+from report_scheduler import _is_due, deliver_report, generate_and_save, run_definition
 from reports import delivery
 from reports.store import ReportStore
 
@@ -153,3 +153,48 @@ def test_run_definition_can_send_both_email_and_telegram(tmp_path, monkeypatch):
     run_definition(store, definition)
 
     assert calls == {"email": 1, "telegram": 1}
+
+
+def test_generate_and_save_does_not_deliver(tmp_path, monkeypatch):
+    # generate_and_save() is the fast, synchronous half used by the
+    # "Сгенерировать сейчас" button -- delivery must be a caller's separate
+    # step (deliver_report), not something generate_and_save does itself,
+    # or the button would still block on a slow Telegram call.
+    monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(report_scheduler, "build_report_pdf", lambda name, codes, start, end: b"%PDF-1.4 fake")
+
+    called = {"count": 0}
+    monkeypatch.setattr(delivery, "send_report_email", lambda *a, **k: called.__setitem__("count", called["count"] + 1) or True)
+
+    store = ReportStore(tmp_path / "test_generate_only.sqlite3")
+    store.add_definition(
+        name="Только генерация", metrics=["ads"], schedule_type="daily", schedule_time="09:00",
+        email_enabled=True,
+    )
+    definition = store.list_definitions()[0]
+
+    pdf_bytes, file_path = generate_and_save(store, definition)
+
+    assert pdf_bytes == b"%PDF-1.4 fake"
+    assert file_path.exists()
+    assert called["count"] == 0
+    run = store.list_runs()[0]
+    assert run["status"] == "ok"
+    assert run["file_path"] == str(file_path)
+
+
+def test_deliver_report_sends_only_enabled_channels(monkeypatch):
+    calls = []
+    monkeypatch.setattr(delivery, "send_report_email", lambda *a, **k: calls.append("email") or True)
+    monkeypatch.setattr(delivery, "send_report_telegram", lambda *a, **k: calls.append("telegram") or True)
+
+    deliver_report(base_definition(name="Тест", email_enabled=True), b"%PDF-1.4...", "report.pdf")
+    assert calls == ["email"]
+
+    calls.clear()
+    deliver_report(base_definition(name="Тест", telegram_enabled=True), b"%PDF-1.4...", "report.pdf")
+    assert calls == ["telegram"]
+
+    calls.clear()
+    deliver_report(base_definition(name="Тест"), b"%PDF-1.4...", "report.pdf")
+    assert calls == []
