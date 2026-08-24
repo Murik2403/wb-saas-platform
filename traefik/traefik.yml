@@ -42,8 +42,24 @@ certificatesResolvers:
   letsencrypt:
     acme:
       storage: /letsencrypt/acme.json
-      httpChallenge:
-        entryPoint: web
+      # DNS-01 challenge via Timeweb Cloud (the domain's DNS host). Switched
+      # from httpChallenge so we can obtain a single WILDCARD certificate for
+      # *.app.marketshelper.ru -- Let's Encrypt only issues wildcards over
+      # DNS-01, never HTTP-01. One wildcard cert covers every tenant subdomain
+      # instantly, so a freshly-provisioned tenant is served a trusted cert
+      # from its very first request (previously each subdomain triggered its
+      # own on-demand HTTP-01 issuance, and during that ~10-30s window Traefik
+      # served its self-signed default -> the browser's "Подключение не
+      # защищено" warning). Also removes the per-subdomain Let's Encrypt
+      # rate-limit exposure entirely. The TIMEWEBCLOUD_AUTH_TOKEN env var is
+      # passed to the traefik service in docker-compose.yml.
+      dnsChallenge:
+        provider: timewebcloud
+        # Public resolvers used to check the _acme-challenge TXT record has
+        # propagated before telling Let's Encrypt to validate.
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
       # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 api:

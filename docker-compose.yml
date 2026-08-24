@@ -44,6 +44,10 @@ services:
       # Traefik reads TRAEFIK_* env vars as static config directly (unlike
       # ${VAR} placeholders inside traefik.yml, which it does NOT expand).
       - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL=${WB_SAAS_ACME_EMAIL}
+      # DNS-01 credential for the timewebcloud provider (see traefik.yml's
+      # dnsChallenge). lego reads this exact env var name. Kept in .env on the
+      # server, never committed.
+      - TIMEWEBCLOUD_AUTH_TOKEN=${TIMEWEBCLOUD_AUTH_TOKEN}
 
   gateway:
     build: ./gateway
@@ -117,6 +121,16 @@ services:
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)
       - traefik.http.routers.gateway.entrypoints=websecure
       - traefik.http.routers.gateway.tls.certresolver=letsencrypt
+      # Request ONE wildcard cert for every tenant subdomain here, on the
+      # gateway router. With DNS-01 (see traefik.yml) Let's Encrypt issues
+      # *.app.<domain>, which Traefik then serves by SNI to every tenant
+      # subdomain -- so a new tenant is covered instantly, with no per-subdomain
+      # issuance window (the cause of the browser's cert warning) and no
+      # per-subdomain rate-limit exposure. Existing per-tenant routers keep
+      # their own certresolver as a harmless fallback; Traefik prefers the
+      # wildcard already in its store and won't re-issue per subdomain.
+      - "traefik.http.routers.gateway.tls.domains[0].main=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}.${WB_SAAS_PARENT_DOMAIN}"
+      - "traefik.http.routers.gateway.tls.domains[0].sans=*.${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}.${WB_SAAS_PARENT_DOMAIN}"
       - traefik.http.services.gateway.loadbalancer.server.port=8000
       # wb-saas-auth (referenced by every tenant container's own labels, see
       # gateway/provisioning.py container_labels()) is defined in
