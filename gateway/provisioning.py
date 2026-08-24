@@ -208,6 +208,15 @@ def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> N
         _mark_failed(tenant_id, "Контейнер не прошёл health-check вовремя.")
         return
 
+    # Hold the tenant "provisioning" until Traefik has actually obtained the
+    # Let's Encrypt cert for its subdomain. Otherwise the user gets redirected
+    # to https://{slug}.app.<domain>/ during the ~10-30s HTTP-01 issuance
+    # window, where Traefik still serves its self-signed default cert -- the
+    # browser then shows (and caches) a "Подключение не защищено" warning. Best
+    # effort and time-boxed: if the cert isn't up within the budget we proceed
+    # anyway rather than trapping the account forever.
+    _wait_for_tenant_cert(slug, timeout_seconds=45)
+
     with control_db.connect() as conn:
         accounts.mark_tenant_provisioned(conn, tenant_id, account_id)
         billing.start_trial(conn, account_id)
@@ -217,6 +226,39 @@ def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> N
 def _mark_failed(tenant_id: int, note: str) -> None:
     with control_db.connect() as conn:
         accounts.set_tenant_status(conn, tenant_id, "failed", note=note)
+
+
+def _wait_for_tenant_cert(slug: str, timeout_seconds: int = 45) -> bool:
+    """Poll until Traefik serves a valid (CA-trusted, non-self-signed) TLS cert
+    for the tenant's subdomain. Checks over the shared wbsaas_net directly to
+    the Traefik container (no external DNS/NAT-loopback dependency): a TLS
+    handshake with SNI=<tenant host> that validates against the CA bundle means
+    the real Let's Encrypt cert is in place; an SSL verification error means
+    Traefik is still serving its self-signed default while ACME issuance is in
+    flight. Returns True once valid, False if the budget runs out."""
+    import socket
+    import ssl
+
+    try:
+        import certifi  # bundled via requests; use it so we validate against a real CA set
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        ctx = ssl.create_default_context()
+
+    host = config.tenant_host(slug)
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((config.TRAEFIK_CONTAINER_NAME, 443), timeout=5) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host):
+                    return True  # handshake validated -> trusted cert is live
+        except ssl.SSLError:
+            pass  # self-signed default still being served; keep waiting
+        except Exception:
+            pass  # transient network/DNS hiccup; retry within the budget
+        time.sleep(3)
+    logger.warning("Cert for %s not confirmed within %ss -- proceeding anyway", host, timeout_seconds)
+    return False
 
 
 def _cleanup_failed_tenant(slug: str) -> None:
