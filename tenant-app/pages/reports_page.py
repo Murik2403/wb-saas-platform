@@ -100,7 +100,7 @@ def _render_telegram_section() -> bool:
 def render(ctx: dict) -> None:
     st.markdown('<div class="wb-title">Отчёты</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="wb-subtitle">PDF-отчёты с графиками по расписанию — за последние 30 дней на момент генерации</div>',
+        '<div class="wb-subtitle">PDF-отчёты с графиками по расписанию — период подбирается автоматически: 3 дня для ежедневных, 7 для еженедельных, 30 для ежемесячных</div>',
         unsafe_allow_html=True,
     )
 

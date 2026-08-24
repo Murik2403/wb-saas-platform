@@ -198,3 +198,53 @@ def test_deliver_report_sends_only_enabled_channels(monkeypatch):
     calls.clear()
     deliver_report(base_definition(name="Тест"), b"%PDF-1.4...", "report.pdf")
     assert calls == []
+
+
+def test_generate_and_save_picks_period_by_schedule_type(tmp_path, monkeypatch):
+    # A daily report re-sent every day with the same rolling 30-day window
+    # barely changes from one send to the next -- the period must track how
+    # often the report actually goes out (see _SCHEDULE_PERIOD_DAYS).
+    monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
+
+    captured_spans = {}
+
+    def fake_build_report_pdf(name, codes, start, end):
+        captured_spans[name] = (end - start).days + 1
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(report_scheduler, "build_report_pdf", fake_build_report_pdf)
+
+    store = ReportStore(tmp_path / "test_periods.sqlite3")
+    for schedule_type, kwargs in [
+        ("daily", {"schedule_time": "09:00"}),
+        ("weekly", {"schedule_time": "09:00", "schedule_weekday": 0}),
+        ("monthly", {"schedule_time": "09:00", "schedule_day": 1}),
+    ]:
+        store.add_definition(name=schedule_type, metrics=["ads"], schedule_type=schedule_type, **kwargs)
+
+    for definition in store.list_definitions():
+        generate_and_save(store, definition)
+
+    assert captured_spans["daily"] == 3
+    assert captured_spans["weekly"] == 7
+    assert captured_spans["monthly"] == 30
+
+
+def test_generate_and_save_explicit_period_days_overrides_schedule_type(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
+
+    captured = {}
+
+    def fake_build_report_pdf(name, codes, start, end):
+        captured["days"] = (end - start).days + 1
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(report_scheduler, "build_report_pdf", fake_build_report_pdf)
+
+    store = ReportStore(tmp_path / "test_explicit_period.sqlite3")
+    store.add_definition(name="Тест", metrics=["ads"], schedule_type="daily", schedule_time="09:00")
+    definition = store.list_definitions()[0]
+
+    generate_and_save(store, definition, period_days=14)
+
+    assert captured["days"] == 14

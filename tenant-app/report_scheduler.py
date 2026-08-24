@@ -52,13 +52,28 @@ def _is_due(definition: dict, now: datetime) -> bool:
     return False
 
 
-def generate_and_save(store: ReportStore, definition: dict, *, period_days: int = 30) -> tuple[bytes, Path]:
+# A "daily" report re-sent every day with the same rolling 30-day window is
+# nearly identical from one day to the next -- the period should track how
+# often the report actually goes out. 3 days (not 1) for daily on purpose:
+# a single-day bar/line chart looks sparse/empty on a slow sales day, and a
+# short trend is more useful than one isolated point.
+_SCHEDULE_PERIOD_DAYS = {"daily": 3, "weekly": 7, "monthly": 30}
+
+
+def generate_and_save(store: ReportStore, definition: dict, *, period_days: int | None = None) -> tuple[bytes, Path]:
     """Builds the PDF and saves it to disk; records the run either way.
     Deliberately does NOT do email/Telegram delivery -- see deliver_report()
     below, split out so a synchronous caller (reports_page.py's "Сгенерировать
     сейчас" button) can run delivery in a background thread instead of
     blocking on it (Telegram's network path is documented as intermittently
-    slow/unreachable from this host, see reports/delivery.py)."""
+    slow/unreachable from this host, see reports/delivery.py).
+
+    `period_days=None` (the default, used by every current caller) picks the
+    window from the definition's own schedule_type -- see
+    _SCHEDULE_PERIOD_DAYS. An explicit value always wins, for any future
+    caller that wants a specific custom range."""
+    if period_days is None:
+        period_days = _SCHEDULE_PERIOD_DAYS.get(definition.get("schedule_type"), 30)
     end = date.today()
     start = end - timedelta(days=period_days - 1)
     run_id = store.start_run(definition["id"])
@@ -90,7 +105,7 @@ def deliver_report(definition: dict, pdf_bytes: bytes, filename: str) -> None:
         delivery.send_report_telegram(definition["name"], pdf_bytes, filename)
 
 
-def run_definition(store: ReportStore, definition: dict, *, period_days: int = 30) -> None:
+def run_definition(store: ReportStore, definition: dict, *, period_days: int | None = None) -> None:
     """Synchronous generate + deliver -- used by the background scheduler
     loop (check_once/loop), where blocking on a slow delivery is harmless
     since it's already off the UI thread."""
