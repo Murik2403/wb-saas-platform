@@ -1,4 +1,4 @@
-"""Preset report metrics: (start, end) -> (DataFrame, matplotlib.Figure).
+"""Preset report metrics: (start, end) -> MetricResult(title, figure, summary).
 
 pdf_builder.py doesn't know anything about a specific metric's data shape --
 it just asks each requested metric code to draw itself and reports the
@@ -17,6 +17,19 @@ import pandas as pd
 
 from calculations import build_dashboard
 from db import read_table
+
+# Branded palette adapted for print / light PDF background -- the app itself
+# is dark-themed (see app.py's CSS variables), but a PDF is read/printed on
+# white, so these are the same accent hues on a light surface instead.
+COLOR_ACCENT = "#7c6cf6"
+COLOR_ACCENT_STRONG = "#9a8bff"
+COLOR_GOOD = "#3ecf8e"
+COLOR_WARN = "#f2b84b"
+COLOR_CRITICAL = "#f2677a"
+COLOR_TEXT = "#1e293b"
+COLOR_MUTED = "#64748b"
+COLOR_GRID = "#e2e8f0"
+COLOR_BG = "#ffffff"
 
 METRIC_LABELS = {
     "sales_orders": "Заказы и продажи по дням",
@@ -39,15 +52,73 @@ class MetricResult:
     summary: str
 
 
+def classify_stock_risk(days: float) -> str:
+    """Maps days-of-supply to a risk bucket -- shared by the chart color
+    logic and the summary text so a reader can't see a red bar labelled
+    differently from a "critical" mention in the text."""
+    if days < 7:
+        return "critical"
+    elif days <= 14:
+        return "warn"
+    return "good"
+
+
+def get_status_color(status: str) -> str:
+    mapping = {
+        "critical": COLOR_CRITICAL,
+        "warn": COLOR_WARN,
+        "good": COLOR_GOOD,
+        "accent": COLOR_ACCENT,
+        "muted": COLOR_MUTED,
+    }
+    return mapping.get(status, COLOR_TEXT)
+
+
+def _apply_chart_style(fig: plt.Figure, ax: plt.Axes, hide_top_right_spines: bool = True) -> None:
+    """Единый визуальный стиль для всех графиков отчёта: светлый фон под
+    печать, приглушённая сетка, убранные верхняя/правая рамки. Применяется
+    во всех метриках ниже вместо разрозненных ad-hoc настроек в каждой."""
+    fig.patch.set_facecolor(COLOR_BG)
+    ax.set_facecolor(COLOR_BG)
+
+    if hide_top_right_spines:
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    for spine in ax.spines.values():
+        if spine.get_visible():
+            spine.set_color("#cbd5e1")
+            spine.set_linewidth(0.8)
+
+    ax.tick_params(colors=COLOR_TEXT, labelsize=8)
+    ax.grid(True, color=COLOR_GRID, linestyle="--", linewidth=0.5, alpha=0.7)
+    ax.xaxis.label.set_color(COLOR_TEXT)
+    ax.xaxis.label.set_fontsize(8.5)
+    ax.yaxis.label.set_color(COLOR_TEXT)
+    ax.yaxis.label.set_fontsize(8.5)
+
+
+def _style_twin_axis(ax: plt.Axes, ax2: plt.Axes) -> None:
+    """Twin-axis charts (bars on ax, a line on ax2) need ax's right spine
+    left alone for ax2 to render its own scale against -- factored out since
+    _ads/_abc_analysis/_ad_performance all do exactly this."""
+    ax.spines["top"].set_visible(False)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_color("#cbd5e1")
+    ax2.tick_params(colors=COLOR_TEXT, labelsize=8)
+    ax2.yaxis.label.set_color(COLOR_TEXT)
+    ax2.yaxis.label.set_fontsize(8.5)
+
+
 def _sales_orders(start: date, end: date) -> MetricResult:
     daily = build_dashboard(start, end).daily
     fig, ax = plt.subplots(figsize=(7, 3.2))
-    ax.plot(daily["day"], daily["orders"], label="Заказы, шт.", marker="o")
-    ax.plot(daily["day"], daily["sales"], label="Продажи, шт.", marker="o")
+    ax.plot(daily["day"], daily["orders"], label="Заказы, шт.", color=COLOR_ACCENT, marker="o", linewidth=2, markersize=4)
+    ax.plot(daily["day"], daily["sales"], label="Продажи, шт.", color=COLOR_GOOD, marker="o", linewidth=2, markersize=4)
     ax.set_xlabel("Дата")
     ax.set_ylabel("Штук")
-    ax.legend()
-    ax.grid(alpha=0.3)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    _apply_chart_style(fig, ax)
     fig.autofmt_xdate()
     total_orders = int(daily["orders"].sum())
     total_sales = int(daily["sales"].sum())
@@ -60,14 +131,17 @@ def _sales_orders(start: date, end: date) -> MetricResult:
 def _ads(start: date, end: date) -> MetricResult:
     daily = build_dashboard(start, end).daily
     fig, ax = plt.subplots(figsize=(7, 3.2))
-    ax.bar(daily["day"], daily["ad_spend"], color="#7c6cf6", label="Расход, ₽")
+    ax.bar(daily["day"], daily["ad_spend"], color=COLOR_ACCENT, alpha=0.85, label="Расход, ₽")
     ax2 = ax.twinx()
-    ax2.plot(daily["day"], daily["drr"], color="#f2677a", label="ДРР, %", marker="o")
+    ax2.plot(daily["day"], daily["drr"], color=COLOR_CRITICAL, label="ДРР, %", marker="o", linewidth=2, markersize=4)
     ax.set_xlabel("Дата")
     ax.set_ylabel("Расход, ₽")
     ax2.set_ylabel("ДРР, %")
-    fig.legend(loc="upper left", bbox_to_anchor=(0.08, 0.92))
-    ax.grid(alpha=0.3)
+
+    _apply_chart_style(fig, ax, hide_top_right_spines=False)
+    _style_twin_axis(ax, ax2)
+
+    fig.legend(loc="upper left", bbox_to_anchor=(0.08, 0.92), frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
     fig.autofmt_xdate()
     total_spend = float(daily["ad_spend"].sum())
     avg_drr = float(daily["drr"].mean()) if len(daily) else 0.0
@@ -80,8 +154,10 @@ def _ads(start: date, end: date) -> MetricResult:
 def _stocks(start: date, end: date) -> MetricResult:
     stocks = read_table("stocks")
     fig, ax = plt.subplots(figsize=(7, 4))
+    _apply_chart_style(fig, ax)
+
     if stocks.empty:
-        ax.text(0.5, 0.5, "Нет данных об остатках", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет данных об остатках", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["stocks"], figure=fig, summary="Данных об остатках нет.")
 
@@ -98,7 +174,7 @@ def _stocks(start: date, end: date) -> MetricResult:
         grouped = grouped.merge(catalog[["nm_id", "supplier_article"]], on="nm_id", how="left")
     grouped["label"] = grouped.get("supplier_article").fillna(grouped["nm_id"].astype(str)) if "supplier_article" in grouped.columns else grouped["nm_id"].astype(str)
 
-    ax.barh(grouped["label"].astype(str), grouped["quantity"], color="#3ecf8e")
+    ax.barh(grouped["label"].astype(str), grouped["quantity"], color=COLOR_GOOD, alpha=0.9)
     ax.set_xlabel("Остаток, шт.")
     ax.invert_yaxis()
     fig.tight_layout()
@@ -126,12 +202,15 @@ def _pnl(start: date, end: date) -> MetricResult:
 
     categories = ["Продажи", "Расходы WB", "Себестоимость", "Реклама", "Чистая прибыль"]
     values = [sales, wb_exp, cost, ads, profit]
-    colors = ["#2e86de", "#ee5253", "#ff9f43", "#9c88ff", "#10ac84" if profit >= 0 else "#ee5253"]
+    bar_colors = [
+        COLOR_ACCENT, COLOR_CRITICAL, COLOR_WARN, COLOR_ACCENT_STRONG,
+        COLOR_GOOD if profit >= 0 else COLOR_CRITICAL,
+    ]
 
-    bars = ax.barh(categories, values, color=colors)
+    bars = ax.barh(categories, values, color=bar_colors, alpha=0.9)
     ax.set_xlabel("Сумма, ₽")
     ax.invert_yaxis()
-    ax.grid(axis="x", alpha=0.3)
+    _apply_chart_style(fig, ax)
 
     max_abs = max(abs(v) for v in values) if values else 0
     for bar in bars:
@@ -140,7 +219,7 @@ def _pnl(start: date, end: date) -> MetricResult:
             w + (max_abs * 0.01 if w >= 0 else -max_abs * 0.01),
             bar.get_y() + bar.get_height() / 2,
             f"{w:,.0f} ₽".replace(",", " "),
-            va="center", ha="left" if w >= 0 else "right", fontsize=8,
+            va="center", ha="left" if w >= 0 else "right", fontsize=8, color=COLOR_TEXT,
         )
 
     fig.tight_layout()
@@ -158,13 +237,13 @@ def _abc_analysis(start: date, end: date) -> MetricResult:
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if df.empty or "Расчётная прибыль" not in df.columns:
-        ax.text(0.5, 0.5, "Нет данных для ABC-анализа", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет данных для ABC-анализа", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["abc_analysis"], figure=fig, summary="Нет данных для ABC-анализа.")
 
     df = df[df["Расчётная прибыль"] > 0].sort_values("Расчётная прибыль", ascending=False)
     if df.empty:
-        ax.text(0.5, 0.5, "Прибыльные товары отсутствуют", ha="center", va="center")
+        ax.text(0.5, 0.5, "Прибыльные товары отсутствуют", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["abc_analysis"], figure=fig, summary="Прибыльные товары за период отсутствуют.")
 
@@ -182,17 +261,20 @@ def _abc_analysis(start: date, end: date) -> MetricResult:
     top_df = df.head(15)
     labels = top_df["Артикул продавца"].fillna(top_df["Артикул WB"].astype(str)).astype(str)
 
-    ax.bar(labels, top_df["Расчётная прибыль"], color="#7c6cf6", label="Прибыль, ₽")
+    ax.bar(labels, top_df["Расчётная прибыль"], color=COLOR_ACCENT, alpha=0.85, label="Прибыль, ₽")
     ax.set_ylabel("Прибыль, ₽")
     ax.set_xticks(range(len(labels)))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
 
     ax2 = ax.twinx()
-    ax2.plot(labels, top_df["cum_profit_pct"], color="#f2677a", marker="o", linewidth=2, label="Накопленная доля, %")
+    ax2.plot(labels, top_df["cum_profit_pct"], color=COLOR_CRITICAL, marker="o", linewidth=2, markersize=4, label="Накопленная доля, %")
     ax2.set_ylabel("Накопленная доля, %")
     ax2.set_ylim(0, 105)
-    ax2.axhline(80, color="gray", linestyle="--", alpha=0.5)
-    ax2.axhline(95, color="gray", linestyle=":", alpha=0.5)
+    ax2.axhline(80, color=COLOR_MUTED, linestyle="--", alpha=0.5)
+    ax2.axhline(95, color=COLOR_MUTED, linestyle=":", alpha=0.5)
+
+    _apply_chart_style(fig, ax, hide_top_right_spines=False)
+    _style_twin_axis(ax, ax2)
 
     fig.tight_layout()
     summary = (
@@ -208,28 +290,28 @@ def _buyout_rate(start: date, end: date) -> MetricResult:
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if df.empty or "Продажи, шт" not in df.columns or "Возвраты, %" not in df.columns:
-        ax.text(0.5, 0.5, "Нет данных по выкупу товаров", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет данных по выкупу товаров", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["buyout_rate"], figure=fig, summary="Данных по выкупу товаров нет.")
 
     df = df[df["Продажи, шт"] > 0].sort_values("Продажи, шт", ascending=False).head(15)
     if df.empty:
-        ax.text(0.5, 0.5, "Нет продаж за указанный период", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет продаж за указанный период", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["buyout_rate"], figure=fig, summary="Продаж за период не обнаружено.")
 
     df["buyout_pct"] = 100.0 - df["Возвраты, %"].clip(lower=0.0, upper=100.0)
     labels = df["Артикул продавца"].fillna(df["Артикул WB"].astype(str)).astype(str)
 
-    bars = ax.barh(labels, df["buyout_pct"], color="#3ecf8e")
+    bars = ax.barh(labels, df["buyout_pct"], color=COLOR_GOOD, alpha=0.9)
     ax.set_xlabel("% выкупа")
     ax.set_xlim(0, 105)
     ax.invert_yaxis()
-    ax.grid(axis="x", alpha=0.3)
+    _apply_chart_style(fig, ax)
 
     for bar in bars:
         w = bar.get_width()
-        ax.text(w + 1, bar.get_y() + bar.get_height() / 2, f"{w:.1f}%", va="center", fontsize=8)
+        ax.text(w + 1, bar.get_y() + bar.get_height() / 2, f"{w:.1f}%", va="center", fontsize=8, color=COLOR_TEXT)
 
     fig.tight_layout()
     avg_buyout = float(df["buyout_pct"].mean())
@@ -244,29 +326,29 @@ def _oos_risk(start: date, end: date) -> MetricResult:
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if df.empty or "Запас, дней" not in df.columns:
-        ax.text(0.5, 0.5, "Нет данных о днях запаса", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет данных о днях запаса", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["oos_risk"], figure=fig, summary="Данных о днях запаса нет.")
 
     df = df[df["Остаток"] > 0].sort_values("Запас, дней", ascending=True).head(15)
     if df.empty:
-        ax.text(0.5, 0.5, "Нет товаров на остатке", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет товаров на остатке", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["oos_risk"], figure=fig, summary="Товаров с остатками не найдено.")
 
     labels = df["Артикул продавца"].fillna(df["Артикул WB"].astype(str)).astype(str)
-    colors = ["#f2677a" if d < 7 else ("#f39c12" if d <= 14 else "#3ecf8e") for d in df["Запас, дней"]]
+    bar_colors = [get_status_color(classify_stock_risk(d)) for d in df["Запас, дней"]]
 
-    bars = ax.barh(labels, df["Запас, дней"], color=colors)
-    ax.axvline(7, color="#f2677a", linestyle="--", linewidth=1.5, label="Порог OOS (7 дн.)")
+    bars = ax.barh(labels, df["Запас, дней"], color=bar_colors, alpha=0.9)
+    ax.axvline(7, color=COLOR_CRITICAL, linestyle="--", linewidth=1.5, label="Порог OOS (7 дн.)")
     ax.set_xlabel("Дни запаса")
     ax.invert_yaxis()
-    ax.grid(axis="x", alpha=0.3)
-    ax.legend(loc="lower right")
+    _apply_chart_style(fig, ax)
+    ax.legend(loc="lower right", frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
 
     for bar in bars:
         w = bar.get_width()
-        ax.text(w + 0.5, bar.get_y() + bar.get_height() / 2, f"{w:.0f} дн", va="center", fontsize=8)
+        ax.text(w + 0.5, bar.get_y() + bar.get_height() / 2, f"{w:.0f} дн", va="center", fontsize=8, color=COLOR_TEXT)
 
     fig.tight_layout()
     critical_cnt = int((df["Запас, дней"] < 7).sum())
@@ -290,20 +372,23 @@ def _wb_deductions(start: date, end: date) -> MetricResult:
     items = {k: v for k, v in categories.items() if v > 0}
 
     if not items:
-        ax.text(0.5, 0.5, "Удержания WB отсутствуют", ha="center", va="center")
+        ax.text(0.5, 0.5, "Удержания WB отсутствуют", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["wb_deductions"], figure=fig, summary="Удержаний WB за период нет.")
 
     labels = list(items.keys())
     values = list(items.values())
-    colors = ["#7c6cf6", "#48dbfb", "#ff9f43", "#f2677a", "#10ac84"][: len(values)]
+    pie_colors = [COLOR_ACCENT, "#38bdf8", COLOR_WARN, COLOR_CRITICAL, COLOR_GOOD][: len(values)]
 
     wedges, texts, autotexts = ax.pie(
-        values, labels=labels, autopct="%1.1f%%", startangle=140, colors=colors,
-        wedgeprops=dict(width=0.4, edgecolor="w"),
+        values, labels=labels, autopct="%1.1f%%", startangle=140, colors=pie_colors,
+        wedgeprops=dict(width=0.4, edgecolor="w", linewidth=1.5),
     )
-    plt.setp(autotexts, size=8, weight="bold")
-    plt.setp(texts, size=8)
+    plt.setp(autotexts, size=8, weight="bold", color="#ffffff")
+    plt.setp(texts, size=8, color=COLOR_TEXT)
+
+    fig.patch.set_facecolor(COLOR_BG)
+    ax.set_facecolor(COLOR_BG)
 
     fig.tight_layout()
     total_exp = sum(values)
@@ -320,13 +405,13 @@ def _ad_performance(start: date, end: date) -> MetricResult:
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if ads.empty or "Расход" not in ads.columns:
-        ax.text(0.5, 0.5, "Нет данных по рекламным кампаниям", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет данных по рекламным кампаниям", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["ad_performance"], figure=fig, summary="Данных по рекламе нет.")
 
     ads = ads[ads["Расход"] > 0].sort_values("Расход", ascending=False).head(10)
     if ads.empty:
-        ax.text(0.5, 0.5, "Расходы на рекламу отсутствуют", ha="center", va="center")
+        ax.text(0.5, 0.5, "Расходы на рекламу отсутствуют", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["ad_performance"], figure=fig, summary="Расходов на рекламу за период нет.")
 
@@ -335,16 +420,19 @@ def _ad_performance(start: date, end: date) -> MetricResult:
     labels = ads["Кампания"].astype(str)
     x = range(len(labels))
 
-    ax.bar(x, ads["Расход"], color="#7c6cf6", label="Расход, ₽", alpha=0.85)
+    ax.bar(x, ads["Расход"], color=COLOR_ACCENT, alpha=0.85, label="Расход, ₽")
     ax.set_ylabel("Расход, ₽")
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
 
     ax2 = ax.twinx()
-    ax2.plot(x, ads["CPO"], color="#f2677a", marker="o", linewidth=2, label="CPO, ₽")
+    ax2.plot(x, ads["CPO"], color=COLOR_CRITICAL, marker="o", linewidth=2, markersize=4, label="CPO, ₽")
     ax2.set_ylabel("CPO (стоимость заказа), ₽")
 
-    fig.legend(loc="upper right", bbox_to_anchor=(0.9, 0.88))
+    _apply_chart_style(fig, ax, hide_top_right_spines=False)
+    _style_twin_axis(ax, ax2)
+
+    fig.legend(loc="upper right", bbox_to_anchor=(0.9, 0.88), frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
     fig.tight_layout()
 
     total_spend = float(ads["Расход"].sum())
@@ -359,7 +447,7 @@ def _warehouse_stocks(start: date, end: date) -> MetricResult:
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if stocks.empty or "Склад" not in stocks.columns or "Остаток" not in stocks.columns:
-        ax.text(0.5, 0.5, "Нет данных по остаткам на складах", ha="center", va="center")
+        ax.text(0.5, 0.5, "Нет данных по остаткам на складах", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["warehouse_stocks"], figure=fig, summary="Данных по складам нет.")
 
@@ -367,19 +455,19 @@ def _warehouse_stocks(start: date, end: date) -> MetricResult:
     grouped = grouped[grouped["Остаток"] > 0].sort_values("Остаток", ascending=False).head(12)
 
     if grouped.empty:
-        ax.text(0.5, 0.5, "Остатки на складах равны 0", ha="center", va="center")
+        ax.text(0.5, 0.5, "Остатки на складах равны 0", ha="center", va="center", color=COLOR_MUTED, fontsize=9)
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["warehouse_stocks"], figure=fig, summary="Остатки на складах отсутствуют.")
 
-    bars = ax.barh(grouped["Склад"], grouped["Остаток"], color="#3ecf8e")
+    bars = ax.barh(grouped["Склад"], grouped["Остаток"], color=COLOR_GOOD, alpha=0.9)
     ax.set_xlabel("Остаток, шт.")
     ax.invert_yaxis()
-    ax.grid(axis="x", alpha=0.3)
+    _apply_chart_style(fig, ax)
 
     max_qty = max(grouped["Остаток"])
     for bar in bars:
         w = bar.get_width()
-        ax.text(w + (max_qty * 0.01), bar.get_y() + bar.get_height() / 2, f"{int(w)} шт", va="center", fontsize=8)
+        ax.text(w + (max_qty * 0.01), bar.get_y() + bar.get_height() / 2, f"{int(w)} шт", va="center", fontsize=8, color=COLOR_TEXT)
 
     fig.tight_layout()
     total_wh_qty = int(grouped["Остаток"].sum())

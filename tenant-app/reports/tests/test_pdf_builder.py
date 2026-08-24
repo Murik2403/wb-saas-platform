@@ -1,9 +1,10 @@
 from datetime import date
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from reports import metrics
-from reports.pdf_builder import build_report_pdf
+from reports.pdf_builder import build_report_pdf, format_page_number
 
 
 class FakeDashboardData:
@@ -100,3 +101,37 @@ def test_build_report_pdf_produces_valid_pdf_bytes(monkeypatch):
     pdf_bytes = build_report_pdf("Тестовый отчёт", ["sales_orders", "ads", "stocks"], date(2026, 8, 1), date(2026, 8, 5))
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 1000
+
+
+def test_format_page_number():
+    assert format_page_number(1, 5) == "Стр. 1 из 5"
+    assert format_page_number(10, 10) == "Стр. 10 из 10"
+
+
+def test_classify_stock_risk():
+    assert metrics.classify_stock_risk(3.5) == "critical"
+    assert metrics.classify_stock_risk(6.9) == "critical"
+    assert metrics.classify_stock_risk(7.0) == "warn"
+    assert metrics.classify_stock_risk(14.0) == "warn"
+    assert metrics.classify_stock_risk(14.1) == "good"
+    assert metrics.classify_stock_risk(30.0) == "good"
+
+
+def test_get_status_color():
+    assert metrics.get_status_color("critical") == metrics.COLOR_CRITICAL
+    assert metrics.get_status_color("warn") == metrics.COLOR_WARN
+    assert metrics.get_status_color("good") == metrics.COLOR_GOOD
+    assert metrics.get_status_color("accent") == metrics.COLOR_ACCENT
+    assert metrics.get_status_color("unknown") == metrics.COLOR_TEXT
+
+
+def test_apply_chart_style_hides_top_right_spines_by_default():
+    fig, ax = plt.subplots()
+    try:
+        metrics._apply_chart_style(fig, ax)
+        assert ax.spines["top"].get_visible() is False
+        assert ax.spines["right"].get_visible() is False
+        assert ax.spines["left"].get_visible() is True
+        assert ax.spines["bottom"].get_visible() is True
+    finally:
+        plt.close(fig)
