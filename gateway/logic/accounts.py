@@ -135,10 +135,11 @@ def create_account(conn: sqlite3.Connection, email: str, password: str, pdn_cons
         """
         INSERT INTO accounts(email, password_hash, password_salt, status, pdn_consent_at, created_at, updated_at)
         VALUES (?, ?, ?, 'pending', ?, ?, ?)
+        RETURNING id
         """,
         (email, password_hash, salt, now, now, now),
     )
-    return int(cur.lastrowid)
+    return int(cur.fetchone()[0])
 
 
 def get_account_by_id(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | None:
@@ -247,10 +248,11 @@ def create_tenant_instance(conn: sqlite3.Connection, account_id: int, slug: str)
         """
         INSERT INTO tenant_instances(account_id, slug, container_name, status, created_at, updated_at)
         VALUES (?, ?, ?, 'provisioning', ?, ?)
+        RETURNING id
         """,
         (int(account_id), slug, container_name, now, now),
     )
-    return int(cur.lastrowid)
+    return int(cur.fetchone()[0])
 
 
 def set_tenant_status(conn: sqlite3.Connection, tenant_id: int, status: str, note: str = "") -> None:

@@ -121,6 +121,22 @@ TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
 
 # --------------------------------------------------------------------------
+# Control-plane database (see logic/db.py)
+# --------------------------------------------------------------------------
+
+# "sqlite" (default, current production setup -- a single file is plenty
+# for the current handful of tenants) or "postgres" (for when concurrent
+# writers to the shared control-plane db -- accounts/billing/sessions,
+# NOT tenant data -- actually start contending). Switching requires
+# WB_SAAS_DATABASE_URL to be set and psycopg[binary] installed; see
+# DEPLOY.md's "Switching the control-plane db to Postgres" section.
+DB_BACKEND = os.environ.get("WB_SAAS_DB_BACKEND", "sqlite")
+
+# Postgres DSN, e.g. "postgresql://user:pass@host:5432/wbsaas". Only read
+# when DB_BACKEND == "postgres".
+DATABASE_URL = os.environ.get("WB_SAAS_DATABASE_URL", "")
+
+# --------------------------------------------------------------------------
 # Admin panel (see admin_routes.py, logic/accounts.py's is_admin_account)
 # --------------------------------------------------------------------------
 

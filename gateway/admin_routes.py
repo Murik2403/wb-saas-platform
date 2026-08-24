@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import config
+from logging_config import bind_account_context
 from logic import accounts, billing, csrf, db as control_db
 
 logger = logging.getLogger("wb_saas_gateway.admin")
@@ -30,7 +31,10 @@ def _current_account(request: Request):
     if not token:
         return None
     with control_db.connect() as conn:
-        return accounts.resolve_session(conn, token)
+        account = accounts.resolve_session(conn, token)
+    if account is not None:
+        bind_account_context(account["id"])
+    return account
 
 
 def _require_admin(request: Request):

@@ -29,12 +29,15 @@ import mailer
 from admin_routes import router as admin_router
 from billing_routes import router as billing_router
 from internal_routes import router as internal_router
+from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
 from logic import accounts, csrf, db as control_db, password_reset
 from rate_limiter import RateLimiter
 
+setup_logging()
 logger = logging.getLogger("wb_saas_gateway")
 
 app = FastAPI(title="MARKETSHELPER Gateway")
+app.add_middleware(StructuredLoggingMiddleware)
 app.include_router(billing_router)
 app.include_router(admin_router)
 app.include_router(internal_router)
@@ -72,7 +75,10 @@ def _current_account(request: Request):
     if not token:
         return None
     with control_db.connect() as conn:
-        return accounts.resolve_session(conn, token)
+        account = accounts.resolve_session(conn, token)
+    if account is not None:
+        bind_account_context(account["id"])
+    return account
 
 
 def _set_session_cookie(response: Response, token: str) -> None:

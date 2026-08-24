@@ -9,22 +9,93 @@ cookies are currently valid.
 SQLite is used here the same way the tenant app uses it -- it's not shared
 across tenants (there is exactly one control-plane database, owned by the
 gateway process), so there's no multi-tenant-in-one-table risk to worry
-about. It can be swapped for Postgres later without touching tenant
-isolation, since tenant isolation is structural (separate containers), not
-a property of this database.
+about.
+
+Backend is switchable via config.DB_BACKEND ("sqlite", the default, or
+"postgres") for when concurrent writers to this shared db actually start
+contending -- see DEPLOY.md's "Switching the control-plane db to Postgres"
+section. Every caller in accounts.py/billing.py/password_reset.py writes
+plain SQL with "?" placeholders and reads rows by column name
+(row["email"]) -- never by position -- specifically so that SQL keeps
+working unchanged on both backends: connect() returns a sqlite3.Connection
+on "sqlite", or a _PGConnection adapter (translating "?" to psycopg's "%s"
+and returning dict-like rows) on "postgres". The two INSERTs that need the
+new row's id use "RETURNING id" + fetchone()[0] rather than
+cursor.lastrowid, since RETURNING works identically on modern SQLite
+(3.35+) and Postgres, whereas lastrowid does not exist on psycopg.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+import config
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "gateway.sqlite3"
+
+_PLACEHOLDER_RE = re.compile(r"\?")
+
+
+def _translate_placeholders(sql: str) -> str:
+    """'?' (sqlite3 style) -> '%s' (psycopg style). Safe as a blind
+    substitution because none of this project's SQL contains a literal
+    '?' (no LIKE patterns, no '?' in string literals) -- verified by grep
+    across logic/accounts.py, logic/billing.py, logic/password_reset.py."""
+    return _PLACEHOLDER_RE.sub("%s", sql)
+
+
+class _PGConnection:
+    """Adapts a psycopg connection to the sqlite3.Connection subset every
+    caller in this codebase actually uses: execute(sql, params) with '?'
+    placeholders, returning a cursor with .fetchone()/.fetchall() giving
+    dict-like rows. Nothing here does anything sqlite3-specific (no
+    row_factory assignment, no PRAGMA), so callers don't need to know or
+    care which backend they got.
+    """
+
+    def __init__(self, pg_conn):
+        self._conn = pg_conn
+
+    def execute(self, sql, params=()):
+        return self._conn.execute(_translate_placeholders(sql), params)
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def _connect_postgres() -> _PGConnection:
+    if not config.DATABASE_URL:
+        raise RuntimeError(
+            "WB_SAAS_DB_BACKEND=postgres requires WB_SAAS_DATABASE_URL to be set."
+        )
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except ImportError as exc:
+        raise RuntimeError(
+            "WB_SAAS_DB_BACKEND=postgres requires the 'psycopg[binary]' package "
+            "(pip install 'psycopg[binary]') -- not installed by default since "
+            "production currently runs on sqlite."
+        ) from exc
+    return _PGConnection(psycopg.connect(config.DATABASE_URL, row_factory=dict_row))
 
 
 @contextmanager
 def connect(db_path: Path | str = DEFAULT_DB_PATH):
+    if config.DB_BACKEND == "postgres":
+        conn = _connect_postgres()
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+        return
+
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=30)
@@ -37,7 +108,123 @@ def connect(db_path: Path | str = DEFAULT_DB_PATH):
         conn.close()
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+# Postgres DDL equivalent of the SQLite schema below. Kept as separate
+# single statements (rather than one executescript-style blob) since
+# psycopg's simple-query protocol is not guaranteed the same
+# multi-statement-per-call behavior sqlite3.executescript() gives.
+#
+# Differences from the SQLite schema, and why:
+# - INTEGER PRIMARY KEY AUTOINCREMENT -> GENERATED ALWAYS AS IDENTITY
+#   (Postgres' modern equivalent; SERIAL is the older, discouraged spelling).
+# - UNIQUE COLLATE NOCASE on accounts.email -> plain UNIQUE: every caller
+#   (create_account, get_account_by_email) already does
+#   email.strip().lower() in Python before touching the db, so case-folding
+#   at the SQL layer would be redundant.
+# - FOREIGN KEY(...) REFERENCES ... inlined into the column definition
+#   instead of a trailing FOREIGN KEY(...) clause -- equivalent, just
+#   Postgres' more common spelling.
+_PG_SCHEMA_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        current_period_end TEXT DEFAULT '',
+        payment_method_id TEXT DEFAULT '',
+        past_due_since TEXT DEFAULT '',
+        pdn_consent_at TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        yookassa_payment_id TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL DEFAULT 'recurring',
+        amount_rub REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        period_start TEXT DEFAULT '',
+        period_end TEXT DEFAULT '',
+        error_message TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id, created_at)",
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id)",
+    """
+    CREATE TABLE IF NOT EXISTS tenant_instances (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        account_id INTEGER NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
+        slug TEXT NOT NULL UNIQUE,
+        container_name TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'provisioning',
+        note TEXT DEFAULT '',
+        telegram_chat_id TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_tenant_instances_status ON tenant_instances(status)",
+    """
+    CREATE TABLE IF NOT EXISTS telegram_link_codes (
+        code TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_account ON telegram_link_codes(account_id)",
+    """
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_account ON password_reset_tokens(account_id)",
+]
+
+
+def _pg_column_exists(conn: _PGConnection, table: str, column: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM information_schema.columns WHERE table_name=? AND column_name=?",
+        (table, column),
+    ).fetchone()
+    return row is not None
+
+
+def _init_db_postgres(conn: _PGConnection) -> None:
+    for statement in _PG_SCHEMA_STATEMENTS:
+        conn.execute(statement)
+    # Postgres-equivalent of the SQLite ALTER-if-missing migrations below --
+    # information_schema.columns instead of PRAGMA table_info.
+    if not _pg_column_exists(conn, "accounts", "pdn_consent_at"):
+        conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")
+    if not _pg_column_exists(conn, "tenant_instances", "telegram_chat_id"):
+        conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
+
+
+def init_db(conn) -> None:
+    if config.DB_BACKEND == "postgres":
+        _init_db_postgres(conn)
+        return
+
     conn.executescript(
         """
         PRAGMA journal_mode=WAL;
