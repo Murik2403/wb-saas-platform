@@ -90,7 +90,7 @@ def _apply_chart_style(fig: plt.Figure, ax: plt.Axes, hide_top_right_spines: boo
 
     for spine in ax.spines.values():
         if spine.get_visible():
-            spine.set_color("#cbd5e1")
+            spine.set_color(COLOR_GRID)
             spine.set_linewidth(0.8)
 
     ax.tick_params(colors=COLOR_TEXT, labelsize=8)
@@ -107,7 +107,7 @@ def _style_twin_axis(ax: plt.Axes, ax2: plt.Axes) -> None:
     _ads/_abc_analysis/_ad_performance all do exactly this."""
     ax.spines["top"].set_visible(False)
     ax2.spines["top"].set_visible(False)
-    ax2.spines["right"].set_color("#cbd5e1")
+    ax2.spines["right"].set_color(COLOR_GRID)
     ax2.tick_params(colors=COLOR_TEXT, labelsize=8)
     ax2.yaxis.label.set_color(COLOR_TEXT)
     ax2.yaxis.label.set_fontsize(8.5)
@@ -120,7 +120,7 @@ def _sales_orders(start: date, end: date) -> MetricResult:
     ax.plot(daily["day"], daily["sales"], label="Продажи, шт.", color=COLOR_GOOD, marker="o", linewidth=2, markersize=4)
     ax.set_xlabel("Дата")
     ax.set_ylabel("Штук")
-    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
     _apply_chart_style(fig, ax)
     fig.autofmt_xdate()
     total_orders = int(daily["orders"].sum())
@@ -144,7 +144,7 @@ def _ads(start: date, end: date) -> MetricResult:
     _apply_chart_style(fig, ax, hide_top_right_spines=False)
     _style_twin_axis(ax, ax2)
 
-    fig.legend(loc="upper left", bbox_to_anchor=(0.08, 0.92), frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    fig.legend(loc="upper left", bbox_to_anchor=(0.08, 0.92), frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
     fig.autofmt_xdate()
     total_spend = float(daily["ad_spend"].sum())
     avg_drr = float(daily["drr"].mean()) if len(daily) else 0.0
@@ -347,7 +347,7 @@ def _oos_risk(start: date, end: date) -> MetricResult:
     ax.set_xlabel("Дни запаса")
     ax.invert_yaxis()
     _apply_chart_style(fig, ax)
-    ax.legend(loc="lower right", frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    ax.legend(loc="lower right", frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
 
     for bar in bars:
         w = bar.get_width()
@@ -435,7 +435,7 @@ def _ad_performance(start: date, end: date) -> MetricResult:
     _apply_chart_style(fig, ax, hide_top_right_spines=False)
     _style_twin_axis(ax, ax2)
 
-    fig.legend(loc="upper right", bbox_to_anchor=(0.9, 0.88), frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    fig.legend(loc="upper right", bbox_to_anchor=(0.9, 0.88), frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
     fig.tight_layout()
 
     total_spend = float(ads["Расход"].sum())
@@ -554,7 +554,7 @@ def _returns_cancellations(start: date, end: date) -> MetricResult:
     ax.plot(all_days, return_series.values, label="Возвраты, шт.", color=COLOR_WARN, marker="o", linewidth=2, markersize=4)
     ax.set_xlabel("Дата")
     ax.set_ylabel("Штук")
-    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=8)
+    ax.legend(frameon=True, facecolor="#f8fafc", edgecolor=COLOR_GRID, fontsize=8)
     fig.autofmt_xdate()
 
     total_cancel = int(cancel_series.sum())

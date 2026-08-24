@@ -23,6 +23,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     HRFlowable,
     Image as RLImage,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -31,7 +32,13 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-from .metrics import build_metric
+from .metrics import (
+    COLOR_ACCENT,
+    COLOR_GRID,
+    COLOR_MUTED,
+    COLOR_TEXT,
+    build_metric,
+)
 
 # reportlab's built-in fonts (Helvetica etc.) have no Cyrillic glyphs, so
 # Russian text renders as boxes. Reuse matplotlib's bundled DejaVu Sans
@@ -79,25 +86,25 @@ class NumberedCanvas(canvas.Canvas):
         self.saveState()
 
         # Top accent bar
-        self.setFillColor(colors.HexColor("#7c6cf6"))
+        self.setFillColor(colors.HexColor(COLOR_ACCENT))
         self.rect(0, 29.7 * cm - 0.4 * cm, 21.0 * cm, 0.4 * cm, fill=1, stroke=0)
 
         # Header text
         self.setFont("DejaVuSans-Bold", 8)
-        self.setFillColor(colors.HexColor("#64748b"))
+        self.setFillColor(colors.HexColor(COLOR_MUTED))
         self.drawString(2 * cm, 29.7 * cm - 0.9 * cm, "MARKETSHELPER")
 
         self.setFont("DejaVuSans", 8)
         self.drawRightString(21.0 * cm - 2 * cm, 29.7 * cm - 0.9 * cm, "Аналитический отчёт")
 
         # Footer line
-        self.setStrokeColor(colors.HexColor("#e2e8f0"))
+        self.setStrokeColor(colors.HexColor(COLOR_GRID))
         self.setLineWidth(0.5)
         self.line(2 * cm, 1.5 * cm, 21.0 * cm - 2 * cm, 1.5 * cm)
 
         # Footer text
         self.setFont("DejaVuSans", 8)
-        self.setFillColor(colors.HexColor("#64748b"))
+        self.setFillColor(colors.HexColor(COLOR_MUTED))
         self.drawString(2 * cm, 1.0 * cm, f"MARKETSHELPER SaaS Platform • Сформировано: {generation_timestamp()}")
 
         page_str = format_page_number(self._pageNumber, page_count)
@@ -114,8 +121,8 @@ def _create_summary_box(text: str, style: ParagraphStyle) -> Table:
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                ("LINELEFT", (0, 0), (0, -1), 3, colors.HexColor("#7c6cf6")),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                ("LINELEFT", (0, 0), (0, -1), 3, colors.HexColor(COLOR_ACCENT)),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(COLOR_GRID)),
                 ("TOPPADDING", (0, 0), (-1, -1), 6),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
@@ -145,7 +152,7 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         fontName="DejaVuSans-Bold",
         fontSize=18,
         leading=22,
-        textColor=colors.HexColor("#0f172a"),
+        textColor=colors.HexColor(COLOR_TEXT),
         spaceAfter=4,
     )
     subtitle_style = ParagraphStyle(
@@ -154,7 +161,7 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         fontName="DejaVuSans",
         fontSize=9,
         leading=13,
-        textColor=colors.HexColor("#475569"),
+        textColor=colors.HexColor(COLOR_MUTED),
     )
     heading_style = ParagraphStyle(
         "MetricHeading",
@@ -162,7 +169,7 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         fontName="DejaVuSans-Bold",
         fontSize=12,
         leading=16,
-        textColor=colors.HexColor("#1e293b"),
+        textColor=colors.HexColor(COLOR_TEXT),
         spaceBefore=8,
         spaceAfter=6,
     )
@@ -172,7 +179,7 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         fontName="DejaVuSans",
         fontSize=8.5,
         leading=12,
-        textColor=colors.HexColor("#334155"),
+        textColor=colors.HexColor(COLOR_TEXT),
     )
 
     # Document header card
@@ -185,13 +192,13 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
     header_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
                 ("LEFTPADDING", (0, 0), (-1, -1), 12),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 12),
                 ("TOPPADDING", (0, 0), (-1, -1), 10),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                ("LINELEFT", (0, 0), (0, -1), 4, colors.HexColor("#7c6cf6")),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                ("LINELEFT", (0, 0), (0, -1), 4, colors.HexColor(COLOR_ACCENT)),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(COLOR_GRID)),
             ]
         )
     )
@@ -207,7 +214,7 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
                 HRFlowable(
                     width="100%",
                     thickness=0.5,
-                    color=colors.HexColor("#e2e8f0"),
+                    color=colors.HexColor(COLOR_GRID),
                     spaceBefore=8,
                     spaceAfter=8,
                 )
@@ -219,11 +226,14 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         plt.close(result.figure)
         img_buffer.seek(0)
 
-        story.append(Paragraph(escape(result.title), heading_style))
-        story.append(RLImage(img_buffer, width=17 * cm, height=17 * cm * 0.45))
-        story.append(Spacer(1, 0.2 * cm))
-        story.append(_create_summary_box(result.summary, summary_style))
-        story.append(Spacer(1, 0.4 * cm))
+        metric_story = [
+            Paragraph(escape(result.title), heading_style),
+            RLImage(img_buffer, width=17 * cm, height=17 * cm * 0.45),
+            Spacer(1, 0.2 * cm),
+            _create_summary_box(result.summary, summary_style),
+            Spacer(1, 0.4 * cm),
+        ]
+        story.append(KeepTogether(metric_story))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     return buffer.getvalue()
