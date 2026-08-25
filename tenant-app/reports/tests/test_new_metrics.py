@@ -354,6 +354,12 @@ def test_all_ten_metrics_produce_a_valid_pdf(monkeypatch):
             return fake_sales_for_returns()
         return pd.DataFrame({"nm_id": [111], "supplier_article": ["A1"]})
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
+    # wb_incident_losses (see metrics.py's _wb_incident_losses) calls
+    # read_wb_incident_cases() directly rather than through read_table(), so
+    # it needs its own patch -- otherwise it hits the real (uninitialized in
+    # this test's environment) SQLite file and fails with "no such table:
+    # wb_incident_cases" instead of exercising the empty-data path.
+    monkeypatch.setattr(metrics, "read_wb_incident_cases", lambda limit=200: pd.DataFrame())
 
     all_codes = list(metrics.METRIC_BUILDERS.keys())
     pdf_bytes = build_report_pdf("Полный отчёт", all_codes, date(2026, 8, 1), date(2026, 8, 5))
