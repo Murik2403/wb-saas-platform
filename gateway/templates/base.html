@@ -247,6 +247,14 @@
   .hero-badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 13px; border-radius: 999px;
     background: var(--accent-soft); border: 1px solid rgba(124,108,246,.3); color: var(--accent-strong);
     font-size: .78rem; font-weight: 600; margin-bottom: 16px; }
+  /* --good instead of --accent: this badge asserts a trust/safety claim (data
+     isolation), not a value prop -- reuses the same green already used for
+     "safe/positive" elsewhere (.badge-good, .mini-kpi .v.good), not a new color. */
+  .hero-badge.badge-trust { background: var(--good-soft); border-color: rgba(62,207,142,.3); color: var(--good); margin-bottom: 0; }
+  .trust-line { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+    text-align: center; margin: -12px 0 60px; }
+  .trust-line p { margin: 0; color: var(--text-muted); font-size: .88rem; }
+  @media (max-width: 600px) { .trust-line { flex-direction: column; gap: 8px; } }
   .section { padding: 10px 0 64px; }
   .section-head { max-width: 640px; margin: 0 0 30px; }
   .eyebrow { font-family: var(--font-mono); font-size: .74rem; letter-spacing: .06em; text-transform: uppercase;
