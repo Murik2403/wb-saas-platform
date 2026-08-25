@@ -4,3 +4,13 @@ jinja2>=3.1
 python-multipart>=0.0.9
 docker>=7.0
 requests>=2.31
+
+# Test-only (see tests/test_db_backend_postgres.py). pytest so the same
+# tenant-app fix applies here too -- unittest.TestCase suites run fine under
+# pytest, so one runner covers both styles instead of splitting CI in two.
+# testcontainers reuses the `docker` dependency above (already required for
+# provisioning.py) to spin up a real, throwaway Postgres for that one test
+# file; it self-skips if Docker isn't reachable (see that file's docstring).
+pytest>=8,<9
+psycopg[binary]>=3.1,<4
+testcontainers[postgres]>=4,<5

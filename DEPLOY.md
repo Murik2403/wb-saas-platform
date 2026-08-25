@@ -302,26 +302,31 @@ SQLite внутри собственного контейнера) работа�
 Этого достаточно, пока запросы гейтвея не начинают реально упираться в
 блокировки этого файла. Когда это станет проблемой:
 
-1. Поднять Postgres (отдельным сервисом в `docker-compose.yml` — том,
-   healthcheck, `POSTGRES_PASSWORD` из `.env`, как у остальных секретов).
-2. Установить драйвер в образ `gateway`: `pip install 'psycopg[binary]'`
-   (не входит в `requirements.txt` по умолчанию, чтобы не тащить лишнюю
-   зависимость, пока прод работает на SQLite).
-3. Задать `WB_SAAS_DB_BACKEND=postgres` и `WB_SAAS_DATABASE_URL=postgresql://user:pass@postgres:5432/wbsaas`.
-4. Перенести существующие данные — `db.init_db()` создаст пустую схему на
-   Postgres, но накопленные аккаунты/платежи из старого SQLite-файла
-   нужно перелить отдельным разовым скриптом (экспорт `SELECT * FROM
-   <table>` из SQLite → `INSERT` в Postgres по каждой из 6 таблиц; в
-   репозитории такого скрипта пока нет, писать под конкретный момент
-   переезда, когда будет ясен точный набор накопленных строк).
+1. Поднять Postgres: `docker compose --profile postgres up -d postgres`
+   (сервис в `docker-compose.yml` — opt-in через `profiles: [postgres]`,
+   так что обычный `docker compose up -d` его не трогает; без публичного
+   порта, доступен только из `wbsaas_net`). Задать `WB_SAAS_POSTGRES_PASSWORD`
+   в `.env` на сервере (без дефолта, в отличие от user/db — секрет).
+2. Драйвер `psycopg[binary]` уже в `gateway/requirements.txt` — отдельно
+   ставить не нужно, попадает в образ при обычной пересборке.
+3. Задать `WB_SAAS_DB_BACKEND=postgres` и `WB_SAAS_DATABASE_URL=postgresql://wbsaas:<пароль>@postgres:5432/wbsaas`,
+   пересоздать гейтвей (`docker compose up -d --build gateway`) — это создаст
+   пустую схему на Postgres через `db.init_db()`.
+4. Перенести накопленные данные: `docker compose exec -e PYTHONPATH=/app gateway
+   python3 /app/scripts/migrate_sqlite_to_postgres.py` — переливает все 6
+   таблиц из старого SQLite-файла построчно (интроспекция схемы, без
+   хардкода списка таблиц/колонок), безопасно перезапускать (`ON CONFLICT
+   DO NOTHING` по первичному ключу).
 
 Весь остальной код (`logic/accounts.py`, `logic/billing.py`,
 `logic/password_reset.py`) написан на переносимом SQL (`?`-плейсхолдеры,
 доступ к строкам по имени колонки) и не требует изменений — переключение
 полностью инкапсулировано в `db.py`. Юнит-тесты (`gateway/tests/`)
-продолжают гонять SQLite независимо от `WB_SAAS_DB_BACKEND` — под
-Postgres они не переведены (это отдельная задача с поднятием реального
-Postgres в CI, не входит в объём этого переключателя).
+по умолчанию продолжают гонять SQLite независимо от `WB_SAAS_DB_BACKEND`;
+`tests/test_db_backend_postgres.py` дополнительно поднимает настоящий
+Postgres через testcontainers (нужен Docker на машине, где гоняются тесты —
+иначе тест самоскипается) и гоняет `_PGConnection`/`_init_db_postgres`
+против него напрямую.
 
 ## Ограничения текущей версии (сознательно отложено)
 

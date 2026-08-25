@@ -19,8 +19,33 @@ networks:
 volumes:
   traefik_letsencrypt:
   gateway_data:
+  postgres_data:
 
 services:
+  # Opt-in (profiles: [postgres]) -- a bare `docker compose up -d` never
+  # starts this. Only relevant once WB_SAAS_DB_BACKEND=postgres is actually
+  # set (see DEPLOY.md's "Switching the control-plane db to Postgres");
+  # until then the gateway runs on SQLite and this service would just sit
+  # there unused. No published port -- reached only from other containers
+  # over wbsaas_net, never from the host's public IP.
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - wbsaas_net
+    environment:
+      - POSTGRES_USER=${WB_SAAS_POSTGRES_USER:-wbsaas}
+      - POSTGRES_PASSWORD=${WB_SAAS_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${WB_SAAS_POSTGRES_DB:-wbsaas}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WB_SAAS_POSTGRES_USER:-wbsaas} -d ${WB_SAAS_POSTGRES_DB:-wbsaas}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   traefik:
     # v3.0 has a known Docker-provider bug against modern Docker Engine
     # (>=29): it hardcodes API version 1.24, which newer daemons refuse

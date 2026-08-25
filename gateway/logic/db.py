@@ -77,10 +77,12 @@ def _connect_postgres() -> _PGConnection:
         import psycopg
         from psycopg.rows import dict_row
     except ImportError as exc:
+        # psycopg is in requirements.txt (needed by tests/test_db_backend_postgres.py
+        # regardless of which backend production runs on), so this only fires on an
+        # environment that installed a stale/incomplete requirements.txt.
         raise RuntimeError(
             "WB_SAAS_DB_BACKEND=postgres requires the 'psycopg[binary]' package "
-            "(pip install 'psycopg[binary]') -- not installed by default since "
-            "production currently runs on sqlite."
+            "(pip install -r requirements.txt)."
         ) from exc
     return _PGConnection(psycopg.connect(config.DATABASE_URL, row_factory=dict_row))
 
