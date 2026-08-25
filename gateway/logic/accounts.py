@@ -139,7 +139,11 @@ def create_account(conn: sqlite3.Connection, email: str, password: str, pdn_cons
         """,
         (email, password_hash, salt, now, now, now),
     )
-    return int(cur.fetchone()[0])
+    # By column name, not position ([0]) -- sqlite3.Row supports both, but
+    # Postgres's dict_row (see logic/db.py's _connect_postgres) is a plain
+    # dict, which has no integer keys at all (KeyError: 0). Caught by
+    # tests/test_db_backend_postgres.py's real-Postgres round-trip.
+    return int(cur.fetchone()["id"])
 
 
 def get_account_by_id(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | None:
@@ -252,7 +256,7 @@ def create_tenant_instance(conn: sqlite3.Connection, account_id: int, slug: str)
         """,
         (int(account_id), slug, container_name, now, now),
     )
-    return int(cur.fetchone()[0])
+    return int(cur.fetchone()["id"])
 
 
 def set_tenant_status(conn: sqlite3.Connection, tenant_id: int, status: str, note: str = "") -> None:
