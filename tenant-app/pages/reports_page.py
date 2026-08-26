@@ -11,7 +11,7 @@ from report_scheduler import deliver_report, generate_and_save
 from reports import delivery
 from reports.metrics import METRIC_LABELS
 from reports.store import ReportStore
-from ui_helpers import render_empty_state
+from ui_helpers import render_empty_state, render_section_header
 
 WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
@@ -65,7 +65,10 @@ def _telegram_is_linked_cached() -> bool:
 def _render_telegram_section() -> bool:
     """Returns whether Telegram is currently linked, so the "Новый отчёт"
     form below knows whether to offer the Telegram-delivery checkbox."""
-    st.markdown("### Telegram")
+    render_section_header(
+        "Telegram",
+        "Привяжите Telegram-чат, чтобы получать отчёты сразу в мессенджер, в дополнение к email.",
+    )
     linked = _telegram_is_linked_cached()
     if linked:
         st.success("Telegram-чат привязан к аккаунту.")
@@ -167,7 +170,11 @@ def render(ctx: dict) -> None:
                 st.rerun()
 
     definitions = store.list_definitions()
-    st.markdown(f"### Расписания ({len(definitions)})")
+    render_section_header(
+        f"Расписания ({len(definitions)})",
+        "Настроенные автоматические отчёты: периодичность, метрики и способ доставки. "
+        "«Удалить» + создать заново — единственный способ изменить состав метрик расписания.",
+    )
     if not definitions:
         render_empty_state("Пока нет ни одного отчёта", "Создайте расписание выше — первая генерация произойдёт автоматически, либо нажмите «Сгенерировать сейчас».")
     else:
@@ -195,7 +202,10 @@ def render(ctx: dict) -> None:
                         st.session_state["reports_page_message"] = ("success", "Расписание удалено")
                         st.rerun()
 
-    st.markdown("### Готовые файлы")
+    render_section_header(
+        "Готовые файлы",
+        "Последние 20 сгенерированных отчётов, доступные для скачивания в формате PDF.",
+    )
     runs = [r for r in store.list_runs() if r["status"] == "ok" and r["file_path"]]
     if not runs:
         render_empty_state("Пока нет готовых отчётов", "Появятся здесь после первой генерации.")

@@ -126,6 +126,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
    page's own content (including the onboarding hint) since it's
    position:fixed. Hidden outright rather than restyled. */
 header[data-testid="stHeader"] {display:none;}
+.section-header-hint {cursor:help; border-bottom:1px dotted var(--text-faint); display:inline-block;}
 div[data-testid="stDataFrame"] {border:1px solid var(--border); border-radius:14px; overflow:hidden;}
 div[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;}
 div[data-testid="stMetricValue"] {font-family: var(--font-mono); font-variant-numeric: tabular-nums;}

@@ -19,7 +19,7 @@ from ui_helpers import (
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
-    build_consolidated_purchase_plan,
+    build_consolidated_purchase_plan, render_section_header,
 )
 from config import (
     load_settings,
@@ -42,7 +42,10 @@ def render(ctx: dict) -> None:
     end = ctx['end']
     start = ctx['start']
 
-    st.markdown("### Финансовый результат")
+    render_section_header(
+        "Финансовый результат",
+        "Итоговая прибыль за период, сверенная с отчётом о реализации Wildberries.",
+    )
     f = data.financial
     if float(f.get("report_rows", 0) or 0) <= 0:
         st.info("Финансовый отчёт ещё не загружен. Откройте «Настройки» и нажмите «Загрузить финансовый отчёт».")
@@ -156,7 +159,10 @@ def render(ctx: dict) -> None:
             actual_cost_total = float(actual_scenario["Факт. себестоимость, ₽"].sum())
             actual_profit = float(f["profit"]) - float(actual_scenario["Изменение себестоимости, ₽"].sum())
 
-        st.markdown("### Оценка по фактической себестоимости партий")
+        render_section_header(
+            "Оценка по фактической себестоимости партий",
+            "Прибыль, пересчитанная с учётом реальной себестоимости конкретных проданных партий, а не усреднённой.",
+        )
         scenario_cols = st.columns(4)
         with scenario_cols[0]:
             kpi_card("Текущая прибыль", money(float(f["profit"])), "По фиксированной базовой себестоимости")
@@ -189,7 +195,10 @@ def render(ctx: dict) -> None:
             "До сквозной привязки конкретной продажи к конкретной партии это управленческая оценка, а не бухгалтерский FIFO-COGS."
         )
 
-        st.markdown("### FIFO-себестоимость продаж и возвратов")
+        render_section_header(
+            "FIFO-себестоимость продаж и возвратов",
+            "Себестоимость каждой продажи и возврата, списанная со склада методом FIFO.",
+        )
         fifo_sales = read_sales_fifo_cogs(start.isoformat(), end.isoformat())
         fifo_profit_target = float(f["profit"])
         if fifo_sales.empty:
@@ -250,7 +259,10 @@ def render(ctx: dict) -> None:
             )
 
 
-        st.markdown("### Маржа по каждому артикулу")
+        render_section_header(
+            "Маржа по каждому артикулу",
+            "Прибыль по каждому товару с разбивкой на прямые расходы и долю общих затрат магазина.",
+        )
         st.caption(
             "Версия 5.2 учитывает полный горизонт пополнения: время до появления товара на WB плюс страховой запас. "
             "Для закупаемых товаров применяются MOQ и сроки поставки, а рекламные сокращения выполняются поэтапно. "
@@ -417,7 +429,11 @@ def render(ctx: dict) -> None:
                 chart_left, chart_right = st.columns(2)
                 chart_source = article_margin[article_margin["Продано нетто"] > 1].copy()
                 with chart_left:
-                    st.markdown("#### Прибыль по артикулам")
+                    render_section_header(
+                        "Прибыль по артикулам",
+                        "Сводная таблица прибыли по каждому товару за выбранный период.",
+                        level=4,
+                    )
                     if chart_source.empty:
                         st.info("Недостаточно продаж для графика.")
                     else:
@@ -435,7 +451,11 @@ def render(ctx: dict) -> None:
                         )
                         st.plotly_chart(fig_margin_profit, use_container_width=True)
                 with chart_right:
-                    st.markdown("#### Маржа и рекламная нагрузка")
+                    render_section_header(
+                        "Маржа и рекламная нагрузка",
+                        "Как расходы на рекламу соотносятся с маржой по каждому товару.",
+                        level=4,
+                    )
                     if chart_source.empty:
                         st.info("Недостаточно продаж для графика.")
                     else:
@@ -754,7 +774,10 @@ def render(ctx: dict) -> None:
         all_fin_products = data.financial_products.copy()
         article_fin = all_fin_products.copy()
 
-        st.markdown("### Распределение общих расходов")
+        render_section_header(
+            "Распределение общих расходов",
+            "Как общие (не привязанные к конкретному товару) расходы магазина распределяются между артикулами.",
+        )
         allocation_cols = st.columns(5)
         with allocation_cols[0]:
             kpi_card("Распределено по товарам", money(f.get("common_expense_pool", 0)), f"Пропорционально {f.get('allocation_basis', 'выручке')}")
@@ -771,7 +794,10 @@ def render(ctx: dict) -> None:
             f"пропорционально {f.get('allocation_basis', 'выручке')}. Удержания и технические строки остаются на уровне магазина."
         )
 
-        st.markdown("### Рейтинг товаров")
+        render_section_header(
+            "Рейтинг товаров",
+            "Лидеры и аутсайдеры по прибыли — как по общей сумме, так и по прибыли на единицу товара.",
+        )
         if article_fin.empty:
             st.info("Нет строк финансового отчёта по активным артикулам за выбранный период.")
         else:
@@ -785,12 +811,20 @@ def render(ctx: dict) -> None:
                     top = eligible_fin.nlargest(7, "Расчётная прибыль").sort_values("Расчётная прибыль")
                     bottom = eligible_fin.nsmallest(7, "Расчётная прибыль").sort_values("Расчётная прибыль")
                     with rc1:
-                        st.markdown("#### Лидеры по общей прибыли")
+                        render_section_header(
+                            "Лидеры по общей прибыли",
+                            "Товары, которые приносят больше всего прибыли в абсолютных цифрах.",
+                            level=4,
+                        )
                         fig_top = px.bar(top, x="Расчётная прибыль", y="Артикул продавца", orientation="h", text_auto=".2s")
                         fig_top.update_layout(height=350, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="₽", yaxis_title="", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                         st.plotly_chart(fig_top, use_container_width=True)
                     with rc2:
-                        st.markdown("#### Нижняя группа по общей прибыли")
+                        render_section_header(
+                            "Нижняя группа по общей прибыли",
+                            "Товары с наименьшей или отрицательной прибылью — кандидаты на пересмотр цены или отключение.",
+                            level=4,
+                        )
                         fig_bottom = px.bar(bottom, x="Расчётная прибыль", y="Артикул продавца", orientation="h", text_auto=".2s")
                         fig_bottom.update_layout(height=350, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="₽", yaxis_title="", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                         st.plotly_chart(fig_bottom, use_container_width=True)
@@ -802,12 +836,20 @@ def render(ctx: dict) -> None:
                     top_unit = eligible_fin.nlargest(7, "Расчётная прибыль на ед.").sort_values("Расчётная прибыль на ед.")
                     bottom_unit = eligible_fin.nsmallest(7, "Расчётная прибыль на ед.").sort_values("Расчётная прибыль на ед.")
                     with rc1:
-                        st.markdown("#### Лидеры по прибыли на единицу")
+                        render_section_header(
+                            "Лидеры по прибыли на единицу",
+                            "Самые маржинальные товары в пересчёте на одну проданную единицу.",
+                            level=4,
+                        )
                         fig_top_unit = px.bar(top_unit, x="Расчётная прибыль на ед.", y="Артикул продавца", orientation="h", text_auto=".2s")
                         fig_top_unit.update_layout(height=350, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="₽/шт", yaxis_title="", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                         st.plotly_chart(fig_top_unit, use_container_width=True)
                     with rc2:
-                        st.markdown("#### Нижняя группа по прибыли на единицу")
+                        render_section_header(
+                            "Нижняя группа по прибыли на единицу",
+                            "Товары с наименьшей прибылью на единицу — даже при хороших продажах могут почти ничего не зарабатывать.",
+                            level=4,
+                        )
                         fig_bottom_unit = px.bar(bottom_unit, x="Расчётная прибыль на ед.", y="Артикул продавца", orientation="h", text_auto=".2s")
                         fig_bottom_unit.update_layout(height=350, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="₽/шт", yaxis_title="", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                         st.plotly_chart(fig_bottom_unit, use_container_width=True)
@@ -824,7 +866,10 @@ def render(ctx: dict) -> None:
             with status_cols[3]: kpi_card("Убыточные", num(loss_making), "После общих расходов")
             with status_cols[4]: kpi_card("Мало данных", num(insufficient), "0–1 продажа")
 
-            st.markdown("### Что масштабировать / что проверить")
+            render_section_header(
+                "Что масштабировать / что проверить",
+                "Автоматические рекомендации: какие товары стоит продвигать активнее, а какие — проверить на предмет проблем.",
+            )
             scale = article_fin[
                 article_fin["Статус"].isin(["Лидер", "Прибыльный"])
                 & (article_fin["Расчётная маржа, %"] >= 15)
@@ -843,7 +888,11 @@ def render(ctx: dict) -> None:
                 "Запас, дней": st.column_config.NumberColumn(format="%.1f"),
             }
             with action_cols[0]:
-                st.markdown("#### Кандидаты на масштабирование")
+                render_section_header(
+                    "Кандидаты на масштабирование",
+                    "Товары с хорошей маржой и растущим спросом — есть смысл увеличить закупку или рекламу.",
+                    level=4,
+                )
                 if scale.empty:
                     st.info("Пока нет товаров, одновременно проходящих фильтр прибыли, маржи и возвратов.")
                 else:
@@ -852,7 +901,11 @@ def render(ctx: dict) -> None:
                         column_config=action_config,
                     )
             with action_cols[1]:
-                st.markdown("#### Проверить цену, рекламу или отключение")
+                render_section_header(
+                    "Проверить цену, рекламу или отключение",
+                    "Товары с проблемной экономикой — стоит пересмотреть цену, снизить рекламу или вовсе снять с продажи.",
+                    level=4,
+                )
                 if review.empty:
                     st.success("Убыточных и низкомаржинальных товаров за период нет.")
                 else:
@@ -863,7 +916,10 @@ def render(ctx: dict) -> None:
             if insufficient:
                 st.caption(f"Ещё {insufficient} товар(ов) имеют 0–1 продажу и не участвуют в выводах об убыточности.")
 
-        st.markdown("### Юнит-экономика по артикулам")
+        render_section_header(
+            "Юнит-экономика по артикулам",
+            "Полная раскладка экономики на единицу товара: цена, себестоимость, комиссия WB, логистика, реклама и итоговая маржа.",
+        )
         if article_fin.empty:
             st.info("Нет данных по активным артикулам за выбранный период.")
         else:
@@ -950,7 +1006,10 @@ def render(ctx: dict) -> None:
                     },
                 )
 
-        st.markdown("### Сверка с отчётом WB")
+        render_section_header(
+            "Сверка с отчётом WB",
+            "Проверка, что расчёт прибыли в дашборде совпадает с официальным отчётом о реализации Wildberries.",
+        )
         st.caption("Загрузите Excel из раздела «Аналитика → Доходы и расходы». Файл нужен только для контрольной сверки и никуда не отправляется.")
         uploaded_report = st.file_uploader("Отчёт «Доходы и расходы» (.xlsx)", type=["xlsx"], key="income_expense_report")
         reconciliation_df = pd.DataFrame()
@@ -992,7 +1051,10 @@ def render(ctx: dict) -> None:
             except Exception as exc:
                 st.error(f"Не удалось прочитать отчёт WB: {exc}")
 
-        st.markdown("### Выгрузка")
+        render_section_header(
+            "Выгрузка",
+            "Выгрузить финансовый результат за период в Excel одной кнопкой.",
+        )
         csv_data = all_fin_products.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig") if not all_fin_products.empty else b""
         try:
             excel_data = build_finance_excel(

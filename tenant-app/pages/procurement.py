@@ -21,6 +21,7 @@ from ui_helpers import (
     build_article_margin_view, procurement_recommendations,
     build_consolidated_purchase_plan,
     NO_PACKAGE_ROLL_LENGTH, is_packaged_material, packages_to_buy,
+    render_section_header,
 )
 from config import (
     load_settings,
@@ -60,7 +61,10 @@ from zoneinfo import (
 def render(ctx: dict) -> None:
     data = ctx['data']
 
-    st.markdown("### Закупки")
+    render_section_header(
+        "Закупки",
+        "Создание и отслеживание закупочных заказов, приёмка товара и учёт оплат поставщикам.",
+    )
     st.caption(
         "Заявки на сырьё и закупаемые товары, платежи, сроки поставки и приёмка. "
         "После проведения приёмки сырьё автоматически увеличивает склад по цвету, а товар — готовый остаток."
@@ -108,7 +112,11 @@ def render(ctx: dict) -> None:
     procurement_tabs = st.tabs(["Рекомендации", "Создать закупку", "Заявки", "Приёмка", "Платежи", "Поставщики", "Журнал", "Сводный план"])
 
     with procurement_tabs[0]:
-        st.markdown("#### Сырьё к закупке")
+        render_section_header(
+            "Сырьё к закупке",
+            "Сырьё, запас которого подходит к концу с учётом текущего производственного плана.",
+            level=4,
+        )
         if material_recommendations.empty:
             st.success("Дефицита сырья по текущему производственному плану нет.")
         else:
@@ -151,7 +159,11 @@ def render(ctx: dict) -> None:
                 except Exception as exc:
                     st.error(str(exc))
 
-        st.markdown("#### Закупаемые товары")
+        render_section_header(
+            "Закупаемые товары",
+            "Готовые товары для перепродажи, которые пора заказать у поставщика.",
+            level=4,
+        )
         if product_recommendations.empty:
             st.success("Закупаемых товаров с критическим остатком нет.")
         else:
@@ -577,7 +589,11 @@ def render(ctx: dict) -> None:
                     st.cache_data.clear(); st.rerun()
 
     with procurement_tabs[4]:
-        st.markdown("#### Платёжный календарь")
+        render_section_header(
+            "Платёжный календарь",
+            "Предстоящие и просроченные платежи поставщикам по всем открытым закупкам.",
+            level=4,
+        )
         if procurement_orders.empty:
             st.info("Платёжный план появится после создания закупок.")
         else:
@@ -636,7 +652,11 @@ def render(ctx: dict) -> None:
                     except Exception as exc:
                         st.error(str(exc))
 
-        st.markdown("#### История платежей")
+        render_section_header(
+            "История платежей",
+            "Уже проведённые оплаты поставщикам с датой и суммой.",
+            level=4,
+        )
         payment_history = read_procurement_payments()
         if payment_history.empty:
             st.info("Платежей пока нет.")
@@ -670,7 +690,11 @@ def render(ctx: dict) -> None:
                     st.cache_data.clear(); st.rerun()
 
     with procurement_tabs[5]:
-        st.markdown("#### Справочник поставщиков")
+        render_section_header(
+            "Справочник поставщиков",
+            "Контакты и настройки по умолчанию (цены, MOQ) для каждого поставщика.",
+            level=4,
+        )
         supplier_summary = read_suppliers()
         if not supplier_summary.empty:
             supplier_view = supplier_summary.copy()
@@ -767,7 +791,12 @@ def render(ctx: dict) -> None:
                     st.cache_data.clear(); st.rerun()
 
     with procurement_tabs[7]:
-        st.markdown("#### Консолидированный план закупок по поставщикам")
+        render_section_header(
+            "Консолидированный план закупок по поставщикам",
+            "Что и у кого нужно заказать, сгруппировано по поставщику — сырьё для производства и "
+            "закупаемые товары для перепродажи.",
+            level=4,
+        )
         st.caption(
             "План объединяет прибыльные закупаемые SKU одного поставщика в одну заявку. "
             "Из потребности вычитаются остаток WB, подтверждённый готовый товар, товар в пути и ещё не полученные закупки. "
@@ -829,7 +858,11 @@ def render(ctx: dict) -> None:
             price_checks = int(status_counts.get("Указать цену", 0) or 0) + int(status_counts.get("Проверить цену", 0) or 0)
             if price_checks:
                 st.info("Для части SKU нет подтверждённой полной цены поставщика. Укажите её в правилах SKU или используйте цену последней проведённой закупки.")
-            st.markdown("##### План по позициям")
+            render_section_header(
+                "План по позициям",
+                "Детальная строка на каждую позицию плана: количество, поставщик, срок.",
+                level=5,
+            )
             st.dataframe(
                 purchase_item_plan, hide_index=True, use_container_width=True,
                 height=min(680, 110 + 38 * len(purchase_item_plan)),
@@ -860,7 +893,11 @@ def render(ctx: dict) -> None:
                 mime="text/csv", key="download_consolidated_procurement_plan"
             )
 
-        st.markdown("##### Сводка по поставщикам")
+        render_section_header(
+            "Сводка по поставщикам",
+            "Итоговая сумма плана закупок по каждому поставщику.",
+            level=5,
+        )
         if supplier_plan.empty:
             st.info("Готовых к созданию заявок пока нет. Проверьте поставщиков, цены, MOQ и прибыльность карточек.")
         else:

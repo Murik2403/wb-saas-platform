@@ -21,7 +21,7 @@ from ui_helpers import (
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
-    build_consolidated_purchase_plan,
+    build_consolidated_purchase_plan, render_section_header,
 )
 
 
@@ -63,13 +63,20 @@ def render(ctx: dict) -> None:
     st.caption(f"Относительно предыдущего периода той же длины ({prev_start:%d.%m}–{prev_end:%d.%m})." if prev_data is not None else "")
     st.caption("Оперативные заказы и выкупы могут обновляться с задержкой и временно отличаться от главной страницы кабинета WB. Для бухгалтерской прибыли используйте раздел «Финансы».")
 
-    st.markdown("### Воронка заказов")
+    render_section_header(
+        "Воронка заказов",
+        "Сколько заказано, сколько выкуплено и сколько возвращено за выбранный период.",
+    )
     render_funnel_bars([
         ("Заказано", data.kpi["orders"], "#7c6cf6"),
         ("Выкуплено", data.kpi["sales"], "#3ecf8e"),
         ("Возврат", data.kpi["returns"], "#f2677a"),
     ])
-    st.markdown("### Динамика")
+    render_section_header(
+        "Динамика",
+        "Сумма заказов, выручка и расходы на рекламу по дням, с пунктирным наложением "
+        "предыдущего периода той же длины для сравнения.",
+    )
     chart_df = data.hourly.copy() if period == "Сегодня" else data.daily.copy()
     if period == "Сегодня":
         chart_df["hour"] = chart_df["hour"].map(lambda h: f"{int(h):02d}:00")
@@ -102,10 +109,17 @@ def render(ctx: dict) -> None:
 
     c1, c2 = st.columns([1.2, 1.8])
     with c1:
-        st.markdown("### Требует внимания")
+        render_section_header(
+            "Требует внимания",
+            "Товары с убытком или аномалией за период — с кратким объяснением причины и что "
+            "с этим можно сделать.",
+        )
         render_problem_products_panel(data.financial_products, data.alerts)
     with c2:
-        st.markdown("### Товары")
+        render_section_header(
+            "Товары",
+            "Заказы, продажи, выручка, ДРР, остаток и запас в днях по каждому артикулу за период.",
+        )
         view = data.products[["Артикул WB", "Артикул продавца", "Заказы", "Продажи", "Выручка", "ДРР, %", "Остаток", "Запас, дней"]].copy() if not data.products.empty else data.products
         st.dataframe(
             view,

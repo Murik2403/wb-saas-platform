@@ -19,14 +19,18 @@ from ui_helpers import (
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
-    build_consolidated_purchase_plan,
+    build_consolidated_purchase_plan, render_section_header,
 )
 
 
 def render(ctx: dict) -> None:
     data = ctx['data']
 
-    st.markdown("### Продвижение")
+    render_section_header(
+        "Продвижение",
+        "Сколько заказов принесла реклама, сколько на неё потрачено, доля рекламных расходов "
+        "(ДРР) и средний CTR за выбранный период.",
+    )
     ad_cols = st.columns(4)
     with ad_cols[0]:
         kpi_card("Сумма заказов", money(data.kpi["ad_revenue"]), "Атрибуция рекламного API")
@@ -38,7 +42,10 @@ def render(ctx: dict) -> None:
         kpi_card("Средний CTR", pct(data.kpi["ad_ctr"]), f"Клики {num(data.kpi['ad_clicks'])}")
 
     st.caption("Общие показатели считаются по итоговой строке каждой кампании за день — без суммирования дублей по приложениям и товарам.")
-    st.markdown("### Рекламные кампании")
+    render_section_header(
+        "Рекламные кампании",
+        "Расход, рекламная выручка, CTR, цена клика (CPC) и ДРР по каждой кампании за период.",
+    )
     if data.ads.empty:
         render_empty_state(
             "Рекламных кампаний пока нет",

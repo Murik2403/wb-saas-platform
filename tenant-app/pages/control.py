@@ -19,7 +19,7 @@ from ui_helpers import (
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
-    build_consolidated_purchase_plan,
+    build_consolidated_purchase_plan, render_section_header,
 )
 from datetime import (
     datetime,
@@ -156,7 +156,11 @@ def render(ctx: dict) -> None:
             )
         cost_issues = cost_quality_df[cost_quality_df["Статус"].ne("Покрыт")].copy() if not cost_quality_df.empty else pd.DataFrame()
         if not cost_issues.empty:
-            st.markdown("#### Конкретные позиции без подтверждённой ставки")
+            render_section_header(
+                "Конкретные позиции без подтверждённой ставки",
+                "Товары, для которых себестоимость не сопоставлена автоматически — стоит проверить вручную.",
+                level=4,
+            )
             st.dataframe(
                 cost_issues[["Артикул WB", "Артикул продавца", "Товар", "Ставка, ₽", "Сопоставление", "Статус"]],
                 hide_index=True, use_container_width=True,
@@ -165,6 +169,11 @@ def render(ctx: dict) -> None:
             st.caption("«Нет строки» и «Нулевая ставка» разделены. Сопоставление сначала выполняется по артикулу WB, затем — по нормализованному артикулу продавца.")
         optional_rows = quality_df[quality_df["Статус"].eq("Отложено")]
         if not optional_rows.empty:
-            st.markdown("#### Необязательные настройки")
+            render_section_header(
+                "Необязательные настройки",
+                "Проверки, которые не блокируют расчёты, но стоит заполнить для полноты картины "
+                "(поставщики, закупочные цены, MOQ).",
+                level=4,
+            )
             st.dataframe(optional_rows[["Модуль", "Проверка", "Детали", "Что сделать"]], hide_index=True, use_container_width=True)
 

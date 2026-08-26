@@ -270,6 +270,18 @@ def render_empty_state(title: str, note: str, icon: str = "○") -> None:
     )
 
 
+def render_section_header(title: str, tooltip: str, level: int = 3) -> None:
+    """Sub-section heading with a native hover tooltip (title= attribute),
+    replacing a plain st.markdown("### ...") call. Pure CSS/HTML hover, no
+    click and no JS -- unlike onboarding.render_page_hint's page-level
+    popover, this is meant for every sub-heading inside a page."""
+    tag = f"h{level}"
+    st.markdown(
+        f'<{tag} class="section-header-hint" title="{escape(tooltip)}">{escape(title)}</{tag}>',
+        unsafe_allow_html=True,
+    )
+
+
 def _parse_local_datetime(value: object) -> datetime | None:
     if value in (None, ""):
         return None

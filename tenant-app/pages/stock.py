@@ -20,7 +20,7 @@ from ui_helpers import (
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
-    build_consolidated_purchase_plan,
+    build_consolidated_purchase_plan, render_section_header,
 )
 from config import (
     get_token,
@@ -79,7 +79,10 @@ def render(ctx: dict) -> None:
 
     stock_tabs = st.tabs(["По складам WB", "Стоимостная оценка", "FIFO готовой продукции", "FIFO продаж", "Сверка FIFO", "Инциденты WB"])
     with stock_tabs[0]:
-        st.markdown("### Остатки по складам")
+        render_section_header(
+            "Остатки по складам",
+            "Сколько товара сейчас лежит на каждом складе WB, по данным последней синхронизации.",
+        )
         if data.stocks.empty:
             st.info("Остатки отсутствуют или категория «Аналитика» не включена в токене.")
         else:
@@ -106,7 +109,10 @@ def render(ctx: dict) -> None:
             st.dataframe(data.stocks, hide_index=True, use_container_width=True)
 
     with stock_tabs[1]:
-        st.markdown("### Стоимость товарного запаса")
+        render_section_header(
+            "Стоимость товарного запаса",
+            "Во сколько оценивается весь товар на складах по себестоимости — сколько денег «заморожено» в запасах.",
+        )
         valuation = read_inventory_valuation()
         if valuation.empty:
             st.info("Нет товаров для стоимостной оценки.")
@@ -180,7 +186,10 @@ def render(ctx: dict) -> None:
             st.caption("Готовый склад, товар в пути и остаток WB оцениваются по своим FIFO-слоям. Непокрытая слоями часть оценивается по базовой себестоимости. Новые продажи после включения версии 4.6 списываются по конкретным FIFO-слоям; исторические операции остаются на базовой оценке.")
 
     with stock_tabs[2]:
-        st.markdown("### Послойная стоимость готовой продукции")
+        render_section_header(
+            "Послойная стоимость готовой продукции",
+            "Каждая произведённая партия хранится отдельным слоем себестоимости и списывается по FIFO при продаже.",
+        )
         st.caption(
             "Слой создаётся при закрытии производственной смены или приёмке закупаемого товара. "
             "При отгрузке стоимость перемещается из готового остатка в путь, после приёмки — на WB."
@@ -280,7 +289,10 @@ def render(ctx: dict) -> None:
                         )
 
     with stock_tabs[3]:
-        st.markdown("### FIFO продаж и возвратов")
+        render_section_header(
+            "FIFO продаж и возвратов",
+            "Себестоимость каждой продажи и возврата, списанная со склада по методу FIFO.",
+        )
         fifo_status = sales_fifo_tracking_status()
         status_cols = st.columns(5)
         with status_cols[0]: kpi_card("Продаж списано", num(fifo_status.get("sales_applied", 0)), "После включения учёта")
@@ -322,7 +334,10 @@ def render(ctx: dict) -> None:
                     )
 
     with stock_tabs[4]:
-        st.markdown("### Сверка FIFO — безопасный режим WB")
+        render_section_header(
+            "Сверка FIFO — безопасный режим WB",
+            "Проверяет расхождения между остатками в системе и данными WB, не изменяя ничего автоматически.",
+        )
         st.caption(
             "v5.9 разделяет обычную локальную сверку и расхождения на стороне WB. "
             "Для WB остаток quantity больше не считается единственным физическим остатком: отдельно учитываются "
@@ -345,7 +360,11 @@ def render(ctx: dict) -> None:
         with rcards[3]: kpi_card("Заблокировано", num(blocked_now), "WB-единиц нельзя автосписывать")
         with rcards[4]: kpi_card("Оценка стоимости", money(value_now), "Только диагностическая оценка")
 
-        st.markdown("#### Контур WB и возможное внешнее выбытие")
+        render_section_header(
+            "Контур WB и возможное внешнее выбытие",
+            "Остатки, которые WB считает списанными не через обычную продажу или возврат — возможные потери или ошибки учёта.",
+            level=4,
+        )
         wb_cards = st.columns(6)
         with wb_cards[0]: kpi_card("Доступно WB", num(int(wb_context.get("available_units", 0) or 0)), "quantity")
         with wb_cards[1]: kpi_card("К клиенту", num(int(wb_context.get("in_way_to_client_units", 0) or 0)), "inWayToClient")
@@ -371,7 +390,11 @@ def render(ctx: dict) -> None:
             )
 
         if not incident_exposure.empty:
-            st.markdown("##### Экспозиция на затронутых складах в последнем детальном снимке")
+            render_section_header(
+                "Экспозиция на затронутых складах в последнем детальном снимке",
+                "На каких конкретно складах и в каком количестве обнаружено расхождение по последним данным WB.",
+                level=5,
+            )
             incident_view = incident_exposure.rename(columns={
                 "warehouse": "Склад / классификация",
                 "wb_names": "Название в WB",
@@ -514,7 +537,11 @@ def render(ctx: dict) -> None:
                 except Exception as exc:
                     st.error(str(exc))
 
-        st.markdown("#### История проведённых локальных сверок")
+        render_section_header(
+            "История проведённых локальных сверок",
+            "Журнал всех ранее выполненных проверок расхождений FIFO с их результатами.",
+            level=4,
+        )
         recon_runs = read_fifo_reconciliation_runs(100)
         if recon_runs.empty:
             st.info("Проведённых сверок пока нет.")
@@ -554,7 +581,10 @@ def render(ctx: dict) -> None:
 
 
     with stock_tabs[5]:
-        st.markdown("### Инциденты WB — диагностика и подтверждённые утраты")
+        render_section_header(
+            "Инциденты WB — диагностика и подтверждённые утраты",
+            "Случаи утери/порчи товара на складах WB: диагностика, подтверждение и учёт компенсаций.",
+        )
         st.caption(
             "Этот модуль не зависит от переключателя периода сверху: он сравнивает последний детальный складской снимок "
             "с текущим контуром WB. Диагностический разрыв не является фактом утраты и ничего не списывает автоматически."
@@ -661,7 +691,11 @@ def render(ctx: dict) -> None:
                 "Колонка «Безопасно списать сейчас» дополнительно ограничивает кандидат текущим запасом FIFO над полным контуром WB."
             )
 
-            st.markdown("#### Реконструкция недостающих входящих / стоимостных слоёв")
+            render_section_header(
+                "Реконструкция недостающих входящих / стоимостных слоёв",
+                "Восстанавливает недостающие данные о поступлениях и их себестоимости, если история FIFO неполная.",
+                level=4,
+            )
             st.warning(
                 "v6.3 уже вычитает подтверждённые API поставки FBW из необъяснённого притока, но не создаёт для них FIFO-слои автоматически. "
                 "«Мин. входящих по балансу» теперь означает только остаток входящих движений, который не объясняется ни ручными поступлениями, ни подтверждёнными FBW-поставками. "
@@ -715,7 +749,11 @@ def render(ctx: dict) -> None:
                     "Эти величины не являются автоматическими поступлениями и сами базу не меняют."
                 )
 
-            st.markdown("#### Подтверждённые поставки FBW и реконструкция входящих")
+            render_section_header(
+                "Подтверждённые поставки FBW и реконструкция входящих",
+                "Опирается на реально подтверждённые поставки на склад WB, чтобы восстановить недостающие входящие записи.",
+                level=4,
+            )
             st.caption(
                 "v6.3 сохраняет результат проверки FBW API в локальной базе. Поставка со статусом 5 («принято») и factDate после базового снимка "
                 "становится подтверждённым входящим движением по количеству из состава поставки. Это меняет диагностику остатков, но само по себе не создаёт FIFO-стоимость."
@@ -748,7 +786,11 @@ def render(ctx: dict) -> None:
                             })
                             st.dataframe(pg[["incomeID","factDate","Склад","nmID","Артикул","Подтвержд. входящие, ед."]], hide_index=True, use_container_width=True)
 
-            st.markdown("#### v6.4 — ретроспективная реконструкция FIFO (preview)")
+            render_section_header(
+                "v6.4 — ретроспективная реконструкция FIFO (preview)",
+                "Показывает предварительный результат пересчёта исторических FIFO-слоёв, ещё без применения изменений.",
+                level=4,
+            )
             st.caption(
                 "Этот блок ничего не записывает в FIFO. Он берёт последний детальный снимок WB как исторический якорь, "
                 "достраивает полный контур на эту дату (включая товары к клиенту и от клиента), вставляет подтверждённые FBW-поставки "
@@ -849,7 +891,11 @@ def render(ctx: dict) -> None:
                         "а затем отдельно определяем надёжный источник себестоимости для мостового слоя и подтверждённых FBW-поставок."
                     )
 
-            st.markdown("#### v6.5 — реконструкция себестоимости исторических слоёв")
+            render_section_header(
+                "v6.5 — реконструкция себестоимости исторических слоёв",
+                "Пересчитывает себестоимость уже существующих исторических FIFO-слоёв там, где она была неверной или отсутствовала.",
+                level=4,
+            )
             st.caption(
                 "v6.5 не применяет реконструкцию. Для каждой единицы мостового слоя и подтверждённой FBW-поставки он выбирает "
                 "лучший доступный источник ставки на соответствующую историческую дату: сначала фактическая закрытая производственная партия, "
@@ -923,7 +969,11 @@ def render(ctx: dict) -> None:
                         )
 
                     residual = retro_rows[pd.to_numeric(retro_rows.get("preview_layer_shortfall_units", 0), errors="coerce").fillna(0) > 0].copy()
-                    st.markdown("##### Остаточные количественные расхождения после replay")
+                    render_section_header(
+                        "Остаточные количественные расхождения после replay",
+                        "Что осталось не сойтись по количеству даже после повторного прогона (replay) реконструкции.",
+                        level=5,
+                    )
                     if residual.empty:
                         st.success("После replay нет SKU, у которых текущий физический контур выше реконструированного FIFO.")
                     else:
@@ -945,7 +995,11 @@ def render(ctx: dict) -> None:
             else:
                 st.info("Cost basis станет доступен после готовности ретроспективного replay v6.4.")
 
-            st.markdown("#### v6.6 — финальный аудит доказательств перед Apply")
+            render_section_header(
+                "v6.6 — финальный аудит доказательств перед Apply",
+                "Последняя проверка всех найденных подтверждений перед тем, как применить реконструкцию к реальным данным.",
+                level=4,
+            )
             st.caption(
                 "Этот аудит ничего не меняет в FIFO. Он локализует последнюю единицу без cost basis и отдельно ищет incomeID, "
                 "которые могли быть пропущены старым фильтром, потому что сам ID существовал до 31.07, но один из остаточных SKU "
@@ -967,7 +1021,11 @@ def render(ctx: dict) -> None:
                 with acards[4]: kpi_card("База аудита", str(audit_summary.get("baseline_snapshot_at", ""))[:10], "последний детальный снимок")
                 with acards[5]: kpi_card("Режим", "READ ONLY", "ничего не списывает")
 
-                st.markdown("##### Единицы без себестоимости")
+                render_section_header(
+                    "Единицы без себестоимости",
+                    "Единицы товара, для которых так и не удалось найти подтверждённую себестоимость.",
+                    level=5,
+                )
                 if audit_missing_cost.empty:
                     st.success("Все реконструируемые единицы имеют хотя бы один cost basis.")
                 else:
@@ -995,7 +1053,11 @@ def render(ctx: dict) -> None:
                         "её нельзя автоматически наделять ставкой другого товара."
                     )
 
-                st.markdown("##### Остаточные SKU и расширенный поиск `incomeID`")
+                render_section_header(
+                    "Остаточные SKU и расширенный поиск `incomeID`",
+                    "Оставшиеся неразрешённые SKU и ручной поиск номера поступления (incomeID) для них по расширенным критериям.",
+                    level=5,
+                )
                 if audit_residual.empty:
                     st.success("После replay количественных SKU-расхождений не осталось.")
                 else:
@@ -1075,7 +1137,11 @@ def render(ctx: dict) -> None:
                     if checked:
                         st.dataframe(pd.DataFrame(checked), hide_index=True, use_container_width=True)
 
-            st.markdown("#### v6.7 — Apply Reconstruction")
+            render_section_header(
+                "v6.7 — Apply Reconstruction",
+                "Применяет проверенную реконструкцию к реальным данным. Необратимо без отдельного отката — используйте после аудита выше.",
+                level=4,
+            )
             st.caption(
                 "Это первый этап, который реально меняет FIFO. Перед записью v6.7 автоматически создаёт консистентную SQLite-копию, "
                 "повторно строит тот же replay под проверками, атомарно заменяет только пост-якорные FIFO-слои/allocations и пересчитывает COGS уже известных продаж/возвратов. "
@@ -1195,7 +1261,11 @@ def render(ctx: dict) -> None:
                     cols = [c for c in ["Run","Статус","Ожидалось FIFO","Применено FIFO","Кандидат утраты","Cost pending","Создан","Применён","Откат","Backup"] if c in run_view.columns]
                     st.dataframe(run_view[cols], hide_index=True, use_container_width=True)
 
-            st.markdown("##### Поиск новых `incomeID` в оперативной истории")
+            render_section_header(
+                "Поиск новых `incomeID` в оперативной истории",
+                "Ищет ещё не привязанные номера поступлений (incomeID) в оперативных данных WB.",
+                level=5,
+            )
             supply_evidence = read_wb_income_supply_evidence()
             if supply_evidence.empty:
                 st.info("После базового снимка не найдено новых `incomeID`, впервые появившихся в локальной истории заказов/продаж.")
@@ -1339,7 +1409,11 @@ def render(ctx: dict) -> None:
                                 "v6.3 использует эти единицы как подтверждённые входящие в количественной реконструкции, но не создаёт стоимостный FIFO-слой."
                             )
 
-        st.markdown("#### Реестр инцидентов и документов")
+        render_section_header(
+            "Реестр инцидентов и документов",
+            "Все зарегистрированные случаи утери/порчи товара с приложенными подтверждающими документами.",
+            level=4,
+        )
         with st.expander("Создать карточку инцидента", expanded=False):
             case_name = st.text_input("Название инцидента", placeholder="Например: пожар / утрата товара на складе WB", key="wb_incident_case_name")
             case_date = st.date_input("Дата инцидента", value=today_msk, key="wb_incident_case_date")
@@ -1398,7 +1472,11 @@ def render(ctx: dict) -> None:
                     except Exception as exc:
                         st.error(str(exc))
 
-            st.markdown("##### Подтверждение утраты товара")
+            render_section_header(
+                "Подтверждение утраты товара",
+                "Фиксирует, что конкретная партия товара действительно утеряна или испорчена на складе WB.",
+                level=5,
+            )
             st.warning(
                 "Списание доступно только при заполненном документе/основании и только в пределах безопасного резерва FIFO над текущим полным контуром WB. "
                 "Даже прямой вызов функции в v6.3 не позволит опустить FIFO ниже контура. Утрата проводится отдельным движением «wb_incident_loss», "
@@ -1467,7 +1545,11 @@ def render(ctx: dict) -> None:
                         except Exception as exc:
                             st.error(str(exc))
 
-            st.markdown("##### Компенсация WB")
+            render_section_header(
+                "Компенсация WB",
+                "Учёт компенсации, выплаченной Wildberries за утерянный или испорченный товар.",
+                level=5,
+            )
             comp_amount = st.number_input("Сумма компенсации, ₽", min_value=0.0, value=0.0, step=100.0, key=f"wb_incident_comp_amount_{selected_case_id}")
             comp_date = st.date_input("Дата компенсации", value=today_msk, key=f"wb_incident_comp_date_{selected_case_id}")
             comp_ref = st.text_input("Документ / идентификатор компенсации", key=f"wb_incident_comp_ref_{selected_case_id}")
@@ -1483,7 +1565,11 @@ def render(ctx: dict) -> None:
             losses = read_wb_incident_loss_lines(int(selected_case_id))
             comps = read_wb_incident_compensations(int(selected_case_id))
             if not losses.empty:
-                st.markdown("##### Подтверждённые строки утраты")
+                render_section_header(
+                    "Подтверждённые строки утраты",
+                    "Уже подтверждённые случаи утраты товара, зафиксированные в системе.",
+                    level=5,
+                )
                 st.dataframe(
                     losses[["id","created_at","supplier_article","product_name","confirmed_units","fifo_cost_rub","unit_cost_rub","status","note"]],
                     hide_index=True, use_container_width=True,
@@ -1509,7 +1595,11 @@ def render(ctx: dict) -> None:
                             else:
                                 st.error(str(result.get("message","Не удалось отменить операцию.")))
             if not comps.empty:
-                st.markdown("##### Записанные компенсации")
+                render_section_header(
+                    "Записанные компенсации",
+                    "Все компенсации от WB, уже внесённые в систему по подтверждённым случаям утраты.",
+                    level=5,
+                )
                 st.dataframe(
                     comps[["id","compensation_date","amount_rub","source_ref","note"]], hide_index=True, use_container_width=True,
                     column_config={

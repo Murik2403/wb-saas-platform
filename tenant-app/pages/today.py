@@ -21,6 +21,7 @@ from ui_helpers import (
     build_article_margin_view, procurement_recommendations,
     build_consolidated_purchase_plan,
     NO_PACKAGE_ROLL_LENGTH, is_packaged_material, packages_to_buy,
+    render_section_header,
 )
 from datetime import (
     date,
@@ -40,7 +41,11 @@ def render(ctx: dict) -> None:
     sync_info = ctx['sync_info']
     today_msk = ctx['today_msk']
 
-    st.markdown("### Сегодня")
+    render_section_header(
+        "Сегодня",
+        "Оперативная сводка на текущий день: воронка заказов, что требует внимания и чего не "
+        "хватает для выполнения производственного плана.",
+    )
     capacity_today = get_production_capacity()
     emergency_days_today = max(1, int(capacity_today.get("emergency_cover_days", 14) or 14))
     lead_days_today = max(0, int(capacity_today.get("fulfillment_lead_days", 10) or 10))
@@ -413,7 +418,11 @@ def render(ctx: dict) -> None:
             cols=[c for c in ["supplier_article","product_name","planned_units","actual_units","status","note"] if c in shift_tasks.columns]
             st.dataframe(shift_tasks[cols].rename(columns={"supplier_article":"Артикул продавца","product_name":"Товар","planned_units":"План, компл.","actual_units":"Факт, компл.","status":"Статус","note":"Примечание"}),hide_index=True,use_container_width=True)
         if not blocked_products_today.empty:
-            st.markdown("#### Не вошли в план из-за дефицита сырья")
+            render_section_header(
+                "Не вошли в план из-за дефицита сырья",
+                "Товары, которые сегодня нельзя произвести — не хватает сырья для нужного количества.",
+                level=4,
+            )
             blocked_view = blocked_products_today[[
                 "Артикул продавца", "Товар", "Материал / цвет", "Нужно произвести, компл.",
                 "Дефицит материала, м", "Упаковок докупить"
@@ -439,7 +448,11 @@ def render(ctx: dict) -> None:
             elif not material_unknown.empty: st.warning("Для части материалов остаток не подтверждён.")
             else: st.success("Сырья на ближайшую смену достаточно.")
     with today_tabs[4]:
-        st.markdown("#### Сырьё")
+        render_section_header(
+            "Сырьё",
+            "Сырьё, которое нужно докупить сегодня, чтобы производственный план не остановился.",
+            level=4,
+        )
         if material_buy_today.empty:
             st.success("По текущему производственному плану закупка сырья не требуется.")
         else:
@@ -456,7 +469,11 @@ def render(ctx: dict) -> None:
                     "Упаковок докупить": st.column_config.NumberColumn(format="%d"),
                 },
             )
-        st.markdown("#### Закупаемые товары")
+        render_section_header(
+            "Закупаемые товары",
+            "Готовые товары для перепродажи с критическим остатком — нужно заказать у поставщика.",
+            level=4,
+        )
         if purchase_products_today.empty:
             st.success("Закупаемых товаров с критическим остатком нет.")
         else:
@@ -472,7 +489,11 @@ def render(ctx: dict) -> None:
                     "Ориентировочно заказать, шт.": st.column_config.NumberColumn(format="%d"),
                 },
             )
-        st.markdown("#### Активные заявки")
+        render_section_header(
+            "Активные заявки",
+            "Уже созданные закупочные заявки, которые ещё не получены и не отменены.",
+            level=4,
+        )
         active_proc_today = procurement_orders_today[~procurement_orders_today["status"].isin(["Получено", "Отменено"])].copy() if not procurement_orders_today.empty else pd.DataFrame()
         if active_proc_today.empty:
             st.info("Активных заявок пока нет. Откройте отдельный раздел «Закупки».")

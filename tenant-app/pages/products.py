@@ -19,14 +19,18 @@ from ui_helpers import (
     _positive_int_set, _cost_coverage_diagnostics, build_data_quality_overview,
     _article_margin_signal, _decision_center_recommendation,
     build_article_margin_view, procurement_recommendations,
-    build_consolidated_purchase_plan,
+    build_consolidated_purchase_plan, render_section_header,
 )
 
 
 def render(ctx: dict) -> None:
     data = ctx['data']
 
-    st.markdown("### Экономика по артикулам")
+    render_section_header(
+        "Экономика по артикулам",
+        "По каждому товару: выручка, процент выкупа, расходы на рекламу, ДРР, скорость продаж, "
+        "запас в днях, себестоимость и маржа до вычета комиссий WB.",
+    )
     if data.products.empty:
         st.info("Нет данных по товарам за выбранный период.")
     else:

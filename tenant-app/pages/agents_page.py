@@ -11,7 +11,7 @@ from agents.rules import AdRules, PriceRules
 from agents.store import AgentStore
 from agent_sync import wb_cost_lookup
 from config import DB_PATH, get_ozon_credentials, get_token
-from ui_helpers import render_empty_state
+from ui_helpers import render_empty_state, render_section_header
 
 
 def _build_clients() -> dict[str, object]:
@@ -93,7 +93,11 @@ def render(ctx: dict) -> None:
         st.rerun()
 
     pending = store.list_candidates(status="pending")
-    st.markdown(f"### Предложения ({len(pending)})")
+    render_section_header(
+        f"Предложения ({len(pending)})",
+        "Рекомендации агентов по ценам и рекламным ставкам. Ничего не применяется само — "
+        "каждую строку нужно одобрить или отклонить вручную.",
+    )
     if not pending:
         render_empty_state(
             "Пока нет предложений",
