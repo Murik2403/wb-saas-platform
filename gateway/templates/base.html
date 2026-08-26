@@ -25,6 +25,15 @@
     --font-mono:"IBM Plex Mono","SF Mono",monospace;
   }
   * { box-sizing: border-box; }
+  /* Without this, iOS Safari silently boosts font-size inside narrow,
+     horizontally-scrollable content (exactly .compare-table's columns on a
+     phone) to "improve readability" -- independent of the font-size actually
+     set here, so it never shows up in computed styles inspected from a
+     desktop browser. The inflated text then overflows its cell and gets
+     visually clipped by the next column's background, which is what looked
+     like broken/overlapping text on a real phone despite the DOM and layout
+     math checking out fine (#reported by user, mobile only, compare-table). */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
   }
