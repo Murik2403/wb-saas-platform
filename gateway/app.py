@@ -15,6 +15,7 @@ before any paying customer touches it. See ../DEPLOY.md.
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -36,7 +37,15 @@ from rate_limiter import RateLimiter
 setup_logging()
 logger = logging.getLogger("wb_saas_gateway")
 
-app = FastAPI(title="MARKETSHELPER Gateway")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    with control_db.connect() as conn:
+        control_db.init_db(conn)
+    yield
+
+
+app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 app.add_middleware(StructuredLoggingMiddleware)
 app.include_router(billing_router)
 app.include_router(admin_router)
@@ -100,12 +109,6 @@ def _set_session_cookie(response: Response, token: str) -> None:
 def _clear_session_cookie(response: Response) -> None:
     domain = config.cookie_domain()
     response.delete_cookie(config.SESSION_COOKIE_NAME, path="/", domain=domain or None)
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    with control_db.connect() as conn:
-        control_db.init_db(conn)
 
 
 # --------------------------------------------------------------------------

@@ -17,6 +17,9 @@ tenant-app/data/
 # Local Claude Code dev-server launch config (per-machine paths)
 .claude/
 
+# Local graphify knowledge-graph output (generated, per-machine)
+graphify-out/
+
 # OS/editor
 .DS_Store
 .idea/
