@@ -121,6 +121,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
 .empty-state-note {font-size:.86rem; color: var(--text-faint); max-width:420px; margin:0 auto;}
 .hint-card-title {font-weight:600; color: var(--text); font-size:.94rem; margin-bottom:4px;}
 .hint-card-body {color: var(--text-muted); font-size:.86rem; margin-bottom:10px;}
+/* Streamlit's own top toolbar (hamburger menu: Print/Record screen/"Made
+   with Streamlit") -- not part of this app's UI, just floats over the
+   page's own content (including the onboarding hint) since it's
+   position:fixed. Hidden outright rather than restyled. */
+header[data-testid="stHeader"] {display:none;}
 div[data-testid="stDataFrame"] {border:1px solid var(--border); border-radius:14px; overflow:hidden;}
 div[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;}
 div[data-testid="stMetricValue"] {font-family: var(--font-mono); font-variant-numeric: tabular-nums;}
