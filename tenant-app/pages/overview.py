@@ -117,5 +117,4 @@ def render(ctx: dict) -> None:
                 "Запас, дней": st.column_config.NumberColumn(format="%.1f"),
             },
         )
-    st.markdown('<div class="warning-box">Текущая маржа — оценочная и пока не учитывает всю детализацию комиссий, логистики, хранения и удержаний WB. Эти статьи будут подключены отдельным финансовым модулем.</div>', unsafe_allow_html=True)
 
