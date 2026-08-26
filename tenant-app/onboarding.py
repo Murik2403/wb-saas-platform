@@ -102,6 +102,12 @@ def render_page_hint(page_name: str, settings: dict) -> None:
                 save_settings(settings)
                 st.rerun()
     else:
-        with st.popover("❓ Об этом разделе"):
+        # key= is required here: without it Streamlit derives the widget's
+        # identity from its label, and every page uses the same label --
+        # so without a per-page key, Streamlit treated every page's popover
+        # as the same widget and carried its open/closed state across page
+        # navigations (looked like a hint stuck open, floating over content
+        # on whichever page you switched to next).
+        with st.popover("❓ Об этом разделе", key=f"hint_popover_{page_name}"):
             st.markdown(f"**{escape(title)}**")
             st.write(body)
