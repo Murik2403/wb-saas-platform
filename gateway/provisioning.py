@@ -112,12 +112,15 @@ def container_labels(slug: str, require_auth: bool = True) -> dict[str, str]:
         "traefik.enable": "true",
         f"traefik.http.routers.{router}.rule": f"Host(`{host}`)",
         f"traefik.http.routers.{router}.entrypoints": "websecure",
-        # Request wildcard cert (*.app.marketshelper.ru) via DNS-01, not per-domain HTTP-01.
-        # This cert is issued once and reused across all tenant subdomains, eliminating
-        # the self-signed window on first visit. Requires dns-resolver (Timeweb Cloud DNS-01)
-        # and marketshelper.ru NS delegation to ns1/ns2.timeweb.ru only.
-        f"traefik.http.routers.{router}.tls.certresolver": "dns-resolver",
-        f"traefik.http.routers.{router}.tls.domains[0].main": f"*.{config.TENANT_SUBDOMAIN_PREFIX}.{config.PARENT_DOMAIN}",
+        # Per-domain HTTP-01 cert (http-resolver), not the wildcard DNS-01 path.
+        # The dns-resolver's wildcard cert (*.app.marketshelper.ru) is currently
+        # unobtainable: marketshelper.ru's zone answer includes ns3/ns4.timeweb.org
+        # in addition to the registry-delegated ns1/ns2.timeweb.ru, which fails
+        # Let's Encrypt's DNS-01 propagation check (see Timeweb support ticket,
+        # 2026-08-26). Every new signup was getting an invalid certificate until
+        # this was switched back to HTTP-01 -- revert to dns-resolver (and drop
+        # this comment) once Timeweb confirms the zone answer is fixed.
+        f"traefik.http.routers.{router}.tls.certresolver": "http-resolver",
         f"traefik.http.services.{router}.loadbalancer.server.port": str(config.TENANT_INTERNAL_PORT),
         # Traefik ends up attached to every per-tenant network plus its own
         # wbsaas_net -- this label removes any ambiguity about which network
