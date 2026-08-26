@@ -59,6 +59,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # panel on day one; "expert" (default) is the full dashboard as before.
     "ui_mode": "expert",
     "agent_interval_minutes": 60,
+    # Page names (see app.py's PAGES/NOVICE_NAV) whose onboarding hint card
+    # (onboarding.render_page_hint) the user has dismissed -- kept here, not
+    # in st.session_state, so it stays hidden across reloads and sessions
+    # like ui_mode itself.
+    "dismissed_hints": [],
 }
 
 

@@ -9,6 +9,7 @@ from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
 from config import BILLING_URL, IS_DEMO, LOGOUT_URL, get_ozon_credentials, get_token, load_settings, save_settings
 from db import init_db, last_sync, refresh_auto_costs, table_count
+from onboarding import render_page_hint
 from ui_helpers import render_setup_checklist
 
 from pages import (
@@ -118,6 +119,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
 .empty-state-icon {font-size:1.8rem; color: var(--text-faint); margin-bottom:10px;}
 .empty-state-title {font-weight:600; color: var(--text); font-size:1.02rem; margin-bottom:6px;}
 .empty-state-note {font-size:.86rem; color: var(--text-faint); max-width:420px; margin:0 auto;}
+.hint-card-title {font-weight:600; color: var(--text); font-size:.94rem; margin-bottom:4px;}
+.hint-card-body {color: var(--text-muted); font-size:.86rem; margin-bottom:10px;}
 div[data-testid="stDataFrame"] {border:1px solid var(--border); border-radius:14px; overflow:hidden;}
 div[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;}
 div[data-testid="stMetricValue"] {font-family: var(--font-mono); font-variant-numeric: tabular-nums;}
@@ -253,4 +256,5 @@ ctx = {
 
 page_module = PAGES.get(page)
 if page_module is not None:
+    render_page_hint(page, settings)
     page_module.render(ctx)
