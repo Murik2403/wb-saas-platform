@@ -968,7 +968,7 @@ def render(ctx: dict) -> None:
                     try:
                         order_id = create_procurement_order(
                             "Товар", supplier_name, "Запланировано", today_proc, payment_date, expected_date,
-                            "Создано из консолидированного плана закупок v5.2. Требует подтверждения поставщику и проверки цен.",
+                            "Создано из консолидированного плана закупок. Требует подтверждения поставщику и проверки цен.",
                             order_items, source_key=f"consolidated-v52-{today_proc.isoformat()}-{supplier_name.casefold()}-{signature}",
                             currency="RUB", exchange_rate=1.0,
                         )
