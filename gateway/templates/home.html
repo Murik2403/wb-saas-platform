@@ -150,6 +150,28 @@
 
   <div class="section reveal">
     <div class="section-head">
+      <div class="eyebrow">2 минуты 15 секунд</div>
+      <h2>Обзор всех разделов — с голосом, а не сухим скринкастом</h2>
+      <p>Прошлись по всем 12 разделам кабинета — от подключения магазина до автоматических PDF-отчётов. Быстрее, чем кликать самому в демо ниже, если просто хотите понять, что внутри.</p>
+    </div>
+    <div class="device-frame">
+      <div class="device-frame-bar">
+        <span class="device-dot"></span><span class="device-dot"></span><span class="device-dot"></span>
+        <span class="device-url">Видеообзор MARKETSHELPER</span>
+        <span class="device-badge">▶ 2:15 · с озвучкой</span>
+      </div>
+      <div class="video-frame-media" id="tutorialVideoWrap">
+        <video id="tutorialVideo" controls preload="none" poster="/static/images/tutorial-poster.jpg" playsinline>
+          <source src="/static/videos/tutorial.mp4" type="video/mp4">
+        </video>
+        <button type="button" class="video-play-btn" id="tutorialPlayBtn" aria-label="Смотреть видеообзор"><span class="ic"></span></button>
+      </div>
+    </div>
+    <p class="device-note">Запись на реальном аккаунте продавца — товары и цифры настоящие, часть данных скрыта.</p>
+  </div>
+
+  <div class="section reveal">
+    <div class="section-head">
       <div class="eyebrow">Как это выглядит</div>
       <h2>Живой кабинет — не мокап</h2>
       <p>Настоящий дашборд MARKETSHELPER прямо здесь, на вымышленных товарах и цифрах — покрутите сами, без регистрации.</p>
@@ -404,6 +426,20 @@
     dashObserver.observe(heroDash);
   } else if (heroDash) {
     heroDash.querySelectorAll("[data-count]").forEach(animateCount);
+  }
+
+  /* ---- tutorial video: click-to-play, poster stays until first play ---- */
+  var tutorialWrap = document.getElementById("tutorialVideoWrap");
+  var tutorialVideo = document.getElementById("tutorialVideo");
+  var tutorialPlayBtn = document.getElementById("tutorialPlayBtn");
+  if (tutorialWrap && tutorialVideo && tutorialPlayBtn) {
+    tutorialPlayBtn.addEventListener("click", function () {
+      tutorialWrap.classList.add("playing");
+      tutorialVideo.play();
+    });
+    tutorialVideo.addEventListener("pause", function () {
+      if (tutorialVideo.currentTime === 0) tutorialWrap.classList.remove("playing");
+    });
   }
 
   /* ---- audience toggle: highlight the matching card ---- */

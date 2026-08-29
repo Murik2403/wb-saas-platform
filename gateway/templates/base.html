@@ -321,6 +321,24 @@
   .device-note { font-size: .78rem; color: var(--text-faint); margin: 0 2px; }
   @media (max-width: 720px) { .device-frame iframe { height: 520px; } }
 
+  /* ---------- landing: tutorial video (same device-frame shell as the live demo,
+     click-to-play poster so the frame doesn't fight for attention before it's asked to) ---------- */
+  .device-badge { margin-left: auto; font-size: .74rem; color: var(--accent-strong); font-family: var(--font-mono);
+    display: flex; align-items: center; gap: 6px; }
+  .video-frame-media { position: relative; background: var(--bg); }
+  .video-frame-media video { width: 100%; aspect-ratio: 16 / 9; display: block; background: var(--bg); }
+  .video-play-btn { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; background: rgba(10,11,18,.18);
+    transition: background .15s ease; }
+  .video-play-btn:hover { background: rgba(10,11,18,.32); }
+  .video-play-btn .ic { width: 76px; height: 76px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 12px 34px rgba(124,108,246,.5); display: flex; align-items: center; justify-content: center;
+    transition: transform .15s ease, background .15s ease; }
+  .video-play-btn:hover .ic { transform: scale(1.06); background: var(--accent-strong); }
+  .video-play-btn .ic::after { content: ''; border-style: solid; border-width: 13px 0 13px 21px;
+    border-color: transparent transparent transparent #0a0b12; margin-left: 5px; }
+  .video-frame-media.playing .video-play-btn { display: none; }
+
   /* ---------- lightbox for real product screenshots ---------- */
   .lightbox { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
     padding: 40px; background: rgba(5,6,10,.88); backdrop-filter: blur(4px);
