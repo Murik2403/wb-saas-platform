@@ -103,6 +103,13 @@ docker compose exec -e PYTHONPATH=/app gateway python3 /app/scripts/upgrade_all_
 email/канал. Эндпоинт возвращает `{"status":"ok"}` без авторизации; не
 используйте для мониторинга страницу входа или tenant-поддомен.
 
+Отдельно контролируйте хотя бы один работающий tenant: создайте второй
+HTTP(s)-monitor с адресом
+`https://<slug>.<tenant-prefix>.<parent-domain>/_stcore/health` и тем же
+интервалом. Provisioner открывает только точный `GET` к этому liveness-path;
+сам dashboard и остальные запросы к tenant-поддомену по-прежнему защищены
+ForwardAuth. Выберите живой tenant, а не вымышленный или остановленный demo.
+
 ## Первый запуск
 
 ```bash

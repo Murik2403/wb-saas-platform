@@ -84,6 +84,7 @@ def _tenant_host(slug: str) -> str:
 
 def _labels(slug: str, require_auth: bool) -> dict[str, str]:
     router = f"tenant-{slug}"
+    health_router = f"{router}-health"
     labels = {
         "traefik.enable": "true",
         f"traefik.http.routers.{router}.rule": f"Host(`{_tenant_host(slug)}`)",
@@ -92,6 +93,15 @@ def _labels(slug: str, require_auth: bool) -> dict[str, str]:
         f"traefik.http.services.{router}.loadbalancer.server.port": str(TENANT_INTERNAL_PORT),
         "traefik.docker.network": _network_name(slug),
         "wb-saas.slug": slug,
+        # A narrowly scoped liveness route lets an external monitor detect a
+        # failed Streamlit process without exposing the tenant dashboard.
+        f"traefik.http.routers.{health_router}.rule": (
+            f"Host(`{_tenant_host(slug)}`) && Path(`/_stcore/health`) && Method(`GET`)"
+        ),
+        f"traefik.http.routers.{health_router}.priority": "100",
+        f"traefik.http.routers.{health_router}.entrypoints": "websecure",
+        f"traefik.http.routers.{health_router}.tls.certresolver": TLS_CERT_RESOLVER,
+        f"traefik.http.routers.{health_router}.service": router,
     }
     if require_auth:
         labels[f"traefik.http.routers.{router}.middlewares"] = FORWARD_AUTH_MIDDLEWARE

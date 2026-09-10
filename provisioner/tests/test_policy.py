@@ -3,6 +3,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
+import app
 from app import TenantRequest, tenant_container_spec
 
 
@@ -41,6 +42,15 @@ def test_tenant_receives_sentry_configuration_only_when_configured():
     environment = tenant_container_spec("shop-a", request)["environment"]
     assert environment["WB_SAAS_SENTRY_DSN"] == request.sentry_dsn
     assert environment["WB_SAAS_SENTRY_ENVIRONMENT"] == "staging"
+
+
+def test_tenant_health_router_is_public_but_exact(monkeypatch):
+    monkeypatch.setattr(app, "PARENT_DOMAIN", "example.test")
+    labels = tenant_container_spec("shop-a", _request())["labels"]
+    prefix = "traefik.http.routers.tenant-shop-a-health"
+    assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/_stcore/health`) && Method(`GET`)"
+    assert labels[f"{prefix}.service"] == "tenant-shop-a"
+    assert f"{prefix}.middlewares" not in labels
 
 
 @pytest.mark.parametrize("slug", ["../escape", "UPPER", "two__underscores", "", "a" * 33])
