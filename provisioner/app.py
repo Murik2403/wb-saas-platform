@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from backup_crypto import encrypt_file
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -32,12 +33,14 @@ TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "http-resolver")
 BACKUP_DIR = os.environ.get("WB_SAAS_BACKUP_DIR", "/opt/wb-saas/backups")
 BACKUP_MOUNT = Path("/backups")
 BACKUP_HELPER_IMAGE = "alpine:3.20"
+BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
 
 
 class TenantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     internal_api_secret: str = Field(min_length=1, max_length=512)
+    data_encryption_key: str = Field(default="", max_length=128)
     billing_url: str = Field(min_length=1, max_length=512)
     logout_url: str = Field(min_length=1, max_length=512)
     internal_api_url: str = Field(min_length=1, max_length=512)
@@ -110,6 +113,8 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
         "WB_SAAS_INTERNAL_API_SECRET": request.internal_api_secret,
         "MH_ALLOWED_HOSTS": f"localhost,127.0.0.1,{_tenant_host(slug)}",
     }
+    if request.data_encryption_key:
+        environment["WB_SAAS_DATA_ENCRYPTION_KEY"] = request.data_encryption_key
     if demo:
         environment["WB_SAAS_IS_DEMO"] = "1"
     return {
@@ -187,7 +192,7 @@ def _prune_old_backups(slug: str, keep_days: int) -> int:
     tenant_dir.mkdir(parents=True, exist_ok=True)
     cutoff = time.time() - keep_days * 86400
     removed = 0
-    for path in tenant_dir.glob("*.tar.gz"):
+    for path in tenant_dir.glob("*.tar.gz.enc"):
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
@@ -326,15 +331,21 @@ def verify_internal_secret(slug: str, request: CredentialCheckRequest) -> dict[s
 
 @app.post("/v1/tenants/{slug}/backup")
 def backup_tenant(slug: str, keep_days: int = 14) -> dict[str, str | int]:
-    """Create one archive using only fixed helper image, volume and host path."""
+    """Create an encrypted archive using only fixed helper image and paths."""
     _validate_slug(slug)
+    if not BACKUP_ENCRYPTION_KEY:
+        raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
     tenant_dir = BACKUP_MOUNT / slug
     tenant_dir.mkdir(parents=True, exist_ok=True)
-    archive_name = f"{slug}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
+    stem = f"{slug}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    archive_name = f"{stem}.tar.gz.enc"
+    plain_name = f".{stem}.tar.gz.partial"
+    plain_path = tenant_dir / plain_name
+    archive_path = tenant_dir / archive_name
     try:
         _client().containers.run(
             BACKUP_HELPER_IMAGE,
-            command=["tar", "czf", f"/backup/{archive_name}", "-C", "/data", "."],
+            command=["tar", "czf", f"/backup/{slug}/{plain_name}", "-C", "/data", "."],
             volumes={
                 _volume_name(slug): {"bind": "/data", "mode": "ro"},
                 BACKUP_DIR: {"bind": "/backup", "mode": "rw"},
@@ -346,6 +357,10 @@ def backup_tenant(slug: str, keep_days: int = 14) -> dict[str, str | int]:
             read_only=True,
             tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
         )
+        encrypt_file(plain_path, archive_path, BACKUP_ENCRYPTION_KEY)
     except Exception as exc:
+        plain_path.unlink(missing_ok=True)
+        archive_path.unlink(missing_ok=True)
         raise HTTPException(status_code=502, detail=f"Docker backup failed: {exc}") from exc
+    plain_path.unlink(missing_ok=True)
     return {"archive": archive_name, "pruned": _prune_old_backups(slug, keep_days)}

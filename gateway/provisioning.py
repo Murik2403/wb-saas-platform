@@ -12,7 +12,7 @@ import time
 import requests
 
 import config
-from internal_auth import tenant_credential
+from internal_auth import tenant_credential, tenant_data_key
 from logic import accounts, billing, db as control_db
 
 logger = logging.getLogger("wb_saas_gateway.provisioning")
@@ -26,6 +26,7 @@ def _provisioner_url() -> str:
 def _tenant_payload(slug: str, require_auth: bool = True) -> dict[str, object]:
     return {
         "internal_api_secret": tenant_credential(config.INTERNAL_API_SECRET, slug),
+        "data_encryption_key": tenant_data_key(config.TENANT_ENCRYPTION_MASTER_KEY, slug),
         "billing_url": config.billing_url(),
         "logout_url": config.logout_url(),
         "internal_api_url": config.base_url(),

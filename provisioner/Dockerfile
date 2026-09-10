@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.lock ./
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
-COPY app.py ./
+COPY app.py backup_crypto.py decrypt_backup.py ./
 
 EXPOSE 8001
 

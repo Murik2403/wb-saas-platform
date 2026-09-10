@@ -130,6 +130,10 @@ TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
 
+# Deployment-only master material. provisioning.py derives a different key
+# for every tenant and never sends this value outside gateway.
+TENANT_ENCRYPTION_MASTER_KEY = os.environ.get("WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY", "")
+
 # --------------------------------------------------------------------------
 # Control-plane database (see logic/db.py)
 # --------------------------------------------------------------------------

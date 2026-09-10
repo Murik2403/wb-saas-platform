@@ -26,6 +26,11 @@ def test_spec_is_allowlisted_and_hardened():
     assert "/var/run/docker.sock" not in str(spec)
 
 
+def test_tenant_receives_only_derived_data_key():
+    request = _request().model_copy(update={"data_encryption_key": "derived-key"})
+    assert tenant_container_spec("shop-a", request)["environment"]["WB_SAAS_DATA_ENCRYPTION_KEY"] == "derived-key"
+
+
 @pytest.mark.parametrize("slug", ["../escape", "UPPER", "two__underscores", "", "a" * 33])
 def test_invalid_slug_is_rejected_before_docker_client(slug):
     with pytest.raises(Exception):

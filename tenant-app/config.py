@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from secure_storage import read as read_encrypted, write as write_encrypted
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -46,6 +48,7 @@ IS_DEMO = os.environ.get("WB_SAAS_IS_DEMO", "0") == "1"
 TENANT_SLUG = os.environ.get("WB_SAAS_TENANT_SLUG", "")
 INTERNAL_API_URL = os.environ.get("WB_SAAS_INTERNAL_API_URL", "")
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+DATA_ENCRYPTION_KEY = os.environ.get("WB_SAAS_DATA_ENCRYPTION_KEY", "")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "sync_interval_minutes": 30,
@@ -91,6 +94,9 @@ def save_token(token: str) -> None:
     token = token.strip()
     if not token:
         raise ValueError("Пустой токен")
+    if TENANT_SLUG:
+        write_encrypted(TOKEN_FALLBACK_PATH, token, DATA_ENCRYPTION_KEY)
+        return
     try:
         import keyring
 
@@ -100,14 +106,15 @@ def save_token(token: str) -> None:
         return
     except Exception:
         # Резервный вариант для сред без системного хранилища ключей.
-        TOKEN_FALLBACK_PATH.write_text(token, encoding="utf-8")
-        try:
-            os.chmod(TOKEN_FALLBACK_PATH, 0o600)
-        except OSError:
-            pass
+        write_encrypted(TOKEN_FALLBACK_PATH, token, DATA_ENCRYPTION_KEY)
 
 
 def get_token() -> str | None:
+    if TENANT_SLUG and TOKEN_FALLBACK_PATH.exists():
+        value, legacy = read_encrypted(TOKEN_FALLBACK_PATH, DATA_ENCRYPTION_KEY)
+        if value and legacy:
+            write_encrypted(TOKEN_FALLBACK_PATH, value, DATA_ENCRYPTION_KEY)
+        return value
     try:
         import keyring
 
@@ -117,11 +124,10 @@ def get_token() -> str | None:
     except Exception:
         pass
     if TOKEN_FALLBACK_PATH.exists():
-        try:
-            value = TOKEN_FALLBACK_PATH.read_text(encoding="utf-8").strip()
-            return value or None
-        except OSError:
-            return None
+        value, legacy = read_encrypted(TOKEN_FALLBACK_PATH, DATA_ENCRYPTION_KEY)
+        if value and legacy and DATA_ENCRYPTION_KEY:
+            write_encrypted(TOKEN_FALLBACK_PATH, value, DATA_ENCRYPTION_KEY)
+        return value
     return None
 
 
@@ -144,6 +150,9 @@ def save_ozon_credentials(client_id: str, api_key: str) -> None:
     if not client_id or not api_key:
         raise ValueError("Client-Id и Api-Key обязательны")
     blob = json.dumps({"client_id": client_id, "api_key": api_key})
+    if TENANT_SLUG:
+        write_encrypted(TOKEN_FALLBACK_PATH_OZON, blob, DATA_ENCRYPTION_KEY)
+        return
     try:
         import keyring
 
@@ -152,26 +161,29 @@ def save_ozon_credentials(client_id: str, api_key: str) -> None:
             TOKEN_FALLBACK_PATH_OZON.unlink()
         return
     except Exception:
-        TOKEN_FALLBACK_PATH_OZON.write_text(blob, encoding="utf-8")
-        try:
-            os.chmod(TOKEN_FALLBACK_PATH_OZON, 0o600)
-        except OSError:
-            pass
+        write_encrypted(TOKEN_FALLBACK_PATH_OZON, blob, DATA_ENCRYPTION_KEY)
 
 
 def get_ozon_credentials() -> tuple[str, str] | None:
     blob = None
+    if TENANT_SLUG and TOKEN_FALLBACK_PATH_OZON.exists():
+        blob, legacy = read_encrypted(TOKEN_FALLBACK_PATH_OZON, DATA_ENCRYPTION_KEY)
+        if blob and legacy:
+            write_encrypted(TOKEN_FALLBACK_PATH_OZON, blob, DATA_ENCRYPTION_KEY)
+    else:
+        legacy = False
     try:
+        if TENANT_SLUG:
+            raise RuntimeError("SaaS tenants use encrypted file storage")
         import keyring
 
         blob = keyring.get_password(KEYRING_SERVICE, KEYRING_USER_OZON)
     except Exception:
         pass
     if not blob and TOKEN_FALLBACK_PATH_OZON.exists():
-        try:
-            blob = TOKEN_FALLBACK_PATH_OZON.read_text(encoding="utf-8")
-        except OSError:
-            blob = None
+        blob, legacy = read_encrypted(TOKEN_FALLBACK_PATH_OZON, DATA_ENCRYPTION_KEY)
+        if blob and legacy and DATA_ENCRYPTION_KEY:
+            write_encrypted(TOKEN_FALLBACK_PATH_OZON, blob, DATA_ENCRYPTION_KEY)
     if not blob:
         return None
     try:

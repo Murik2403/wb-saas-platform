@@ -39,6 +39,31 @@ python -m piptools compile --resolver=backtracking --generate-hashes --allow-uns
 frontend-каталогах, тесты и сборку всех трёх образов. Dependabot создаёт
 такие предложения еженедельно; проверяйте их вместе с результатами CI.
 
+## Шифрование токенов и бэкапов
+
+До запуска задайте в `.env` два независимых случайных секрета длиной не
+менее 32 символов: `WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY` и
+`WB_SAAS_BACKUP_ENCRYPTION_KEY`. Первый остаётся в gateway: для каждого
+клиента из него выводится отдельный ключ, а в Docker-volume записывается
+только шифротекст WB/Ozon-учётных данных. Второй известен только
+provisioner и шифрует каждый host-бэкап в формате `.tar.gz.enc`.
+
+Не меняйте эти значения без миграции: старые токены и архивы после этого
+нельзя будет расшифровать. При первом запуске с ключом старый plaintext
+fallback-токен автоматически переписывается в шифротекст. До настройки
+ключа новый tenant не сохранит токен, а host-бэкап завершится ошибкой,
+вместо создания открытого архива.
+
+Для аварийного восстановления сначала расшифруйте архив внутри provisioner
+в временный файл, извлеките его в нужный volume отдельным одноразовым
+контейнером, затем удалите временный `.tar.gz`:
+
+```bash
+docker compose exec -T provisioner python decrypt_backup.py /backups/<slug>/<archive>.tar.gz.enc /backups/<slug>/restore.tar.gz
+docker run --rm -v wb-tenant-data-<slug>:/data -v /opt/wb-saas/backups:/backup:ro alpine:3.20 tar xzf /backup/<slug>/restore.tar.gz -C /data
+rm /opt/wb-saas/backups/<slug>/restore.tar.gz
+```
+
 ## Первый запуск
 
 ```bash

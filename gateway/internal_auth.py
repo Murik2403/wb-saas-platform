@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import re
+import base64
 
 
 def tenant_credential(master: str, slug: str) -> str:
@@ -13,3 +14,13 @@ def tenant_credential(master: str, slug: str) -> str:
 def verify_credential(master: str, slug: str, provided: str) -> bool:
     expected = tenant_credential(master, slug)
     return bool(expected) and hmac.compare_digest(expected.encode(), provided.encode())
+
+
+def tenant_data_key(master: str, slug: str) -> str:
+    """Derive a Fernet-compatible encryption key without exposing ``master``."""
+    if not master or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", slug):
+        return ""
+    digest = hmac.new(
+        master.encode(), ("tenant-data-encryption:v1:" + slug).encode(), hashlib.sha256
+    ).digest()
+    return base64.urlsafe_b64encode(digest).decode()
