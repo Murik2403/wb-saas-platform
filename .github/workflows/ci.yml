@@ -21,8 +21,7 @@ jobs:
 
       - name: Install Provisioner Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r provisioner/requirements.txt pytest
+          python -m pip install --require-hashes -r provisioner/requirements.lock
 
       - name: Run Provisioner Policy Tests
         run: |
@@ -42,8 +41,7 @@ jobs:
 
       - name: Install Gateway Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r gateway/requirements.txt
+          python -m pip install --require-hashes -r gateway/requirements.lock
 
       - name: Run Gateway Unit Tests
         # pytest, not `unittest discover` -- tests/test_db_backend_postgres.py
@@ -71,8 +69,7 @@ jobs:
 
       - name: Install Tenant App Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r tenant-app/requirements.txt
+          python -m pip install --require-hashes -r tenant-app/requirements.lock
 
       - name: Run Tenant App Unit Tests
         # pytest, not `unittest discover` -- agents/tests/ and reports/tests/
@@ -103,7 +100,54 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.project }}/package-lock.json
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run build
       - name: Check history formatting
         if: matrix.project == 'mh-redesign-lab'
         run: node scripts/test-history-format.mjs
+
+  audit-python:
+    name: Audit Python Dependencies
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lock:
+          - gateway/requirements.lock
+          - provisioner/requirements.lock
+          - tenant-app/requirements.lock
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit ${{ matrix.lock }}
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: ${{ matrix.lock }}
+          no-deps: true
+          require-hashes: true
+
+  scan-images:
+    name: Scan ${{ matrix.name }} Image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gateway
+            context: gateway
+          - name: provisioner
+            context: provisioner
+          - name: tenant-app
+            context: tenant-app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.name }} image
+        run: docker build --tag wbsaas/${{ matrix.name }}:${{ github.sha }} ${{ matrix.context }}
+      - name: Scan high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: wbsaas/${{ matrix.name }}:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          vuln-type: os,library

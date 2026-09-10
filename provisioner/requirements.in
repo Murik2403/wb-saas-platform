@@ -1,0 +1,6 @@
+# Direct provisioner dependencies. Exact transitive versions and hashes live
+# in requirements.lock, generated under Python 3.12 with pip-tools.
+fastapi>=0.141,<0.142
+uvicorn[standard]>=0.52,<0.53
+docker>=7.0,<8
+pytest>=9.0.3,<10

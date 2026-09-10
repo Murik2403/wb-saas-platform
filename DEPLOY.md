@@ -20,6 +20,25 @@ YAML-парсер — синтаксически и структурно они 
 - Порты 80 и 443 открыты наружу (нужны Traefik для HTTP-01 challenge
   Let's Encrypt и самого трафика).
 
+## Обновление зависимостей
+
+Python-зависимости приложений закреплены в `requirements.lock`: в образы и
+CI устанавливаются только эти файлы с проверкой SHA-256. Не редактируйте
+lock-файлы вручную. Для планового обновления на Python 3.12 обновите
+соответствующий `requirements.in`, затем из корня репозитория выполните:
+
+```powershell
+python -m pip install "pip-tools==7.6.1"
+python -m piptools compile --resolver=backtracking --generate-hashes --allow-unsafe --strip-extras --output-file gateway/requirements.lock gateway/requirements.in
+python -m piptools compile --resolver=backtracking --generate-hashes --allow-unsafe --strip-extras --output-file provisioner/requirements.lock provisioner/requirements.in
+python -m piptools compile --resolver=backtracking --generate-hashes --allow-unsafe --strip-extras --output-file tenant-app/requirements.lock tenant-app/requirements.in
+```
+
+Перед слиянием обновления выполните `pip-audit -r <путь к requirements.lock>`
+для каждого Python-компонента, `npm audit --audit-level=high` в обоих
+frontend-каталогах, тесты и сборку всех трёх образов. Dependabot создаёт
+такие предложения еженедельно; проверяйте их вместе с результатами CI.
+
 ## Первый запуск
 
 ```bash

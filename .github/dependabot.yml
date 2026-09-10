@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /gateway
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /provisioner
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /tenant-app
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /mh-redesign-lab
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /gateway
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /provisioner
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /tenant-app
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
