@@ -74,6 +74,35 @@ CIDR в `traefik/traefik.yml` → `forwardedHeaders.trustedIPs`, затем за
 в `.env` число таких proxy в `WB_SAAS_TRUSTED_PROXY_HOPS` и проверьте вход
 с поддельным `X-Forwarded-For`.
 
+## Мониторинг и отчёты об ошибках
+
+Sentry включается только после явного задания DSN — без переменных ниже
+приложение не отправляет телеметрию. Создайте два проекта в Sentry: один для
+gateway, второй для tenant-приложений. Их DSN задаются в `.env` только на
+сервере:
+
+```dotenv
+WB_SAAS_SENTRY_DSN=https://...  # проект gateway
+WB_SAAS_SENTRY_TENANT_DSN=https://...  # общий проект tenant-приложений
+WB_SAAS_SENTRY_ENVIRONMENT=production
+```
+
+В SDK отключена отправка персональных данных по умолчанию; не добавляйте в
+Sentry tags, breadcrumbs или сообщения токены WB/Ozon, email, номера заказов
+и прочие данные продавцов. После изменения этих переменных пересоберите
+gateway, затем образ tenant и обновите уже запущенные tenant-контейнеры:
+
+```bash
+docker compose up -d --build gateway
+docker build -t wb-dashboard-tenant:latest ./tenant-app
+docker compose exec -e PYTHONPATH=/app gateway python3 /app/scripts/upgrade_all_tenants.py
+```
+
+Для внешней доступности создайте в UptimeRobot HTTP(s)-monitor с адресом
+`https://<ваш-домен>/healthz`, интервалом 5 минут и уведомлением на рабочий
+email/канал. Эндпоинт возвращает `{"status":"ok"}` без авторизации; не
+используйте для мониторинга страницу входа или tenant-поддомен.
+
 ## Первый запуск
 
 ```bash

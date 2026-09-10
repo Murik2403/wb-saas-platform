@@ -34,8 +34,10 @@ from internal_routes import router as internal_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
 from logic import accounts, csrf, db as control_db, password_reset
 from rate_limiter import RateLimiter
+from sentry_integration import initialize as initialize_sentry
 
 setup_logging()
+initialize_sentry()
 logger = logging.getLogger("wb_saas_gateway")
 
 

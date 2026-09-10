@@ -13,3 +13,4 @@ reportlab>=4.0,<5
 fastapi>=0.141,<0.142
 uvicorn[standard]>=0.52,<0.53
 pytest>=9.0.3,<10
+sentry-sdk>=2.0,<3

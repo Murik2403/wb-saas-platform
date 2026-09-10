@@ -31,6 +31,18 @@ def test_tenant_receives_only_derived_data_key():
     assert tenant_container_spec("shop-a", request)["environment"]["WB_SAAS_DATA_ENCRYPTION_KEY"] == "derived-key"
 
 
+def test_tenant_receives_sentry_configuration_only_when_configured():
+    request = _request().model_copy(
+        update={
+            "sentry_dsn": "https://public@example.ingest.sentry.io/123",
+            "sentry_environment": "staging",
+        }
+    )
+    environment = tenant_container_spec("shop-a", request)["environment"]
+    assert environment["WB_SAAS_SENTRY_DSN"] == request.sentry_dsn
+    assert environment["WB_SAAS_SENTRY_ENVIRONMENT"] == "staging"
+
+
 @pytest.mark.parametrize("slug", ["../escape", "UPPER", "two__underscores", "", "a" * 33])
 def test_invalid_slug_is_rejected_before_docker_client(slug):
     with pytest.raises(Exception):

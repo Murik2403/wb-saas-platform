@@ -188,6 +188,9 @@ services:
       # an empty string as a valid secret -- see config.py's INTERNAL_API_SECRET.
       - WB_SAAS_INTERNAL_API_SECRET=${WB_SAAS_INTERNAL_API_SECRET:-}
       - WB_SAAS_MAX_REPORT_UPLOAD_BYTES=${WB_SAAS_MAX_REPORT_UPLOAD_BYTES:-20971520}
+      - WB_SAAS_SENTRY_DSN=${WB_SAAS_SENTRY_DSN:-}
+      - WB_SAAS_SENTRY_TENANT_DSN=${WB_SAAS_SENTRY_TENANT_DSN:-}
+      - WB_SAAS_SENTRY_ENVIRONMENT=${WB_SAAS_SENTRY_ENVIRONMENT:-production}
     depends_on:
       provisioner:
         condition: service_healthy

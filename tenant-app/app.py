@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from sentry_integration import initialize as initialize_sentry
 from backup_tools import ensure_daily_backup, latest_backup
 from calculations import build_dashboard
 from config import BILLING_URL, IS_DEMO, LOGOUT_URL, get_ozon_credentials, get_token, load_settings, save_settings
@@ -38,6 +39,7 @@ FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производ�
 # related is expert-only complexity a first-time seller doesn't need yet.
 NOVICE_NAV = ["Сегодня", "Обзор", "Финансы", "Настройки"]
 
+initialize_sentry()
 st.set_page_config(page_title="MARKETSHELPER", page_icon="📊", layout="wide")
 
 

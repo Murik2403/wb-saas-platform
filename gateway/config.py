@@ -132,6 +132,11 @@ TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 # --------------------------------------------------------------------------
 
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+# Error reporting is opt-in: no telemetry leaves the deployment until an
+# operator sets one of these DSNs.
+SENTRY_DSN = os.environ.get("WB_SAAS_SENTRY_DSN", "")
+SENTRY_TENANT_DSN = os.environ.get("WB_SAAS_SENTRY_TENANT_DSN", "")
+SENTRY_ENVIRONMENT = os.environ.get("WB_SAAS_SENTRY_ENVIRONMENT", "production")
 # Upper bound for one scheduled-report PDF accepted from a tenant.  The
 # gateway reads at most one byte beyond this value before rejecting it.
 MAX_REPORT_UPLOAD_BYTES = max(1, int(os.environ.get("WB_SAAS_MAX_REPORT_UPLOAD_BYTES", str(20 * 1024 * 1024))))

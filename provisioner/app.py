@@ -45,6 +45,8 @@ class TenantRequest(BaseModel):
     billing_url: str = Field(min_length=1, max_length=512)
     logout_url: str = Field(min_length=1, max_length=512)
     internal_api_url: str = Field(min_length=1, max_length=512)
+    sentry_dsn: str = Field(default="", max_length=512)
+    sentry_environment: str = Field(default="production", min_length=1, max_length=64)
     require_auth: bool = True
 
 
@@ -116,6 +118,9 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
     }
     if request.data_encryption_key:
         environment["WB_SAAS_DATA_ENCRYPTION_KEY"] = request.data_encryption_key
+    if request.sentry_dsn:
+        environment["WB_SAAS_SENTRY_DSN"] = request.sentry_dsn
+        environment["WB_SAAS_SENTRY_ENVIRONMENT"] = request.sentry_environment
     if demo:
         environment["WB_SAAS_IS_DEMO"] = "1"
     return {

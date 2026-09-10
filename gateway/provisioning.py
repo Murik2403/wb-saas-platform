@@ -30,6 +30,8 @@ def _tenant_payload(slug: str, require_auth: bool = True) -> dict[str, object]:
         "billing_url": config.billing_url(),
         "logout_url": config.logout_url(),
         "internal_api_url": config.base_url(),
+        "sentry_dsn": config.SENTRY_TENANT_DSN,
+        "sentry_environment": config.SENTRY_ENVIRONMENT,
         "require_auth": require_auth,
     }
 
