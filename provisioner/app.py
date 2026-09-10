@@ -34,6 +34,7 @@ BACKUP_DIR = os.environ.get("WB_SAAS_BACKUP_DIR", "/opt/wb-saas/backups")
 BACKUP_MOUNT = Path("/backups")
 BACKUP_HELPER_IMAGE = "alpine:3.20"
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
+CONTROL_PLANE_BACKUP_GROUP = "control-plane"
 
 
 class TenantRequest(BaseModel):
@@ -152,6 +153,24 @@ def _volume(client: Any, slug: str):
         return client.volumes.create(name)
 
 
+def _control_plane_volume_name(client: Any) -> str:
+    """Resolve this Compose project's gateway_data volume without caller input."""
+    try:
+        hostname = os.environ["HOSTNAME"]
+        own_container = client.containers.get(hostname)
+        labels = own_container.attrs.get("Config", {}).get("Labels", {}) or {}
+        project = labels["com.docker.compose.project"]
+        volumes = client.volumes.list(filters={"label": [
+            f"com.docker.compose.project={project}",
+            "com.docker.compose.volume=gateway_data",
+        ]})
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Unable to resolve the control-plane volume") from exc
+    if len(volumes) != 1 or not volumes[0].name:
+        raise HTTPException(status_code=503, detail="Expected exactly one control-plane volume")
+    return str(volumes[0].name)
+
+
 def _attach_traefik(client: Any, network: Any) -> None:
     try:
         traefik = client.containers.get(TRAEFIK_CONTAINER_NAME)
@@ -200,6 +219,41 @@ def _prune_old_backups(slug: str, keep_days: int) -> int:
         except OSError:
             continue
     return removed
+
+
+def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: Any) -> dict[str, str | int]:
+    """Archive one fixed Docker volume to an encrypted archive namespace."""
+    if not BACKUP_ENCRYPTION_KEY:
+        raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
+    backup_dir = BACKUP_MOUNT / backup_group
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"{backup_group}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    archive_name = f"{stem}.tar.gz.enc"
+    plain_name = f".{stem}.tar.gz.partial"
+    plain_path = backup_dir / plain_name
+    archive_path = backup_dir / archive_name
+    try:
+        client.containers.run(
+            BACKUP_HELPER_IMAGE,
+            command=["tar", "czf", f"/backup/{backup_group}/{plain_name}", "-C", "/data", "."],
+            volumes={
+                volume_name: {"bind": "/data", "mode": "ro"},
+                BACKUP_DIR: {"bind": "/backup", "mode": "rw"},
+            },
+            remove=True,
+            network_disabled=True,
+            security_opt=["no-new-privileges:true"],
+            cap_drop=["ALL"],
+            read_only=True,
+            tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+        )
+        encrypt_file(plain_path, archive_path, BACKUP_ENCRYPTION_KEY)
+    except Exception as exc:
+        plain_path.unlink(missing_ok=True)
+        archive_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=502, detail=f"Docker backup failed: {exc}") from exc
+    plain_path.unlink(missing_ok=True)
+    return {"archive": archive_name, "pruned": _prune_old_backups(backup_group, keep_days)}
 
 
 @app.get("/healthz")
@@ -333,34 +387,12 @@ def verify_internal_secret(slug: str, request: CredentialCheckRequest) -> dict[s
 def backup_tenant(slug: str, keep_days: int = 14) -> dict[str, str | int]:
     """Create an encrypted archive using only fixed helper image and paths."""
     _validate_slug(slug)
-    if not BACKUP_ENCRYPTION_KEY:
-        raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
-    tenant_dir = BACKUP_MOUNT / slug
-    tenant_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{slug}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    archive_name = f"{stem}.tar.gz.enc"
-    plain_name = f".{stem}.tar.gz.partial"
-    plain_path = tenant_dir / plain_name
-    archive_path = tenant_dir / archive_name
-    try:
-        _client().containers.run(
-            BACKUP_HELPER_IMAGE,
-            command=["tar", "czf", f"/backup/{slug}/{plain_name}", "-C", "/data", "."],
-            volumes={
-                _volume_name(slug): {"bind": "/data", "mode": "ro"},
-                BACKUP_DIR: {"bind": "/backup", "mode": "rw"},
-            },
-            remove=True,
-            network_disabled=True,
-            security_opt=["no-new-privileges:true"],
-            cap_drop=["ALL"],
-            read_only=True,
-            tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
-        )
-        encrypt_file(plain_path, archive_path, BACKUP_ENCRYPTION_KEY)
-    except Exception as exc:
-        plain_path.unlink(missing_ok=True)
-        archive_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=502, detail=f"Docker backup failed: {exc}") from exc
-    plain_path.unlink(missing_ok=True)
-    return {"archive": archive_name, "pruned": _prune_old_backups(slug, keep_days)}
+    return _backup_volume(_volume_name(slug), slug, keep_days, _client())
+
+
+@app.post("/v1/control-plane/backup")
+def backup_control_plane(keep_days: int = 14) -> dict[str, str | int]:
+    """Back up only this Compose project's gateway_data volume."""
+    client = _client()
+    volume_name = _control_plane_volume_name(client)
+    return _backup_volume(volume_name, CONTROL_PLANE_BACKUP_GROUP, keep_days, client)
