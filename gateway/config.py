@@ -134,6 +134,11 @@ INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
 # for every tenant and never sends this value outside gateway.
 TENANT_ENCRYPTION_MASTER_KEY = os.environ.get("WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY", "")
 
+# Number of external reverse proxies in front of Traefik that have been
+# explicitly configured as trusted in traefik.yml. A direct public Traefik
+# deployment has no such proxy, so the address appended on the right is used.
+TRUSTED_PROXY_HOPS = max(0, min(8, int(os.environ.get("WB_SAAS_TRUSTED_PROXY_HOPS", "0"))))
+
 # --------------------------------------------------------------------------
 # Control-plane database (see logic/db.py)
 # --------------------------------------------------------------------------

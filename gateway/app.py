@@ -70,12 +70,15 @@ def _client_ip(request: Request) -> str:
     reach it directly), so request.client.host is always Traefik's own
     container IP, never the real visitor's -- using it directly here would
     rate-limit every visitor as a single shared bucket instead of per-IP.
-    Traefik already forwards the real address (auth_verify() below relies
-    on its other X-Forwarded-* headers the same way), so read that instead,
-    falling back to request.client for the local-dev-without-a-proxy case."""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    Traefik appends the direct peer on the right. Never take the leftmost
+    value: it can have been supplied by an untrusted client. Operators who
+    place trusted proxies in front of Traefik set TRUSTED_PROXY_HOPS, which
+    selects the appropriate address from the right. A malformed/short chain
+    intentionally falls back to Traefik's shared address (stricter rate
+    limiting) rather than trusting an attacker-provided value."""
+    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    if len(forwarded) > config.TRUSTED_PROXY_HOPS:
+        return forwarded[-(config.TRUSTED_PROXY_HOPS + 1)]
     return request.client.host if request.client else "unknown"
 
 

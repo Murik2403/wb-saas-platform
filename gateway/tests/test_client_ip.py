@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import Request
 
@@ -30,16 +31,20 @@ class ClientIpTests(unittest.TestCase):
         request = _request([(b"x-forwarded-for", b"203.0.113.7")])
         self.assertEqual(app_module._client_ip(request), "203.0.113.7")
 
-    def test_takes_the_first_address_in_a_forwarded_chain(self) -> None:
-        # Traefik appends to X-Forwarded-For rather than replacing it, so a
-        # chain (client, any upstream proxies) is possible; the original
-        # client is always first.
+    def test_ignores_a_spoofed_leftmost_address(self) -> None:
+        # Traefik appends the direct peer to the right. A client-controlled
+        # value placed on the left must never select a new rate-limit bucket.
         request = _request([(b"x-forwarded-for", b"203.0.113.7, 10.0.0.1")])
-        self.assertEqual(app_module._client_ip(request), "203.0.113.7")
+        self.assertEqual(app_module._client_ip(request), "10.0.0.1")
 
     def test_falls_back_to_request_client_without_the_header(self) -> None:
         request = _request([])
         self.assertEqual(app_module._client_ip(request), "172.18.0.5")
+
+    def test_uses_configured_trusted_proxy_hops_from_the_right(self) -> None:
+        request = _request([(b"x-forwarded-for", b"198.51.100.4, 10.0.0.1")])
+        with patch.object(app_module.config, "TRUSTED_PROXY_HOPS", 1):
+            self.assertEqual(app_module._client_ip(request), "198.51.100.4")
 
 
 if __name__ == "__main__":

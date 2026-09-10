@@ -6,6 +6,12 @@
 entryPoints:
   web:
     address: ":80"
+    # Never enable forwardedHeaders.insecure in production. Direct clients
+    # cannot preserve a spoofed X-Forwarded-* chain; add trustedIPs here if
+    # an external load balancer or CDN is deliberately placed before Traefik.
+    forwardedHeaders:
+      insecure: false
+      notAppendXForwardedFor: false
     http:
       redirections:
         entryPoint:
@@ -13,6 +19,9 @@ entryPoints:
           scheme: https
   websecure:
     address: ":443"
+    forwardedHeaders:
+      insecure: false
+      notAppendXForwardedFor: false
 
 providers:
   docker:

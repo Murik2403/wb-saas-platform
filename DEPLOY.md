@@ -64,6 +64,16 @@ docker run --rm -v wb-tenant-data-<slug>:/data -v /opt/wb-saas/backups:/backup:r
 rm /opt/wb-saas/backups/<slug>/restore.tar.gz
 ```
 
+## Доверенные reverse proxy
+
+По умолчанию Traefik принимает публичный трафик напрямую, поэтому оставьте
+`WB_SAAS_TRUSTED_PROXY_HOPS=0`. Не включайте `forwardedHeaders.insecure`:
+подставленный клиентом `X-Forwarded-For` мог бы обойти rate-limit. Если перед
+Traefik ставится CDN или load balancer, сначала добавьте его фиксированные
+CIDR в `traefik/traefik.yml` → `forwardedHeaders.trustedIPs`, затем задайте
+в `.env` число таких proxy в `WB_SAAS_TRUSTED_PROXY_HOPS` и проверьте вход
+с поддельным `X-Forwarded-For`.
+
 ## Первый запуск
 
 ```bash
