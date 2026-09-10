@@ -8,9 +8,11 @@ functions.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from fastapi import HTTPException
@@ -85,6 +87,28 @@ class DeliverReportEmailTests(GatewayDbTestCase):
             with self.assertRaises(HTTPException) as ctx:
                 internal_routes.deliver_report_email(self.slug, "Отчёт", b"%PDF-1.4...", "report.pdf")
             self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_oversized_email_report_is_rejected_before_delivery(self) -> None:
+        class Upload:
+            filename = "report.pdf"
+
+            def __init__(self) -> None:
+                self.read_sizes: list[int] = []
+
+            async def read(self, size: int = -1) -> bytes:
+                self.read_sizes.append(size)
+                return b"x" * (internal_routes.MAX_REPORT_UPLOAD_BYTES + 1)
+
+        upload = Upload()
+        with mock.patch.object(internal_routes, "_secret_is_valid", return_value=True), \
+             mock.patch.object(internal_routes, "deliver_report_email") as deliver:
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(internal_routes.send_report_email(
+                    SimpleNamespace(headers={}), self.slug, "Отчёт", upload
+                ))
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(upload.read_sizes, [internal_routes.MAX_REPORT_UPLOAD_BYTES + 1])
+        deliver.assert_not_called()
 
 
 class TelegramLinkCodeTests(GatewayDbTestCase):
@@ -182,6 +206,28 @@ class DeliverReportTelegramTests(GatewayDbTestCase):
             with self.assertRaises(HTTPException) as ctx:
                 internal_routes.deliver_report_telegram(self.slug, "Отчёт", b"%PDF-1.4...", "report.pdf")
             self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_oversized_telegram_report_is_rejected_before_delivery(self) -> None:
+        class Upload:
+            filename = "report.pdf"
+
+            def __init__(self) -> None:
+                self.read_sizes: list[int] = []
+
+            async def read(self, size: int = -1) -> bytes:
+                self.read_sizes.append(size)
+                return b"x" * (internal_routes.MAX_REPORT_UPLOAD_BYTES + 1)
+
+        upload = Upload()
+        with mock.patch.object(internal_routes, "_secret_is_valid", return_value=True), \
+             mock.patch.object(internal_routes, "deliver_report_telegram") as deliver:
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(internal_routes.send_report_telegram(
+                    SimpleNamespace(headers={}), self.slug, "Отчёт", upload
+                ))
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(upload.read_sizes, [internal_routes.MAX_REPORT_UPLOAD_BYTES + 1])
+        deliver.assert_not_called()
 
 
 if __name__ == "__main__":

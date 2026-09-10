@@ -28,12 +28,21 @@ from logic import accounts, db as control_db
 logger = logging.getLogger("wb_saas_gateway.internal")
 
 router = APIRouter()
+MAX_REPORT_UPLOAD_BYTES = config.MAX_REPORT_UPLOAD_BYTES
 
 
 def _secret_is_valid(provided: str, slug: str = "") -> bool:
     # Empty INTERNAL_API_SECRET means the feature is unconfigured -- refuse
     # everything rather than accepting an empty-string secret as valid.
     return verify_credential(config.INTERNAL_API_SECRET, slug, provided)
+
+
+async def _read_report_pdf(file: UploadFile) -> bytes:
+    """Read one bounded report payload without materializing an unlimited file."""
+    pdf_bytes = await file.read(MAX_REPORT_UPLOAD_BYTES + 1)
+    if len(pdf_bytes) > MAX_REPORT_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="report file is too large")
+    return pdf_bytes
 
 
 def deliver_report_email(slug: str, report_name: str, pdf_bytes: bytes, filename: str) -> None:
@@ -64,7 +73,7 @@ async def send_report_email(
     if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
 
-    pdf_bytes = await file.read()
+    pdf_bytes = await _read_report_pdf(file)
     deliver_report_email(slug, report_name, pdf_bytes, file.filename or "report.pdf")
     return JSONResponse({"status": "ok"})
 
@@ -140,6 +149,6 @@ async def send_report_telegram(
     if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
 
-    pdf_bytes = await file.read()
+    pdf_bytes = await _read_report_pdf(file)
     deliver_report_telegram(slug, report_name, pdf_bytes, file.filename or "report.pdf")
     return JSONResponse({"status": "ok"})

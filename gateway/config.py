@@ -132,6 +132,9 @@ TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 # --------------------------------------------------------------------------
 
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+# Upper bound for one scheduled-report PDF accepted from a tenant.  The
+# gateway reads at most one byte beyond this value before rejecting it.
+MAX_REPORT_UPLOAD_BYTES = max(1, int(os.environ.get("WB_SAAS_MAX_REPORT_UPLOAD_BYTES", str(20 * 1024 * 1024))))
 
 # Deployment-only master material. provisioning.py derives a different key
 # for every tenant and never sends this value outside gateway.

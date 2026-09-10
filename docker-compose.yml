@@ -187,6 +187,7 @@ services:
       # report). Empty disables the feature entirely rather than accepting
       # an empty string as a valid secret -- see config.py's INTERNAL_API_SECRET.
       - WB_SAAS_INTERNAL_API_SECRET=${WB_SAAS_INTERNAL_API_SECRET:-}
+      - WB_SAAS_MAX_REPORT_UPLOAD_BYTES=${WB_SAAS_MAX_REPORT_UPLOAD_BYTES:-20971520}
     depends_on:
       provisioner:
         condition: service_healthy

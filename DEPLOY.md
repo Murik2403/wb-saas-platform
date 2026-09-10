@@ -264,6 +264,7 @@ PDF-отчёт и, опционально, отправлять его на emai
 
 ```
 WB_SAAS_INTERNAL_API_SECRET=<длинная случайная строка>
+WB_SAAS_MAX_REPORT_UPLOAD_BYTES=20971520
 ```
 
 Сгенерировать: `openssl rand -hex 32`. Пустое значение полностью отключает
