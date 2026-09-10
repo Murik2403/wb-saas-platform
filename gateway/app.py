@@ -58,6 +58,16 @@ app.mount(
 )
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
+
+def _render_auth_form_error(request: Request, template_name: str, context: dict, status_code: int):
+    """Re-render a login/registration form with a matching fresh CSRF cookie."""
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(
+        request, template_name, {**context, "csrf_token": csrf_token}, status_code=status_code
+    )
+    csrf.set_cookie(response, csrf_token)
+    return response
+
 # Brute-force protection on /login, /register, /forgot-password. In-memory
 # (see rate_limiter.py) rather than Redis -- a single gateway process is
 # the whole deployment, and a restart resetting counters is an acceptable
@@ -177,16 +187,12 @@ def register_submit(
     csrf_token: str = Form(""),
 ):
     if not auth_rate_limiter.is_allowed(f"register:{_client_ip(request)}"):
-        return templates.TemplateResponse(
-            request, "register.html",
-            {"error": "Слишком много попыток. Попробуйте позже.", "email": email, "csrf_token": csrf.get_or_create_token(request)},
-            status_code=429,
+        return _render_auth_form_error(
+            request, "register.html", {"error": "Слишком много попыток. Попробуйте позже.", "email": email}, 429
         )
     if not csrf.verify(request, csrf_token):
-        return templates.TemplateResponse(
-            request, "register.html",
-            {"error": "Форма устарела, попробуйте ещё раз.", "email": email, "csrf_token": csrf.get_or_create_token(request)},
-            status_code=400,
+        return _render_auth_form_error(
+            request, "register.html", {"error": "Форма устарела, попробуйте ещё раз.", "email": email}, 400
         )
     with control_db.connect() as conn:
         try:
@@ -194,10 +200,8 @@ def register_submit(
             slug = accounts.generate_unique_slug(conn, email)
             tenant_id = accounts.create_tenant_instance(conn, account_id, slug)
         except ValueError as exc:
-            return templates.TemplateResponse(
-                request, "register.html",
-                {"error": str(exc), "email": email, "csrf_token": csrf.get_or_create_token(request)},
-                status_code=400,
+            return _render_auth_form_error(
+                request, "register.html", {"error": str(exc), "email": email}, 400
             )
         token = accounts.create_session(conn, account_id)
 
@@ -235,25 +239,19 @@ def login_submit(
     csrf_token: str = Form(""),
 ):
     if not auth_rate_limiter.is_allowed(f"login:{_client_ip(request)}"):
-        return templates.TemplateResponse(
+        return _render_auth_form_error(
             request, "login.html",
-            {"error": "Слишком много попыток входа. Пожалуйста, подождите минуту.", "email": email, "next": next, "csrf_token": csrf.get_or_create_token(request)},
-            status_code=429,
+            {"error": "Слишком много попыток входа. Пожалуйста, подождите минуту.", "email": email, "next": next}, 429,
         )
     if not csrf.verify(request, csrf_token):
-        return templates.TemplateResponse(
-            request, "login.html",
-            {"error": "Форма устарела, попробуйте ещё раз.", "email": email, "next": next, "csrf_token": csrf.get_or_create_token(request)},
-            status_code=400,
+        return _render_auth_form_error(
+            request, "login.html", {"error": "Форма устарела, попробуйте ещё раз.", "email": email, "next": next}, 400
         )
     with control_db.connect() as conn:
         account = accounts.authenticate_account(conn, email, password)
         if account is None:
-            return templates.TemplateResponse(
-                request,
-                "login.html",
-                {"error": "Неверный email или пароль.", "email": email, "next": next, "csrf_token": csrf.get_or_create_token(request)},
-                status_code=400,
+            return _render_auth_form_error(
+                request, "login.html", {"error": "Неверный email или пароль.", "email": email, "next": next}, 400
             )
         token = accounts.create_session(conn, account["id"])
 
