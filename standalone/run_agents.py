@@ -1,7 +1,8 @@
 """Standalone entrypoint for personal WB/Ozon cabinets — no MARKETSHELPER required.
 
-Reads config.yaml (see config.example.yaml) and runs both agents for
-whichever marketplaces have credentials filled in. Dry-run by default.
+Reads an operator-managed secret config (see config.example.yaml) and runs
+both agents for whichever marketplaces have credentials filled in. Dry-run by
+default.
 
     python standalone/run_agents.py --once
     python standalone/run_agents.py --loop --interval 60
@@ -10,6 +11,7 @@ whichever marketplaces have credentials filled in. Dry-run by default.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -24,15 +26,22 @@ from agents.rules import AdRules, PriceRules
 from agents.runner import run_once
 from agents.store import AgentStore
 
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
+DEFAULT_CONFIG_PATH = Path.home() / ".wb-saas-secrets" / "standalone-config.yaml"
+
+
+def config_path() -> Path:
+    """Return the operator-managed secret file without placing it in the checkout."""
+    override = os.environ.get("WB_SAAS_STANDALONE_CONFIG_PATH")
+    return Path(override).expanduser() if override else DEFAULT_CONFIG_PATH
 
 
 def load_config() -> dict:
-    if not CONFIG_PATH.exists():
+    path = config_path()
+    if not path.exists():
         raise SystemExit(
-            f"{CONFIG_PATH} не найден. Скопируйте config.example.yaml -> config.yaml и заполните ключи."
+            f"{path} не найден. Скопируйте standalone/config.example.yaml в этот путь и заполните ключи."
         )
-    return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def main() -> int:

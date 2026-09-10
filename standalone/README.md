@@ -6,12 +6,24 @@
 
 ```bash
 pip install -r ../tenant-app/requirements.txt requests pyyaml
-cp config.example.yaml config.yaml
 ```
 
-Заполните `config.yaml` реальными ключами:
+Создайте рабочую копию шаблона **вне checkout**. В PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Path "$HOME\.wb-saas-secrets" -Force
+Copy-Item config.example.yaml "$HOME\.wb-saas-secrets\standalone-config.yaml"
+```
+
+Заполните `~/.wb-saas-secrets/standalone-config.yaml` реальными ключами:
 - **WB**: кабинет продавца → Настройки → Доступ к API → токен со scope «Цены и скидки», «Продвижение», «Аналитика».
 - **Ozon**: кабинет продавца → Настройки → Seller API → Client-Id + Api-Key.
+
+Для managed secret store или другого расположения задайте путь перед запуском:
+
+```powershell
+$env:WB_SAAS_STANDALONE_CONFIG_PATH = "C:\secure\standalone-config.yaml"
+```
 
 ## Запуск
 
