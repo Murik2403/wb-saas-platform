@@ -92,6 +92,9 @@ BACKUP_KEEP_DAYS = int(os.environ.get("WB_SAAS_BACKUP_KEEP_DAYS", "14"))
 
 # How long a reset link stays valid after being requested.
 PASSWORD_RESET_TTL_MINUTES = int(os.environ.get("WB_SAAS_PASSWORD_RESET_TTL_MINUTES", "60"))
+# Browser password changes use the HIBP range API. A short bounded timeout
+# avoids tying up a gateway worker when the remote service is unreachable.
+HIBP_PASSWORD_TIMEOUT_SECONDS = max(1, int(os.environ.get("WB_SAAS_HIBP_TIMEOUT_SECONDS", "3")))
 
 SMTP_HOST = os.environ.get("WB_SAAS_SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("WB_SAAS_SMTP_PORT", "587"))

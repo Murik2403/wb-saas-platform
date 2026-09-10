@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from unittest import mock
 
 from logic import accounts
@@ -19,12 +20,59 @@ class PasswordHashingTests(GatewayDbTestCase):
     def test_same_password_different_salt_each_time(self) -> None:
         h1, salt1 = accounts.hash_password("same password")
         h2, salt2 = accounts.hash_password("same password")
-        self.assertNotEqual(salt1, salt2)
-        self.assertNotEqual(h1, h2)  # different salts -> different hashes even for identical password
+        self.assertEqual(salt1, "")
+        self.assertEqual(salt2, "")
+        self.assertNotEqual(h1, h2)  # Argon2 PHC hashes embed distinct random salts
+
+    def test_new_password_hashes_use_argon2id(self) -> None:
+        password_hash, salt = accounts.hash_password("correct horse battery staple")
+        self.assertTrue(password_hash.startswith("$argon2id$"))
+        self.assertEqual(salt, "")
+
+    def test_legacy_pbkdf2_hash_still_verifies(self) -> None:
+        password = "legacy password"
+        salt = bytes.fromhex("00112233445566778899aabbccddeeff")
+        password_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, accounts.PBKDF2_ITERATIONS).hex()
+        self.assertTrue(accounts.verify_password(password, password_hash, salt.hex()))
 
     def test_password_issues_flags_short_password(self) -> None:
         self.assertTrue(accounts.password_issues("short"))
         self.assertEqual(accounts.password_issues("a long enough password"), [])
+
+
+class PasswordHashMigrationTests(GatewayDbTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.init_db()
+        self.email = "legacy@example.test"
+        self.password = "legacy password"
+        self.salt = "00112233445566778899aabbccddeeff"
+        password_hash = hashlib.pbkdf2_hmac(
+            "sha256", self.password.encode("utf-8"), bytes.fromhex(self.salt), accounts.PBKDF2_ITERATIONS
+        ).hex()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO accounts(email, password_hash, password_salt, status, pdn_consent_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'active', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
+                """,
+                (self.email, password_hash, self.salt),
+            )
+
+    def test_successful_legacy_login_upgrades_the_stored_hash(self) -> None:
+        with self.connect() as conn:
+            account = accounts.authenticate_account(conn, self.email, self.password)
+            upgraded = accounts.get_account_by_email(conn, self.email)
+        self.assertIsNotNone(account)
+        self.assertTrue(upgraded["password_hash"].startswith("$argon2id$"))
+        self.assertEqual(upgraded["password_salt"], "")
+
+    def test_wrong_legacy_password_does_not_rewrite_the_stored_hash(self) -> None:
+        with self.connect() as conn:
+            self.assertIsNone(accounts.authenticate_account(conn, self.email, "wrong password"))
+            unchanged = accounts.get_account_by_email(conn, self.email)
+        self.assertFalse(unchanged["password_hash"].startswith("$argon2id$"))
+        self.assertEqual(unchanged["password_salt"], self.salt)
 
 
 class EmailValidationTests(GatewayDbTestCase):

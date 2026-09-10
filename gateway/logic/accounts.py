@@ -1,18 +1,13 @@
 """Pure business logic for the gateway: accounts, passwords, sessions, and
 the tenant-provisioning state machine.
 
-Deliberately has ZERO imports of fastapi/docker/uvicorn/httpx -- everything
-here is stdlib + sqlite3, so it can be unit-tested in any Python environment
-(including one with no network access to install third-party packages,
-which is exactly the constraint this module was first written under). The
-FastAPI routes and Docker orchestration are thin wrappers around these
-functions; if a bug exists in "who can log in" or "whose data is whose",
-it should be catchable here, not only by manually clicking through the
-running site.
+Deliberately has ZERO imports of fastapi/docker/uvicorn/httpx. The FastAPI
+routes and Docker orchestration are thin wrappers around these functions; if
+a bug exists in "who can log in" or "whose data is whose", it should be
+catchable here, not only by manually clicking through the running site.
 
-Password hashing uses stdlib hashlib.pbkdf2_hmac (no bcrypt/argon2
-dependency required) -- this is a legitimate, long-standing recommended
-approach (Django defaulted to PBKDF2 for years), not a placeholder.
+New records use Argon2id. Legacy PBKDF2-HMAC-SHA256 records remain valid and
+are upgraded only after their owner proves knowledge of the password.
 """
 from __future__ import annotations
 
@@ -24,16 +19,26 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
+from argon2.low_level import Type
+
 import config
 
 PBKDF2_ITERATIONS = 260_000
 SESSION_TOKEN_BYTES = 32
 SESSION_TTL_HOURS = 24 * 30  # 30 days
-# A syntactically valid, fixed PBKDF2 record used only when an email has no
-# account.  Verifying against it keeps the negative path comparable to a
-# wrong-password attempt and avoids revealing account existence by timing.
-DUMMY_PASSWORD_SALT = "00000000000000000000000000000000"
-DUMMY_PASSWORD_HASH = "9ad2eb1b0f976b2020f598135c377cc2124bceed457718c8978b0fcdac15fc1d"
+ARGON2_HASHER = PasswordHasher(
+    time_cost=2,
+    memory_cost=19 * 1024,
+    parallelism=1,
+    type=Type.ID,
+)
+# A valid Argon2id record used only when an email has no account. Verifying
+# against it keeps the negative path comparable to a wrong-password attempt
+# and avoids leaking account existence through the hashing algorithm's cost.
+DUMMY_PASSWORD_SALT = ""
+DUMMY_PASSWORD_HASH = ARGON2_HASHER.hash("not-a-real-account-password")
 
 ACCOUNT_STATUSES = {"pending", "trialing", "active", "past_due", "canceled"}
 # trialing/active/past_due all grant dashboard access -- past_due is a
@@ -56,18 +61,39 @@ def _now_iso() -> str:
 # Passwords
 # --------------------------------------------------------------------------
 
+def _hash_legacy_pbkdf2(password: str, salt: bytes) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS).hex()
+
+
 def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
-    """Returns (password_hash_hex, salt_hex)."""
-    if salt is None:
-        salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-    return digest.hex(), salt.hex()
+    """Return a new Argon2id PHC record, or a legacy PBKDF2 record for verification."""
+    if salt is not None:
+        return _hash_legacy_pbkdf2(password, salt), salt.hex()
+    return ARGON2_HASHER.hash(password), ""
 
 
 def verify_password(password: str, password_hash_hex: str, salt_hex: str) -> bool:
-    salt = bytes.fromhex(salt_hex)
-    candidate, _ = hash_password(password, salt=salt)
+    if password_hash_hex.startswith("$argon2id$"):
+        try:
+            return bool(ARGON2_HASHER.verify(password_hash_hex, password))
+        except (InvalidHashError, VerificationError):
+            return False
+    try:
+        salt = bytes.fromhex(salt_hex)
+    except ValueError:
+        return False
+    candidate = _hash_legacy_pbkdf2(password, salt)
     return hmac.compare_digest(candidate, password_hash_hex)
+
+
+def needs_password_rehash(password_hash: str) -> bool:
+    """Whether a verified record is legacy or below current Argon2id settings."""
+    if not password_hash.startswith("$argon2id$"):
+        return True
+    try:
+        return ARGON2_HASHER.check_needs_rehash(password_hash)
+    except (InvalidHashError, VerificationError):
+        return True
 
 
 def password_issues(password: str) -> list[str]:
@@ -166,6 +192,13 @@ def authenticate_account(conn: sqlite3.Connection, email: str, password: str) ->
         return None
     if not verify_password(password, account["password_hash"], account["password_salt"]):
         return None
+    if needs_password_rehash(account["password_hash"]):
+        password_hash, salt = hash_password(password)
+        conn.execute(
+            "UPDATE accounts SET password_hash=?, password_salt=?, updated_at=? WHERE id=?",
+            (password_hash, salt, _now_iso(), int(account["id"])),
+        )
+        account = get_account_by_id(conn, int(account["id"]))
     return account
 
 

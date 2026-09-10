@@ -27,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 import config
 import mailer
+import password_breach
 from client_ip import client_ip as _client_ip
 from admin_routes import router as admin_router
 from billing_routes import router as billing_router
@@ -75,6 +76,23 @@ def _render_auth_form_error(request: Request, template_name: str, context: dict,
 # the whole deployment, and a restart resetting counters is an acceptable
 # trade-off for not adding infrastructure.
 auth_rate_limiter = RateLimiter(requests_per_window=10, window_seconds=60)
+
+
+def _password_policy_error(password: str) -> tuple[str, int] | None:
+    """Return a safe form error after an HIBP range check, if any.
+
+    This runs only at full form submission. It deliberately does not affect
+    login, and a remote failure occurs before a registration/reset DB write.
+    """
+    try:
+        count = password_breach.pwned_password_count(
+            password, timeout_seconds=config.HIBP_PASSWORD_TIMEOUT_SECONDS
+        )
+    except password_breach.PasswordBreachCheckError:
+        return "Не удалось проверить пароль по базе утечек. Попробуйте ещё раз.", 503
+    if count:
+        return "Этот пароль встречался в известных утечках. Выберите другой.", 400
+    return None
 
 
 def _current_account(request: Request):
@@ -196,6 +214,10 @@ def register_submit(
         return _render_auth_form_error(
             request, "register.html", {"error": "Форма устарела, попробуйте ещё раз.", "email": email}, 400
         )
+    policy_error = _password_policy_error(password)
+    if policy_error:
+        error, status_code = policy_error
+        return _render_auth_form_error(request, "register.html", {"error": error, "email": email}, status_code)
     with control_db.connect() as conn:
         try:
             account_id = accounts.create_account(conn, email, password, pdn_consent=bool(pdn_consent))
@@ -320,6 +342,15 @@ def reset_password_submit(
             "reset_password.html",
             {"token": token, "error": "Пароли не совпадают."},
             status_code=400,
+        )
+    policy_error = _password_policy_error(password)
+    if policy_error:
+        error, status_code = policy_error
+        return templates.TemplateResponse(
+            request,
+            "reset_password.html",
+            {"token": token, "error": error},
+            status_code=status_code,
         )
     with control_db.connect() as conn:
         try:
