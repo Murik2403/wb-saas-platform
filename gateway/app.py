@@ -27,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 import config
 import mailer
+from client_ip import client_ip as _client_ip
 from admin_routes import router as admin_router
 from billing_routes import router as billing_router
 from internal_routes import router as internal_router
@@ -62,24 +63,6 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "tem
 # the whole deployment, and a restart resetting counters is an acceptable
 # trade-off for not adding infrastructure.
 auth_rate_limiter = RateLimiter(requests_per_window=10, window_seconds=60)
-
-
-def _client_ip(request: Request) -> str:
-    """The gateway only ever receives traffic through Traefik (see
-    docker-compose.yml -- there's no ports mapping that would let a request
-    reach it directly), so request.client.host is always Traefik's own
-    container IP, never the real visitor's -- using it directly here would
-    rate-limit every visitor as a single shared bucket instead of per-IP.
-    Traefik appends the direct peer on the right. Never take the leftmost
-    value: it can have been supplied by an untrusted client. Operators who
-    place trusted proxies in front of Traefik set TRUSTED_PROXY_HOPS, which
-    selects the appropriate address from the right. A malformed/short chain
-    intentionally falls back to Traefik's shared address (stricter rate
-    limiting) rather than trusting an attacker-provided value."""
-    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
-    if len(forwarded) > config.TRUSTED_PROXY_HOPS:
-        return forwarded[-(config.TRUSTED_PROXY_HOPS + 1)]
-    return request.client.host if request.client else "unknown"
 
 
 def _current_account(request: Request):

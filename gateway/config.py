@@ -72,6 +72,9 @@ GRACE_PERIOD_DAYS = int(os.environ.get("WB_SAAS_GRACE_PERIOD_DAYS", "5"))
 
 YOOKASSA_SHOP_ID = os.environ.get("WB_SAAS_YOOKASSA_SHOP_ID", "")
 YOOKASSA_SECRET_KEY = os.environ.get("WB_SAAS_YOOKASSA_SECRET_KEY", "")
+YOOKASSA_WEBHOOK_CIDRS = tuple(
+    value.strip() for value in os.environ.get("WB_SAAS_YOOKASSA_WEBHOOK_CIDRS", "").split(",") if value.strip()
+)
 
 # --------------------------------------------------------------------------
 # Host-level backups (see ../scripts/backup_tenant_volumes.py)

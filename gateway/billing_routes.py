@@ -10,6 +10,7 @@ docstrings.
 from __future__ import annotations
 
 import logging
+import ipaddress
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,13 +20,27 @@ from fastapi.templating import Jinja2Templates
 
 import config
 import yookassa_client
+from client_ip import client_ip
 from logging_config import bind_account_context
 from logic import accounts, billing, csrf, db as control_db
+from rate_limiter import RateLimiter
 
 logger = logging.getLogger("wb_saas_gateway.billing")
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+webhook_global_limiter = RateLimiter(requests_per_window=120, window_seconds=60)
+webhook_source_limiter = RateLimiter(requests_per_window=20, window_seconds=60)
+
+
+def _webhook_source_allowed(source: str) -> bool:
+    if not config.YOOKASSA_WEBHOOK_CIDRS:
+        return False
+    try:
+        address = ipaddress.ip_address(source)
+        return any(address in ipaddress.ip_network(cidr) for cidr in config.YOOKASSA_WEBHOOK_CIDRS)
+    except ValueError:
+        return False
 
 
 def _current_account(request: Request):
@@ -171,6 +186,15 @@ async def yookassa_webhook(request: Request):
     only to look up the *real* status via an authenticated API call --
     nothing in the POST body itself is trusted for the actual decision.
     """
+    source = client_ip(request)
+    if not config.YOOKASSA_WEBHOOK_CIDRS:
+        logger.error("YooKassa webhook denied: source CIDRs are not configured")
+        return JSONResponse({"error": "webhook source allowlist is not configured"}, status_code=503)
+    if not _webhook_source_allowed(source):
+        logger.warning("YooKassa webhook denied from untrusted source %s", source)
+        return JSONResponse({"error": "untrusted webhook source"}, status_code=403)
+    if not webhook_global_limiter.is_allowed("global") or not webhook_source_limiter.is_allowed(source):
+        return JSONResponse({"error": "too many webhook requests"}, status_code=429)
     try:
         body = await request.json()
     except Exception:

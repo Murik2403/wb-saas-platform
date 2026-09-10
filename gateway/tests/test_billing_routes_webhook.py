@@ -35,7 +35,7 @@ from .base import GatewayDbTestCase  # noqa: E402
 _real_connect = control_db.connect  # captured before any test patches billing_routes.control_db.connect
 
 
-def _post_request(payload: dict) -> Request:
+def _post_request(payload: dict, client=("198.51.100.10", 12345)) -> Request:
     body = json.dumps(payload).encode("utf-8")
     sent = {"done": False}
 
@@ -50,11 +50,12 @@ def _post_request(payload: dict) -> Request:
         "method": "POST",
         "path": "/webhooks/yookassa",
         "headers": [(b"content-type", b"application/json")],
+        "client": client,
     }
     return Request(scope, receive)
 
 
-def _raw_body_request(raw: bytes) -> Request:
+def _raw_body_request(raw: bytes, client=("198.51.100.10", 12345)) -> Request:
     sent = {"done": False}
 
     async def receive():
@@ -63,7 +64,7 @@ def _raw_body_request(raw: bytes) -> Request:
         sent["done"] = True
         return {"type": "http.request", "body": raw, "more_body": False}
 
-    scope = {"type": "http", "method": "POST", "path": "/webhooks/yookassa", "headers": []}
+    scope = {"type": "http", "method": "POST", "path": "/webhooks/yookassa", "headers": [], "client": client}
     return Request(scope, receive)
 
 
@@ -87,6 +88,13 @@ class YooKassaWebhookTests(GatewayDbTestCase):
         )
         self.connect_patcher.start()
         self.addCleanup(self.connect_patcher.stop)
+        self.allowlist_patcher = mock.patch.object(
+            billing_routes.config, "YOOKASSA_WEBHOOK_CIDRS", ("198.51.100.0/24",)
+        )
+        self.allowlist_patcher.start()
+        self.addCleanup(self.allowlist_patcher.stop)
+        billing_routes.webhook_global_limiter.clear()
+        billing_routes.webhook_source_limiter.clear()
 
     def _call(self, request: Request):
         return asyncio.run(billing_routes.yookassa_webhook(request))
@@ -154,6 +162,18 @@ class YooKassaWebhookTests(GatewayDbTestCase):
     def test_invalid_json_returns_400(self) -> None:
         response = self._call(_raw_body_request(b"not json"))
         self.assertEqual(response.status_code, 400)
+
+    def test_unconfigured_allowlist_never_calls_yookassa(self) -> None:
+        with mock.patch.object(billing_routes.config, "YOOKASSA_WEBHOOK_CIDRS", ()), mock.patch.object(yookassa_client, "get_payment") as get_payment:
+            response = self._call(_post_request({"object": {"id": "yk-1"}}))
+        self.assertEqual(response.status_code, 503)
+        get_payment.assert_not_called()
+
+    def test_untrusted_source_never_calls_yookassa(self) -> None:
+        with mock.patch.object(yookassa_client, "get_payment") as get_payment:
+            response = self._call(_post_request({"object": {"id": "yk-1"}}, client=("203.0.113.9", 12345)))
+        self.assertEqual(response.status_code, 403)
+        get_payment.assert_not_called()
 
     def test_missing_payment_id_returns_400(self) -> None:
         response = self._call(_post_request({"object": {}}))
