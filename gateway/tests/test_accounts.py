@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest import mock
+
 from logic import accounts
 
 from .base import GatewayDbTestCase
@@ -79,6 +81,14 @@ class AccountLifecycleTests(GatewayDbTestCase):
     def test_authenticate_unknown_email_fails(self) -> None:
         with self.connect() as conn:
             self.assertIsNone(accounts.authenticate_account(conn, "nobody@shop.ru", "password1234"))
+
+    def test_authenticate_unknown_email_runs_dummy_password_verification(self) -> None:
+        with mock.patch.object(accounts, "verify_password", return_value=False) as verify_password:
+            with self.connect() as conn:
+                self.assertIsNone(accounts.authenticate_account(conn, "nobody@shop.ru", "password1234"))
+        verify_password.assert_called_once_with(
+            "password1234", accounts.DUMMY_PASSWORD_HASH, accounts.DUMMY_PASSWORD_SALT
+        )
 
     def test_duplicate_email_rejected_case_insensitively(self) -> None:
         with self.connect() as conn:

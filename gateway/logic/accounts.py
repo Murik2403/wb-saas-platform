@@ -29,6 +29,11 @@ import config
 PBKDF2_ITERATIONS = 260_000
 SESSION_TOKEN_BYTES = 32
 SESSION_TTL_HOURS = 24 * 30  # 30 days
+# A syntactically valid, fixed PBKDF2 record used only when an email has no
+# account.  Verifying against it keeps the negative path comparable to a
+# wrong-password attempt and avoids revealing account existence by timing.
+DUMMY_PASSWORD_SALT = "00000000000000000000000000000000"
+DUMMY_PASSWORD_HASH = "9ad2eb1b0f976b2020f598135c377cc2124bceed457718c8978b0fcdac15fc1d"
 
 ACCOUNT_STATUSES = {"pending", "trialing", "active", "past_due", "canceled"}
 # trialing/active/past_due all grant dashboard access -- past_due is a
@@ -157,6 +162,7 @@ def get_account_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row | 
 def authenticate_account(conn: sqlite3.Connection, email: str, password: str) -> sqlite3.Row | None:
     account = get_account_by_email(conn, email)
     if account is None:
+        verify_password(password, DUMMY_PASSWORD_HASH, DUMMY_PASSWORD_SALT)
         return None
     if not verify_password(password, account["password_hash"], account["password_salt"]):
         return None
