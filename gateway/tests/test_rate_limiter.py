@@ -48,6 +48,15 @@ class RateLimiterTests(unittest.TestCase):
         with mock.patch("rate_limiter.time.monotonic", return_value=1061.0):
             self.assertTrue(limiter.is_allowed(key))
 
+    def test_expired_keys_are_pruned_without_revisiting_them(self) -> None:
+        limiter = RateLimiter(requests_per_window=1, window_seconds=60)
+        with mock.patch("rate_limiter.time.monotonic", return_value=1000.0):
+            limiter.is_allowed("old-a")
+            limiter.is_allowed("old-b")
+        with mock.patch("rate_limiter.time.monotonic", return_value=1061.0):
+            limiter.is_allowed("current")
+        self.assertEqual(set(limiter._history), {"current"})
+
     def test_clear_resets_all_state(self) -> None:
         limiter = RateLimiter(requests_per_window=1, window_seconds=60)
         key = "1.2.3.4"
