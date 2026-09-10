@@ -14,8 +14,11 @@ COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir 'pip>=26.2,<27' && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN chmod +x docker-entrypoint.sh \
-    && mkdir -p /app/data
+RUN groupadd --gid 10001 appgroup \
+    && useradd --uid 10001 --gid appgroup --create-home --home-dir /app appuser \
+    && chmod +x docker-entrypoint.sh \
+    && mkdir -p /app/data \
+    && chown -R appuser:appgroup /app
 
 # Streamlit's own liveness endpoint; Traefik/Docker use this to know the
 # container is actually ready to serve, not just "process started".
@@ -27,5 +30,7 @@ EXPOSE 8501
 # One tenant's data must survive `docker rm`+re-`run` (image upgrades) --
 # only the named volume mounted here at deploy time is persistent.
 VOLUME ["/app/data"]
+
+USER appuser
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

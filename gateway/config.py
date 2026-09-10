@@ -31,6 +31,11 @@ TENANT_INTERNAL_PORT = int(os.environ.get("WB_SAAS_TENANT_INTERNAL_PORT", "8501"
 TENANT_MEM_LIMIT = os.environ.get("WB_SAAS_TENANT_MEM_LIMIT", "768m")
 TENANT_CPU_QUOTA = float(os.environ.get("WB_SAAS_TENANT_CPU_QUOTA", "1.0"))  # in CPU cores
 
+# The gateway never talks to the Docker daemon. It can only call this
+# internal service, which validates and executes the small tenant lifecycle
+# contract while holding the host socket.
+PROVISIONER_URL = os.environ.get("WB_SAAS_PROVISIONER_URL", "http://provisioner:8001")
+
 # Name of the Traefik ForwardAuth middleware (defined once, via labels on
 # the gateway service in docker-compose.yml) that every tenant router
 # references. Must match exactly what's in docker-compose.yml.

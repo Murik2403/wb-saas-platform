@@ -1,27 +1,30 @@
-"""Read-only post-migration check. Prints no tokens or container environment."""
+"""Read-only credential migration check without Docker access in gateway."""
 from pathlib import Path
 import sys
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 import config
-import provisioning
-from internal_auth import verify_credential
+from internal_auth import tenant_credential
 from logic import db
 
 
-def main():
+def main() -> int:
     if not config.INTERNAL_API_SECRET:
         print("Gateway master key is not configured")
         return 1
-    client = provisioning._client()
     with db.connect() as conn:
         slugs = [row["slug"] for row in conn.execute("SELECT slug FROM tenant_instances WHERE status='running'")]
     failed = False
     for slug in slugs:
         try:
-            container = client.containers.get(f"wb-tenant-{slug}")
-            env = dict(value.split("=", 1) for value in container.attrs["Config"]["Env"] if "=" in value)
-            valid = verify_credential(config.INTERNAL_API_SECRET, slug, env.get("WB_SAAS_INTERNAL_API_SECRET", ""))
+            response = requests.post(
+                f"{config.PROVISIONER_URL.rstrip('/')}/v1/tenants/{slug}/verify-internal-secret",
+                json={"expected_secret": tenant_credential(config.INTERNAL_API_SECRET, slug)},
+                timeout=20,
+            )
+            valid = response.ok and response.json().get("valid") is True
         except Exception:
             valid = False
         print(f"{slug}: {'OK' if valid else 'MIGRATION REQUIRED'}")

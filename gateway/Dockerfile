@@ -12,13 +12,19 @@ COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir 'pip>=26.2,<27' && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN mkdir -p /app/data && chmod +x docker-entrypoint.sh
+RUN groupadd --gid 10001 appgroup \
+    && useradd --uid 10001 --gid appgroup --create-home --home-dir /app appuser \
+    && mkdir -p /app/data \
+    && chmod +x docker-entrypoint.sh \
+    && chown -R appuser:appgroup /app
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
     CMD python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"
 
 EXPOSE 8000
 
-# Needs the host's Docker socket mounted (see docker-compose.yml) to create
-# and manage tenant containers -- that's provisioning.py's job.
+USER appuser
+
+# Tenant lifecycle requests go to the private provisioner service; this image
+# deliberately never receives the host Docker socket.
 ENTRYPOINT ["./docker-entrypoint.sh"]

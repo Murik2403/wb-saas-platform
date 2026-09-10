@@ -15,6 +15,11 @@ networks:
     ipam:
       config:
         - subnet: fd00:dead:beef::/64
+  provisioning_net:
+    # Only gateway and provisioner can communicate here. It has no route
+    # outside Docker and no published port, so tenant and edge containers
+    # cannot reach the Docker-control boundary.
+    internal: true
 
 volumes:
   traefik_letsencrypt:
@@ -22,6 +27,43 @@ volumes:
   postgres_data:
 
 services:
+  provisioner:
+    build: ./provisioner
+    restart: unless-stopped
+    networks:
+      - provisioning_net
+    volumes:
+      # The sole Docker socket mount in this compose project. app.py accepts
+      # a fixed tenant lifecycle contract rather than forwarding Docker API
+      # requests, so a gateway RCE cannot create arbitrary host containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The daemon sees the host path from WB_SAAS_BACKUP_DIR while this
+      # container sees the same fixed location at /backups for retention.
+      - ${WB_SAAS_BACKUP_DIR:-/opt/wb-saas/backups}:/backups
+    environment:
+      - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
+      - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
+      - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:latest}
+      - WB_SAAS_TENANT_INTERNAL_PORT=${WB_SAAS_TENANT_INTERNAL_PORT:-8501}
+      - WB_SAAS_TENANT_MEM_LIMIT=${WB_SAAS_TENANT_MEM_LIMIT:-768m}
+      - WB_SAAS_TENANT_CPU_QUOTA=${WB_SAAS_TENANT_CPU_QUOTA:-1.0}
+      - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@file
+      - WB_SAAS_TLS_CERT_RESOLVER=http-resolver
+      - WB_SAAS_BACKUP_DIR=${WB_SAAS_BACKUP_DIR:-/opt/wb-saas/backups}
+      - WB_SAAS_TRAEFIK_CONTAINER_NAME=${WB_SAAS_TRAEFIK_CONTAINER_NAME:-wb-saas-traefik-1}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   # Opt-in (profiles: [postgres]) -- a bare `docker compose up -d` never
   # starts this. Only relevant once WB_SAAS_DB_BACKEND=postgres is actually
   # set (see DEPLOY.md's "Switching the control-plane db to Postgres");
@@ -81,11 +123,8 @@ services:
     restart: unless-stopped
     networks:
       - wbsaas_net
+      - provisioning_net
     volumes:
-      # Needed so provisioning.py (docker-py) can create/start/stop tenant
-      # containers on the host's own Docker daemon -- the gateway container
-      # doesn't run Docker itself, it just talks to the host's socket.
-      - /var/run/docker.sock:/var/run/docker.sock
       - gateway_data:/app/data
       # scripts/run_billing_cycle.py and scripts/backup_tenant_volumes.py both
       # read the real accounts DB (logic/db.py), which only exists inside
@@ -105,6 +144,7 @@ services:
       - WB_SAAS_TENANT_MEM_LIMIT=${WB_SAAS_TENANT_MEM_LIMIT:-768m}
       - WB_SAAS_TENANT_CPU_QUOTA=${WB_SAAS_TENANT_CPU_QUOTA:-1.0}
       - WB_SAAS_PROVISION_TIMEOUT=${WB_SAAS_PROVISION_TIMEOUT:-180}
+      - WB_SAAS_PROVISIONER_URL=http://provisioner:8001
       - WB_SAAS_COOKIE_SECURE=${WB_SAAS_COOKIE_SECURE:-1}
       - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@file
       - WB_SAAS_TLS_CERT_RESOLVER=letsencrypt
@@ -144,6 +184,17 @@ services:
       # report). Empty disables the feature entirely rather than accepting
       # an empty string as a valid secret -- see config.py's INTERNAL_API_SECRET.
       - WB_SAAS_INTERNAL_API_SECRET=${WB_SAAS_INTERNAL_API_SECRET:-}
+    depends_on:
+      provisioner:
+        condition: service_healthy
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     labels:
       - traefik.enable=true
       - traefik.http.routers.gateway.rule=Host(`${WB_SAAS_PARENT_DOMAIN}`)
