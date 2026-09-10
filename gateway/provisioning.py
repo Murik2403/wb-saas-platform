@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import time
 
+from internal_auth import tenant_credential
 import config
 from logic import accounts, billing, db as control_db
 
@@ -134,13 +135,13 @@ def container_labels(slug: str, require_auth: bool = True) -> dict[str, str]:
     return labels
 
 
-def _run_tenant_container(client, slug: str, container_name: str, require_auth: bool = True):
+def _run_tenant_container(client, slug: str, container_name: str, require_auth: bool = True, image: str | None = None):
     network_name = _tenant_network_name(slug)
     ensure_tenant_network(client, slug)
     _attach_traefik(client, network_name)
     volume = ensure_volume(client, slug)
     return client.containers.run(
-        config.TENANT_IMAGE,
+        image or config.TENANT_IMAGE,
         name=container_name,
         detach=True,
         network=network_name,
@@ -163,7 +164,8 @@ def _run_tenant_container(client, slug: str, container_name: str, require_auth: 
             "WB_SAAS_LOGOUT_URL": config.logout_url(),
             "WB_SAAS_TENANT_SLUG": slug,
             "WB_SAAS_INTERNAL_API_URL": config.base_url(),
-            "WB_SAAS_INTERNAL_API_SECRET": config.INTERNAL_API_SECRET,
+            "WB_SAAS_INTERNAL_API_SECRET": tenant_credential(config.INTERNAL_API_SECRET, slug),
+            "MH_ALLOWED_HOSTS": f"localhost,127.0.0.1,{config.tenant_host(slug)}",
         },
     )
 
@@ -332,7 +334,7 @@ def upgrade_tenant(slug: str, image: str | None = None) -> bool:
         client.images.pull(target_image)
     except Exception:
         logger.info("upgrade_tenant: pull skipped for %s (using locally-built image)", target_image)
-    _run_tenant_container(client, slug, container_name)
+    _run_tenant_container(client, slug, container_name, image=target_image)
     healthy = _wait_until_healthy(client, container_name, config.PROVISION_HEALTH_TIMEOUT_SECONDS)
     if healthy:
         # Persist 'running' so Traefik's ForwardAuth (app.py's auth_verify,

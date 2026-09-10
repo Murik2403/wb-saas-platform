@@ -14,6 +14,13 @@ openpyxl>=3.1
 matplotlib>=3.8,<4
 reportlab>=4.0,<5
 
+# JSON API for the Next.js frontend migration (api_server.py) -- runs
+# alongside app.py (Streamlit), same DB, same business-logic modules. See
+# memory/project_marketshelper_frontend_migration.md. Pinned to the same
+# major version gateway/ already runs to keep behavior consistent.
+fastapi>=0.141,<0.142
+uvicorn[standard]>=0.52,<0.53
+
 # Test-only, but installed unconditionally like everything else here (no
 # separate dev-requirements file in this repo). Needed because
 # agents/tests/ and reports/tests/ are written as plain pytest-style
@@ -21,4 +28,4 @@ reportlab>=4.0,<5
 # which uses unittest.TestCase. `python -m unittest discover` silently finds
 # zero tests in those two directories; pytest picks up both styles at once
 # and is what CI now runs (see ../.github/workflows/ci.yml).
-pytest>=8,<9
+pytest>=9.0.3,<10

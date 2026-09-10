@@ -134,6 +134,7 @@ services:
       # Empty token disables the relay; gateway starts and runs normally
       # either way.
       - WB_SAAS_TELEGRAM_BOT_TOKEN=${WB_SAAS_TELEGRAM_BOT_TOKEN:-}
+      - WB_SAAS_TELEGRAM_BOT_USERNAME=${WB_SAAS_TELEGRAM_BOT_USERNAME:-}
       - WB_SAAS_TELEGRAM_OWNER_CHAT_ID=${WB_SAAS_TELEGRAM_OWNER_CHAT_ID:-}
       # Admin panel (/admin) -- comma-separated allowlist, empty disables it
       # entirely even for a logged-in account. See config.py's ADMIN_EMAILS.

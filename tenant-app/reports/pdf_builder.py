@@ -7,7 +7,11 @@ document with a custom branded canvas and elegant layout.
 from __future__ import annotations
 
 import io
+import json
 import os
+import subprocess
+import sys
+import tempfile
 from datetime import date, datetime
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
@@ -208,6 +212,8 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
         Spacer(1, 0.4 * cm),
     ]
 
+    isolated = os.environ.get("WB_SAAS_REPORT_ISOLATED_METRICS", "0") == "1"
+
     for idx, code in enumerate(metric_codes):
         if idx > 0:
             story.append(
@@ -220,17 +226,48 @@ def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date)
                 )
             )
 
-        result = build_metric(code, start, end)
-        img_buffer = io.BytesIO()
-        result.figure.savefig(img_buffer, format="png", dpi=150, bbox_inches="tight")
-        plt.close(result.figure)
-        img_buffer.seek(0)
+        if isolated:
+            with tempfile.TemporaryDirectory(prefix="marketshelper-report-") as tmp_dir:
+                image_path = os.path.join(tmp_dir, "metric.png")
+                result_path = os.path.join(tmp_dir, "metric.json")
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "reports.metric_worker",
+                        code,
+                        start.isoformat(),
+                        end.isoformat(),
+                        image_path,
+                        result_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                    check=False,
+                )
+                if completed.returncode != 0:
+                    detail = (completed.stderr or completed.stdout or "неизвестная ошибка").strip()
+                    raise RuntimeError(f"Раздел «{code}» не сформирован: {detail[-800:]}")
+                payload = json.loads(open(result_path, encoding="utf-8").read())
+                image_bytes = open(image_path, "rb").read()
+            result_title = str(payload["title"])
+            result_summary = str(payload["summary"])
+            img_buffer = io.BytesIO(image_bytes)
+        else:
+            result = build_metric(code, start, end)
+            img_buffer = io.BytesIO()
+            result.figure.savefig(img_buffer, format="png", dpi=150, bbox_inches="tight")
+            plt.close(result.figure)
+            img_buffer.seek(0)
+            result_title = result.title
+            result_summary = result.summary
 
         metric_story = [
-            Paragraph(escape(result.title), heading_style),
+            Paragraph(escape(result_title), heading_style),
             RLImage(img_buffer, width=17 * cm, height=17 * cm * 0.45),
             Spacer(1, 0.2 * cm),
-            _create_summary_box(result.summary, summary_style),
+            _create_summary_box(result_summary, summary_style),
             Spacer(1, 0.4 * cm),
         ]
         story.append(KeepTogether(metric_story))

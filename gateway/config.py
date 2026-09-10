@@ -103,6 +103,11 @@ SMTP_FROM_EMAIL = os.environ.get("WB_SAAS_SMTP_FROM_EMAIL", "no-reply@" + PARENT
 # unconfigured SMTP_HOST in mailer.py.
 TELEGRAM_BOT_TOKEN = os.environ.get("WB_SAAS_TELEGRAM_BOT_TOKEN", "")
 
+# Public @username from BotFather. Keeping it in configuration lets tenant
+# pages build the one-click deep link without blocking on Telegram's getMe
+# endpoint, which can be unreachable from the host for tens of seconds.
+TELEGRAM_BOT_USERNAME = os.environ.get("WB_SAAS_TELEGRAM_BOT_USERNAME", "").lstrip("@")
+
 # The operator's own numeric Telegram chat id (from @userinfobot) -- every
 # message a customer sends the bot is relayed here so a human sees it.
 TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")

@@ -31,7 +31,8 @@ from .base import GatewayDbTestCase  # noqa: E402
 class SecretIsValidTests(unittest.TestCase):
     def test_correct_secret_is_valid(self) -> None:
         with mock.patch.object(config, "INTERNAL_API_SECRET", "s3cr3t"):
-            self.assertTrue(internal_routes._secret_is_valid("s3cr3t"))
+            from internal_auth import tenant_credential
+            self.assertTrue(internal_routes._secret_is_valid(tenant_credential("s3cr3t", "shop"), "shop"))
 
     def test_wrong_secret_is_invalid(self) -> None:
         with mock.patch.object(config, "INTERNAL_API_SECRET", "s3cr3t"):

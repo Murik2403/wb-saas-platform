@@ -26,6 +26,7 @@ from db import (
     process_sales_fifo_events,
 )
 from wb_api import WBAPI, flatten_ad_stats
+from sync_lock import sync_lock
 
 
 def _incremental_from(table: str, default_days: int) -> str:
@@ -62,6 +63,11 @@ def _financial_incremental_range(default_days: int, overlap_days: int = 14) -> t
 
 
 def sync_all() -> dict[str, int | str]:
+    with sync_lock():
+        return _sync_all_locked()
+
+
+def _sync_all_locked() -> dict[str, int | str]:
     init_db()
     ensure_financial_schema()
     settings = load_settings()
@@ -130,6 +136,23 @@ def sync_all() -> dict[str, int | str]:
             # COGS tracking must not block operational WB synchronization.
             result["fifo_error"] = str(exc)[:180]
 
+        _sync_ads(api, settings, result)
+        result["cleaned_cost_rows"] = cleanup_orphan_zero_costs()
+
+        details = ", ".join(f"{k}: {v}" for k, v in result.items())
+        status = "partial" if any(k.endswith("_error") or k.endswith("_skipped") for k in result) or result.get("fifo_errors", 0) else "success"
+        finish_sync_log(log_id, status, details)
+        return result
+    except Exception as exc:
+        details = ", ".join(f"{k}: {v}" for k, v in result.items())
+        finish_sync_log(log_id, "error", f"{details}; error: {exc}" if details else str(exc))
+        raise
+
+
+
+
+def _sync_ads(api, settings, result):
+    try:
         campaign_ids = api.get_campaign_ids()
         ad_days = max(1, min(int(settings.get("advert_history_days", 31)), 365))
         ad_end = datetime.now(ZoneInfo("Europe/Moscow")).date()
@@ -150,18 +173,31 @@ def sync_all() -> dict[str, int | str]:
             result["ads"] = 0
             result["ads_skipped"] = "empty API response with live campaigns -- kept existing data"
         result["campaigns"] = len(campaign_ids)
-        result["cleaned_cost_rows"] = cleanup_orphan_zero_costs()
-
-        details = ", ".join(f"{k}: {v}" for k, v in result.items())
-        finish_sync_log(log_id, "success", details)
-        return result
     except Exception as exc:
-        finish_sync_log(log_id, "error", str(exc))
-        raise
-
+        # Keep existing ad history and report the sections already saved.
+        result["ads_error"] = str(exc)[:400]
 
 
 def sync_finances(days: int = 90) -> dict[str, int]:
+    with sync_lock():
+        return _sync_finances_locked(days)
+
+
+def sync_ads_only() -> dict[str, int | str]:
+    with sync_lock():
+        token = get_token()
+        if not token:
+            raise RuntimeError("Сначала подключите WB API")
+        init_db()
+        log_id = start_sync_log()
+        result = {"scope": "ads"}
+        _sync_ads(WBAPI(token), load_settings(), result)
+        status = "partial" if "ads_error" in result or "ads_skipped" in result else "success"
+        finish_sync_log(log_id, status, ", ".join(f"{key}: {value}" for key, value in result.items()))
+        return result
+
+
+def _sync_finances_locked(days: int) -> dict[str, int]:
     init_db()
     ensure_financial_schema()
     token = get_token()

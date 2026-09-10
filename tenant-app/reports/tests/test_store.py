@@ -83,3 +83,38 @@ def test_set_last_run(tmp_path):
     store.set_last_run(def_id, "2026-08-23T08:00:00")
     definitions = store.list_definitions()
     assert definitions[0]["last_run_at"] == "2026-08-23T08:00:00"
+
+
+def test_queued_run_can_be_claimed_and_completed(tmp_path):
+    store = make_store(tmp_path)
+    def_id = store.add_definition(name="Большой", metrics=["sales_orders", "pnl"], schedule_type="weekly", schedule_time="09:00")
+    run_id = store.enqueue_run(def_id, period_days=7, delivery_requested=True)
+
+    queued = store.list_runs()[0]
+    assert queued["status"] == "queued"
+    assert queued["definition_name"] == "Большой"
+
+    job = store.claim_next_queued()
+    assert job is not None
+    assert job["run_id"] == run_id
+    assert job["period_days"] == 7
+    assert job["delivery_requested"] == 1
+    assert store.list_runs()[0]["status"] == "running"
+
+    store.finish_run(run_id, status="ok", file_path="/tmp/report.pdf")
+    store.finish_delivery(run_id, status="ok")
+    completed = store.list_runs()[0]
+    assert completed["status"] == "ok"
+    assert completed["delivery_status"] == "ok"
+
+
+def test_interrupted_run_is_requeued_after_restart(tmp_path):
+    store = make_store(tmp_path)
+    def_id = store.add_definition(name="Прерванный", metrics=["ads"], schedule_type="daily", schedule_time="09:00")
+    run_id = store.start_run(def_id)
+
+    assert store.requeue_interrupted_runs() == 1
+    run = store.list_runs()[0]
+    assert run["id"] == run_id
+    assert run["status"] == "queued"
+    assert "прервана" in run["error"]

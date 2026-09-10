@@ -75,6 +75,22 @@ class PreviewReconciliationTests(DbTestCase):
         self.assertEqual(row["difference_units"], 6)
         self.assertEqual(row["safe_to_reconcile"], 0)
 
+    def test_wb_transit_is_reported_but_does_not_create_a_fifo_difference(self) -> None:
+        """FIFO wb_units represents only WB-available stock, not customer transit."""
+        with connect() as conn:
+            _create_finished_goods_layer(conn, NM_ID, "ART-1", "Тест", "opening", "seed:1", "2026-01-01", 5, 40.0, "wb")
+            conn.execute(
+                """
+                INSERT INTO stocks(
+                    snapshot_at,nm_id,chrt_id,warehouse_id,warehouse_name,region_name,
+                    quantity,in_way_to_client,in_way_from_client,raw_json
+                ) VALUES ('2026-09-09T22:38:00',?,0,-999999,'WB','',5,7,3,'{}')
+                """,
+                (NM_ID,),
+            )
+        preview = preview_finished_goods_reconciliation()
+        self.assertTrue(preview.empty)
+
     def test_matching_physical_and_layered_units_produce_no_row(self) -> None:
         with connect() as conn:
             _create_finished_goods_layer(conn, NM_ID, "ART-1", "Тест", "opening", "seed:1", "2026-01-01", 5, 40.0, "ready")

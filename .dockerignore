@@ -1,0 +1,34 @@
+# Root-context builds (notably mh-redesign-lab/Dockerfile.tenant-staging)
+# must never embed an operator's tenant database, backups or credentials.
+.git
+**/.env
+**/.env.*
+**/.wb_token
+**/.ozon_credentials
+**/data
+**/.venv
+**/venv
+**/node_modules
+**/.next
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/*.sqlite3
+**/*.sqlite3-*
+**/*.db
+**/logs
+**/screenshots
+**/*.log
+.audit-*
+.audit2-*
+.deploy-context-*
+.production-recommendations-*
+.verify-*
+.serena
+.codex
+tmp-pytest-*
+tmp/
+.tmp*
+**/*.tar
+**/*.tar.gz

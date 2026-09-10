@@ -44,7 +44,11 @@ CREATE TABLE IF NOT EXISTS report_runs (
     finished_at TEXT,
     status TEXT NOT NULL,           -- "ok" | "error"
     file_path TEXT,
-    error TEXT
+    error TEXT,
+    period_days INTEGER,
+    delivery_requested INTEGER NOT NULL DEFAULT 0,
+    delivery_status TEXT NOT NULL DEFAULT 'not_requested',
+    delivery_error TEXT
 );
 """
 
@@ -64,6 +68,15 @@ class ReportStore:
                 conn.execute("ALTER TABLE report_definitions ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 0")
             if "telegram_enabled" not in existing_columns:
                 conn.execute("ALTER TABLE report_definitions ADD COLUMN telegram_enabled INTEGER NOT NULL DEFAULT 0")
+            run_columns = {row[1] for row in conn.execute("PRAGMA table_info(report_runs)")}
+            if "period_days" not in run_columns:
+                conn.execute("ALTER TABLE report_runs ADD COLUMN period_days INTEGER")
+            if "delivery_requested" not in run_columns:
+                conn.execute("ALTER TABLE report_runs ADD COLUMN delivery_requested INTEGER NOT NULL DEFAULT 0")
+            if "delivery_status" not in run_columns:
+                conn.execute("ALTER TABLE report_runs ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'not_requested'")
+            if "delivery_error" not in run_columns:
+                conn.execute("ALTER TABLE report_runs ADD COLUMN delivery_error TEXT")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -108,6 +121,10 @@ class ReportStore:
         with self._conn() as conn:
             conn.execute("UPDATE report_definitions SET last_run_at = ? WHERE id = ?", (when, definition_id))
 
+    def set_enabled(self, definition_id: int, enabled: bool) -> None:
+        with self._conn() as conn:
+            conn.execute("UPDATE report_definitions SET enabled = ? WHERE id = ?", (int(enabled), definition_id))
+
     def start_run(self, definition_id: int) -> int:
         with self._conn() as conn:
             cur = conn.execute(
@@ -116,6 +133,62 @@ class ReportStore:
             )
             return cur.lastrowid
 
+    def enqueue_run(self, definition_id: int, *, period_days: int | None = None, delivery_requested: bool = False) -> int:
+        """Persist a manual generation request for the report worker.
+
+        The web process only enqueues work, so a large report cannot exhaust
+        the API process and leave the browser waiting on a dead request.
+        """
+        with self._conn() as conn:
+            cur = conn.execute(
+                """INSERT INTO report_runs
+                   (definition_id, started_at, status, period_days, delivery_requested, delivery_status)
+                   VALUES (?, ?, 'queued', ?, ?, ?)""",
+                (
+                    definition_id,
+                    _now_msk_naive_iso(),
+                    period_days,
+                    int(delivery_requested),
+                    "queued" if delivery_requested else "not_requested",
+                ),
+            )
+            return cur.lastrowid
+
+    def claim_next_queued(self) -> dict | None:
+        """Atomically claim the oldest queued report for one worker."""
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT r.id AS run_id, r.period_days, r.delivery_requested,
+                          d.*
+                   FROM report_runs r
+                   JOIN report_definitions d ON d.id = r.definition_id
+                   WHERE r.status = 'queued'
+                   ORDER BY r.id ASC
+                   LIMIT 1"""
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                """UPDATE report_runs
+                   SET status = 'running', started_at = ?, finished_at = NULL, error = NULL
+                   WHERE id = ? AND status = 'queued'""",
+                (_now_msk_naive_iso(), int(row["run_id"])),
+            )
+            return dict(row)
+
+    def requeue_interrupted_runs(self) -> int:
+        """Recover jobs abandoned when the container or worker restarted."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                """UPDATE report_runs
+                   SET status = 'queued', finished_at = NULL,
+                       error = 'Предыдущая сборка была прервана; запуск повторён автоматически'
+                   WHERE status = 'running'"""
+            )
+            return int(cur.rowcount)
+
     def finish_run(self, run_id: int, *, status: str, file_path: str | None = None, error: str | None = None) -> None:
         with self._conn() as conn:
             conn.execute(
@@ -123,13 +196,23 @@ class ReportStore:
                 (_now_msk_naive_iso(), status, file_path, error, run_id),
             )
 
+    def finish_delivery(self, run_id: int, *, status: str, error: str | None = None) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE report_runs SET delivery_status = ?, delivery_error = ? WHERE id = ?",
+                (status, error, run_id),
+            )
+
     def list_runs(self, *, definition_id: int | None = None, limit: int = 50) -> list[dict]:
-        query = "SELECT * FROM report_runs"
+        query = """SELECT report_runs.*, report_definitions.name AS definition_name,
+                          report_definitions.metrics AS definition_metrics
+                   FROM report_runs
+                   LEFT JOIN report_definitions ON report_definitions.id = report_runs.definition_id"""
         params: tuple[Any, ...] = ()
         if definition_id is not None:
-            query += " WHERE definition_id = ?"
+            query += " WHERE report_runs.definition_id = ?"
             params = (definition_id,)
-        query += " ORDER BY started_at DESC LIMIT ?"
+        query += " ORDER BY report_runs.id DESC LIMIT ?"
         params = params + (limit,)
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row

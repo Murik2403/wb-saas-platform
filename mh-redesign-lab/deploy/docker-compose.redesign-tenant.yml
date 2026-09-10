@@ -1,0 +1,30 @@
+services:
+  redesign-tenant:
+    image: wb-dashboard-tenant:redesign
+    container_name: wb-tenant-redesign
+    restart: unless-stopped
+    networks:
+      - wbsaas_net
+    volumes:
+      - wb-tenant-data-redesign:/app/tenant-app/data
+    environment:
+      WB_SAAS_TENANT_SLUG: redesign
+      MH_ALLOWED_HOSTS: localhost,127.0.0.1,redesign.app.${WB_SAAS_PARENT_DOMAIN}
+      WB_SAAS_BILLING_URL: https://${WB_SAAS_PARENT_DOMAIN}/billing
+      WB_SAAS_LOGOUT_URL: https://${WB_SAAS_PARENT_DOMAIN}/logout
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tenant-redesign.rule=Host(`redesign.app.${WB_SAAS_PARENT_DOMAIN}`)
+      - traefik.http.routers.tenant-redesign.entrypoints=websecure
+      - traefik.http.routers.tenant-redesign.tls.certresolver=${WB_SAAS_TLS_CERT_RESOLVER:-http-resolver}
+      - traefik.http.routers.tenant-redesign.middlewares=wb-saas-auth@file
+      - traefik.http.services.tenant-redesign.loadbalancer.server.port=8501
+      - wb-saas.slug=redesign
+
+networks:
+  wbsaas_net:
+    external: true
+    name: ${WB_SAAS_DOCKER_NETWORK:-wbsaas_net}
+
+volumes:
+  wb-tenant-data-redesign:

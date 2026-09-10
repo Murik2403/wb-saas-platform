@@ -39,6 +39,20 @@ FULL_NAV = ["Сегодня", "Обзор", "Финансы", "Производ�
 NOVICE_NAV = ["Сегодня", "Обзор", "Финансы", "Настройки"]
 
 st.set_page_config(page_title="MARKETSHELPER", page_icon="📊", layout="wide")
+
+
+@st.cache_resource
+def hold_service_guard():
+    import atexit
+    from config import DB_PATH
+    from sync_lock import sync_lock
+    guard = sync_lock(DB_PATH.with_suffix(".streamlit.lock"))
+    guard.__enter__()
+    atexit.register(lambda: guard.__exit__(None, None, None))
+    return guard
+
+
+hold_service_guard()
 init_db()
 try:
     refresh_auto_costs()

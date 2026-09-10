@@ -14,7 +14,7 @@ link-code issuance/status, so a user can connect their chat).
 """
 from __future__ import annotations
 
-import hmac
+from internal_auth import verify_credential
 import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -30,10 +30,10 @@ logger = logging.getLogger("wb_saas_gateway.internal")
 router = APIRouter()
 
 
-def _secret_is_valid(provided: str) -> bool:
+def _secret_is_valid(provided: str, slug: str = "") -> bool:
     # Empty INTERNAL_API_SECRET means the feature is unconfigured -- refuse
     # everything rather than accepting an empty-string secret as valid.
-    return bool(config.INTERNAL_API_SECRET) and hmac.compare_digest(provided, config.INTERNAL_API_SECRET)
+    return verify_credential(config.INTERNAL_API_SECRET, slug, provided)
 
 
 def deliver_report_email(slug: str, report_name: str, pdf_bytes: bytes, filename: str) -> None:
@@ -61,7 +61,7 @@ async def send_report_email(
     report_name: str = Form(...),
     file: UploadFile = File(...),
 ):
-    if not _secret_is_valid(request.headers.get("x-internal-secret", "")):
+    if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
 
     pdf_bytes = await file.read()
@@ -84,6 +84,25 @@ def telegram_is_linked(slug: str) -> bool:
         return bool(accounts.get_telegram_chat_id_for_slug(conn, slug))
 
 
+def report_delivery_status(slug: str) -> dict:
+    with control_db.connect() as conn:
+        tenant = accounts.get_tenant_by_slug(conn, slug)
+        if tenant is None:
+            raise HTTPException(status_code=404, detail="unknown tenant")
+        account = accounts.get_account_by_id(conn, int(tenant["account_id"]))
+        linked = bool(accounts.get_telegram_chat_id_for_slug(conn, slug))
+    if account is None:
+        raise HTTPException(status_code=404, detail="unknown account")
+    bot_username = telegram_bot.get_bot_username()
+    return {
+        "linked": linked,
+        "email": account["email"],
+        "email_configured": bool(config.SMTP_HOST),
+        "telegram_configured": bool(config.TELEGRAM_BOT_TOKEN and bot_username),
+        "bot_username": bot_username,
+    }
+
+
 def deliver_report_telegram(slug: str, report_name: str, pdf_bytes: bytes, filename: str) -> None:
     with control_db.connect() as conn:
         chat_id = accounts.get_telegram_chat_id_for_slug(conn, slug)
@@ -98,7 +117,7 @@ def deliver_report_telegram(slug: str, report_name: str, pdf_bytes: bytes, filen
 
 @router.post("/internal/telegram-link-code")
 def telegram_link_code(request: Request, slug: str = Form(...)):
-    if not _secret_is_valid(request.headers.get("x-internal-secret", "")):
+    if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
     code = create_telegram_link_code(slug)
     return JSONResponse({"code": code, "ttl_minutes": accounts.TELEGRAM_LINK_CODE_TTL_MINUTES})
@@ -106,9 +125,9 @@ def telegram_link_code(request: Request, slug: str = Form(...)):
 
 @router.get("/internal/telegram-status")
 def telegram_status(request: Request, slug: str):
-    if not _secret_is_valid(request.headers.get("x-internal-secret", "")):
+    if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
-    return JSONResponse({"linked": telegram_is_linked(slug)})
+    return JSONResponse(report_delivery_status(slug))
 
 
 @router.post("/internal/send-report-telegram")
@@ -118,7 +137,7 @@ async def send_report_telegram(
     report_name: str = Form(...),
     file: UploadFile = File(...),
 ):
-    if not _secret_is_valid(request.headers.get("x-internal-secret", "")):
+    if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
 
     pdf_bytes = await file.read()

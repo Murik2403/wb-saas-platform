@@ -18,7 +18,7 @@ from reports import delivery
 from reports.pdf_builder import build_report_pdf
 from reports.store import ReportStore
 
-CHECK_INTERVAL_SECONDS = 300
+CHECK_INTERVAL_SECONDS = 5
 REPORTS_DIR = DB_PATH.parent / "reports"
 
 
@@ -52,15 +52,19 @@ def _is_due(definition: dict, now: datetime) -> bool:
     return False
 
 
-# A "daily" report re-sent every day with the same rolling 30-day window is
-# nearly identical from one day to the next -- the period should track how
-# often the report actually goes out. 3 days (not 1) for daily on purpose:
-# a single-day bar/line chart looks sparse/empty on a slow sales day, and a
-# short trend is more useful than one isolated point.
-_SCHEDULE_PERIOD_DAYS = {"daily": 3, "weekly": 7, "monthly": 30}
+# The generated window follows the schedule cadence: a daily report covers
+# one day, weekly covers seven days, and monthly covers thirty days. This keeps
+# the report period explicit and predictable for recurring deliveries.
+_SCHEDULE_PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
 
-def generate_and_save(store: ReportStore, definition: dict, *, period_days: int | None = None) -> tuple[bytes, Path]:
+def generate_and_save(
+    store: ReportStore,
+    definition: dict,
+    *,
+    period_days: int | None = None,
+    run_id: int | None = None,
+) -> tuple[bytes, Path]:
     """Builds the PDF and saves it to disk; records the run either way.
     Deliberately does NOT do email/Telegram delivery -- see deliver_report()
     below, split out so a synchronous caller (reports_page.py's "Сгенерировать
@@ -76,7 +80,8 @@ def generate_and_save(store: ReportStore, definition: dict, *, period_days: int 
         period_days = _SCHEDULE_PERIOD_DAYS.get(definition.get("schedule_type"), 30)
     end = date.today()
     start = end - timedelta(days=period_days - 1)
-    run_id = store.start_run(definition["id"])
+    if run_id is None:
+        run_id = store.start_run(definition["id"])
     try:
         metric_codes = json.loads(definition["metrics"])
         pdf_bytes = build_report_pdf(definition["name"], metric_codes, start, end)
@@ -94,15 +99,29 @@ def generate_and_save(store: ReportStore, definition: dict, *, period_days: int 
         raise
 
 
-def deliver_report(definition: dict, pdf_bytes: bytes, filename: str) -> None:
+def deliver_report(
+    definition: dict,
+    pdf_bytes: bytes,
+    filename: str,
+    *,
+    store: ReportStore | None = None,
+    run_id: int | None = None,
+) -> dict[str, bool]:
     """Best-effort side-channel delivery -- never raises (see
     delivery.send_report_email/send_report_telegram's own contracts). A
     failed delivery must not undo an already-successful, already-saved
     generation."""
+    results: dict[str, bool] = {}
     if definition.get("email_enabled"):
-        delivery.send_report_email(definition["name"], pdf_bytes, filename)
+        results["email"] = delivery.send_report_email(definition["name"], pdf_bytes, filename)
     if definition.get("telegram_enabled"):
-        delivery.send_report_telegram(definition["name"], pdf_bytes, filename)
+        results["telegram"] = delivery.send_report_telegram(definition["name"], pdf_bytes, filename)
+    if store is not None and run_id is not None:
+        failures = [channel for channel, ok in results.items() if not ok]
+        status = "ok" if results and not failures else ("error" if failures else "not_requested")
+        error = f"Не доставлено: {', '.join(failures)}" if failures else None
+        store.finish_delivery(run_id, status=status, error=error)
+    return results
 
 
 def run_definition(store: ReportStore, definition: dict, *, period_days: int | None = None) -> None:
@@ -110,17 +129,47 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int | N
     loop (check_once/loop), where blocking on a slow delivery is harmless
     since it's already off the UI thread."""
     pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days)
-    deliver_report(definition, pdf_bytes, file_path.name)
+    run = store.list_runs(definition_id=int(definition["id"]), limit=1)[0]
+    deliver_report(definition, pdf_bytes, file_path.name, store=store, run_id=int(run["id"]))
 
 
-def check_once() -> int:
+def process_queued(store: ReportStore, *, limit: int = 1) -> int:
+    """Generate manual requests outside the web process."""
+    processed = 0
+    for _ in range(limit):
+        job = store.claim_next_queued()
+        if job is None:
+            break
+        run_id = int(job.pop("run_id"))
+        period_days = job.pop("period_days", None)
+        delivery_requested = bool(job.pop("delivery_requested", 0))
+        try:
+            pdf_bytes, file_path = generate_and_save(
+                store,
+                job,
+                period_days=int(period_days) if period_days else None,
+                run_id=run_id,
+            )
+            if delivery_requested:
+                deliver_report(job, pdf_bytes, file_path.name, store=store, run_id=run_id)
+        except Exception as exc:
+            print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Ошибка ручного отчёта '{job['name']}': {exc}", flush=True)
+        processed += 1
+    return processed
+
+
+def check_once(*, deliver: bool = True) -> int:
     store = ReportStore(DB_PATH)
+    queued = process_queued(store)
     now = _now_msk()
-    generated = 0
+    generated = queued
     for definition in store.list_definitions(enabled_only=True):
         if _is_due(definition, now):
             try:
-                run_definition(store, definition)
+                if deliver:
+                    run_definition(store, definition)
+                else:
+                    generate_and_save(store, definition)
                 generated += 1
             except Exception as exc:
                 print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Ошибка отчёта '{definition['name']}': {exc}", flush=True)
@@ -128,6 +177,16 @@ def check_once() -> int:
 
 
 def loop() -> None:
+    from sync_lock import sync_lock
+    with sync_lock(DB_PATH.with_suffix(".reports.lock")):
+        _loop()
+
+
+def _loop() -> None:
+    store = ReportStore(DB_PATH)
+    recovered = store.requeue_interrupted_runs()
+    if recovered:
+        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Повторно поставлено прерванных отчётов: {recovered}", flush=True)
     while True:
         try:
             generated = check_once()

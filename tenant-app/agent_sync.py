@@ -59,6 +59,12 @@ def run_once() -> dict:
 
 
 def loop() -> None:
+    from sync_lock import sync_lock
+    with sync_lock(DB_PATH.with_suffix(".agents.lock")):
+        _loop()
+
+
+def _loop() -> None:
     while True:
         settings = load_settings()
         interval = max(15, int(settings.get("agent_interval_minutes", 60)))

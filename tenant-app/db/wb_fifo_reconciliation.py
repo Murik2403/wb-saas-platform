@@ -31,9 +31,9 @@ def _wb_fifo_reconciliation_context_with_conn(conn: sqlite3.Connection) -> dict[
     """Diagnostic context for WB stock/FIFO reconciliation.
 
     WB stock snapshots can temporarily lose warehouse granularity and be returned as
-    one aggregate warehouse (warehouse_id=-999999). In that mode `quantity` alone is
-    not a safe basis for a FIFO write-off because units may also be inWayToClient / 
-    inWayFromClient and external losses are not represented by ordinary sale events.
+    one aggregate warehouse (warehouse_id=-999999). FIFO `wb_units` represents
+    only the available quantity: client transit is reported separately and never
+    treated as a missing or surplus FIFO layer.
     """
     latest_row = conn.execute(
         "SELECT MAX(snapshot_at) AS snapshot_at FROM stocks"
@@ -191,6 +191,8 @@ def _wb_fifo_reconciliation_context_with_conn(conn: sqlite3.Connection) -> dict[
         **current,
         "fifo_wb_units": fifo_units,
         "fifo_wb_amount_rub": round(fifo_amount, 2),
+        "wb_available_minus_fifo": current["available_units"] - fifo_units,
+        "wb_transit_units": current["in_way_to_client_units"] + current["in_way_from_client_units"],
         "wb_contour_minus_fifo": current["wb_contour_units"] - fifo_units,
         "last_detailed_snapshot_at": detailed_snapshot,
         "last_detailed_available_units": detailed_available,
@@ -492,10 +494,10 @@ def read_wb_incident_reconciliation() -> pd.DataFrame:
 def _fifo_reconciliation_preview_with_conn(conn: sqlite3.Connection) -> pd.DataFrame:
     """Return diagnostic physical-vs-layer differences for ready, inbound and WB balances.
 
-    v5.9 safety rule: WB rows are diagnostic only. They are never automatically
-    reconciled because WB `quantity` is not the full stock contour and external
-    warehouse losses/compensations are not ordinary sale events. For WB we compare
-    FIFO layers against quantity + inWayToClient + inWayFromClient only as a signal.
+    WB rows are diagnostic only. They are never automatically reconciled because
+    external warehouse losses/compensations are not ordinary sale events. FIFO
+    `wb_units` is compared with WB `quantity` only; customer transit is shown
+    separately and is not part of the warehouse FIFO balance.
     """
     context = _wb_fifo_reconciliation_context_with_conn(conn)
     summary = pd.read_sql_query(
@@ -533,7 +535,7 @@ def _fifo_reconciliation_preview_with_conn(conn: sqlite3.Connection) -> pd.DataF
                COALESCE(w.wb_available,0) AS wb_available,
                COALESCE(w.wb_to_client,0) AS wb_to_client,
                COALESCE(w.wb_from_client,0) AS wb_from_client,
-               COALESCE(w.wb_contour,0) AS wb_physical,
+               COALESCE(w.wb_available,0) AS wb_physical,
                COALESCE(g.wb_layer_units,0) AS wb_layered,
                CASE WHEN COALESCE(g.wb_layer_units,0)>0 THEN g.wb_amount/g.wb_layer_units ELSE COALESCE(c.cost_per_wb_unit,0) END AS wb_rate,
                COALESCE(c.cost_per_wb_unit,0) AS baseline_rate
@@ -547,7 +549,7 @@ def _fifo_reconciliation_preview_with_conn(conn: sqlite3.Connection) -> pd.DataF
         """, conn,
     )
     rows: list[dict[str, Any]] = []
-    labels = {"ready": "Готово у вас", "inbound": "В пути", "wb": "Контур WB"}
+    labels = {"ready": "Готово у вас", "inbound": "В пути", "wb": "Доступно на WB"}
     for _, row in summary.iterrows():
         nm_id = int(row.get("nm_id", 0) or 0)
         for location in ("ready", "inbound", "wb"):
@@ -568,7 +570,7 @@ def _fifo_reconciliation_preview_with_conn(conn: sqlite3.Connection) -> pd.DataF
                 else:
                     action = "Не досоздавать — проверить данные WB"
                     risk_status = "Проверка данных WB"
-                basis = "Доступно + к клиенту + от клиента"
+                basis = "Доступно на WB; транзит показан отдельно"
             else:
                 safe_to_reconcile = 1
                 action = "Досоздать слой" if diff > 0 else "Списать из слоёв"
@@ -978,4 +980,3 @@ def read_fifo_reconciliation_lines(run_id: int | None = None, limit: int = 500) 
             "SELECT * FROM fifo_reconciliation_lines ORDER BY id DESC LIMIT ?",
             conn, params=(max(1, int(limit)),),
         )
-

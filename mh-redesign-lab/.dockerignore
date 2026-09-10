@@ -1,0 +1,12 @@
+node_modules
+dist
+logs
+screenshots
+.tmp
+*.log
+*.tsbuildinfo
+.env*
+Dockerfile*
+docker-compose*.yml
+docs
+scripts

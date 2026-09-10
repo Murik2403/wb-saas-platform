@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import lru_cache
 
 import requests
 
@@ -62,6 +63,19 @@ def send_document(chat_id: str, file_bytes: bytes, filename: str, caption: str =
     response = requests.post(url, data=data, files=files, timeout=60)
     response.raise_for_status()
     return response.json()
+
+
+@lru_cache(maxsize=1)
+def get_bot_username() -> str:
+    if not config.TELEGRAM_BOT_TOKEN:
+        return ""
+    if config.TELEGRAM_BOT_USERNAME:
+        return config.TELEGRAM_BOT_USERNAME
+    try:
+        return str((_call("getMe").get("result") or {}).get("username") or "")
+    except Exception:
+        logger.exception("Failed to read Telegram bot username")
+        return ""
 
 
 def format_relay(message: dict) -> str:
@@ -117,6 +131,10 @@ def _handle_update(update: dict) -> None:
     text = (message.get("text") or "").strip()
     if text.startswith("/link"):
         _handle_link_command(chat_id, text)
+        return
+    if text.startswith("/start link_"):
+        code = text.split("link_", 1)[1].split(maxsplit=1)[0]
+        _handle_link_command(chat_id, f"/link {code}")
         return
     try:
         _call("sendMessage", chat_id=chat_id, text=AUTO_REPLY)

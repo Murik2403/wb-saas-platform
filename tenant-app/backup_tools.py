@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from config import DATA_DIR, DB_PATH, SETTINGS_PATH
+from sync_lock import sync_lock, SyncBusyError
+from contextlib import ExitStack
 
 BACKUP_DIR = DATA_DIR / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -141,6 +143,10 @@ def backup_bytes(path: str | Path) -> bytes:
 def _validate_zip_names(zf: zipfile.ZipFile) -> None:
     allowed = {"wb_dashboard.sqlite3", "settings.json", "manifest.json"}
     names = set(zf.namelist())
+    if len(names) != len(zf.namelist()):
+        raise ValueError("Архив содержит повторяющиеся файлы.")
+    if sum(item.file_size for item in zf.infolist()) > 2 * 1024 ** 3:
+        raise ValueError("Распакованный архив превышает 2 ГБ.")
     if "wb_dashboard.sqlite3" not in names:
         raise ValueError("В архиве нет файла базы данных.")
     unexpected = names - allowed
@@ -170,8 +176,18 @@ def inspect_backup(payload: bytes) -> dict[str, Any]:
 
 
 def restore_backup(payload: bytes, restore_settings: bool = True) -> dict[str, Any]:
-    """Verify and restore database. A safety backup is created first."""
-    safety = create_backup(kind="manual")
+    """Use SQLite's transactional backup API; never unlink an active WAL."""
+    try:
+        with ExitStack() as guards:
+            for name in ("api", "streamlit", "jobs", "agents", "reports"):
+                guards.enter_context(sync_lock(DB_PATH.with_suffix(f".{name}.lock")))
+            guards.enter_context(sync_lock())
+            return _restore_backup_locked(payload, restore_settings)
+    except SyncBusyError as exc:
+        raise RuntimeError("Остановите API, интерфейс и фоновые задачи перед восстановлением. Используйте scripts/restore_local.py после остановки приложения.") from exc
+
+
+def _restore_backup_locked(payload: bytes, restore_settings: bool) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="wb_restore_") as tmp_name:
         tmp = Path(tmp_name)
         with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
@@ -181,6 +197,11 @@ def restore_backup(payload: bytes, restore_settings: bool = True) -> dict[str, A
                 zf.extract("settings.json", path=tmp)
 
         candidate = tmp / "wb_dashboard.sqlite3"
+        settings_candidate = tmp / "settings.json"
+        if settings_candidate.exists():
+            settings_value = json.loads(settings_candidate.read_text(encoding="utf-8"))
+            if not isinstance(settings_value, dict):
+                raise ValueError("Настройки в архиве должны быть JSON-объектом.")
         connection = sqlite3.connect(candidate)
         try:
             check = connection.execute("PRAGMA integrity_check").fetchone()
@@ -195,21 +216,38 @@ def restore_backup(payload: bytes, restore_settings: bool = True) -> dict[str, A
         finally:
             connection.close()
 
-        # Remove WAL sidecars before atomic replacement. They will be recreated by SQLite.
-        for suffix in ("-wal", "-shm"):
-            try:
-                Path(str(DB_PATH) + suffix).unlink(missing_ok=True)
-            except OSError:
-                pass
-        replacement = DATA_DIR / f".restore_{_timestamp()}.sqlite3"
-        shutil.copy2(candidate, replacement)
-        os.replace(replacement, DB_PATH)
+        safety = create_backup(kind="manual")
+        rollback_db = tmp / "before.sqlite3"
+        _safe_sqlite_snapshot(rollback_db)
+        previous_settings = SETTINGS_PATH.read_bytes() if SETTINGS_PATH.exists() else None
 
-        settings_candidate = tmp / "settings.json"
-        if restore_settings and settings_candidate.exists():
-            replacement_settings = DATA_DIR / f".restore_settings_{_timestamp()}.json"
-            shutil.copy2(settings_candidate, replacement_settings)
-            os.replace(replacement_settings, SETTINGS_PATH)
+        def copy_database(source_path):
+            # SQLite retains one file identity for existing readers, manages
+            # WAL itself and commits the destination as one transaction.
+            import time
+            deadline = time.monotonic() + 30
+            def progress(status, remaining, total):
+                if time.monotonic() > deadline:
+                    raise TimeoutError("База занята. Повторите восстановление после остановки операций.")
+            source = sqlite3.connect(source_path)
+            target = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                source.backup(target, pages=256, progress=progress, sleep=0.05)
+            finally:
+                target.close()
+                source.close()
+
+        copy_database(candidate)
+        try:
+            if restore_settings and settings_candidate.exists():
+                replacement_settings = DATA_DIR / f".restore_settings_{_timestamp()}.json"
+                shutil.copy2(settings_candidate, replacement_settings)
+                os.replace(replacement_settings, SETTINGS_PATH)
+        except Exception:
+            copy_database(rollback_db)
+            if previous_settings is not None:
+                SETTINGS_PATH.write_bytes(previous_settings)
+            raise
 
     return {
         "ok": True,

@@ -31,6 +31,47 @@ def internal_api_is_configured() -> bool:
 email_is_configured = internal_api_is_configured
 
 
+def get_delivery_status() -> dict:
+    """Return the real channel state from the gateway, including linkage.
+
+    Merely having an internal URL does not prove SMTP is configured or that a
+    Telegram chat is linked, which previously made unavailable channels look
+    selectable in the dashboard.
+    """
+    fallback = {
+        "configured": internal_api_is_configured(),
+        "email_configured": False,
+        "email": "",
+        "telegram_configured": False,
+        "telegram_linked": False,
+        "telegram_bot_username": "",
+    }
+    if not internal_api_is_configured():
+        return fallback
+    try:
+        response = requests.get(
+            f"{config.INTERNAL_API_URL}/internal/telegram-status",
+            headers={"X-Internal-Secret": config.INTERNAL_API_SECRET},
+            params={"slug": config.TENANT_SLUG},
+            timeout=40,
+        )
+        if response.status_code != 200:
+            logger.error("Gateway rejected report delivery status: %s %s", response.status_code, response.text[:500])
+            return fallback
+        payload = response.json()
+        return {
+            "configured": True,
+            "email_configured": bool(payload.get("email_configured")),
+            "email": str(payload.get("email") or ""),
+            "telegram_configured": bool(payload.get("telegram_configured")),
+            "telegram_linked": bool(payload.get("linked")),
+            "telegram_bot_username": str(payload.get("bot_username") or ""),
+        }
+    except Exception:
+        logger.exception("Failed to read report delivery status")
+        return fallback
+
+
 def _post_to_gateway(path: str, report_name: str, pdf_bytes: bytes, filename: str, timeout: int = 30) -> bool:
     response = requests.post(
         f"{config.INTERNAL_API_URL}{path}",
@@ -62,21 +103,7 @@ def send_report_email(report_name: str, pdf_bytes: bytes, filename: str) -> bool
 def telegram_is_linked() -> bool:
     """False both when unconfigured and when configured-but-not-linked --
     callers only ever need "can I send to Telegram right now", not why not."""
-    if not internal_api_is_configured():
-        return False
-    try:
-        response = requests.get(
-            f"{config.INTERNAL_API_URL}/internal/telegram-status",
-            headers={"X-Internal-Secret": config.INTERNAL_API_SECRET},
-            params={"slug": config.TENANT_SLUG},
-            timeout=15,
-        )
-        if response.status_code != 200:
-            return False
-        return bool(response.json().get("linked"))
-    except Exception:
-        logger.exception("Failed to reach gateway internal API for Telegram link status")
-        return False
+    return bool(get_delivery_status().get("telegram_linked"))
 
 
 def request_telegram_link_code() -> tuple[str, int] | None:

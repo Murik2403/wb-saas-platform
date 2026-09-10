@@ -1167,7 +1167,11 @@ def render(ctx: dict) -> None:
                     disabled=not confirm_restore,
                     use_container_width=True,
                 ):
-                    result = restore_backup(restore_payload, restore_settings=restore_settings_ui)
+                    try:
+                        result = restore_backup(restore_payload, restore_settings=restore_settings_ui)
+                    except (RuntimeError, ValueError, OSError) as exc:
+                        st.error(str(exc))
+                        st.stop()
                     st.session_state["backup_flash"] = (
                         "success",
                         result["message"] + " Перед заменой создана страховая копия.",

@@ -110,6 +110,23 @@ class HandleLinkCommandTests(GatewayDbTestCase):
         self.assertEqual(calls[0][0], "sendMessage")
         self.assertEqual(calls[0][1]["chat_id"], 987654321)
 
+    def test_start_deep_link_links_chat(self) -> None:
+        calls = []
+
+        def fake_call(method, **params):
+            calls.append((method, params))
+            return {}
+
+        update = {"message": {"chat": {"id": 987654321}, "text": f"/start link_{self.code}", "from": {"id": 987654321}}}
+        with mock.patch.object(telegram_bot, "control_db", mock.Mock(connect=self.connect)), \
+             mock.patch.object(telegram_bot, "_call", fake_call):
+            telegram_bot._handle_update(update)
+
+        with self.connect() as conn:
+            self.assertEqual(accounts.get_telegram_chat_id_for_slug(conn, self.slug), "987654321")
+        self.assertEqual(len(calls), 1)
+        self.assertIn("привязан", calls[0][1]["text"])
+
 
 class RunWithoutTokenConfiguredTests(unittest.TestCase):
     def setUp(self) -> None:

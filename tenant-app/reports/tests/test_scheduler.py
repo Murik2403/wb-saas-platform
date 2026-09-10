@@ -201,9 +201,8 @@ def test_deliver_report_sends_only_enabled_channels(monkeypatch):
 
 
 def test_generate_and_save_picks_period_by_schedule_type(tmp_path, monkeypatch):
-    # A daily report re-sent every day with the same rolling 30-day window
-    # barely changes from one send to the next -- the period must track how
-    # often the report actually goes out (see _SCHEDULE_PERIOD_DAYS).
+    # Each recurring report uses a window matching its delivery cadence
+    # (see _SCHEDULE_PERIOD_DAYS).
     monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
 
     captured_spans = {}
@@ -225,7 +224,7 @@ def test_generate_and_save_picks_period_by_schedule_type(tmp_path, monkeypatch):
     for definition in store.list_definitions():
         generate_and_save(store, definition)
 
-    assert captured_spans["daily"] == 3
+    assert captured_spans["daily"] == 1
     assert captured_spans["weekly"] == 7
     assert captured_spans["monthly"] == 30
 
@@ -248,3 +247,22 @@ def test_generate_and_save_explicit_period_days_overrides_schedule_type(tmp_path
     generate_and_save(store, definition, period_days=14)
 
     assert captured["days"] == 14
+
+
+def test_process_queued_generates_and_delivers_without_web_request(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_scheduler, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(report_scheduler, "build_report_pdf", lambda *args: b"%PDF-1.4 queued")
+    monkeypatch.setattr(delivery, "send_report_email", lambda *args: True)
+
+    store = ReportStore(tmp_path / "queued.sqlite3")
+    def_id = store.add_definition(
+        name="Фоновый", metrics=["sales_orders"], schedule_type="daily", schedule_time="09:00",
+        email_enabled=True,
+    )
+    run_id = store.enqueue_run(def_id, period_days=1, delivery_requested=True)
+
+    assert report_scheduler.process_queued(store) == 1
+    run = next(row for row in store.list_runs() if row["id"] == run_id)
+    assert run["status"] == "ok"
+    assert run["delivery_status"] == "ok"
+    assert run["file_path"]

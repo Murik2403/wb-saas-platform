@@ -1,0 +1,151 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * MARKETSHELPER design system -- the SAME tokens as gateway/templates/base.html
+ * (marketing site) and tenant-app/app.py (current Streamlit dashboard). Do not
+ * drift these values independently in any of the three places; see
+ * memory/project_marketshelper_frontend_migration.md. Dark-only for now, same
+ * as the product today -- no light theme needed until asked for one.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --color-text-faint: var(--text-faint);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --font-display: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", monospace;
+
+  /* Motion vocabulary -- deliberately small. This is a financial console,
+     not a consumer app: calm over lively. Every value here is used for a
+     named reason (see find-animation-opportunities report,
+     memory/project_marketshelper_frontend_migration.md) -- don't add
+     animation anywhere these tokens don't already reach. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --background: #0a0b12;
+  --foreground: #eef0f7;
+  --card: #12141e;
+  --card-foreground: #eef0f7;
+  --popover: #12141e;
+  --popover-foreground: #eef0f7;
+  --primary: #7c6cf6;
+  --primary-foreground: #0a0b12;
+  --secondary: #1a1d2c;
+  --secondary-foreground: #eef0f7;
+  --muted: #1a1d2c;
+  --muted-foreground: #8d94aa;
+  --text-faint: #5b6178;
+  --accent: rgba(124, 108, 246, 0.14);
+  --accent-foreground: #9a8bff;
+  --destructive: #f2677a;
+  --border: rgba(255, 255, 255, 0.09);
+  --input: rgba(255, 255, 255, 0.09);
+  --ring: #9a8bff;
+  --good: #3ecf8e;
+  --good-soft: rgba(62, 207, 142, 0.12);
+  --warn: #f2b84b;
+  --warn-soft: rgba(242, 184, 75, 0.12);
+  --critical: #f2677a;
+  --critical-soft: rgba(242, 103, 122, 0.12);
+  --radius: 1rem;
+  --sidebar: #12141e;
+  --sidebar-foreground: #eef0f7;
+  --sidebar-primary: #7c6cf6;
+  --sidebar-primary-foreground: #0a0b12;
+  --sidebar-accent: rgba(124, 108, 246, 0.14);
+  --sidebar-accent-foreground: #9a8bff;
+  --sidebar-border: rgba(255, 255, 255, 0.09);
+  --sidebar-ring: #9a8bff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background: radial-gradient(circle at 20% 0%, var(--accent) 0%, var(--background) 36%, var(--background) 100%);
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Content entrance (skeleton -> real data, KPI cards) -- fade + a tiny lift,
+   never scale (this replaces a loading state, it isn't a popover appearing
+   from somewhere). Kept to one shared keyframe so nothing on the page
+   improvises its own timing. */
+@keyframes content-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-content-in {
+  animation: content-in 220ms var(--ease-out) both;
+}
+
+/* Tab-body swap: fade only, no translate/height -- the panels are different
+   sizes (table vs. one-line status), so animating height would visibly
+   jump. Short, because this happens several times a session, not once. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 140ms var(--ease-out) both;
+}
+
+/* Reduced motion: gentler, not zero -- per find-animation-opportunities
+   guidance, an instant snap is itself a jarring change for a user who
+   opted into reduced motion for comfort, not for teleporting UI. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-content-in { animation-duration: 1ms; }
+  * { transition-duration: 80ms !important; }
+}

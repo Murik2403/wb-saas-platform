@@ -1,0 +1,27 @@
+{
+  "name": "mh-redesign-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5177",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4177",
+    "api:tenant": "powershell -ExecutionPolicy Bypass -File scripts/start-tenant-api.ps1",
+    "api:bridge": "powershell -ExecutionPolicy Bypass -File scripts/start-api-bridge.ps1",
+    "qa:layout": "node scripts/measure-layout.mjs",
+    "qa:staging": "node scripts/check-staging.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.37.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.1.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
+  }
+}

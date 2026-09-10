@@ -61,3 +61,28 @@ jobs:
         # one command covers all three test directories.
         run: |
           cd tenant-app && python -m pytest -q
+
+      - name: Run Redesign API Tests
+        run: python -m pytest mh-redesign-lab/tenant-api/tests -q
+
+  test-frontends:
+    name: Build Frontends
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [frontend, mh-redesign-lab]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ${{ matrix.project }}/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Check history formatting
+        if: matrix.project == 'mh-redesign-lab'
+        run: node scripts/test-history-format.mjs
