@@ -5,6 +5,7 @@
 .deploy-context-*/
 .production-recommendations-*/
 .verify-*/
+.material-readiness
 tmp-pytest-*/
 tmp/
 .tmp*

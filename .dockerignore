@@ -25,6 +25,7 @@
 .deploy-context-*
 .production-recommendations-*
 .verify-*
+.material-readiness
 .serena
 .codex
 tmp-pytest-*
