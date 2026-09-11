@@ -512,7 +512,7 @@
 {% block content %}{% endblock %}
 </div>
 {% endblock %}
-{% if request.url.path != "/" %}
+{% if request.url.path != "/" and not request.url.path.startswith("/compliance") %}
 <div class="legal-footer">
   <a href="/privacy">Политика обработки персональных данных</a>
   <a href="/contacts">Контакты и реквизиты</a>
