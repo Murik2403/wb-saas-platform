@@ -105,8 +105,10 @@ email/канал. Эндпоинт возвращает `{"status":"ok"}` без
 
 Отдельно контролируйте хотя бы один работающий tenant: создайте второй
 HTTP(s)-monitor с адресом
-`https://<slug>.<tenant-prefix>.<parent-domain>/_stcore/health` и тем же
-интервалом. Provisioner открывает только точный `GET` к этому liveness-path;
+`https://<slug>.<tenant-prefix>.<parent-domain>/healthz` и тем же
+интервалом. Для legacy Streamlit tenants используйте также
+`https://<slug>.<tenant-prefix>.<parent-domain>/_stcore/health`.
+Provisioner открывает только точный `GET` к любому из этих liveness-path;
 сам dashboard и остальные запросы к tenant-поддомену по-прежнему защищены
 ForwardAuth. Выберите живой tenant, а не вымышленный или остановленный demo.
 

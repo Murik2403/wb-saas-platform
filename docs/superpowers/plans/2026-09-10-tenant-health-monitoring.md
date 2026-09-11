@@ -2,9 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make only each tenant's Streamlit liveness endpoint publicly reachable so an external uptime monitor can detect a failed dashboard without opening dashboard content.
+**Goal:** Make only each tenant's liveness endpoint publicly reachable so an external
+uptime monitor can detect a failed dashboard without opening dashboard content.
 
-**Architecture:** Tenant containers already expose Streamlit's `/_stcore/health` internally and the normal Traefik router applies ForwardAuth to every request. The provisioner will emit a second, higher-priority Traefik router for an exact `GET /_stcore/health` match, using the same service but no authentication middleware. The existing router continues to protect every other tenant path.
+**Architecture:** Tenant containers expose `/_stcore/health` (legacy) and `/healthz`
+(redesign). The provisioner emits higher-priority Traefik routers for those exact
+paths with no authentication middleware, while the existing router continues to
+protect all other tenant paths.
 
 **Tech Stack:** FastAPI/Pydantic provisioner, Docker SDK labels, Traefik v3, pytest, Docker Compose.
 
@@ -13,7 +17,8 @@
 ## Global Constraints
 
 - Preserve the existing authenticated tenant router for all non-health paths.
-- Expose only `GET /_stcore/health` on the tenant host; do not attach ForwardAuth to the health router.
+- Expose only unauthenticated liveness paths on the tenant host; do not attach
+  ForwardAuth to health routers.
 - Keep the same tenant service and TLS configuration as the authenticated router.
 - Do not add secrets or production hostnames to source control.
 
@@ -35,6 +40,11 @@
 def test_tenant_health_router_is_public_but_exact():
     labels = tenant_container_spec("shop-a", _request())["labels"]
     prefix = "traefik.http.routers.tenant-shop-a-health"
+    assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/healthz`) && Method(`GET`)"
+    assert labels[f"{prefix}.service"] == "tenant-shop-a"
+    assert f"{prefix}.middlewares" not in labels
+
+    prefix = "traefik.http.routers.tenant-shop-a-health-legacy"
     assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/_stcore/health`) && Method(`GET`)"
     assert labels[f"{prefix}.service"] == "tenant-shop-a"
     assert f"{prefix}.middlewares" not in labels
@@ -51,11 +61,19 @@ Expected: FAIL because the `tenant-shop-a-health` labels do not exist.
 ```python
 health_router = f"{router}-health"
 labels.update({
-    f"traefik.http.routers.{health_router}.rule": f"Host(`{_tenant_host(slug)}`) && Path(`/_stcore/health`) && Method(`GET`)",
+    f"traefik.http.routers.{health_router}.rule": f"Host(`{_tenant_host(slug)}`) && Path(`/healthz`) && Method(`GET`)",
     f"traefik.http.routers.{health_router}.priority": "100",
     f"traefik.http.routers.{health_router}.entrypoints": "websecure",
     f"traefik.http.routers.{health_router}.tls.certresolver": TLS_CERT_RESOLVER,
     f"traefik.http.routers.{health_router}.service": router,
+    f"traefik.http.routers.{health_router_legacy}.rule": (
+        f"Host(`{_tenant_host(slug)}`) && Path(`/_stcore/health`) && Method(`GET`)"
+    ),
+    f"traefik.http.routers.{health_router_legacy}.priority": "100",
+    f"traefik.http.routers.{health_router_legacy}.entrypoints": "websecure",
+    f"traefik.http.routers.{health_router_legacy}.tls.certresolver": TLS_CERT_RESOLVER,
+    f"traefik.http.routers.{health_router_legacy}.service": router,
+
 })
 ```
 
@@ -72,13 +90,16 @@ Expected: PASS.
 
 **Interfaces:**
 - Consumes: public tenant hostname `<slug>.app.<parent-domain>` and Streamlit health path.
-- Produces: an operator instruction for a separate 5-minute UptimeRobot HTTP(s) monitor.
+- Produces: an operator instruction for a separate 5-minute UptimeRobot HTTP(s)
+  monitor using the correct tenant liveness path.
 
 - [x] **Step 1: Add explicit monitor instruction**
 
 ```markdown
 Create a second HTTP(s) monitor for
-`https://<slug>.<tenant-prefix>.<parent-domain>/_stcore/health`.
+`https://<slug>.<tenant-prefix>.<parent-domain>/healthz` (or
+`https://<slug>.<tenant-prefix>.<parent-domain>/_stcore/health` for legacy
+Streamlit tenants).
 Use a real, non-demo tenant host and the same five-minute interval.
 ```
 
@@ -88,7 +109,7 @@ Run: `docker compose config --quiet` and `docker compose build provisioner`
 
 Expected: both commands exit successfully.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add provisioner/app.py provisioner/tests/test_policy.py DEPLOY.md docs/superpowers/plans/2026-09-10-tenant-health-monitoring.md

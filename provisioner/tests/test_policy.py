@@ -48,7 +48,31 @@ def test_tenant_health_router_is_public_but_exact(monkeypatch):
     monkeypatch.setattr(app, "PARENT_DOMAIN", "example.test")
     labels = tenant_container_spec("shop-a", _request())["labels"]
     prefix = "traefik.http.routers.tenant-shop-a-health"
-    assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/_stcore/health`) && Method(`GET`)"
+    assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/healthz`) && Method(`GET`)"
+    assert labels[f"{prefix}.service"] == "tenant-shop-a"
+    assert f"{prefix}.middlewares" not in labels
+
+
+def test_tenant_legacy_health_router_is_public_but_exact(monkeypatch):
+    monkeypatch.setattr(app, "PARENT_DOMAIN", "example.test")
+    labels = tenant_container_spec("shop-a", _request())["labels"]
+    prefix = "traefik.http.routers.tenant-shop-a-health-legacy"
+    assert labels[f"{prefix}.rule"] == (
+        "Host(`shop-a.app.example.test`) && Path(`/_stcore/health`) && Method(`GET`)"
+    )
+    assert labels[f"{prefix}.service"] == "tenant-shop-a"
+    assert f"{prefix}.middlewares" not in labels
+
+
+def test_tenant_pwa_assets_are_public_but_exact(monkeypatch):
+    monkeypatch.setattr(app, "PARENT_DOMAIN", "example.test")
+    labels = tenant_container_spec("shop-a", _request())["labels"]
+    prefix = "traefik.http.routers.tenant-shop-a-pwa"
+
+    assert labels[f"{prefix}.rule"] == (
+        "Host(`shop-a.app.example.test`) && "
+        "(Path(`/manifest.webmanifest`) || Path(`/sw.js`) || Path(`/offline.html`) || PathPrefix(`/icons/`))"
+    )
     assert labels[f"{prefix}.service"] == "tenant-shop-a"
     assert f"{prefix}.middlewares" not in labels
 

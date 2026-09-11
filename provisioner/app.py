@@ -21,7 +21,7 @@ from backup_crypto import encrypt_file
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
-TENANT_IMAGE = os.environ.get("WB_SAAS_TENANT_IMAGE", "wb-dashboard-tenant:latest")
+TENANT_IMAGE = os.environ.get("WB_SAAS_TENANT_IMAGE", "wb-dashboard-tenant:redesign")
 PARENT_DOMAIN = os.environ.get("WB_SAAS_PARENT_DOMAIN", "localhost")
 TENANT_SUBDOMAIN_PREFIX = os.environ.get("WB_SAAS_TENANT_SUBDOMAIN_PREFIX", "app")
 TENANT_INTERNAL_PORT = int(os.environ.get("WB_SAAS_TENANT_INTERNAL_PORT", "8501"))
@@ -85,6 +85,8 @@ def _tenant_host(slug: str) -> str:
 def _labels(slug: str, require_auth: bool) -> dict[str, str]:
     router = f"tenant-{slug}"
     health_router = f"{router}-health"
+    health_router_legacy = f"{router}-health-legacy"
+    pwa_router = f"{router}-pwa"
     labels = {
         "traefik.enable": "true",
         f"traefik.http.routers.{router}.rule": f"Host(`{_tenant_host(slug)}`)",
@@ -94,14 +96,33 @@ def _labels(slug: str, require_auth: bool) -> dict[str, str]:
         "traefik.docker.network": _network_name(slug),
         "wb-saas.slug": slug,
         # A narrowly scoped liveness route lets an external monitor detect a
-        # failed Streamlit process without exposing the tenant dashboard.
+        # failed redesigned tenant without exposing the dashboard.
         f"traefik.http.routers.{health_router}.rule": (
-            f"Host(`{_tenant_host(slug)}`) && Path(`/_stcore/health`) && Method(`GET`)"
+            f"Host(`{_tenant_host(slug)}`) && Path(`/healthz`) && Method(`GET`)"
         ),
         f"traefik.http.routers.{health_router}.priority": "100",
         f"traefik.http.routers.{health_router}.entrypoints": "websecure",
         f"traefik.http.routers.{health_router}.tls.certresolver": TLS_CERT_RESOLVER,
         f"traefik.http.routers.{health_router}.service": router,
+        # Keep legacy streamlit tenants monitorable with the original health path.
+        f"traefik.http.routers.{health_router_legacy}.rule": (
+            f"Host(`{_tenant_host(slug)}`) && Path(`/_stcore/health`) && Method(`GET`)"
+        ),
+        f"traefik.http.routers.{health_router_legacy}.priority": "100",
+        f"traefik.http.routers.{health_router_legacy}.entrypoints": "websecure",
+        f"traefik.http.routers.{health_router_legacy}.tls.certresolver": TLS_CERT_RESOLVER,
+        f"traefik.http.routers.{health_router_legacy}.service": router,
+        # A phone must load these PWA bootstrap files before it can use the
+        # authenticated dashboard. They contain no tenant data; all pages and
+        # API requests continue through the authenticated primary router.
+        f"traefik.http.routers.{pwa_router}.rule": (
+            f"Host(`{_tenant_host(slug)}`) && "
+            "(Path(`/manifest.webmanifest`) || Path(`/sw.js`) || Path(`/offline.html`) || PathPrefix(`/icons/`))"
+        ),
+        f"traefik.http.routers.{pwa_router}.priority": "100",
+        f"traefik.http.routers.{pwa_router}.entrypoints": "websecure",
+        f"traefik.http.routers.{pwa_router}.tls.certresolver": TLS_CERT_RESOLVER,
+        f"traefik.http.routers.{pwa_router}.service": router,
     }
     if require_auth:
         labels[f"traefik.http.routers.{router}.middlewares"] = FORWARD_AUTH_MIDDLEWARE
@@ -133,6 +154,8 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
         environment["WB_SAAS_SENTRY_ENVIRONMENT"] = request.sentry_environment
     if demo:
         environment["WB_SAAS_IS_DEMO"] = "1"
+    environment["MPLCONFIGDIR"] = "/tmp/matplotlib"
+    environment["HOME"] = "/app"
     return {
         "image": TENANT_IMAGE,
         "name": _container_name(slug),
@@ -147,7 +170,17 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
         "security_opt": ["no-new-privileges:true"],
         "cap_drop": ["ALL"],
         "read_only": True,
-        "tmpfs": {"/tmp": "rw,noexec,nosuid,size=64m"},
+        "tmpfs": {
+            "/tmp": "rw,noexec,nosuid,size=64m",
+            "/var/lib/nginx": "rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=0777",
+            "/var/lib/nginx/body": "rw,noexec,nosuid,size=16m",
+            "/var/lib/nginx/proxy": "rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0777",
+            "/var/lib/nginx/fastcgi": "rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0777",
+            "/var/cache/nginx": "rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0777",
+            "/var/log/nginx": "rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0777",
+            "/run": "rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0777",
+            "/run/nginx": "rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0777",
+        },
         "environment": environment,
     }
 
