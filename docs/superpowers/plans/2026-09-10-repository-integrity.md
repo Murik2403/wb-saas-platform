@@ -139,19 +139,19 @@ Expected: generated examples are ignored; required source examples are not ignor
 - Consumes: Task 2 canonical-source decision and Task 3 ignore boundaries.
 - Produces: a Git-backed source set whose CI and Docker references resolve from a clean clone.
 
-- [ ] **Step 1: Stage only reviewed required source**
+- [x] **Step 1: Stage only reviewed required source**
 
 Use `git add --intent-to-add` or explicit path staging for reviewed source paths; do not stage temporary folders, live configuration, archives, logs, or deployment snapshots.
 
 Expected: `git diff --cached --name-status` contains only intentionally adopted source and documentation.
 
-- [ ] **Step 2: Make CI conditional only if a product root remains intentionally separate**
+- [x] **Step 2: Make CI conditional only if a product root remains intentionally separate**
 
 If `frontend/` or `mh-redesign-lab/tenant-api/` is not adopted into this repository, remove or relocate the corresponding CI job in `.github/workflows/ci.yml` so the remaining CI is valid on a clean clone. If adopted, keep the job and verify its package/test files are tracked.
 
 Expected: no CI step references a directory unavailable from Git.
 
-- [ ] **Step 3: Validate a clean clone without changing the user worktree**
+- [x] **Step 3: Validate a clean clone without changing the user worktree**
 
 Create a temporary clone from the reviewed commit or staged result outside the working tree, then run the repository’s documented build/test commands from that clone.
 
@@ -167,7 +167,7 @@ Expected: gateway imports resolve, Docker build contexts contain required files,
 - Consumes: Tasks 2–4 classification and clean-clone validation.
 - Produces: a workspace with no live tokens in synchronizable project paths and no large generated payloads in build contexts.
 
-- [ ] **Step 1: Revoke or rotate any token found in local plaintext configuration**
+- [x] **Step 1: Revoke or rotate any token found in local plaintext configuration**
 
 Before deleting or moving `standalone/config.yaml`, inspect only whether it contains a live credential; do not print the credential value. Rotate/revoke it through the provider before cleanup.
 
