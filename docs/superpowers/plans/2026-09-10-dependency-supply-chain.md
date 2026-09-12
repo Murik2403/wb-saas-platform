@@ -152,7 +152,7 @@ Run `docker compose build gateway provisioner` and `docker build -t wb-dashboard
 
 Run gateway/provisioner/tenant tests and both frontend builds; then run `git diff --check` and inspect the staged diff for only dependency-policy work.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add gateway tenant-app provisioner .github DEPLOY.md docs/superpowers/plans/2026-09-10-dependency-supply-chain.md
