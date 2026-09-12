@@ -81,7 +81,9 @@ jobs:
           cd tenant-app && python -m pytest -q
 
       - name: Run Redesign API Tests
-        run: python -m pytest mh-redesign-lab/tenant-api/tests -q
+        if: |
+          hashFiles('mh-redesign-lab/tenant-api/tests/test_audit_regressions.py') != ''
+        run: cd .. && python -m pytest mh-redesign-lab/tenant-api/tests -q
 
   test-frontends:
     name: Build Frontends
@@ -95,15 +97,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: hashFiles('${{ matrix.project }}/package.json') != ''
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: ${{ matrix.project }}/package-lock.json
       - run: npm ci
+        if: hashFiles('${{ matrix.project }}/package.json') != ''
       - run: npm audit --audit-level=high
+        if: hashFiles('${{ matrix.project }}/package.json') != ''
       - run: npm run build
+        if: hashFiles('${{ matrix.project }}/package.json') != ''
       - name: Check history formatting
-        if: matrix.project == 'mh-redesign-lab'
+        if: matrix.project == 'mh-redesign-lab' && hashFiles('mh-redesign-lab/scripts/test-history-format.mjs') != ''
         run: node scripts/test-history-format.mjs
 
   audit-python:

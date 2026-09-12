@@ -95,6 +95,7 @@ gateway, затем образ tenant и обновите уже запущен�
 ```bash
 docker compose up -d --build gateway
 docker build -t wb-dashboard-tenant:latest ./tenant-app
+docker compose exec -e PYTHONPATH=/app gateway python3 /app/scripts/check_tenant_credentials.py
 docker compose exec -e PYTHONPATH=/app gateway python3 /app/scripts/upgrade_all_tenants.py
 ```
 
@@ -435,8 +436,9 @@ gateway, расшифруйте архив из `control-plane/`, извлеки
 VPS, Docker daemon, Traefik или gateway делает вход и ForwardAuth недоступными
 до восстановления. При штатном рестарте gateway пользователи не должны
 разлогиниваться: хэши токенов сессий лежат в control-plane БД, а CSRF-токен
-хранится в cookie браузера. Сбрасываются только in-memory rate-limit и кэш
-имени Telegram; незавершённая фоновая операция provisioning может потребовать
+хранится в cookie браузера. Ограничители (rate-limit) теперь живут в той же
+control-plane БД и переживают перезапуск gateway; сбрасывается только кэш
+имени Telegram. Незавершённая фоновая операция provisioning может потребовать
 повторной проверки в админке.
 
 Текущая эксплуатационная цель (не SLA до первого restore drill):
@@ -447,6 +449,46 @@ VPS, Docker daemon, Traefik или gateway делает вход и ForwardAuth 
 - **RTO:** до 4 часов после готовности нового VPS и последней рабочей
   offsite-копии. Этот ориентир нужно измерить тестовым восстановлением до
   начала платной эксплуатации и затем повторять не реже раза в квартал.
+
+### Рекомендуемый DR/SPOF drill (квартальный минимум)
+
+Пока система одноэкземплярная (без HA), это рабочая мера для снижения
+человеческого времени простоя до целевого RTO:
+
+1. До drill-а зафиксируйте baseline:
+   - список `docker-compose ls` и `docker ps` на момент проверки;
+   - время генерации последнего backup control-plane и tenant-volumes;
+   - время выполнения `docker compose exec gateway python3 -m pytest -q
+     gateway/tests/test_billing.py` (как маркер здоровья платформенных
+     зависимостей);
+   - размер последнего `backup_tenant_volumes.py` архива и наличие offsite-копии.
+2. Выполните контрольный отказ:
+   - остановите `gateway` + `traefik` на 15 минут;
+   - проверьте, что Uptime-уведомление пришло один раз для
+     `https://<домен>/healthz`;
+   - в это время подтвердите, что tenant dashboard недоступен, а прямой
+     доступ без входа у клиентов не открывается после перезапуска Traefik.
+3. Восстановление:
+   - запустите `traefik`, затем `gateway`, затем tenants в порядке `docker
+     compose up -d --build`;
+   - прогоните `docker compose logs gateway --tail=200` и smoke-тест:
+     регистрация тестового клиента → `https://.../healthz` → `login` → tenant
+     поддомен.
+4. Проверка DR сценария backup/restore:
+   - снимите control-plane backup (`backup_tenant_volumes.py`);
+   - удалите/переименуйте один tenant-volume;
+   - разверните срез-ресурс из backup (restore container + extract на том);
+   - проверьте `/healthz` и, где возможно, доступ к последнему отчету.
+5. Внесите в журнал:
+   - фактическое время обнаружения, время восстановления, число затронутых
+     клиентов, отсутствие вторичных инцидентов (например, двойных алертов).
+
+По итогам drill:
+- если на smoke-тесте >10 минут, зафиксировать инцидент и отложить релизы;
+- если offsite-restore >4 часов, сначала доработать резервирование перед
+  переключением клиентов в платный режим;
+- если любой шаг требует ручного SQL-правления на рабочей БД — вернуть на
+  план архитектурный этап с Postgres/внешним состоянием.
 
 Для перехода к HA потребуются одновременно Postgres с собственными
 `pg_dump`/PITR и репликацией, минимум два gateway за Traefik, внешнее общее
