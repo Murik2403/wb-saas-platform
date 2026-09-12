@@ -173,13 +173,13 @@ Before deleting or moving `standalone/config.yaml`, inspect only whether it cont
 
 Expected: the exposed credential is no longer valid, and no secret value is copied into Git, logs, or the plan.
 
-- [ ] **Step 2: Remove only verified disposable artifacts**
+- [x] **Step 2: Remove only verified disposable artifacts**
 
 After recording the classification and verifying no required source exists only inside them, remove generated audit folders, deployment-context snapshots, temporary test trees, archives, logs, and local virtual environments from the workspace.
 
 Expected: product source remains intact; the workspace size drops substantially.
 
-- [ ] **Step 3: Run the final repository-integrity checks**
+- [x] **Step 3: Run the final repository-integrity checks**
 
 Run:
 
