@@ -30,7 +30,7 @@
 - Consumes: current Git index and working tree.
 - Produces: a recorded inventory of tracked, modified, untracked, ignored, and referenced paths for the remaining tasks.
 
-- [ ] **Step 1: Capture the current branch and status**
+- [x] **Step 1: Capture the current branch and status**
 
 Run:
 
@@ -42,13 +42,13 @@ git ls-files
 
 Expected: the current in-flight modifications remain visible; no files are changed.
 
-- [ ] **Step 2: Enumerate CI and Docker path dependencies**
+- [x] **Step 2: Enumerate CI and Docker path dependencies**
 
 Inspect every `working-directory`, `path`, `context`, `COPY`, volume, and bind mount in `.github/workflows/ci.yml`, `docker-compose.yml`, `gateway/Dockerfile`, and `tenant-app/Dockerfile`.
 
 Expected: each referenced path is recorded as either tracked, untracked source, generated material, or missing.
 
-- [ ] **Step 3: Re-run the inventory after each later repository edit**
+- [x] **Step 3: Re-run the inventory after each later repository edit**
 
 Run:
 
@@ -68,7 +68,7 @@ Expected: only intentionally changed files differ from the initial evidence.
 - Consumes: Task 1 path inventory and the existing audit report.
 - Produces: an explicit decision for every top-level untracked path: adopt into this repository, split into a separately versioned repository, ignore as generated material, or remove only after preservation approval.
 
-- [ ] **Step 1: Identify buildable product roots**
+- [x] **Step 1: Identify buildable product roots**
 
 Inspect:
 
@@ -82,13 +82,13 @@ Get-Content -LiteralPath mh-redesign-lab/tenant-api/pyproject.toml -Raw -ErrorAc
 
 Expected: the canonical frontend candidate, redesign frontend, and redesign tenant API are named explicitly rather than inferred from directory names.
 
-- [ ] **Step 2: Trace whether CI requires those roots**
+- [x] **Step 2: Trace whether CI requires those roots**
 
 Inspect `.github/workflows/ci.yml` and record the exact commands that require `frontend/` or `mh-redesign-lab/tenant-api/`.
 
 Expected: every CI step either has its source path available from Git or is marked for removal until the source is adopted.
 
-- [ ] **Step 3: Classify required untracked gateway and tenant source**
+- [x] **Step 3: Classify required untracked gateway and tenant source**
 
 Review imports and Docker copy behavior for `gateway/internal_auth.py`, `gateway/constraints-windows.txt`, `tenant-app/constraints-windows.txt`, and the untracked tenant service modules.
 
@@ -105,19 +105,19 @@ Expected: runtime-required source is separated from local tooling and generated 
 - Consumes: Task 2 classification.
 - Produces: ignore rules that keep generated artifacts and secrets out of Git and Docker contexts while leaving required source visible.
 
-- [ ] **Step 1: Add narrowly scoped rules for known generated material**
+- [x] **Step 1: Add narrowly scoped rules for known generated material**
 
 Add rules for the verified artifact classes: `.audit2-*`, `.deploy-context-*`, `tmp-pytest-*`, `.production-recommendations-*`, `.verify-*`, `.serena/`, `.codex/`, root `tmp/`, `*.tar`, `*.tar.gz`, and local virtual environments. Do not ignore `frontend/`, `mh-redesign-lab/`, `docs/`, or runtime Python source.
 
 Expected: generated folders and archives become ignored; product source remains visible as untracked until adopted.
 
-- [ ] **Step 2: Exclude generated and secret material from Docker contexts**
+- [x] **Step 2: Exclude generated and secret material from Docker contexts**
 
 Add the same generated classes plus `.env*` exceptions as appropriate, live local configuration, archives, logs, and virtual environments to `.dockerignore` without excluding required build inputs.
 
 Expected: Docker build contexts no longer include the known multi-gigabyte or secret-bearing artifacts.
 
-- [ ] **Step 3: Verify ignore behavior**
+- [x] **Step 3: Verify ignore behavior**
 
 Run:
 
