@@ -1641,6 +1641,8 @@ function adaptFinanceMetrics(overview: ApiOverviewResponse | undefined, fallback
   const revenue = findOverviewKpi(overview, "revenue");
   const ads = findOverviewKpi(overview, "ad_spend");
   const stock = findOverviewKpi(overview, "stock");
+  const netMargin = findOverviewKpi(overview, "net_margin_pct");
+  const orderProfitability = findOverviewKpi(overview, "orders_profitability_pct");
 
   return [
     overviewMetricCard(profit, fallback[0], "Прибыль", "расчетная по товарам"),
@@ -1653,6 +1655,8 @@ function adaptFinanceMetrics(overview: ApiOverviewResponse | undefined, fallback
       detail: text(overview.period_label, fallback[3]?.detail ?? "период"),
       tone: normalizeTone(stock?.tone, fallback[3]?.tone ?? "info"),
     },
+    overviewMetricCard(netMargin, undefined, "Чистая маржинальность", "после всех расходов"),
+    overviewMetricCard(orderProfitability, undefined, "Рентабельность заказов", "от суммы заказов"),
   ];
 }
 

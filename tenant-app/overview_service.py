@@ -82,6 +82,12 @@ def _f(value) -> float:
     return 0.0 if pd.isna(number) else float(number)
 
 
+def _margin_pct(profit: float, revenue: float) -> float:
+    """Return a safe percentage for a profit/revenue pair."""
+    base = _f(revenue)
+    return _f(profit) / abs(base) * 100 if abs(base) > 0.000001 else 0.0
+
+
 def _problem_products(financial_products: pd.DataFrame, max_items: int = 5) -> list[dict]:
     """The worst-off products (loss-making / low-margin), ranked worst-first --
     the same selection render_problem_products_panel() makes: filter to the two
@@ -159,10 +165,18 @@ def compute_overview(ctx: dict, prev_ctx: dict | None = None) -> dict:
     prev_start = prev_ctx["start"] if prev_ctx is not None else None
     prev_end = prev_ctx["end"] if prev_ctx is not None else None
     prev_kpi = prev_data.kpi if prev_data is not None else {}
-    prev_profit = prev_data.financial.get("product_allocated_profit") if prev_data is not None else None
+    prev_profit = prev_data.financial.get("profit") if prev_data is not None else None
 
     k = data.kpi
-    profit_value = data.financial.get("product_allocated_profit", 0.0)
+    profit_value = data.financial.get("profit", 0.0)
+    realization_revenue = data.financial.get("operational_buyout_amount") or k.get("revenue", 0.0)
+    order_amount = k.get("order_amount", 0.0)
+    net_margin_pct = _margin_pct(profit_value, realization_revenue)
+    orders_profitability_pct = _margin_pct(profit_value, order_amount)
+    prev_realization_revenue = (prev_data.financial.get("operational_buyout_amount") or prev_kpi.get("revenue", 0.0)) if prev_data is not None else None
+    prev_order_amount = prev_kpi.get("order_amount") if prev_data is not None else None
+    prev_net_margin_pct = _margin_pct(prev_profit, prev_realization_revenue) if prev_data is not None else None
+    prev_orders_profitability_pct = _margin_pct(prev_profit, prev_order_amount) if prev_data is not None else None
 
     # Same seven cards, in the same order, as pages/overview.py's hero + 6 KPI
     # columns. `spark_key` names the daily series the frontend draws beneath the
@@ -199,6 +213,20 @@ def compute_overview(ctx: dict, prev_ctx: dict | None = None) -> dict:
             "value": money(k["revenue"]), "note": "Оперативные данные",
             "delta": delta_pct(k["revenue"], prev_kpi.get("revenue")),
             "spark_key": "revenue",
+        },
+        {
+            "key": "net_margin_pct", "hero": False, "label": "Чистая маржинальность",
+            "value": pct(net_margin_pct),
+            "note": "Чистая прибыль / выручка реализации · все расходы и комиссия WB учтены",
+            "delta": delta_pct(net_margin_pct, prev_net_margin_pct),
+            "spark_key": None,
+        },
+        {
+            "key": "orders_profitability_pct", "hero": False, "label": "Рентабельность заказов",
+            "value": pct(orders_profitability_pct),
+            "note": "Чистая прибыль / сумма заказов · с учётом возвратов и всех расходов",
+            "delta": delta_pct(orders_profitability_pct, prev_orders_profitability_pct),
+            "spark_key": None,
         },
         {
             "key": "ad_spend", "hero": False, "label": "Реклама",
