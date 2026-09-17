@@ -482,6 +482,15 @@ def _product_inventory(data, *, prioritize_known_stock: bool = False) -> list[di
     if data.products.empty:
         return []
     products = data.products
+    financial_products = getattr(data, "financial_products", None)
+    financial_index = {}
+    if financial_products is not None and not financial_products.empty and "Артикул WB" in financial_products.columns:
+        for _, financial_product in financial_products.iterrows():
+            try:
+                key = int(float(financial_product.get("Артикул WB", 0) or 0))
+            except (TypeError, ValueError):
+                continue
+            financial_index[key] = financial_product
     if prioritize_known_stock:
         # The Today endpoint uses a one-day calculation for its KPIs. Keep
         # that request fast, but put SKUs with an actual WB quantity first so
@@ -495,6 +504,15 @@ def _product_inventory(data, *, prioritize_known_stock: bool = False) -> list[di
         quantity = pd.to_numeric(product.get("Остаток"), errors="coerce")
         stock_days = pd.to_numeric(product.get("Запас, дней"), errors="coerce")
         margin = pd.to_numeric(product.get("Маржа до комиссий WB"), errors="coerce")
+        margin_pct = pd.to_numeric(None, errors="coerce")
+        try:
+            product_id = int(float(product.get("Артикул WB", 0) or 0))
+        except (TypeError, ValueError):
+            product_id = 0
+        financial_product = financial_index.get(product_id)
+        if financial_product is not None:
+            margin = pd.to_numeric(financial_product.get("Чистая прибыль"), errors="coerce")
+            margin_pct = pd.to_numeric(financial_product.get("Чистая маржинальность, %"), errors="coerce")
         if pd.isna(stock_days):
             signal, tone = ("Нет данных об остатке" if pd.isna(quantity) else "Недостаточно продаж для прогноза"), "info"
             stock_value: float | None = None
@@ -513,6 +531,7 @@ def _product_inventory(data, *, prioritize_known_stock: bool = False) -> list[di
             "stock_days": stock_value,
             "stock": None if pd.isna(quantity) else float(quantity),
             "margin_rub": None if pd.isna(margin) else round(float(margin), 2),
+            "margin_pct": None if pd.isna(margin_pct) else round(float(margin_pct), 2),
             "signal": signal,
             "tone": tone,
         })

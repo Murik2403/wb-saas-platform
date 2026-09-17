@@ -691,7 +691,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             financial["product_direct_profit"] = float(active["direct_profit"].sum())
             financial["product_allocated_profit"] = float(active["allocated_profit"].sum())
         else:
-            for col in ["allocation_share", "allocated_common_expense", "allocated_profit", "direct_margin_pct", "allocated_margin_pct", "direct_profit_per_unit", "allocated_profit_per_unit", "return_rate_pct", "ad_share_pct", "wb_share_pct", "cost_share_pct", "total_variable_cost", "roi_pct", "profit_share_pct"]:
+            for col in ["allocation_share", "allocated_common_expense", "allocated_profit", "direct_margin_pct", "allocated_margin_pct", "net_profit", "net_margin_pct", "direct_profit_per_unit", "allocated_profit_per_unit", "return_rate_pct", "ad_share_pct", "wb_share_pct", "cost_share_pct", "total_variable_cost", "roi_pct", "profit_share_pct"]:
                 active[col] = 0.0
             active["rank"] = 0
             active["status"] = ""
@@ -744,6 +744,22 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         financial_unallocated = pd.DataFrame(store_rows)
         financial["remaining_store_impact"] = financial["profit"] - financial.get("product_allocated_profit", 0.0)
 
+        # Net article economics: allocated_profit already includes the article's
+        # direct WB costs, advertising, COGS and the distributable common pool.
+        # Allocate the remaining store impact as well (unallocated deductions,
+        # technical rows and any other residual accounting adjustment) so the
+        # article totals reconcile exactly to the accounting profit. This is the
+        # percentage shown as the commercial margin on the redesigned Products
+        # screen; commission is already reflected in ppvz_for_pay/to_pay.
+        if not active.empty:
+            residual_store_impact = float(financial.get("remaining_store_impact", 0.0) or 0.0)
+            active["net_profit"] = active["allocated_profit"] + active["allocation_share"] * residual_store_impact
+            active["net_margin_pct"] = np.where(
+                active["buyer_revenue"].abs() > 0,
+                active["net_profit"] / active["buyer_revenue"].abs() * 100,
+                0,
+            )
+
         financial_products = active.rename(columns={
             "rank": "Ранг",
             "status": "Статус",
@@ -773,6 +789,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "allocated_profit": "Расчётная прибыль",
             "allocated_profit_per_unit": "Расчётная прибыль на ед.",
             "allocated_margin_pct": "Расчётная маржа, %",
+            "net_profit": "Чистая прибыль",
+            "net_margin_pct": "Чистая маржинальность, %",
             "roi_pct": "Рентабельность затрат, %",
             "profit_share_pct": "Доля прибыли, %",
             "stock_qty": "Остаток",
@@ -790,6 +808,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "Маржинальная прибыль", "Маржинальная прибыль на ед.", "Маржинальность, %",
             "Доля общих расходов, %", "Распределено общих расходов",
             "Расчётная прибыль", "Расчётная прибыль на ед.", "Расчётная маржа, %",
+            "Чистая прибыль", "Чистая маржинальность, %",
             "Рентабельность затрат, %", "Доля прибыли, %",
             "Остаток", "Продаж/день", "Запас, дней",
             "Основная причина", "Рекомендация", "Причина / действие"

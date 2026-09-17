@@ -128,6 +128,7 @@ export type ProductEconomicsRow = {
   daysOfStock: number | null;
   unitCost: number;
   margin: number;
+  marginPct?: number;
 };
 export type ProductPriceRow = { nmId: number; vendorCode: string; price: number; discount: number; clubDiscount: number; discountedPrice: number; status?: number; errorText?: string | null };
 export type ProductCard = { nmId: number; vendorCode: string; title: string; description?: string; brand: string; subject: string; photos: string[]; sizes: number };
@@ -248,6 +249,7 @@ type ApiInventoryWatchRow = {
   days_of_stock?: number;
   margin_bps?: number;
   margin_rub?: number;
+  margin_pct?: number;
   signal?: string;
   tone?: ApiTone;
 };
@@ -1469,7 +1471,7 @@ function adaptInventory(input: ApiInventoryWatchRow[], fallback: InventoryWatchR
         : typeof row.stock === "number"
           ? `${formatNumber(row.stock)} шт.`
           : "остатки WB не загружены",
-    margin: typeof row.margin_rub === "number" ? `${formatNumber(row.margin_rub)} ₽` : typeof row.margin_bps === "number" ? formatPercent(row.margin_bps) : "-",
+    margin: typeof row.margin_pct === "number" ? `${formatNumber(row.margin_pct)}%` : typeof row.margin_rub === "number" ? `${formatNumber(row.margin_rub)} ₽` : typeof row.margin_bps === "number" ? formatPercent(row.margin_bps) : "-",
     signal: text(row.signal, "Нет данных от WB"),
     tone: normalizeTone(row.tone, legacyStockTone(row)),
   }));
@@ -1997,7 +1999,7 @@ function adaptProductEconomics(rows: Array<Record<string, unknown>>): ProductEco
     nmId: String(row.nm_id ?? row.article ?? ""), article: text(row.article, ""), product: text(row.product, "Товар"),
     orders: numberValue(row.orders), sales: numberValue(row.sales), revenue: numberValue(row.revenue), buyout: numberValue(row.buyout),
     adSpend: numberValue(row.ad_spend), drr: numberValue(row.drr), stock: numberValue(row.stock), dailySales: numberValue(row.daily_sales),
-    daysOfStock: typeof row.days_of_stock === "number" && Number.isFinite(row.days_of_stock) ? row.days_of_stock : null, unitCost: numberValue(row.unit_cost), margin: numberValue(row.margin),
+    daysOfStock: typeof row.days_of_stock === "number" && Number.isFinite(row.days_of_stock) ? row.days_of_stock : null, unitCost: numberValue(row.unit_cost), margin: numberValue(row.margin), marginPct: numberValue(row.margin_pct),
   }));
 }
 

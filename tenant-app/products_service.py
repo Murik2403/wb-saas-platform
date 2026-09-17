@@ -37,7 +37,11 @@ PRODUCT_COLUMNS: dict[str, str] = {
     "Продаж/день": "daily_sales",
     "Запас, дней": "days_of_stock",
     "Себестоимость ед.": "unit_cost",
-    "Маржа до комиссий WB": "margin",
+    # `margin` is now the reconciled net profit after COGS, advertising and
+    # every accounting expense. WB commission is already included in
+    # ppvz_for_pay, the authoritative amount payable to the seller.
+    "Чистая прибыль": "margin",
+    "Чистая маржинальность, %": "margin_pct",
 }
 
 
@@ -53,6 +57,25 @@ def compute_products(ctx: dict) -> dict:
         # produced for this window (an empty ads join, say) rather than raising.
         present = [c for c in PRODUCT_COLUMNS if c in data.products.columns]
         products_view = data.products[present].copy()
+
+        # The legacy products frame only had a pre-WB margin estimate. Overlay
+        # the accounting-backed product economics so the redesigned screen
+        # uses the same full-expense result as Finance. Keep the base rows for
+        # stock/velocity fields, but leave margin unavailable when a SKU cannot
+        # be reconciled rather than presenting a misleading pre-WB amount.
+        financial_products = getattr(data, "financial_products", pd.DataFrame())
+        if financial_products is not None and not financial_products.empty and "Артикул WB" in financial_products.columns:
+            base_ids = pd.to_numeric(products_view.get("Артикул WB"), errors="coerce")
+            financial_view = financial_products.copy()
+            financial_view["_nm_id"] = pd.to_numeric(financial_view["Артикул WB"], errors="coerce")
+            financial_view = financial_view.dropna(subset=["_nm_id"]).drop_duplicates("_nm_id").set_index("_nm_id")
+            products_view["_nm_id"] = base_ids
+            products_view["Чистая прибыль"] = products_view["_nm_id"].map(financial_view.get("Чистая прибыль", pd.Series(dtype=float)))
+            products_view["Чистая маржинальность, %"] = products_view["_nm_id"].map(financial_view.get("Чистая маржинальность, %", pd.Series(dtype=float)))
+            products_view = products_view.drop(columns=["_nm_id"])
+        else:
+            products_view["Чистая прибыль"] = pd.NA
+            products_view["Чистая маржинальность, %"] = pd.NA
 
     return {
         "period": period,
