@@ -288,7 +288,7 @@ Production smoke выявил, что `background=true` оставлял уде�
 
 В API `/api/products` добавлены `margin` (чистая прибыль, ₽) и `margin_pct` (чистая маржинальность, %). На карточках и в сводном KPI отображается процент; абсолютная чистая прибыль остаётся во вторичной строке и деталях. Главная страница использует те же чистые значения для блока «Остатки, маржа, сигнал».
 
-Проверки: `tenant-app` — 272 passed; `mh-redesign-lab/tenant-api` — 92 passed; `npm test -- --run` — 18 passed; `npm run build` — успешно; `git diff --check` — без ошибок. Production deployment выполняется после сборки release41.
+Проверки: `tenant-app` — 272 passed; `mh-redesign-lab/tenant-api` — 92 passed; `npm test -- --run` — 18 passed; `npm run build` — успешно; `git diff --check` — без ошибок. Production: release-20260918-audit41, image `sha256:292b54be903bfa572e8bc3dcc21e7f7492271f41c2dad4d27120807af03c0f2c`; затем финансовый блок перевыкатан как release-20260918-audit42, image `sha256:6eb93bd065f0f163cbcccf7341b61f73793a42712052d66dbd8ce0c1127b5c6e`, 4/4 deploy probes, резервная копия создана, `/healthz` 200. Production `/api/overview?period=90d` подтвердил `32.5%` чистой маржинальности и `42.8%` рентабельности заказов.
 
 ## Две финансовые маржинальности — 18.09.2026
 
