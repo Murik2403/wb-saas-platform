@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import sys
 import unittest
+import base64
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -41,6 +43,32 @@ class HeadersTests(unittest.TestCase):
         api = WBAPI("my-token")
         self.assertEqual(api._headers(bearer=True)["Authorization"], "Bearer my-token")
 
+
+class TokenScopeTests(unittest.TestCase):
+    @staticmethod
+    def _token(payload: dict) -> str:
+        def encode(value: bytes) -> str:
+            return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+        header = encode(json.dumps({"alg": "none"}).encode())
+        body = encode(json.dumps(payload).encode())
+        return f"{header}.{body}.signature"
+
+    def test_decodes_scope_mask_without_network_request(self) -> None:
+        token = self._token({"s": (1 << 5) | (1 << 10) | (1 << WBAPI.READ_ONLY_BIT), "exp": 4102444800})
+        result = WBAPI(token).token_scope_info()
+        self.assertTrue(result["known"])
+        self.assertEqual(result["scopes"], ["Статистика", "Поставки"])
+        self.assertIn("Контент", result["missing_scopes"])
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["expires_at"], 4102444800)
+
+    def test_opaque_token_returns_unknown_scope_metadata(self) -> None:
+        result = WBAPI("opaque-token").token_scope_info()
+        self.assertFalse(result["known"])
+        self.assertEqual(result["scopes"], [])
+
+class RequestHeaderTests(unittest.TestCase):
     def test_bearer_does_not_double_prefix(self) -> None:
         api = WBAPI("Bearer my-token")
         self.assertEqual(api._headers(bearer=True)["Authorization"], "Bearer my-token")
@@ -127,6 +155,15 @@ class EndpointMethodTests(unittest.TestCase):
             result = self.api.get_orders("2026-01-01")
         self.assertEqual(result, [])
 
+    def test_get_fbs_supplies_follows_next_cursor(self) -> None:
+        with mock.patch.object(WBAPI, "_request", side_effect=[
+            {"supplies": [{"id": "WB-1"}], "next": 123},
+            {"supplies": [{"id": "WB-2"}], "next": 0},
+        ]) as request:
+            self.assertEqual(self.api.get_fbs_supplies(), [{"id": "WB-1"}, {"id": "WB-2"}])
+        self.assertEqual(request.call_args_list[0].kwargs["params"], {"limit": 100, "next": 0})
+        self.assertEqual(request.call_args_list[1].kwargs["params"], {"limit": 100, "next": 123})
+
     def test_get_sales_returns_list(self) -> None:
         with mock.patch.object(WBAPI, "_request", return_value=[{"nmId": 2}]):
             result = self.api.get_sales("2026-01-01")
@@ -143,6 +180,44 @@ class EndpointMethodTests(unittest.TestCase):
         with mock.patch.object(WBAPI, "_request", return_value=payload):
             result = self.api.get_campaign_ids()
         self.assertEqual(result, [1, 3])
+
+    def test_customer_quality_methods_are_available_and_normalize_payloads(self) -> None:
+        with mock.patch.object(WBAPI, "_request", side_effect=[
+            {"data": {"valuation": 4.9}},
+            {"data": {"items": [{"id": "q1"}]}},
+            {"data": {"goods": [{"nmId": 7}]}},
+            {"report": [{"nmId": 8}]},
+        ]) as request:
+            self.assertEqual(self.api.get_seller_rating(), {"valuation": 4.9})
+            self.assertEqual(self.api.get_new_feedbacks_questions(), {"data": {"items": [{"id": "q1"}]}})
+            self.assertEqual(self.api.get_quarantine_goods(), [{"nmId": 7}])
+            self.assertEqual(self.api.get_goods_returns("2026-09-01", "2026-09-17"), [{"nmId": 8}])
+        self.assertEqual(request.call_count, 4)
+
+    def test_send_seller_message_uses_multipart_and_disables_retries(self) -> None:
+        with mock.patch.object(WBAPI, "_request", return_value={"result": {"chatID": "chat-1"}}) as request:
+            result = self.api.send_seller_message("1:chat-signature", "Добрый день")
+        self.assertEqual(result["result"]["chatID"], "chat-1")
+        self.assertEqual(request.call_args.args[:2], ("POST", "https://buyer-chat-api.wildberries.ru/api/v1/seller/message"))
+        fields = request.call_args.kwargs["files"]
+        self.assertEqual([(name, value[0], value[1]) for name, value in fields], [("replySign", None, "1:chat-signature"), ("message", None, "Добрый день")])
+        self.assertFalse(request.call_args.kwargs["retry_safe"])
+
+    def test_send_seller_message_validates_lengths(self) -> None:
+        with self.assertRaises(ValueError):
+            self.api.send_seller_message("", "текст")
+        with self.assertRaises(ValueError):
+            self.api.send_seller_message("подпись", "x" * 1001)
+
+    def test_quarantine_retries_with_explicit_limit_when_wb_requires_it(self) -> None:
+        with mock.patch.object(
+            WBAPI,
+            "_request",
+            side_effect=[WBAPIError("WB API 400: limit required query parameter"), {"data": {"goods": [{"nmId": 9}]}}],
+        ) as request:
+            self.assertEqual(self.api.get_quarantine_goods(), [{"nmId": 9}])
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_args_list[1].kwargs["params"], {"limit": 1000})
 
 
 class FlattenAdStatsTests(unittest.TestCase):

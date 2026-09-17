@@ -4,9 +4,9 @@ Tenant containers are deliberately NOT on the gateway's docker network (see
 provisioning.py's per-tenant network isolation, added so tenants can't reach
 each other) -- so a tenant container calls this over the same public HTTPS
 domain everything else uses, not a docker-internal hostname. Authenticated
-by a shared secret (config.INTERNAL_API_SECRET) baked into every tenant
-container's environment at provision time, not a user session -- there is
-no human in the loop for this call, so no CSRF/cookie auth applies here.
+by a tenant-scoped secret (config.INTERNAL_API_SECRET + slug) baked into each
+tenant container's environment at provision time, not a user session -- there
+is no human in the loop for this call, so no CSRF/cookie auth applies here.
 
 Callers are tenant-app/reports/delivery.py (email and Telegram delivery of
 a scheduled PDF report) and tenant-app/pages/reports_page.py (Telegram
@@ -118,7 +118,15 @@ def deliver_report_telegram(slug: str, report_name: str, pdf_bytes: bytes, filen
     if not chat_id:
         raise HTTPException(status_code=409, detail="telegram not linked")
     try:
-        telegram_bot.send_document(chat_id, pdf_bytes, filename, caption=f"Отчёт «{report_name}» — MARKETSHELPER")
+        result = telegram_bot.send_document(chat_id, pdf_bytes, filename, caption=f"Отчёт «{report_name}» — MARKETSHELPER")
+        # Telegram may return HTTP 200 for an application-level failure.
+        # Treat only an explicit Bot API `ok: true` response as delivered;
+        # otherwise the tenant report run must expose a delivery error.
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            logger.error("Telegram rejected report for slug %s: %r", slug, result)
+            raise HTTPException(status_code=502, detail="telegram delivery failed")
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Failed to send Telegram document for slug %s", slug)
         raise HTTPException(status_code=502, detail="telegram delivery failed")

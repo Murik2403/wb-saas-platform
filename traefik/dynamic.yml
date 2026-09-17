@@ -26,3 +26,6 @@ http:
         # DoS. /auth/verify only ever returns an empty 2xx/redirect, so 64KB
         # is generous headroom, not a real limit in practice.
         maxResponseBodySize: 65536
+        authResponseHeaders:
+          - "X-Tenant-Role"
+          - "X-Tenant-Account"

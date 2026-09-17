@@ -78,7 +78,7 @@ def generate_and_save(
     caller that wants a specific custom range."""
     if period_days is None:
         period_days = _SCHEDULE_PERIOD_DAYS.get(definition.get("schedule_type"), 30)
-    end = date.today()
+    end = _now_msk().date()
     start = end - timedelta(days=period_days - 1)
     if run_id is None:
         run_id = store.start_run(definition["id"])
@@ -88,7 +88,7 @@ def generate_and_save(
 
         out_dir = REPORTS_DIR / str(definition["id"])
         out_dir.mkdir(parents=True, exist_ok=True)
-        file_path = out_dir / f"{datetime.now():%Y%m%d_%H%M%S}.pdf"
+        file_path = out_dir / f"{end.isoformat()}-{run_id}.pdf"
         file_path.write_bytes(pdf_bytes)
 
         store.finish_run(run_id, status="ok", file_path=str(file_path))
@@ -96,6 +96,7 @@ def generate_and_save(
         return pdf_bytes, file_path
     except Exception as exc:
         store.finish_run(run_id, status="error", error=str(exc))
+        store.set_last_run(definition["id"], _now_msk().isoformat(timespec="seconds"))
         raise
 
 
@@ -128,9 +129,9 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int | N
     """Synchronous generate + deliver -- used by the background scheduler
     loop (check_once/loop), where blocking on a slow delivery is harmless
     since it's already off the UI thread."""
-    pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days)
-    run = store.list_runs(definition_id=int(definition["id"]), limit=1)[0]
-    deliver_report(definition, pdf_bytes, file_path.name, store=store, run_id=int(run["id"]))
+    run_id = store.start_run(definition["id"], delivery_requested=bool(definition.get("email_enabled") or definition.get("telegram_enabled")))
+    pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days, run_id=run_id)
+    deliver_report(definition, pdf_bytes, file_path.name, store=store, run_id=run_id)
 
 
 def process_queued(store: ReportStore, *, limit: int = 1) -> int:

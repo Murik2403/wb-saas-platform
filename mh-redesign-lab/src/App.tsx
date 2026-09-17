@@ -1,6 +1,6 @@
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { RuntimeStatus } from "./RuntimeStatus";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -28,9 +28,12 @@ import {
   Play,
   RefreshCw,
   Search,
+  ChevronDown,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  House,
+  LogOut,
   Truck,
   Trash2,
   WalletCards,
@@ -65,7 +68,7 @@ import type {
   StockRule,
   Tone,
 } from "./contracts";
-import { applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, useDashboardData, type ActionPlanItem, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FifoReconciliationData, type IncidentOperations, type MaterialFifoRow, type MaterialInventory, type ProductCostSetting, type ProductEconomicsRow, type ProductionExecutionTask, type ProductionNorm, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
+import { financeExportUrl, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type IncidentOperations, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
 import { navItems as fallbackNavItems } from "./mock-dashboard";
 
 const iconByKey: Record<IconKey, LucideIcon> = {
@@ -87,6 +90,41 @@ const iconByKey: Record<IconKey, LucideIcon> = {
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
+
+/** Small accessible replacement for browser prompt/alert/confirm.
+ * It is deliberately DOM based so legacy inline action handlers can use it
+ * without coupling every section to a second piece of React state.
+ */
+function openInteractionDialog(options: { title: string; message?: string; input?: string; confirm?: boolean }): Promise<string | boolean | null> {
+  if (typeof document === "undefined") return Promise.resolve(options.input ?? (options.confirm ? false : null));
+  const dialog = document.createElement("dialog");
+  dialog.className = "plan-drawer operation-dialog interaction-dialog";
+  const heading = document.createElement("h3"); heading.textContent = options.title;
+  const message = document.createElement("p"); message.textContent = options.message ?? "";
+  const form = document.createElement("form"); form.method = "dialog";
+  const controls = document.createElement("div"); controls.className = "dialog-actions";
+  const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "ghost-button"; cancel.textContent = "Отмена";
+  const submit = document.createElement("button"); submit.type = "submit"; submit.className = "primary-button"; submit.textContent = options.confirm ? "Подтвердить" : "Сохранить";
+  const input = options.input !== undefined ? document.createElement("textarea") : null;
+  if (input) { input.className = "dialog-input"; input.value = options.input ?? ""; input.rows = 4; input.setAttribute("aria-label", options.title); }
+  controls.append(cancel, submit);
+  form.append(controls); dialog.append(heading, message); if (input) dialog.append(input); dialog.append(form);
+  document.body.appendChild(dialog);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: string | boolean | null) => { if (settled) return; settled = true; dialog.remove(); resolve(value); };
+    cancel.addEventListener("click", () => finish(null));
+    dialog.addEventListener("cancel", () => finish(null));
+    form.addEventListener("submit", (event) => { event.preventDefault(); finish(options.confirm ? true : (input?.value ?? "")); });
+    dialog.addEventListener("close", () => finish(null));
+    if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
+    input?.focus();
+  });
+}
+
+const askText = (title: string, initial = "") => openInteractionDialog({ title, input: initial }) as Promise<string | null>;
+const askConfirm = (message: string) => openInteractionDialog({ title: "Подтверждение", message, confirm: true }) as Promise<boolean>;
+const notifyUser = (message: string) => openInteractionDialog({ title: "Результат", message }).then(() => undefined);
 
 function isPageId(value: string | null): value is PageId {
   return fallbackNavItems.some((item) => item.id === value);
@@ -124,6 +162,20 @@ function defaultCustomPeriod(): DashboardPeriod {
   return { id: "custom", start: dateInputValue(start), end: dateInputValue(end) };
 }
 
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+type DrawerDetail = {
+  title: string;
+  subtitle: string;
+  facts: Array<string>;
+  page?: PageId;
+  target?: string;
+  actionLabel?: string;
+};
+
 function getInitialDashboardPeriod(): DashboardPeriod {
   const url = new URL(window.location.href);
   const id = url.searchParams.get("period");
@@ -146,23 +198,92 @@ function App() {
   const [planItems, setPlanItems] = useState<ActionPlanItem[]>([]);
   const [planOpen, setPlanOpen] = useState(false);
   const [planFilter, setPlanFilter] = useState<"all" | ActionPlanItem["status"]>("all");
+  const planExecutionLock = useRef(false);
   const [planBusyId, setPlanBusyId] = useState<string | null>(null);
   const [session, setSession] = useState<DashboardSession | null>(null);
   const [operation, setOperation] = useState<"procurement" | "production" | null>(null);
   const [operationItem, setOperationItem] = useState("");
+  const [pendingFifoPlanId, setPendingFifoPlanId] = useState<string | null>(null);
   const [pendingPlanOperationId, setPendingPlanOperationId] = useState<string | null>(null);
   const [operationBusy, setOperationBusy] = useState(false);
   const [fifoOpen, setFifoOpen] = useState(false);
   const [fifoData, setFifoData] = useState<FifoReconciliationData | null>(null);
   const [fifoBusy, setFifoBusy] = useState(false);
   const [actionDetail, setActionDetail] = useState<{ title: string; description: string; page: PageId; target?: string } | null>(null);
+  const [drawerDetail, setDrawerDetail] = useState<DrawerDetail | null>(null);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const sessionShellRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const capturePrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const clearPrompt = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", capturePrompt);
+    window.addEventListener("appinstalled", clearPrompt);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", capturePrompt);
+      window.removeEventListener("appinstalled", clearPrompt);
+    };
+  }, []);
+
+  const installApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") setInstallPrompt(null);
+  };
+
+  const getLogoutUrl = () => {
+    const { protocol, hostname, host } = window.location;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".localhost")) {
+      return `${protocol}//${host}/logout`;
+    }
+
+    const hostParts = hostname.split(".");
+    const appIndex = hostParts.findIndex((part) => part === "app");
+    if (appIndex >= 0 && appIndex + 1 < hostParts.length) {
+      return `${protocol}//${hostParts.slice(appIndex + 1).join(".")}/logout`;
+    }
+
+    return `${protocol}//${hostParts.slice(1).join(".") || hostname}/logout`;
+  };
+
+  const handleLogout = () => {
+    setSessionMenuOpen(false);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = getLogoutUrl();
+    form.style.display = "none";
+    document.body.appendChild(form);
+    form.submit();
+  };
+
+  const goToHomePage = () => {
+    setSessionMenuOpen(false);
+    selectPage("today");
+  };
 
   useEffect(() => {
     if (!toast) return undefined;
     const timeoutId = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
+
+  useEffect(() => {
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (sessionShellRef.current && target && !sessionShellRef.current.contains(target)) {
+        setSessionMenuOpen(false);
+      }
+    };
+    if (!sessionMenuOpen) return undefined;
+    window.addEventListener("mousedown", closeMenu);
+    return () => window.removeEventListener("mousedown", closeMenu);
+  }, [sessionMenuOpen]);
 
   useEffect(() => {
     void getActionPlanItems().then((items) => {
@@ -269,19 +390,20 @@ function App() {
       }
       await dashboard.refresh();
       setToast(status.status === "partial" ? "Данные обновлены частично. Подробности — в журнале синхронизации." : "Синхронизация завершена, данные обновлены");
-      return;
+      return status.status;
     }
-    setToast("Синхронизация продолжается в фоне. Экран можно обновить позже.");
+    throw new Error("Синхронизация продолжается в фоне. Задача остаётся в работе; проверьте результат позднее.");
   };
 
   const setPlanStatus = async (item: ActionPlanItem, status: ActionPlanItem["status"], result?: string) => {
-    const updated = await updateActionPlanItem(item.id, { status });
-    setPlanItems((items) => items.map((current) => current.id === item.id ? { ...updated, result: result ?? updated.result } : current));
+    const updated = await updateActionPlanItem(item.id, { status, ...(result ? { result } : {}) });
+    setPlanItems((items) => items.map((current) => current.id === item.id ? updated : current));
     return updated;
   };
 
   const executePlanItem = async (item: ActionPlanItem) => {
-    if (planBusyId === item.id || item.status === "done" || item.status === "cancelled") return;
+    if (planExecutionLock.current || item.status === "done" || item.status === "cancelled") return;
+    planExecutionLock.current = true;
     setPlanBusyId(item.id);
     const normalized = `${item.title} ${item.sku}`.toLocaleLowerCase("ru-RU");
     try {
@@ -294,15 +416,17 @@ function App() {
       }
       if (normalized.includes("синхрон") || normalized.includes("устар")) {
         await setPlanStatus(item, "in_progress");
-        await runTenantSync();
-        await setPlanStatus(item, "done", "Синхронизация WB завершена, данные обновлены.");
+        const status = await runTenantSync();
+        await setPlanStatus(item, status === "success" ? "done" : "blocked", status === "success" ? "Синхронизация WB завершена, данные обновлены." : "Синхронизация частичная. Проверьте журнал перед завершением задачи.");
         return;
       }
       if (normalized.includes("fifo")) {
         const data = await getFifoReconciliation();
         setFifoData(data);
         setFifoOpen(true);
-        await setPlanStatus(item, "done", "Сверка FIFO открыта для проверки.");
+        setPendingFifoPlanId(item.id);
+        setPlanOpen(false);
+        await setPlanStatus(item, "in_progress");
         setToast("Сверка FIFO открыта");
         return;
       }
@@ -316,6 +440,7 @@ function App() {
         setOperationItem(item.sku);
         setOperation("procurement");
         setPendingPlanOperationId(item.id);
+        setPlanOpen(false);
         await setPlanStatus(item, "in_progress");
         setToast("Открыта форма заявки. После сохранения операция будет выполнена.");
         return;
@@ -324,32 +449,48 @@ function App() {
         setOperationItem(item.sku || dashboard.productionTasks[0]?.sku || "");
         setOperation("production");
         setPendingPlanOperationId(item.id);
+        setPlanOpen(false);
         await setPlanStatus(item, "in_progress");
         setToast("Открыта форма производственной смены. После сохранения операция будет выполнена.");
         return;
       }
 
-      // Проверки и контрольные действия исполняются открытием нужного контура.
+      // Navigation starts a task; only a recorded operation or explicit result completes it.
       if (normalized.includes("провер") || normalized.includes("контрол")) {
         selectPage("control");
         setActionDetail({ title: `Контроль: ${item.sku || item.title}`, description: "Проверка открыта в разделе контроля качества данных.", page: "control" });
-        await setPlanStatus(item, "done", "Проверка открыта в разделе контроля.");
-        setToast("Проверка открыта и выполнена");
+        setPlanOpen(false);
+        await setPlanStatus(item, "in_progress");
+        setToast("Проверка открыта. После проверки укажите результат в плане задач.");
         return;
       }
 
       handleAction(item.title, item.sku);
-      await setPlanStatus(item, "done", "Действие открыто из плана задач.");
-      setToast(`${item.title}: действие выполнено`);
+      setPlanOpen(false);
+      await setPlanStatus(item, "in_progress");
+      setToast(`${item.title}: задача в работе`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Задача не выполнена");
     } finally {
+      planExecutionLock.current = false;
       setPlanBusyId(null);
     }
   };
 
   const handleAction = (label: string, itemLabel: string) => {
     const normalizedLabel = label.toLocaleLowerCase("ru-RU");
+    if (label === "Производственные нормы") {
+      selectPage("settings", "production-norms");
+      return;
+    }
+    if (label === "Остатки сырья") {
+      selectPage("settings", "material-inventory");
+      return;
+    }
+    if (label === "Рабочая смена") {
+      selectPage("production", "production-shift");
+      return;
+    }
     if (normalizedLabel === "реклама сегодня") {
       selectPage("ads");
       setActionDetail({ title: `Реклама: ${itemLabel}`, description: "Открыта рекламная аналитика. Здесь можно проверить кампании, воронку и товары в ставках за выбранный период.", page: "ads", target: "ads-campaigns" });
@@ -438,7 +579,7 @@ function App() {
       setOperation("procurement");
       return;
     }
-    if (normalizedAction.includes("производ") || normalizedAction.includes("ускор") || normalizedAction.includes("парт")) {
+    if (normalizedAction.includes("производ") || normalizedAction.includes("ускор") || normalizedAction.includes("парт") || normalizedAction.includes("обновить факт") || normalizedAction.includes("просроч")) {
       setOperationItem(itemLabel);
       setOperation("production");
       return;
@@ -501,6 +642,7 @@ function App() {
           sku: String(values.get("sku") ?? ""),
           productName: String(values.get("product") ?? ""),
           plannedUnits: Number(values.get("quantity") ?? 0),
+          taskDate: String(values.get("taskDate") ?? ""),
         });
         setToast(`Смена сохранена: ${result.saved} задача`);
         if (pendingPlanOperationId) {
@@ -516,6 +658,172 @@ function App() {
     } finally {
       setOperationBusy(false);
     }
+  };
+
+  const openCardDetail = (detail: DrawerDetail) => setDrawerDetail(detail);
+  const closeCardDetail = () => setDrawerDetail(null);
+  const formatMoney = (value: number, unit = "₽"): string => `${Math.round(value).toLocaleString("ru-RU")} ${unit}`;
+  const formatCount = (value: number) => Math.round(value).toLocaleString("ru-RU");
+
+  const openProductDetail = (item: ProductEconomicsRow) => {
+    openCardDetail({
+      title: item.product || item.article || item.nmId,
+      subtitle: item.article || `WB ${item.nmId}`,
+      facts: [
+        `Артикул: ${item.nmId || "не задан"}`,
+        `Количество заказов: ${formatCount(item.orders)}`,
+        `Выкупов: ${formatCount(item.sales)}`,
+        `Выручка: ${formatMoney(item.revenue)}`,
+        `Реклама: ${formatMoney(item.adSpend)}`,
+        `Маржа: ${formatMoney(item.margin)}`,
+        `DРР: ${item.drr.toFixed(1)}%`,
+        `Запас: ${formatCount(item.stock)} шт.`,
+        item.daysOfStock === null ? "Прогноз запаса: нет данных" : `Прогноз запаса: ${item.daysOfStock.toFixed(1)} дн.`,
+      ],
+      page: "products",
+    });
+  };
+
+  const openControlCheckDetail = (row: Record<string, unknown>) => {
+    const module = String(row.Модуль ?? "Контроль");
+    const name = String(row.Проверка ?? "Проверка");
+    const status = String(row.Статус ?? "—");
+    const details = String(row.Детали ?? "Не переданы подробности.");
+    const action = String(row["Что сделать"] ?? "Перейдите в раздел контроля для шага исправления.");
+    const normalized = `${name} ${module}`.toLocaleLowerCase("ru-RU");
+    const openPage = normalized.includes("сверка сырья") || normalized.includes("fifo") ? "settings" : normalized.includes("реклам") ? "ads" : normalized.includes("запас") || normalized.includes("склад") ? "stock" : normalized.includes("продаж") || normalized.includes("финанс") ? "finance" : normalized.includes("норм") ? "settings" : normalized.includes("себестоимость") || normalized.includes("стоимость") || normalized.includes("маржа") ? "settings" : "control";
+    const target =
+      openPage === "settings"
+        ? normalized.includes("норм") ? "production-norms" : normalized.includes("себестоимость") || normalized.includes("стоимость") ? "product-costs" : undefined
+        : openPage === "control" ? "control-checks" : openPage === "ads" ? "ads-campaigns" : undefined;
+    openCardDetail({
+      title: name,
+      subtitle: module,
+      facts: [
+        `Статус: ${status}`,
+        `Подробнее: ${details}`,
+        `Рекомендуемое действие: ${action}`,
+      ],
+      page: openPage,
+      target,
+      actionLabel: "Открыть раздел",
+    });
+  };
+
+  const openStockRowDetail = (row: InventoryWatchRow) => {
+    openCardDetail({
+      title: `Запас ${row.sku}`,
+      subtitle: row.name,
+      facts: [
+        `Запас: ${row.stock}`,
+        `Маржа: ${row.margin}`,
+        `Сигнал: ${row.signal}`,
+      ],
+      page: "stock",
+      target: "stock-coverage",
+      actionLabel: "Открыть разбор",
+    });
+  };
+
+  const openReorderDetail = (item: ReorderItem) => {
+    openCardDetail({
+      title: `Приоритет пополнения`,
+      subtitle: item.name,
+      facts: [
+        `SKU: ${item.sku}`,
+        `Дней запас: ${item.days}`,
+        `Требуемое количество: ${item.qty}`,
+        `Склад: ${item.warehouse}`,
+        `Риск: ${item.risk}`,
+      ],
+      page: "stock",
+      target: "stock-reorder-plan",
+      actionLabel: "Открыть план пополнения",
+    });
+  };
+
+  const openCoverageRowDetail = (row: StockCoverageRow) => {
+    openCardDetail({
+      title: `Запас по SKU`,
+      subtitle: row.label,
+      facts: [
+        `Подробности: ${row.detail}`,
+        `Запас: ${row.value}`,
+      ],
+      page: "stock",
+      target: "stock-coverage",
+      actionLabel: "Показать запас",
+    });
+  };
+
+  const openRuleDetail = (row: StockRule) => {
+    openCardDetail({
+      title: "Правило пополнения",
+      subtitle: row.id,
+      facts: [
+        `Название: ${row.title}`,
+        `Описание: ${row.description || "не указано"}`,
+      ],
+      page: "supply",
+      target: "supply-orders",
+      actionLabel: "Перейти в поставки",
+    });
+  };
+
+  const openProductionStageDetail = (stage: ProductionStage) => {
+    openCardDetail({
+      title: `Этап: ${stage.label}`,
+      subtitle: stage.status,
+      facts: [stage.value],
+      page: "production",
+      target: "production-shift",
+      actionLabel: "Открыть производство",
+    });
+  };
+
+  const openProductionTaskDetail = (task: ProductionTask) => {
+    openCardDetail({
+      title: task.title || `Задача ${task.sku}`,
+      subtitle: `SKU: ${task.sku}`,
+      facts: [
+        `План: ${task.plan}`,
+        `Факт: ${task.actual}`,
+        `Статус: ${task.status}`,
+      ],
+      page: "production",
+      target: "production-shift",
+      actionLabel: "Открыть смену",
+    });
+  };
+
+  const openMaterialNeedDetail = (item: MaterialNeed) => {
+    openCardDetail({
+      title: `Материал: ${item.name}`,
+      subtitle: item.status,
+      facts: [
+        `Нужно: ${item.need}`,
+        `Запас: ${item.stock}`,
+        `Статус: ${item.tone}`,
+      ],
+      page: "supply",
+      target: "supply-orders",
+      actionLabel: "Открыть поставки",
+    });
+  };
+
+  const openSupplyShipmentDetail = (shipment: SupplyShipment) => {
+    openCardDetail({
+      title: `Поставка ${shipment.id}`,
+      subtitle: shipment.supplier,
+      facts: [
+        `ETA: ${shipment.eta}`,
+        `Сумма: ${shipment.amount}`,
+        `Статус: ${shipment.status}`,
+      ],
+      page: "supply",
+      target: "supply-orders",
+      actionLabel: "Открыть поставку",
+    });
   };
 
   return (
@@ -598,17 +906,61 @@ function App() {
           </div>
 
           <div className="topbar-actions">
-            {activePlanItems.length ? (
-              <button
-                className="plan-counter"
-                type="button"
-                onClick={() => setPlanOpen(true)}
-              >
-                <CheckCircle2 size={16} />
-                <span>План {activePlanItems.length}</span>
-              </button>
+            {installPrompt ? <button className="secondary-button install-button" type="button" onClick={() => void installApp()}><Download size={17} /><span>Установить</span></button> : null}
+            <button
+              className="secondary-button home-button"
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                selectPage("today");
+              }}
+            >
+              <House size={17} />
+              <span>На главную</span>
+            </button>
+            <button
+              className="plan-counter"
+              type="button"
+              onClick={() => setPlanOpen(true)}
+              aria-label="Открыть план задач"
+            >
+              <CheckCircle2 size={16} />
+              <span>{activePlanItems.length ? `План ${activePlanItems.length}` : "План задач"}</span>
+            </button>
+            {session ? (
+              <div className="session-shell" ref={sessionShellRef}>
+                <button
+                  className="session-chip"
+                  type="button"
+                  aria-label={`Текущий аккаунт: ${session.tenant.name}`}
+                  aria-expanded={sessionMenuOpen}
+                  onClick={() => setSessionMenuOpen((open) => !open)}
+                >
+                  <span className="session-avatar">{session.user.name.slice(0, 1)}</span>
+                  <span>{session.user.name}</span>
+                  <small>{session.tenant.name}</small>
+                  <ChevronDown size={14} />
+                </button>
+                {sessionMenuOpen ? (
+                  <div className="session-menu" role="menu" aria-label="Действия аккаунта">
+                    <span className="eyebrow">Аккаунт</span>
+                    <button type="button" onClick={goToHomePage}>
+                      <strong>На главную</strong>
+                      <small>Перейти в сводный обзор</small>
+                    </button>
+                    <a href="/billing" role="menuitem"><strong>Подписка и оплата</strong><small>Статус тарифа и история платежей</small></a>
+                    <a href="/account" role="menuitem"><strong>Аккаунт</strong><small>Пароль и email</small></a>
+                    <a href="/offer" role="menuitem"><strong>Документы</strong><small>Оферта и политика конфиденциальности</small></a>
+                    <a href="/contacts" role="menuitem"><strong>Поддержка</strong><small>Контакты и помощь по кабинету</small></a>
+                    <button className="session-logout" type="button" onClick={handleLogout}>
+                      <LogOut size={16} />
+                      <strong>Выйти</strong>
+                      <small>Завершить сеанс и вернуться к входу</small>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
-            {session ? <div className="session-chip" aria-label={`Текущий аккаунт: ${session.tenant.name}`}><span className="session-avatar">{session.user.name.slice(0, 1)}</span><span>{session.user.name}</span><small>{session.tenant.name}</small></div> : null}
             <button
               className={cx("primary-button", dashboard.refreshing && "is-refreshing")}
               type="button"
@@ -657,11 +1009,16 @@ function App() {
           <StockView
             inventory={dashboard.inventory}
             onAction={handleAction}
+            onOpenStockRow={openStockRowDetail}
+            onOpenReorder={openReorderDetail}
+            onOpenCoverage={openCoverageRowDetail}
+            onOpenRule={openRuleDetail}
             reorderPlan={dashboard.reorderPlan}
             stockCoverage={dashboard.stockCoverage}
             stockHero={dashboard.stockHero}
             stockMetrics={dashboard.stockMetrics}
             stockRules={dashboard.stockRules}
+            sellerWarehouses={dashboard.sellerWarehouses}
           />
         ) : null}
         {activeNav === "ads" ? (
@@ -682,6 +1039,7 @@ function App() {
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
+            financeReport={dashboard.financeReport}
             financeMetrics={dashboard.financeMetrics}
             onAction={handleAction}
             period={dashboardPeriod}
@@ -697,6 +1055,9 @@ function App() {
             productionMetrics={dashboard.productionMetrics}
             productionStages={dashboard.productionStages}
             productionTasks={dashboard.productionTasks}
+            onOpenProductionStage={openProductionStageDetail}
+            onOpenProductionTask={openProductionTaskDetail}
+            onOpenMaterialNeed={openMaterialNeedDetail}
           />
         ) : null}
 
@@ -708,6 +1069,11 @@ function App() {
             supplierPulse={dashboard.supplierPulse}
             supplyMetrics={dashboard.supplyMetrics}
             supplyShipments={dashboard.supplyShipments}
+            supplyNewOrders={dashboard.supplyNewOrders}
+            acceptanceCoefficients={dashboard.acceptanceCoefficients}
+            transitTariffs={dashboard.transitTariffs}
+            supplyErrors={dashboard.supplyErrors}
+            onOpenShipment={openSupplyShipmentDetail}
           />
         ) : null}
 
@@ -734,10 +1100,28 @@ function App() {
         ) : null}
 
         {activeNav === "products" ? (
-          <ProductsView period={dashboardPeriod} products={dashboard.productEconomics} setPeriod={setDashboardPeriod} />
+          <ProductsView
+            period={dashboardPeriod}
+            products={dashboard.productEconomics}
+            productCards={dashboard.productCards}
+            productCardErrors={dashboard.productCardErrors}
+            prices={dashboard.productPrices}
+            productPriceErrors={dashboard.productPriceErrors}
+            customerQuality={dashboard.customerQuality}
+            onRefresh={dashboard.refresh}
+            setPeriod={setDashboardPeriod}
+            onOpenProduct={openProductDetail}
+          />
         ) : null}
 
-        {activeNav === "control" ? <ControlView data={dashboard.dataQuality} onNavigate={selectPage} onOpenFifo={() => handleAction("Открыть сверку FIFO", "")} /> : null}
+        {activeNav === "control" ? (
+          <ControlView
+            data={dashboard.dataQuality}
+            onNavigate={selectPage}
+            onOpenFifo={() => handleAction("Открыть сверку FIFO", "")}
+            onOpenCheck={(row) => openControlCheckDetail(row)}
+          />
+        ) : null}
         {activeNav === "settings" ? <SettingsViewV2 onSynced={dashboard.refresh} /> : null}
 
         {toast ? (
@@ -750,6 +1134,7 @@ function App() {
         {operation ? <OperationDialog
           busy={operationBusy}
           item={operationItem}
+          productName={dashboard.productionTasks.find((task) => task.sku === operationItem)?.title ?? ""}
           kind={operation}
           onClose={() => setOperation(null)}
           onSubmit={(form) => void submitOperation(form)}
@@ -763,6 +1148,11 @@ function App() {
             try {
               const result = await applyFifoReconciliation(note);
               setToast(result.run_id ? `FIFO-сверка №${result.run_id} проведена` : "Безопасных строк для проведения нет");
+              if (result.run_id && pendingFifoPlanId) {
+                const item = planItems.find((row) => row.id === pendingFifoPlanId);
+                if (item) await setPlanStatus(item, "done", `FIFO-сверка №${result.run_id} проведена.`);
+                setPendingFifoPlanId(null);
+              }
               setFifoData(await getFifoReconciliation());
               await dashboard.refresh();
             } catch (error) {
@@ -773,6 +1163,7 @@ function App() {
           }}
         /> : null}
         {actionDetail ? <ActionDetailDialog detail={actionDetail} onClose={() => setActionDetail(null)} onNavigate={selectPage} /> : null}
+        {drawerDetail ? <DetailDrawer detail={drawerDetail} onClose={() => setDrawerDetail(null)} onNavigate={selectPage} /> : null}
       </main>
 
       {planOpen ? (
@@ -795,7 +1186,7 @@ function App() {
       <nav className="bottom-nav" aria-label="Мобильная навигация">
         {dashboard.mobileNav.map((id) => {
           const item = dashboard.navItems.find((navItem) => navItem.id === id)!;
-          const Icon = iconByKey[item.iconKey];
+          const Icon = item.id === "today" ? House : iconByKey[item.iconKey];
           return (
             <button
               className={cx(activeNav === item.id && "active")}
@@ -804,10 +1195,20 @@ function App() {
               onClick={() => selectPage(item.id)}
             >
               <Icon size={20} />
-              <span>{item.label}</span>
+              <span>{item.id === "today" ? "Главная" : item.label}</span>
             </button>
           );
         })}
+        {session ? (
+          <button
+            className="session-bottom-button"
+            type="button"
+            onClick={handleLogout}
+          >
+            <LogOut size={20} />
+            <span>Выход</span>
+          </button>
+        ) : null}
       </nav>
     </div>
   );
@@ -855,7 +1256,7 @@ function PlanDrawer({
   onOpenFifo: () => void;
   onExecute: (item: ActionPlanItem) => Promise<void>;
   busyId: string | null;
-  onUpdate: (id: string, patch: Partial<Pick<ActionPlanItem, "status" | "assignee" | "due_at" | "priority">>) => void;
+  onUpdate: (id: string, patch: Partial<Pick<ActionPlanItem, "status" | "assignee" | "due_at" | "priority" | "result">>) => void;
 }) {
   const activeItems = items.filter((item) => item.status !== "done" && item.status !== "cancelled");
   const visibleItems = filter === "all" ? activeItems : items.filter((item) => item.status === filter);
@@ -871,15 +1272,16 @@ function PlanDrawer({
   return (
     <>
       <button className="drawer-backdrop" type="button" aria-label="Закрыть план задач" onClick={onClose} />
-      <aside className="plan-drawer" aria-label="План задач">
+      <aside className="plan-drawer" role="dialog" aria-modal="true" aria-labelledby="task-plan-title">
         <div className="drawer-header">
           <div>
             <span className="eyebrow">Операционный контур</span>
-            <h2>План задач</h2>
+            <h2 id="task-plan-title">План задач</h2>
             <p>{activeItems.length ? `${activeItems.length} задач в очереди` : "Очередь пока пуста"}</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Закрыть план задач" onClick={onClose}>
+          <button className="secondary-button drawer-close-button" type="button" aria-label="Закрыть план задач" onClick={onClose}>
             <X size={18} />
+            <span>Закрыть</span>
           </button>
         </div>
         <div className="plan-filters" role="tablist" aria-label="Фильтр задач">
@@ -907,12 +1309,29 @@ function PlanDrawer({
               <StatusPill tone={item.status === "done" ? "good" : item.status === "cancelled" || item.status === "blocked" ? "danger" : item.status === "in_progress" ? "info" : "warn"}>
                 {statusLabels[item.status]}
               </StatusPill>
-              {item.status !== "done" && item.status !== "cancelled" && item.status !== "blocked" ? (
-                <button className="secondary-button" type="button" disabled={busyId === item.id} onClick={() => void onExecute(item)}>
-                  {busyId === item.id ? "Выполняем…" : "Запустить"}
-                </button>
-              ) : null}
-              {item.title.toLocaleLowerCase("ru-RU").includes("fifo") && item.status !== "cancelled" ? <button className="secondary-button" type="button" onClick={onOpenFifo}>Открыть FIFO</button> : null}
+              <div className="plan-item-actions">
+                {item.status === "created" || item.status === "in_progress" ? (
+                  <button className="secondary-button" type="button" disabled={busyId === item.id} onClick={() => void onExecute(item)}>
+                    {busyId === item.id ? "Выполняем…" : item.status === "in_progress" ? "Продолжить" : "В работу"}
+                  </button>
+                ) : null}
+                {item.status === "blocked" ? (
+                  <button className="secondary-button" type="button" disabled={busyId === item.id} onClick={() => void onExecute(item)}>
+                    {busyId === item.id ? "Выполняем…" : "Запустить снова"}
+                  </button>
+                ) : null}
+                {item.status === "in_progress" ? (
+                  <button className="primary-button" type="button" disabled={busyId === item.id} onClick={() => void askText("Что выполнено? Укажите результат ручного выполнения задачи:").then((result) => { if (result?.trim()) void onUpdate(item.id, { status: "done", result: `Выполнено вручную: ${result.trim()}` }); })}>
+                    <CheckCircle2 size={16} />Подтвердить вручную
+                  </button>
+                ) : null}
+                {item.status !== "done" && item.status !== "cancelled" ? (
+                  <button className="ghost-button" type="button" disabled={busyId === item.id} onClick={() => void askConfirm("Отменить эту задачу? Её история сохранится в фильтре «Отменены».").then((confirmed) => { if (confirmed) void onUpdate(item.id, { status: "cancelled" }); })}>
+                    Отменить
+                  </button>
+                ) : null}
+                {item.title.toLocaleLowerCase("ru-RU").includes("fifo") && item.status !== "cancelled" ? <button className="secondary-button" type="button" onClick={onOpenFifo}>Открыть FIFO</button> : null}
+              </div>
               <details className="plan-details">
                 <summary>Детали</summary>
                 <div className="plan-detail-grid">
@@ -920,7 +1339,7 @@ function PlanDrawer({
                   <label>Приоритет<select value={item.priority ?? "medium"} onChange={(event) => onUpdate(item.id, { priority: event.target.value as ActionPlanItem["priority"] })}><option value="low">Низкий</option><option value="medium">Средний</option><option value="high">Высокий</option><option value="critical">Критичный</option></select></label>
                   <label>Срок<input type="date" value={item.due_at?.slice(0, 10) ?? ""} onChange={(event) => onUpdate(item.id, { due_at: event.target.value || null })} /></label>
                 </div>
-                {item.result ? <p className="plan-result"><strong>Результат AI:</strong> {item.result}</p> : null}
+                {item.result ? <p className="plan-result"><strong>Результат:</strong> {item.result}</p> : null}
                 {item.history?.length ? <div className="plan-history"><span>История</span>{item.history.slice(-3).reverse().map((entry, index) => <small key={`${entry.at}-${index}`}>{statusLabels[entry.status]} · {new Date(entry.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</small>)}</div> : null}
               </details>
             </article>
@@ -1019,7 +1438,7 @@ function TodayView({
       <MetricGrid metrics={todayMetrics} onMetricClick={(metric) => onAction(metric.label, metric.label)} />
 
       <div className="content-grid">
-        <section className="work-section">
+        <section className="work-section" id="stock-reorder-plan">
           <SectionHeader kicker="Очередь решений" title="Что требует действия">
             <span className="section-tag">
               <Filter size={16} />
@@ -1114,19 +1533,29 @@ function StockIncidentsPanelV2() {
 function StockView({
   inventory,
   onAction,
+  onOpenStockRow,
+  onOpenReorder,
+  onOpenCoverage,
+  onOpenRule,
   reorderPlan,
   stockCoverage,
   stockHero,
   stockMetrics,
   stockRules,
+  sellerWarehouses,
 }: {
   inventory: InventoryWatchRow[];
   onAction: (label: string, itemLabel: string) => void;
+  onOpenStockRow: (row: InventoryWatchRow) => void;
+  onOpenReorder: (item: ReorderItem) => void;
+  onOpenCoverage: (row: StockCoverageRow) => void;
+  onOpenRule: (row: StockRule) => void;
   reorderPlan: ReorderItem[];
   stockCoverage: StockCoverageRow[];
   stockHero: StockHero;
   stockMetrics: DashboardMetric[];
   stockRules: StockRule[];
+  sellerWarehouses: Array<{ id?: number; name?: string; office_id?: number; quantity?: number; processing?: boolean }>;
 }) {
   return (
     <div className="workspace-view">
@@ -1151,10 +1580,10 @@ function StockView({
 
       <MetricGrid metrics={stockMetrics} onMetricClick={(metric) => onAction("Контроль", metric.label)} />
 
-      <InventoryTable inventory={inventory} onOpen={(row) => onAction("Контроль", row.sku)} />
+      <InventoryTable inventory={inventory} onOpen={(row) => onOpenStockRow(row)} />
 
       <div className="stock-grid">
-        <section className="work-section">
+        <section className="work-section" id="reorder-plan">
           <SectionHeader kicker="План пополнения" title="Что отгружать первым">
             <span className="section-tag">
               <Truck size={16} />
@@ -1164,7 +1593,7 @@ function StockView({
 
           <div className="reorder-list">
             {reorderPlan.map((item) => (
-              <article className={cx("reorder-card", "detail-trigger", item.tone)} key={item.sku} tabIndex={0} role="button" onClick={() => onAction("Отгрузка", item.sku)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onAction("Отгрузка", item.sku); } }}>
+              <article className={cx("reorder-card", "detail-trigger", item.tone)} key={item.sku} tabIndex={0} role="button" onClick={() => onOpenReorder(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenReorder(item); } }}>
                 <div>
                   <span>{item.sku}</span>
                   <h3>{item.name}</h3>
@@ -1183,15 +1612,20 @@ function StockView({
         </section>
 
         <aside className="insight-column">
-          <section className="panel">
+          <section className="panel" id="stock-coverage">
             <SectionHeader compact kicker="Контур" title="Запасы WB">
               <button className="icon-button" type="button" aria-label="Открыть контроль запасов" onClick={() => onAction("Контроль", "Запасы WB")}><Package size={20} /></button>
             </SectionHeader>
             <div className="warehouse-list">
               {stockCoverage.map((row) => (
-                <CoverageRow key={row.label} row={row} onOpen={() => onAction("Контроль", row.label)} />
+                <CoverageRow key={row.label} row={row} onOpen={() => onOpenCoverage(row)} />
               ))}
             </div>
+          </section>
+
+          <section className="panel" id="seller-warehouses">
+            <SectionHeader compact kicker="FBS / DBS" title="Склады продавца"><Truck size={20} /></SectionHeader>
+            {sellerWarehouses.length ? <div className="warehouse-list">{sellerWarehouses.map((warehouse) => <button className="warehouse-row detail-trigger" type="button" key={String(warehouse.id ?? warehouse.name)} onClick={() => onAction("Поставка", String(warehouse.name ?? "Склад продавца"))}><span><strong>{warehouse.name ?? "Склад продавца"}</strong><small>{warehouse.processing ? "обновляется" : "остатки продавца"}</small></span><b>{Number(warehouse.quantity ?? 0).toLocaleString("ru-RU")} шт.</b></button>)}</div> : <p className="plan-empty">Склады продавца не заведены или у токена нет категории «Маркетплейс».</p>}
           </section>
 
           <section className="panel">
@@ -1200,7 +1634,7 @@ function StockView({
             </SectionHeader>
             <div className="rule-list">
               {stockRules.map((rule) => (
-                <button className="rule-card detail-trigger" type="button" key={rule.id} onClick={() => onAction("Поставка", rule.title)}>
+                <button className="rule-card detail-trigger" type="button" key={rule.id} onClick={() => onOpenRule(rule)}>
                   <strong>{rule.title}</strong>
                   <p>{rule.description}</p>
                 </button>
@@ -1299,6 +1733,7 @@ function FinanceView({
   cashWindows,
   expenseSplit,
   financeLedger,
+  financeReport,
   financeMetrics,
   onAction,
   period,
@@ -1307,11 +1742,19 @@ function FinanceView({
   cashWindows: Array<{ label: string; value: string; detail: string }>;
   expenseSplit: ExpenseSplit[];
   financeLedger: FinanceLedgerItem[];
+  financeReport: import("./contracts").FinanceReportState;
   financeMetrics: DashboardMetric[];
   onAction: (label: string, itemLabel: string) => void;
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
 }) {
+  const financeCoverage = financeReport.complete
+    ? { label: "период закрыт", className: "status-pill good", note: "Все даты выбранного периода покрыты реализацией WB." }
+    : !financeReport.lastDate
+      ? { label: "нет данных WB", className: "status-pill warn", note: "Реализация WB ещё не загружена." }
+      : Number(financeReport.lagDays ?? 0) <= 1
+        ? { label: "WB обновляет данные", className: "status-pill info", note: "WB ещё не закрыл последний день. Расчёт выполнен по последней доступной дате." }
+        : { label: "неполное покрытие", className: "status-pill warn", note: "Часть выбранного периода ещё не покрыта реализацией WB." };
   return (
     <div className="workspace-view">
       <section className="hero-strip finance-hero" aria-label="Финансовый контур">
@@ -1323,15 +1766,20 @@ function FinanceView({
           <h2>{financeMetrics[0]?.value ?? "0 ₽"} расчетной прибыли</h2>
           <p>Выручка, рекламные расходы и остаток сведены в один управленческий контур.</p>
         </div>
-        <div className="hero-actions">
-          <button className="secondary-button" type="button" onClick={() => onAction("Отчет", "финансы")}>
+          <div className="hero-actions">
+            <button className="secondary-button" type="button" onClick={() => onAction("Отчет", "финансы")}>
             <Plus size={17} />
-            <span>В отчет</span>
-          </button>
+              <span>В отчет</span>
+            </button>
+            <a className="secondary-button" href={financeExportUrl(period)} download>
+              <Download size={17} />
+              <span>Скачать XLSX</span>
+            </a>
         </div>
       </section>
 
       <MetricGrid metrics={financeMetrics} onMetricClick={(metric) => onAction("Отчет", metric.label)} />
+      {financeReport.balance !== undefined && financeReport.balance > 0 ? <div className="cash-grid finance-balance-grid"><div className="stat"><span>Баланс WB</span><strong>{Math.round(financeReport.balance).toLocaleString("ru-RU")} ₽</strong><small>текущий баланс продавца</small></div><div className="stat"><span>К выводу</span><strong>{Math.round(financeReport.forWithdraw ?? 0).toLocaleString("ru-RU")} ₽</strong><small>по данным Finance API</small></div></div> : null}
 
       <div className="content-grid">
         <section className="work-section">
@@ -1341,6 +1789,15 @@ function FinanceView({
           {financeLedger.length ? <div className="ledger-list">
             {financeLedger.map((item) => <FinanceLedgerRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
           </div> : <p className="plan-empty">Нет данных о движении денег</p>}
+          <section className="panel finance-expenses-panel">
+            <SectionHeader compact kicker="WB реализация" title="Статьи расходов">
+              <span className={financeCoverage.className}>{financeCoverage.label}</span>
+            </SectionHeader>
+            <p className="form-hint finance-coverage-note">{financeCoverage.note}</p>
+            {financeReport.wbCosts ? <div className="finance-wb-details"><h4>Дополнительная аналитика WB</h4><p className="form-hint">Расшифровка удержаний; не прибавляется повторно к расходам финансового отчёта.</p>{financeReport.wbCosts.errors.map((error) => <p className={financeReport.wbCosts?.status === "processing" ? "form-hint" : "operation-error"} key={error}>{error}</p>)}<p>Подмены: {financeReport.wbCosts.deductions.toLocaleString("ru-RU")} ₽ · Габариты: {financeReport.wbCosts.measurementPenalties.toLocaleString("ru-RU")} ₽ · Платное хранение: {financeReport.wbCosts.paidStorage.toLocaleString("ru-RU")} ₽{financeReport.wbCosts.status === "processing" ? " · расчёт продолжается" : ""}</p></div> : null}
+            {financeReport.rows.length ? <div className="ledger-list">{financeReport.rows.map((row) => <FinanceLedgerRow key={row.label} item={{ label: row.label, amount: `${Math.round(row.amount).toLocaleString("ru-RU")} ₽`, detail: "финансовый отчёт WB", tone: row.amount < 0 ? "warn" : "good" }} onOpen={() => onAction("Отчет", row.label)} />)}</div> : <p className="plan-empty">Финансовый отчёт WB ещё не загружен</p>}
+            {financeReport.lastDate ? <small className="muted">Последняя дата реализации: {financeReport.lastDate}{financeReport.calculationEnd ? ` · расчёт до ${financeReport.calculationEnd}` : ""}{financeReport.lagDays ? ` · отставание ${Math.round(financeReport.lagDays)} дн.` : ""}</small> : null}
+          </section>
         </section>
 
         <aside className="insight-column">
@@ -1365,41 +1822,208 @@ function FinanceView({
   );
 }
 
-function ProductsView({ period, products, setPeriod }: { period: DashboardPeriod; products: ProductEconomicsRow[]; setPeriod: (period: DashboardPeriod) => void }) {
+function ProductsView({
+  period,
+  productCards,
+  productCardErrors,
+  productPriceErrors,
+  products,
+  prices,
+  customerQuality,
+  onRefresh,
+  setPeriod,
+  onOpenProduct,
+}: {
+  period: DashboardPeriod;
+  productCards: import("./data-source").ProductCard[];
+  productCardErrors: string[];
+  productPriceErrors: string[];
+  products: ProductEconomicsRow[];
+  prices: ProductPriceRow[];
+  customerQuality: CustomerQualityData | null;
+  onRefresh: () => Promise<void>;
+  setPeriod: (period: DashboardPeriod) => void;
+  onOpenProduct: (item: ProductEconomicsRow) => void;
+}) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<ProductEconomicsRow | null>(null);
+  const [priceDrafts, setPriceDrafts] = useState<Record<number, { price: number; discount: number }>>({});
+  const [priceMessage, setPriceMessage] = useState("");
+  const [priceUploadId, setPriceUploadId] = useState<number | null>(null);
+  const [priceUploadStatus, setPriceUploadStatus] = useState("");
+  const [priceSubmitting, setPriceSubmitting] = useState(false);
+  const priceSubmitLock = useRef(false);
+  const [priceResults, setPriceResults] = useState<Array<Record<string, unknown>>>([]);
+  const [priceUploadHistory, setPriceUploadHistory] = useState<PriceUploadHistoryItem[]>([]);
+  const [editingCard, setEditingCard] = useState<ProductCard | null>(null);
   const normalized = query.trim().toLocaleLowerCase("ru-RU");
   const visible = products.filter((item) => !normalized || `${item.article} ${item.product} ${item.nmId}`.toLocaleLowerCase("ru-RU").includes(normalized));
   const revenue = products.reduce((sum, item) => sum + item.revenue, 0);
   const margin = products.reduce((sum, item) => sum + item.margin, 0);
   const atRisk = products.filter((item) => item.daysOfStock !== null && item.daysOfStock >= 0 && item.daysOfStock < 7).length;
+  const visiblePrices = (prices ?? []).filter((item) => !normalized || `${item.vendorCode} ${item.nmId}`.toLocaleLowerCase("ru-RU").includes(normalized)).slice(0, 50);
+  const rating = Number(customerQuality?.rating?.valuation ?? 0);
+  const quarantineCount = customerQuality?.quarantine?.length ?? 0;
+  const returnClaims = customerQuality?.returns?.claims;
+  const returnCount = Number(customerQuality?.returns?.total ?? (Array.isArray(returnClaims) ? returnClaims.length : 0));
+  const visibleReturns = Array.isArray(returnClaims) ? returnClaims.slice(0, 5) as Array<Record<string, unknown>> : [];
+  const chatCount = customerQuality?.chats?.length ?? 0;
+  useEffect(() => { void getPriceUploadHistory().then(setPriceUploadHistory).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!priceUploadId) return undefined;
+    let active = true;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const result = await getPriceUploadStatus(priceUploadId);
+        if (!active) return;
+        const payload = (result.data ?? {}) as Record<string, unknown>;
+        setPriceUploadStatus(`${String(result.label ?? "Статус неизвестен")} · ${String(payload.successGoodsNumber ?? "—")} из ${String(payload.overAllGoodsNumber ?? "—")}`);
+        setPriceResults(Array.isArray(result.items) ? result.items : []);
+        if (result.terminal === true) { setPriceUploadId(null); return; }
+      } catch (error) {
+        if (!active) return;
+        setPriceUploadStatus(`${error instanceof Error ? error.message : "Статус недоступен"}. Проверка будет повторена; цены повторно не отправляются.`);
+      }
+      if (active) timer = window.setTimeout(() => void poll(), 10000);
+    };
+    void poll();
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [priceUploadId]);
+  const submitPrices = async () => {
+    if (priceSubmitLock.current || priceUploadId) return;
+    const goods = Object.entries(priceDrafts).map(([nmID, value]) => ({ nmID: Number(nmID), price: Number(value.price), discount: Number(value.discount) }));
+    if (!goods.length) { setPriceMessage("Изменений цен нет"); return; }
+    if (goods.some((row) => !Number.isInteger(row.price) || row.price <= 0 || !Number.isInteger(row.discount) || row.discount < 0 || row.discount > 99)) {
+      setPriceMessage("Цена должна быть положительным целым числом, скидка — целым числом от 0 до 99."); return;
+    }
+    if (!await askConfirm(`Отправить изменения в WB для ${goods.length} SKU? Перед отправкой проверьте предпросмотр цен в списке.`)) return;
+    priceSubmitLock.current = true;
+    setPriceSubmitting(true);
+    try {
+      const result = await uploadProductPrices(goods);
+      const data = result.data as Record<string, unknown> | undefined;
+      const uploadId = Number(data?.id ?? data?.uploadID ?? 0);
+      if (!uploadId || result.error) throw new Error(String(result.errorText || "WB не вернул номер загрузки. Результат не подтверждён; проверьте историю в ЛК WB перед повторной отправкой."));
+      setPriceUploadId(uploadId);
+      setPriceUploadStatus("В обработке");
+      setPriceResults([]);
+      setPriceMessage(`Загрузка WB №${uploadId}: ожидаем результат обработки`);
+      setPriceUploadHistory(await getPriceUploadHistory().catch(() => priceUploadHistory));
+      setPriceDrafts({});
+    } catch (error) { setPriceMessage(error instanceof Error ? error.message : "Не удалось загрузить цены"); }
+    finally { priceSubmitLock.current = false; setPriceSubmitting(false); }
+  };
   return (
     <div className="workspace-view">
+      {customerQuality?.errors?.length ? <p className="operation-error" role="status">Часть данных WB недоступна: {customerQuality.errors.join(" · ")}</p> : null}
       <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и маржа по каждому артикулу WB.</p></div></section>
       <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good" }, { label: "Маржа", value: `${Math.round(margin).toLocaleString("ru-RU")} ₽`, delta: "до комиссий WB", detail: "расчётная", tone: "good" }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good" }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info" }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
-      <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label>{selected ? <section className="product-detail-panel" aria-live="polite"><div><span>Детализация товара</span><h3>{selected.product}</h3><p>{selected.article || `WB ${selected.nmId}`} · {selected.orders} заказов · {selected.sales} выкупов</p><p>Себестоимость: {Math.round(selected.unitCost).toLocaleString("ru-RU")} ₽ · Реклама: {Math.round(selected.adSpend).toLocaleString("ru-RU")} ₽ · Выкуп: {selected.buyout.toFixed(1)}%</p></div><button className="icon-button" aria-label="Закрыть детализацию" type="button" onClick={() => setSelected(null)}><X size={18} /></button></section> : null}{visible.length ? <div className="product-economics-cards">{visible.map((item) => <button className="product-economics-card detail-trigger" key={item.nmId} type="button" onClick={() => setSelected(item)}><div className="product-economics-card-heading"><div><strong>{item.product}</strong><span>{item.article || item.nmId}</span></div><strong>{Math.round(item.margin).toLocaleString("ru-RU")} ₽</strong></div><div className="product-economics-card-metrics"><span>Выручка<strong>{Math.round(item.revenue).toLocaleString("ru-RU")} ₽</strong></span><span>ДРР<strong>{item.drr.toFixed(1)}%</strong></span><span>Запас<strong>{`${item.stock.toLocaleString("ru-RU")} шт.`}{item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}</strong></span></div></button>)}</div> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
+      <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label>{visible.length ? <div className="product-economics-cards">{visible.map((item) => <button className="product-economics-card detail-trigger" key={item.nmId} type="button" onClick={() => onOpenProduct(item)}><div className="product-economics-card-heading"><div><strong>{item.product}</strong><span>{item.article || item.nmId}</span></div><strong>{Math.round(item.margin).toLocaleString("ru-RU")} ₽</strong></div><div className="product-economics-card-metrics"><span>Выручка<strong>{Math.round(item.revenue).toLocaleString("ru-RU")} ₽</strong></span><span>ДРР<strong>{item.drr.toFixed(1)}%</strong></span><span>Запас<strong>{`${item.stock.toLocaleString("ru-RU")} шт.`}{item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}</strong></span></div></button>)}</div> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
+      <section className="work-section"><SectionHeader kicker="Контент WB" title="Карточки и медиа"><PackageCheck size={18} /></SectionHeader>{productCardErrors.length ? <div className="data-banner stale" role="status">Карточки WB недоступны: {productCardErrors.join(" · ")}</div> : null}{productCards.length ? <div className="product-card-grid">{productCards.slice(0, 12).map((card) => <button className="product-card-preview detail-trigger" type="button" key={card.nmId} onClick={() => setEditingCard(card)}><div className="product-card-image">{card.photos[0] ? <img src={card.photos[0]} alt="" loading="lazy" /> : <PackageCheck size={24} />}</div><div><strong>{card.title}</strong><span>{card.vendorCode || `WB ${card.nmId}`}</span><small>{[card.brand, card.subject].filter(Boolean).join(" · ") || "Карточка WB"} · {card.sizes} размеров</small></div></button>)}</div> : <p className="plan-empty">{productCardErrors.length ? "После исправления доступа обновите раздел." : "Карточек WB пока нет."}</p>}</section>
+      {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
+      <section className="work-section"><SectionHeader kicker="WB API" title="Качество магазина"><button className="icon-button" type="button" aria-label="Обновить данные качества магазина" title="Обновить данные качества магазина" onClick={() => void onRefresh()}><RefreshCw size={17} /></button><div className="cash-grid"><div className="stat"><span>Рейтинг продавца</span><strong>{rating ? rating.toFixed(2) : "—"}</strong><small>{String(customerQuality?.rating?.feedbackCount ?? 0)} отзывов</small></div><div className="stat"><span>Карантин цен</span><strong>{quarantineCount}</strong><small>товаров требуют проверки</small></div><div className="stat"><span>Возвраты</span><strong>{returnCount}</strong><small>активных обращений WB</small></div><div className="stat"><span>Чаты</span><strong>{chatCount}</strong><small>диалогов с покупателями</small></div></div></SectionHeader><div className="action-list">{(customerQuality?.feedbacks ?? []).slice(0, 3).map((item, index) => <article className="automation-row" key={String(item.id ?? index)}><div><strong>Отзыв · {String(item.nmId ?? "WB")}</strong><span>{String(item.text ?? item.productName ?? "Без текста")}</span></div><button className="ghost-button" type="button" onClick={async () => { const text = await askText("Ответ на отзыв", "Спасибо за обратную связь!"); if (!text) return; try { await answerCustomerFeedback(String(item.id ?? ""), text); await notifyUser("Ответ отправлен в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Ответ не отправлен"); } }}>Ответить</button></article>)}{(customerQuality?.questions ?? []).slice(0, 2).map((item, index) => <article className="automation-row" key={`q-${String(item.id ?? index)}`}><div><strong>Вопрос · {String(item.nmId ?? "WB")}</strong><span>{String(item.text ?? "Без текста")}</span></div><button className="ghost-button" type="button" onClick={async () => { const text = await askText("Ответ на вопрос", "Спасибо за вопрос! Сейчас уточним информацию."); if (!text) return; try { await answerCustomerQuestion(String(item.id ?? ""), text); await notifyUser("Ответ отправлен в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Ответ не отправлен"); } }}>Ответить</button></article>)}{(customerQuality?.chats ?? []).slice(0, 3).map((item, index) => { const replySign = String(item.replySign ?? item.reply_sign ?? ""); return <article className="automation-row" key={`chat-${String(item.chatId ?? item.id ?? index)}`}><div><strong>Чат · {String(item.nmId ?? item.subject ?? "WB")}</strong><span>{String((item.lastMessage as Record<string, unknown> | undefined)?.text ?? item.lastMessage ?? item.message ?? item.title ?? "Диалог с покупателем")}</span></div><button className="ghost-button" type="button" disabled={!replySign} title={replySign ? "Ответить покупателю" : "WB не передал подпись чата"} onClick={async () => { if (!replySign) return; const text = await askText("Сообщение покупателю"); if (!text?.trim()) return; try { await sendCustomerChatMessage(replySign, text); await notifyUser("Сообщение отправлено в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Сообщение не отправлено"); } }}>Ответить</button></article>; })}<div className="return-claims-list">{visibleReturns.map((item, index) => <article className="automation-row" key={`r-${String(item.id ?? index)}`}><div><strong>Возврат · {String(item.nm_id ?? item.nmId ?? "WB")}</strong><span>{String(item.user_comment ?? item.comment ?? "Заявка покупателя")}</span></div><div className="procurement-order-actions"><button className="ghost-button" type="button" onClick={async () => { if (!await askConfirm("Одобрить возврат и отправить решение в WB?")) return; try { await processCustomerReturn(String(item.id ?? ""), "approve"); await notifyUser("Возврат одобрен"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Возврат не обработан"); } }}>Одобрить</button><button className="secondary-button" type="button" onClick={async () => { if (!await askConfirm("Отклонить возврат? Решение будет отправлено в WB.")) return; try { await processCustomerReturn(String(item.id ?? ""), "reject"); await notifyUser("Возврат отклонён"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Возврат не обработан"); } }}>Отклонить</button></div></article>)}</div></div></section><section className="work-section"><SectionHeader kicker="WB API" title="Цены и скидки"><button className="primary-button" type="button" disabled={priceSubmitting || !!priceUploadId} onClick={() => void submitPrices()}>Отправить изменения в WB</button></SectionHeader>{productPriceErrors.length ? <div className="data-banner stale" role="status">Цены WB недоступны: {productPriceErrors.join(" · ")}</div> : null}{priceMessage ? <p className="operation-error" role="status">{priceMessage}</p> : null}{priceUploadStatus ? <p className="form-hint" role="status">Статус загрузки WB: {priceUploadStatus}</p> : null}{priceResults.filter((row) => row.errorText).map((row, index) => <p className="operation-error" key={index}>WB {String(row.nmID)}: {String(row.errorText)}</p>)}{visiblePrices.length ? <div className="product-price-table">{visiblePrices.map((item) => { const draft = priceDrafts[item.nmId] ?? { price: item.price, discount: item.discount }; return <div className="product-price-row" key={item.nmId}><strong>{item.vendorCode}</strong><span>WB {item.nmId}</span>{item.errorText ? <StatusPill tone="danger">{item.errorText}</StatusPill> : item.status !== undefined ? <StatusPill tone={item.status === 0 ? "good" : "info"}>{item.status === 0 ? "принято WB" : `статус WB ${item.status}`}</StatusPill> : null}<label>Цена<input type="number" min="0" value={draft.price} onChange={(event) => setPriceDrafts((rows) => ({ ...rows, [item.nmId]: { ...draft, price: Number(event.target.value) } }))} /></label><label>Скидка %<input type="number" min="0" max="99" value={draft.discount} onChange={(event) => setPriceDrafts((rows) => ({ ...rows, [item.nmId]: { ...draft, discount: Number(event.target.value) } }))} /></label><span>После скидки<strong>{Math.round(draft.price * (1 - draft.discount / 100)).toLocaleString("ru-RU")} ₽</strong></span></div>; })}</div> : <p className="plan-empty">{productPriceErrors.length ? "После исправления доступа обновите раздел." : "Цены WB пока не загружены или токен не имеет категории «Цены и скидки»."}</p>} {priceUploadHistory.length ? <div className="price-upload-history"><h3>История загрузок</h3>{priceUploadHistory.slice(0, 10).map((item) => <div className="automation-row" key={`${item.wb_upload_id}-${item.created_at}`}><div><strong>WB загрузка №{item.wb_upload_id}</strong><span>{item.goods_count} SKU · {item.created_at}</span></div><StatusPill tone={item.status.toLowerCase().includes("ошиб") ? "danger" : item.status.toLowerCase().includes("заверш") ? "good" : "info"}>{item.status}</StatusPill></div>)}</div> : null}</section>
     </div>
   );
 }
 
-function ControlView({ data, onNavigate, onOpenFifo }: { data: DataQualityData | null; onNavigate: (page: PageId) => void; onOpenFifo: () => void }) {
+function ProductCardEditor({
+  card,
+  onClose,
+  onSaved,
+}: {
+  card: ProductCard;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [title, setTitle] = useState(card.title);
+  const [description, setDescription] = useState(card.description ?? "");
+  const [brand, setBrand] = useState(card.brand);
+  const [mediaText, setMediaText] = useState(card.photos.join("\n"));
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const save = async () => {
+    if (!confirmed) { setMessage("Подтвердите отправку изменений в WB."); return; }
+    const urls = mediaText.split(/\r?\n/).map((url) => url.trim()).filter(Boolean);
+    if (urls.some((url) => !/^https?:\/\//i.test(url))) { setMessage("Каждая ссылка на медиа должна начинаться с http:// или https://."); return; }
+    setBusy(true); setMessage("");
+    try {
+      await updateProductCard(card.nmId, { title: title.trim(), description: description.trim(), brand: brand.trim() });
+      if (urls.length) await saveProductCardMedia(card.nmId, urls);
+      await onSaved();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Изменения не отправлены"); }
+    finally { setBusy(false); }
+  };
+  return <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <section className="plan-drawer operation-dialog product-card-editor" role="dialog" aria-modal="true" aria-labelledby="product-card-editor-title">
+      <div className="drawer-header"><div><span className="eyebrow">Контент WB · редактирование</span><h2 id="product-card-editor-title">{card.title}</h2><p>WB {card.nmId} · {card.vendorCode || "без артикула продавца"}</p></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose} disabled={busy}><X size={18} /></button></div>
+      <div className="form-grid"><label>Название<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={255} /></label><label>Бренд<input value={brand} onChange={(event) => setBrand(event.target.value)} maxLength={255} /></label><label className="full-width">Описание<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} maxLength={5000} /></label><label className="full-width">Медиафайлы, по одной ссылке на строку<textarea value={mediaText} onChange={(event) => setMediaText(event.target.value)} rows={5} /></label></div>
+      <label className="form-checkbox"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> Я подтверждаю отправку изменений и замену списка медиафайлов в WB</label>
+      {message ? <p className="operation-error" role="status">{message}</p> : null}
+      <div className="dialog-actions"><button className="ghost-button" type="button" onClick={onClose} disabled={busy}>Отмена</button><button className="primary-button" type="button" onClick={() => void save()} disabled={busy || !confirmed}>{busy ? "Отправка…" : "Сохранить в WB"}</button></div>
+    </section>
+  </div>;
+}
+
+function DetailDrawer({
+  detail,
+  onClose,
+  onNavigate,
+}: {
+  detail: DrawerDetail;
+  onClose: () => void;
+  onNavigate: (page: PageId, target?: string) => void;
+}) {
+  return (
+    <div className="drawer-backdrop detail-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="plan-drawer detail-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-drawer-title">
+        <div className="drawer-header">
+          <div>
+            <span className="eyebrow">детали</span>
+            <h2 id="detail-drawer-title">{detail.title}</h2>
+            <p>{detail.subtitle}</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="detail-facts">
+          {detail.facts.map((fact) => <p key={fact}>{fact}</p>)}
+        </div>
+        <div className="operation-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              onClose();
+              onNavigate(detail.page ?? "today", detail.target);
+            }}
+          >
+            {detail.actionLabel || "Открыть раздел"}
+          </button>
+          <button className="ghost-button" type="button" onClick={onClose}>Закрыть</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ControlView({
+  data,
+  onNavigate,
+  onOpenCheck,
+  onOpenFifo,
+}: {
+  data: DataQualityData | null;
+  onNavigate: (page: PageId, target?: string) => void;
+  onOpenCheck: (row: Record<string, unknown>) => void;
+  onOpenFifo: () => void;
+}) {
   if (!data) return <div className="workspace-view"><section className="work-section"><p className="plan-empty">Проверки качества данных загружаются.</p></section></div>;
   const summary = data.summary;
   const checks = data.checks;
   const score = Number(summary.score ?? 0);
   const tone: Tone = Number(summary.critical ?? 0) > 0 ? "danger" : Number(summary.warnings ?? 0) > 0 ? "warn" : "good";
   const checkTone = (status: string): Tone => status.includes("Крит") ? "danger" : status.includes("Вним") ? "warn" : "good";
-  const openCheck = (row: Record<string, unknown>) => {
-    const name = String(row.Проверка ?? "");
-    const module = String(row.Модуль ?? "").toLocaleLowerCase("ru-RU");
-    const normalized = `${name} ${module}`.toLocaleLowerCase("ru-RU");
-    if (normalized.includes("сверка сырья")) onNavigate("settings");
-    else if (normalized.includes("fifo")) onOpenFifo();
-    else if (name.includes("Себестоимость") || normalized.includes("нормы")) onNavigate("settings");
-    else if (normalized.includes("реклам")) onNavigate("ads");
-    else if (normalized.includes("запас") || normalized.includes("склад")) onNavigate("stock");
-    else if (normalized.includes("продаж") || normalized.includes("финанс")) onNavigate("finance");
-  };
+  const openCheck = (row: Record<string, unknown>) => onOpenCheck(row);
   return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:String(data.fifo_guard.guard_mode ?? ""),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><section className="work-section"><SectionHeader kicker="Настройки расчётов" title="Нормы и себестоимость"><SlidersHorizontal size={18} /></SectionHeader><div className="operation-actions"><p className="plan-empty">Нормы материала и себестоимость ведутся отдельно в настройках и участвуют в производственном плане и марже.</p><button className="secondary-button" type="button" onClick={() => onNavigate("settings")}>Открыть настройки</button></div></section><section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{checks.length ? <div className="data-quality-list">{checks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{String(row.Модуль ?? "Контроль")}</span><strong>{String(row.Проверка ?? "")}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">Проверок пока нет</p>}</section></div>;
 }
 
@@ -1415,12 +2039,21 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
   const [costQuery, setCostQuery] = useState("");
   const [editingCost, setEditingCost] = useState<ProductCostSetting | null>(null);
   const [editingNorm, setEditingNorm] = useState<ProductionNorm | null>(null);
+  const [wbToken, setWbToken] = useState("");
+  const [wbScopes, setWbScopes] = useState<string[]>([]);
+  const [wbMissingScopes, setWbMissingScopes] = useState<string[]>([]);
+  const [wbScopeMetadataAvailable, setWbScopeMetadataAvailable] = useState(false);
+  const [wbReadOnly, setWbReadOnly] = useState(false);
+  const [wbExpiresAt, setWbExpiresAt] = useState<number | null>(null);
+  const [ozonClientId, setOzonClientId] = useState("");
+  const [ozonApiKey, setOzonApiKey] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | null>(null);
+  const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | "wb-token" | null>(null);
+  const onboardingRequired = Boolean(settings && (!settings.wb_connected || syncRuns.length === 0));
 
   const load = async () => {
     try {
-      const [nextSettings, backupData, syncData, costData, normsData, materialData] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory()]);
+      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), getWBTokenStatus()]);
       setSettings(nextSettings);
       setBackups(backupData.backups);
       setSyncRuns(syncData.runs);
@@ -1429,6 +2062,11 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
       setMaterialInventory(materialData.items);
       setMaterialFifo(materialData.fifo);
       setOpeningRate(materialData.opening_rate_rub_m);
+      setWbScopes(wbStatus.scopes);
+      setWbMissingScopes(wbStatus.missing_scopes);
+      setWbScopeMetadataAvailable(Boolean(wbStatus.scope_metadata_available));
+      setWbReadOnly(Boolean(wbStatus.read_only));
+      setWbExpiresAt(wbStatus.expires_at ?? null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось загрузить параметры tenant");
     }
@@ -1447,6 +2085,54 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     } finally {
       setBusy(null);
     }
+  };
+
+  const saveWBToken = async () => {
+    if (!wbToken.trim()) { setMessage("Введите WB-токен"); return; }
+    setBusy("wb-token");
+    try {
+      const result = await connectWBToken(wbToken);
+      setWbToken("");
+      setWbScopes(result.scopes);
+      setWbMissingScopes(result.missing_scopes);
+      setWbScopeMetadataAvailable(Boolean(result.scope_metadata_available));
+      setWbReadOnly(Boolean(result.read_only));
+      setWbExpiresAt(result.expires_at ?? null);
+      setSettings((current) => current ? { ...current, wb_connected: result.connected } : current);
+      setMessage("WB подключён. Запустите первую синхронизацию ниже.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось подключить WB"); }
+    finally { setBusy(null); }
+  };
+
+  const removeWBToken = async () => {
+    setBusy("wb-token");
+    try {
+      await disconnectWBToken();
+      setSettings((current) => current ? { ...current, wb_connected: false } : current);
+      setWbScopes([]); setWbMissingScopes([]);
+      setWbScopeMetadataAvailable(false); setWbReadOnly(false); setWbExpiresAt(null);
+      setMessage("WB отключён");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось отключить WB"); }
+    finally { setBusy(null); }
+  };
+
+  const saveOzon = async () => {
+    if (!ozonClientId.trim() || !ozonApiKey.trim()) { setMessage("Введите Client-Id и Api-Key Ozon"); return; }
+    setBusy("wb-token");
+    try {
+      await connectOzonCredentials(ozonClientId, ozonApiKey);
+      setOzonClientId(""); setOzonApiKey("");
+      setSettings((current) => current ? { ...current, ozon_connected: true } : current);
+      setMessage("Ozon подключён");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось подключить Ozon"); }
+    finally { setBusy(null); }
+  };
+
+  const removeOzon = async () => {
+    setBusy("wb-token");
+    try { await disconnectOzonCredentials(); setSettings((current) => current ? { ...current, ozon_connected: false } : current); setMessage("Ozon отключён"); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось отключить Ozon"); }
+    finally { setBusy(null); }
   };
 
   const createBackup = async () => {
@@ -1481,10 +2167,10 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     }
   };
 
-  const startSync = async (scope: "all" | "ads" = "all") => {
+  const startSync = async (scope: "all" | "ads" | "finance" = "all", days = 90) => {
     setBusy("sync");
     try {
-      await startTenantSync(scope);
+      await startTenantSync(scope, days);
       setMessage("Синхронизация WB запущена. Можно продолжать работу, статус появится в журнале.");
       await monitorSync();
     } catch (error) {
@@ -1534,7 +2220,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
   };
 
   const initializeMaterials = async () => {
-    if (!window.confirm("Инициализировать FIFO по подтверждённым физическим остаткам сырья? Слои будут созданы с указанной ставкой.")) return;
+    if (!await askConfirm("Инициализировать FIFO по подтверждённым физическим остаткам сырья? Слои будут созданы с указанной ставкой.")) return;
     setBusy("material");
     try {
       const result = await initializeMaterialFifo(openingRate);
@@ -1558,6 +2244,16 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
           <p>Токены остаются в защищённом tenant-хранилище. Резервные копии не содержат ключей доступа.</p>
         </div>
       </section>
+      {onboardingRequired ? <section className="work-section onboarding-panel" id="onboarding" aria-labelledby="onboarding-title">
+        <SectionHeader kicker="Первый запуск" title="Подготовим кабинет к работе"><Sparkles size={18} /></SectionHeader>
+        <p className="form-hint">Пройдите четыре шага: подключите WB, загрузите историю, укажите себестоимость и включите каналы отчётов.</p>
+        <div className="onboarding-steps">
+          <article className={cx("onboarding-step", settings.wb_connected ? "done" : "current")}><span className="onboarding-step-number">1</span><div><strong>Подключить WB</strong><small>{settings.wb_connected ? "Токен проверен и сохранён" : "Без токена данные и отчёты не загружаются"}</small></div>{!settings.wb_connected ? <div className="onboarding-inline-form"><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="WB API-токен" /><button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : <CheckCircle2 size={18} />}</article>
+          <article className={cx("onboarding-step", !settings.wb_connected ? "locked" : syncRuns.length ? "done" : "current")}><span className="onboarding-step-number">2</span><div><strong>Загрузить историю</strong><small>{syncRuns.length ? `Запусков синхронизации: ${syncRuns.length}` : "Выберите глубину и запустите первую синхронизацию"}</small></div>{settings.wb_connected && !syncRuns.length ? <div className="onboarding-inline-form"><input min="7" max="90" type="number" value={settings.initial_history_days} onChange={(event) => setSettings({ ...settings, initial_history_days: Number(event.target.value) })} /><span>дней</span><button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void startSync("all", settings.initial_history_days)}>{busy === "sync" ? "Синхронизируем" : "Запустить"}</button></div> : settings.wb_connected ? <CheckCircle2 size={18} /> : <span>После шага 1</span>}</article>
+          <article className={cx("onboarding-step", !syncRuns.length ? "locked" : productCosts.length ? "done" : "current")}><span className="onboarding-step-number">3</span><div><strong>Заполнить себестоимость</strong><small>{productCosts.length ? `${productCosts.length} SKU доступны для настройки` : "После синхронизации укажите себестоимость в блоке ниже"}</small></div>{syncRuns.length ? <button className="ghost-button" type="button" onClick={() => document.getElementById("product-costs")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Открыть себестоимость</button> : <span>После шага 2</span>}</article>
+          <article className="onboarding-step"><span className="onboarding-step-number">4</span><div><strong>Включить отчёты</strong><small>Email и Telegram настраиваются в разделе «Отчёты»</small></div><a className="ghost-button" href="?view=reports">Перейти к отчётам</a></article>
+        </div>
+      </section> : null}
       <div className="content-grid">
         <section className="work-section">
           <SectionHeader kicker="Обновление" title="Интервалы работы"><SlidersHorizontal size={18} /></SectionHeader>
@@ -1571,10 +2267,17 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <aside className="insight-column">
           <section className="panel">
             <SectionHeader compact kicker="Подключения" title="Статус API"><ShieldCheck size={20} /></SectionHeader>
+            {!settings.wb_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Wildberries"><p className="form-hint">Подключите WB-токен, чтобы загрузить продажи, остатки, финансы и отчёты.</p><label className="operation-field"><span>WB API-токен</span><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="Вставьте токен WB" /></label><button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : null}
             <div className="automation-list">
               <AutomationRow item={{ title: "Wildberries API", detail: "Данные и операции tenant", status: settings.wb_connected ? "подключён" : "не подключён", tone: settings.wb_connected ? "good" : "warn" }} />
               <AutomationRow item={{ title: "Ozon Seller API", detail: "Используется агентом цен", status: settings.ozon_connected ? "подключён" : "не подключён", tone: settings.ozon_connected ? "good" : "info" }} />
             </div>
+            {!settings.ozon_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Ozon"><p className="form-hint">Подключите Ozon для ценовых рекомендаций.</p><label className="operation-field"><span>Client-Id</span><input autoComplete="off" value={ozonClientId} onChange={(event) => setOzonClientId(event.target.value)} /></label><label className="operation-field"><span>Api-Key</span><input autoComplete="off" type="password" value={ozonApiKey} onChange={(event) => setOzonApiKey(event.target.value)} /></label><button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void saveOzon()}>{busy === "wb-token" ? "Сохраняем" : "Сохранить Ozon"}</button></div> : <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeOzon()}>Отключить Ozon</button>}
+            {settings.wb_connected ? <div className="connection-actions"><span className="form-hint">Токен хранится зашифрованно и не показывается повторно.</span><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeWBToken()}>Отключить WB</button></div> : null}
+            {wbScopes.length || wbMissingScopes.length ? <p className="form-hint">Проверено: {wbScopes.join(", ") || "—"}. Для полного функционала добавьте категории: {wbMissingScopes.join(", ")}.</p> : null}
+            {wbReadOnly ? <p className="form-hint warning-text">Токен WB доступен только для чтения: операции изменения и печати в кабинете могут быть недоступны.</p> : null}
+            {wbScopeMetadataAvailable && wbExpiresAt ? <p className="form-hint">Срок действия токена: {new Date(wbExpiresAt * 1000).toLocaleString("ru-RU")}</p> : null}
+            {settings.wb_connected && !wbScopeMetadataAvailable ? <p className="form-hint">WB не передал карту категорий для сохранённого токена. Проверена категория «Статистика»; права остальных разделов уточняются при обращении к ним.</p> : null}
           </section>
         </aside>
       </div>
@@ -1592,6 +2295,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <div className="operation-actions">
           <p className="plan-empty">Обновляет продажи, остатки, финансы и рекламу. Результат каждого запуска — в журнале ниже.</p>
           <button className="secondary-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync()}><RefreshCw size={17} />{busy === "sync" ? "Синхронизируем" : "Синхронизировать сейчас"}</button>
+          <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("finance", 90)}>Обновить финансовый отчёт WB (90 дней)</button>
         </div>
         <SyncHistory runs={syncRuns} />
         <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("ads")}>Повторить только рекламу</button>
@@ -1685,6 +2389,9 @@ function ProductionView({
   productionMetrics,
   productionStages,
   productionTasks,
+  onOpenProductionTask,
+  onOpenProductionStage,
+  onOpenMaterialNeed,
 }: {
   materialNeeds: MaterialNeed[];
   onAction: (label: string, itemLabel: string) => void;
@@ -1692,7 +2399,11 @@ function ProductionView({
   productionMetrics: DashboardMetric[];
   productionStages: ProductionStage[];
   productionTasks: ProductionTask[];
+  onOpenProductionTask: (task: ProductionTask) => void;
+  onOpenProductionStage: (stage: ProductionStage) => void;
+  onOpenMaterialNeed: (item: MaterialNeed) => void;
 }) {
+  const plannedValue = productionMetrics.find((metric) => metric.label === "План смены" || metric.label === "К запуску")?.value ?? "0";
   return (
     <div className="workspace-view">
       <section className="hero-strip production-hero" aria-label="Производственный контур">
@@ -1701,7 +2412,7 @@ function ProductionView({
             <Factory size={16} />
             смена
           </div>
-          <h2>{productionTasks.length ? `${productionMetrics[1]?.value ?? "0"} комплектов к запуску` : "Смена не сформирована"}</h2>
+          <h2>{productionTasks.length ? `К запуску: ${plannedValue} компл.` : "Смена не сформирована"}</h2>
           <p>{productionTasks.length ? "План, фактическое выполнение и материалы собраны рядом с задачами на запуск." : "Сначала соберите рабочую смену — после этого здесь появятся задания и их выполнение."}</p>
         </div>
         <div className="hero-actions">
@@ -1725,17 +2436,17 @@ function ProductionView({
             </span>
           </SectionHeader>
           {productionTasks.length ? <div className="production-list">
-            {productionTasks.map((task) => <ProductionTaskRow key={task.sku} onAction={onAction} task={task} />)}
+            {productionTasks.map((task) => <ProductionTaskRow key={task.sku} onAction={onAction} onOpen={onOpenProductionTask} task={task} />)}
           </div> : <p className="plan-empty">Нет заданий в открытой смене. Нажмите «Собрать смену», чтобы создать рабочий план.</p>}
         </section>
 
         <aside className="insight-column">
           <section className="panel">
             <SectionHeader compact kicker="Этапы" title="Готовность">
-              <button className="icon-button" type="button" aria-label="Открыть рабочую смену" onClick={() => onAction("Смена", "производство")}><Zap size={20} /></button>
+              <button className="icon-button" type="button" aria-label="Открыть рабочую смену" onClick={() => onAction("Рабочая смена", "производство")}><Zap size={20} /></button>
             </SectionHeader>
             {productionStages.length ? <div className="timeline">
-              {productionStages.map((stage) => <ProductionStageRow key={stage.label} stage={stage} onOpen={() => onAction("Смена", stage.label)} />)}
+              {productionStages.map((stage) => <ProductionStageRow key={stage.label} stage={stage} onOpen={() => onOpenProductionStage(stage)} />)}
             </div> : <p className="plan-empty">Этапы не переданы API</p>}
           </section>
 
@@ -1744,7 +2455,7 @@ function ProductionView({
               <button className="icon-button" type="button" aria-label="Открыть закупки сырья" title="Открыть закупки сырья" onClick={() => onAction("Поставка", "сырьё") }><PackageCheck size={20} /></button>
             </SectionHeader>
             {materialNeeds.length ? <div className="material-list">
-              {materialNeeds.map((item) => <MaterialNeedRow item={item} key={item.name} onOpen={() => onAction("Поставка", item.name)} />)}
+              {materialNeeds.map((item) => <MaterialNeedRow item={item} key={item.name} onOpen={() => onOpenMaterialNeed(item)} />)}
             </div> : <p className="plan-empty">Нет данных о сырье</p>}
           </section>
         </aside>
@@ -1763,7 +2474,9 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
     try {
       const result = await getProductionExecution();
       setTasks(result.tasks);
-      if (!date) setDate(result.tasks.find((task) => task.task_date)?.task_date ?? "");
+      const availableDates = Array.from(new Set(result.tasks.map((task) => task.task_date).filter((value): value is string => Boolean(value)))).sort((a, b) => b.localeCompare(a));
+      setDate((current) => current && availableDates.includes(current) ? current : availableDates[0] ?? "");
+      setMessage(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось загрузить смены");
     }
@@ -1771,6 +2484,7 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
 
   useEffect(() => { void load(); }, []);
 
+  const dates = Array.from(new Set(tasks.map((task) => task.task_date).filter((value): value is string => Boolean(value)))).sort((a, b) => b.localeCompare(a));
   const visible = tasks.filter((task) => task.task_date === date);
   const updateTask = (taskKey: string, patch: Partial<ProductionExecutionTask>) => {
     setTasks((rows) => rows.map((row) => row.task_key === taskKey ? { ...row, ...patch } : row));
@@ -1792,14 +2506,23 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
   };
 
   const close = async () => {
-    if (!window.confirm("Закрыть смену и оприходовать подтверждённый фактический выпуск?")) return;
+    if (!await askConfirm("Закрыть смену и оприходовать подтверждённый фактический выпуск?")) return;
     setBusy(true);
     setMessage(null);
     try {
+      // The editor keeps the current shift changes locally until the user
+      // saves them. Persist those edits before closing so the backend closes
+      // the same facts/statuses the operator just confirmed, rather than the
+      // stale values from the last save.
+      await saveProductionExecution(visible);
       const result = await closeProductionExecution(date);
-      await load();
-      await onRefresh();
       setMessage(`Смена закрыта: оприходовано ${result.units} компл.`);
+      // The close operation is already committed by the API. Do not keep the
+      // primary action in a busy state while the dashboard reloads unrelated
+      // sections; a slow refresh must never look like a hung close request.
+      setBusy(false);
+      void load().catch(() => undefined);
+      void onRefresh().catch(() => undefined);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось закрыть смену");
     } finally {
@@ -1810,12 +2533,16 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
   return <section className="work-section">
     <SectionHeader kicker="Исполнение" title="Рабочая смена"><CalendarDays size={18} /></SectionHeader>
     {message ? <p className="operation-error" role="status">{message}</p> : null}
-    <label className="operation-field">
+    <div className="production-shift-toolbar">
+    <label className="operation-field production-date-field">
       <span>Дата смены</span>
-      <select className="filter-select" value={date} onChange={(event) => setDate(event.target.value)}>
-        {Array.from(new Set(tasks.map((task) => task.task_date).filter(Boolean))).map((value) => <option key={value} value={value ?? ""}>{value}</option>)}
+      <select aria-label="Дата смены" className="filter-select" disabled={!dates.length} value={date} onChange={(event) => setDate(event.target.value)}>
+        {!dates.length ? <option value="">Нет открытых смен</option> : null}
+        {dates.map((value) => <option key={value} value={value}>{new Date(`${value}T00:00:00`).toLocaleDateString("ru-RU")}</option>)}
       </select>
     </label>
+    <span className="production-shift-count">{dates.length ? `${visible.length} ${visible.length === 1 ? "задача" : "задач"}` : "Соберите смену, чтобы начать работу"}</span>
+    </div>
     {visible.length ? <div className="production-execution-list">
       {visible.map((task) => <article className="production-execution-task" key={task.task_key}>
         <div className="production-task-header">
@@ -1829,7 +2556,7 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
           <label className="production-task-note"><span>Примечание</span><input value={task.note} placeholder="Комментарий" onChange={(event) => updateTask(task.task_key, { note: event.target.value })} /></label>
         </div>
       </article>)}
-    </div> : <p className="plan-empty">На выбранную дату заданий нет</p>}
+    </div> : <p className="plan-empty">{dates.length ? "На выбранную дату заданий нет" : "Открытых смен пока нет. Нажмите «Собрать смену» и укажите дату, товар и план."}</p>}
     <div className="operation-actions">
       <button className="ghost-button" disabled={busy || !visible.length} type="button" onClick={() => void save()}>Сохранить исполнение</button>
       <button className="primary-button" disabled={busy || !visible.some((task) => task.actual_units > 0 && ["Изготовлено", "Упаковано", "Передано на отгрузку"].includes(task.status))} type="button" onClick={() => void close()}><CheckCircle2 size={16} />{busy ? "Проводим" : "Закрыть смену"}</button>
@@ -1844,6 +2571,11 @@ function SupplyView({
   supplierPulse,
   supplyMetrics,
   supplyShipments,
+  supplyNewOrders,
+  acceptanceCoefficients,
+  transitTariffs,
+  supplyErrors,
+  onOpenShipment,
 }: {
   onAction: (label: string, itemLabel: string) => void;
   onRefresh: () => Promise<void>;
@@ -1851,6 +2583,11 @@ function SupplyView({
   supplierPulse: SupplierPulse[];
   supplyMetrics: DashboardMetric[];
   supplyShipments: SupplyShipment[];
+  supplyNewOrders: Array<Record<string, unknown>>;
+  acceptanceCoefficients: Array<Record<string, unknown>>;
+  transitTariffs: Array<Record<string, unknown>>;
+  supplyErrors: Record<string, string>;
+  onOpenShipment: (shipment: SupplyShipment) => void;
 }) {
   const [busyOrder, setBusyOrder] = useState<number | null>(null);
   const [paymentOrder, setPaymentOrder] = useState<Record<string, unknown> | null>(null);
@@ -1860,6 +2597,9 @@ function SupplyView({
   const [editingSupplier, setEditingSupplier] = useState<SupplierRecord | null>(null);
   const [supplierBusy, setSupplierBusy] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [fbsDialog, setFbsDialog] = useState<{ id: string; detail: FbsSupplyDetail; barcode: FbsSupplyBarcode | null } | null>(null);
+  const [fbsBusy, setFbsBusy] = useState(false);
+  const [fbsError, setFbsError] = useState<string | null>(null);
   useEffect(() => { void Promise.all([getProcurementOperations(), getSuppliers()]).then(([operations, directory]) => { setProcurementItems(operations.items); setSuppliers(directory.items); }).catch(() => setOperationError("Не удалось загрузить данные поставок")); }, []);
   const saveSupplierRecord = async (item: SupplierRecord) => {
     setSupplierBusy(true);
@@ -1916,8 +2656,34 @@ function SupplyView({
       setBusyOrder(null);
     }
   };
+  const openFbsSupply = async (supplyId: string) => {
+    setFbsBusy(true);
+    setFbsError(null);
+    try {
+      const detail = await getFbsSupplyDetails(supplyId);
+      setFbsDialog({ id: supplyId, detail, barcode: null });
+    } catch (error) {
+      setFbsError(error instanceof Error ? error.message : "Не удалось открыть поставку WB");
+    } finally {
+      setFbsBusy(false);
+    }
+  };
+  const loadFbsBarcode = async () => {
+    if (!fbsDialog) return;
+    setFbsBusy(true);
+    setFbsError(null);
+    try {
+      const barcode = await getFbsSupplyBarcode(fbsDialog.id);
+      setFbsDialog((current) => current ? { ...current, barcode } : current);
+    } catch (error) {
+      setFbsError(error instanceof Error ? error.message : "Не удалось получить QR поставки WB");
+    } finally {
+      setFbsBusy(false);
+    }
+  };
   return (
     <div className="workspace-view">
+      {Object.keys(supplyErrors).length ? <div className="data-banner stale" role="status">Часть данных поставок WB недоступна: {Object.values(supplyErrors).join(" · ")}</div> : null}
       <section className="hero-strip supply-hero" aria-label="Поставки">
         <div>
           <div className="eyebrow">
@@ -1953,7 +2719,7 @@ function SupplyView({
             </span>
           </SectionHeader>
           {supplyShipments.length ? <div className="shipment-list">
-            {supplyShipments.map((shipment) => <SupplyShipmentRow key={shipment.id} onAction={onAction} shipment={shipment} />)}
+            {supplyShipments.map((shipment) => <SupplyShipmentRow key={shipment.id} onAction={onAction} onOpen={() => onOpenShipment(shipment)} onOpenFbs={shipment.amount === "WB FBS" ? openFbsSupply : undefined} shipment={shipment} />)}
           </div> : <p className="plan-empty">Нет активных поставок</p>}
         </section>
 
@@ -1972,11 +2738,31 @@ function SupplyView({
               <button className="icon-button" type="button" aria-label="Открыть поставки" onClick={() => onAction("Поставка", "Приёмка WB")}><CalendarDays size={20} /></button>
             </SectionHeader>
             <div className="slot-grid">
-              {[['Сегодня', 'нет'], ['Завтра', 'нет данных'], ['Неделя', 'нет данных']].map(([label, value]) => <button className="stat detail-trigger" type="button" key={label} onClick={() => onAction("Поставка", `Приёмка WB: ${label}`)}><span>{label}</span><strong>{value}</strong></button>)}
+              {(() => {
+                const coefficientRows = acceptanceCoefficients.slice(0, 3);
+                if (!coefficientRows.length) return <p className="plan-empty">Коэффициенты приёмки WB пока не загружены или недоступны по токену.</p>;
+                return coefficientRows.map((row, index) => { const warehouse = String(row.warehouseName ?? row.warehouse ?? row.warehouse_name ?? "Склад WB"); const date = String(row.date ?? row.dateFrom ?? row.date_to ?? `Окно ${index + 1}`); const coefficient = row.coefficient ?? row.value ?? row.coeff ?? "—"; return <button className="stat detail-trigger" type="button" key={`${warehouse}-${date}-${index}`} onClick={() => onAction("Поставка", `Приёмка WB: ${warehouse}`)}><span>{warehouse}</span><strong>{date}</strong><small>коэффициент: {String(coefficient)}</small></button>; });
+              })()}
             </div>
+          </section>
+          <section className="panel">
+            <SectionHeader compact kicker="Маршруты" title="Тарифы транзита">
+              <button className="icon-button" type="button" aria-label="Открыть тарифы транзита" onClick={() => onAction("Поставка", "Тарифы транзита")}><Truck size={20} /></button>
+            </SectionHeader>
+            {transitTariffs.length ? <div className="slot-grid">{transitTariffs.slice(0, 4).map((row, index) => {
+              const from = String(row.transitWarehouseName ?? row.fromWarehouseName ?? row.from ?? "Склад отправления");
+              const to = String(row.destinationWarehouseName ?? row.toWarehouseName ?? row.to ?? "Направление");
+              const box = row.boxTariff == null ? "—" : typeof row.boxTariff === "object" ? "по объёму" : `${row.boxTariff} ₽`;
+              const pallet = row.palletTariff == null ? "—" : `${row.palletTariff} ₽`;
+              return <button className="stat detail-trigger" type="button" key={`${from}-${to}-${index}`} onClick={() => onAction("Поставка", `Тариф: ${from} → ${to}`)}><span>{from}</span><strong>{to}</strong><small>короб: {box} · паллета: {pallet}</small></button>;
+            })}</div> : <p className="plan-empty">Тарифы транзита WB пока не загружены или недоступны по токену.</p>}
           </section>
         </aside>
       </div>
+      <section className="work-section">
+        <SectionHeader kicker="WB FBS" title="Новые сборочные задания"><PackageCheck size={18} /></SectionHeader>
+        {supplyNewOrders.length ? <div className="shipment-list">{supplyNewOrders.slice(0, 12).map((order, index) => <article className="shipment-row" key={String(order.orderId ?? order.id ?? index)}><div><strong>Заказ {String(order.orderId ?? order.id ?? "WB")}</strong><span>{String(order.address ?? order.deliveryType ?? "Новое сборочное задание")}</span></div><StatusPill tone="warn">ожидает сборки</StatusPill></article>)}</div> : <p className="plan-empty">Новых сборочных заданий FBS нет или раздел недоступен для токена.</p>}
+      </section>
       <section className="work-section">
         <SectionHeader kicker="Журнал" title="Закупочные документы"><Truck size={18} /></SectionHeader>
         {operationError ? <p className="operation-error" role="alert">{operationError}</p> : null}
@@ -2002,6 +2788,8 @@ function SupplyView({
       {paymentOrder ? <ProcurementPaymentDialog busy={busyOrder === Number(paymentOrder.id)} order={paymentOrder} onClose={() => { if (!busyOrder) setPaymentOrder(null); }} onSubmit={submitPayment} /> : null}
       {editingSupplier ? <SupplierDialog busy={supplierBusy} item={editingSupplier} onClose={() => { if (!supplierBusy) setEditingSupplier(null); }} onSubmit={saveSupplierRecord} /> : null}
       {receiptOrder ? <ProcurementReceiptDialog busy={busyOrder === Number(receiptOrder.id)} items={procurementItems.filter((item) => Number(item.order_id) === Number(receiptOrder.id) && Number(item.quantity ?? 0) > Number(item.posted_quantity ?? 0))} order={receiptOrder} onClose={() => { if (!busyOrder) setReceiptOrder(null); }} onSubmit={submitReceipt} /> : null}
+      {fbsError && !fbsDialog ? <p className="operation-error" role="alert">{fbsError}</p> : null}
+      {fbsDialog ? <FbsSupplyDialog busy={fbsBusy} error={fbsError} item={fbsDialog} onClose={() => { if (!fbsBusy) { setFbsDialog(null); setFbsError(null); } }} onLoadBarcode={loadFbsBarcode} /> : null}
     </div>
   );
 }
@@ -2081,7 +2869,7 @@ function AssistantView({
                 await decideAgentCandidate(candidate.id, outcome);
                 await onRefresh();
               } catch (error) {
-                window.alert(error instanceof Error ? error.message : "Решение не выполнено");
+                await notifyUser(error instanceof Error ? error.message : "Решение не выполнено");
               }
             }} />)}
           </div> : <p className="plan-empty">Очередь AI-агентов пуста</p>}
@@ -2127,7 +2915,7 @@ function AssistantView({
             setConfirmCandidate(null);
             await onRefresh();
           } catch (error) {
-            window.alert(error instanceof Error ? error.message : "Решение не выполнено");
+            await notifyUser(error instanceof Error ? error.message : "Решение не выполнено");
             setDecisionBusy(false);
           }
         }}
@@ -2231,23 +3019,38 @@ function ReportsView({
   const [scheduleType, setScheduleType] = useState<"daily" | "weekly" | "monthly">("weekly");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [operationsError, setOperationsError] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [quickDays, setQuickDays] = useState(30);
   const refreshOperations = async () => {
     try {
       setOperations(await getReportOperations());
+      setOperationsError(null);
       // A transient API restart can leave an old plain-text 404 in this
       // component. Once the report data is available again, remove that
       // stale error instead of showing it next to healthy report cards.
       setMessage(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось загрузить отчёты");
+      const detail = error instanceof Error ? error.message : "Не удалось загрузить отчёты";
+      setOperationsError(detail);
+      setMessage(detail);
     }
   };
   useEffect(() => { void refreshOperations(); }, []);
-  const refreshDelivery = async () => { try { setDelivery(await getReportDelivery()); } catch { /* status is also visible as unavailable */ } };
+  useEffect(() => {
+    void getAnalyticsDashboard("30d")
+      .then((result) => { setAnalytics(result); setAnalyticsError(null); })
+      .catch((error) => {
+        setAnalytics(null);
+        setAnalyticsError(error instanceof Error ? error.message : "Не удалось загрузить аналитику WB");
+      });
+  }, []);
+  const refreshDelivery = async () => { setDeliveryError(null); try { setDelivery(await getReportDelivery()); } catch (error) { setDeliveryError(error instanceof Error ? error.message : "Не удалось загрузить настройки доставки"); } };
   useEffect(() => { void refreshDelivery(); }, []);
   useEffect(() => {
-    if (!operations?.runs.some((run) => run.status === "queued" || run.status === "running")) return;
+    if (!operations?.runs.some((run) => run.status === "queued" || run.status === "running" || (run.status === "ok" && run.delivery_status === "queued"))) return;
     const timer = window.setInterval(() => { void getReportOperations().then(setOperations).catch(() => undefined); }, 3000);
     return () => window.clearInterval(timer);
   }, [operations]);
@@ -2269,11 +3072,14 @@ function ReportsView({
     "Реклама и эффективность": ["ads", "ad_performance", "organic_vs_ads", "ad_funnel"],
   };
   const runQuickReport = async (name: string) => { setBusyId(-2); setMessage(null); try { await onQuickReport(name, quickDays, quickReportMetrics[name] ?? ["sales_orders", "ads", "stocks"]); await refreshOperations(); setMessage("Отчёт поставлен в очередь. Статус обновится автоматически."); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось запустить PDF"); } finally { setBusyId(null); } };
-  const removeDefinition = async (id: number) => { if (!window.confirm("Удалить расписание и его историю запусков?")) return; setBusyId(id); setMessage(null); try { await deleteReportDefinition(id); await refreshOperations(); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось удалить расписание"); } finally { setBusyId(null); } };
+  const removeDefinition = async (id: number) => { if (!await askConfirm("Удалить расписание и его историю запусков?")) return; setBusyId(id); setMessage(null); try { await deleteReportDefinition(id); await refreshOperations(); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось удалить расписание"); } finally { setBusyId(null); } };
+  const editDefinition = async (report: ReportDefinition) => { const name = await askText("Название расписания", report.name); if (name === null) return; const time = await askText("Время МСК (ЧЧ:ММ)", report.schedule_time); if (time === null) return; const emailChoice = await askText("Отправлять на Email? (да/нет)", report.email_enabled ? "да" : "нет"); if (emailChoice === null) return; const telegramChoice = await askText("Отправлять в Telegram? (да/нет)", report.telegram_enabled ? "да" : "нет"); if (telegramChoice === null) return; const emailEnabled = /^да|yes|1|true$/i.test(emailChoice.trim()); const telegramEnabled = /^да|yes|1|true$/i.test(telegramChoice.trim()); if (emailEnabled && !delivery.email_configured) { setMessage("Email не настроен в профиле"); return; } if (telegramEnabled && !delivery.telegram_linked) { setMessage("Сначала привяжите Telegram в блоке доставки"); return; } let metrics: string[] = []; try { metrics = JSON.parse(report.metrics); } catch { setMessage("У расписания повреждён список разделов"); return; } setBusyId(report.id); setMessage(null); try { await updateReportDefinition(report.id, { name, metrics, schedule_type: report.schedule_type, schedule_time: time, schedule_weekday: report.schedule_weekday, schedule_day: report.schedule_day, email_enabled: emailEnabled, telegram_enabled: telegramEnabled }); await refreshOperations(); setMessage("Расписание обновлено"); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось обновить расписание"); } finally { setBusyId(null); } };
+  const toggleDefinition = async (report: ReportDefinition) => { setBusyId(report.id); setMessage(null); try { await setReportDefinitionEnabled(report.id, !Boolean(report.enabled)); await refreshOperations(); setMessage(Boolean(report.enabled) ? "Расписание поставлено на паузу" : "Расписание возобновлено"); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось изменить статус расписания"); } finally { setBusyId(null); } };
   const metricOptions = Object.entries(operations?.metric_labels ?? { sales_orders: "Заказы и продажи", ads: "Реклама", stocks: "Остатки", pnl: "Финансовый результат" });
   const definitionMetricCount = (report: { metrics: string }) => { try { return JSON.parse(report.metrics).length as number; } catch { return 0; } };
   const runTone = (status: string): Tone => status === "ok" ? "good" : status === "error" ? "danger" : "info";
   const runLabel = (status: string) => status === "ok" ? "готов" : status === "error" ? "ошибка" : status === "running" ? "формируется" : "в очереди";
+  const deliveryLabel = (status?: string) => status === "ok" ? "доставка выполнена" : status === "error" ? "ошибка доставки" : status === "not_requested" ? "без доставки" : status || "доставка ожидается";
   return (
     <div className="workspace-view">
       <section className="hero-strip reports-hero" aria-label="Отчеты">
@@ -2300,8 +3106,10 @@ function ReportsView({
 
       <MetricGrid metrics={reportMetrics} />
 
+      {analytics || analyticsError ? <section className="work-section report-analytics-section"><SectionHeader kicker="WB Analytics" title="Воронка продаж и история остатков"><BarChart3 size={18} /></SectionHeader>{analyticsError ? <div className="data-banner stale" role="status">Аналитика WB недоступна: {analyticsError}</div> : null}{analytics ? <>{analytics.errors.sales_funnel ? <p className="form-hint">{analytics.errors.sales_funnel}</p> : null}<div className="analytics-funnel-grid">{analytics.sales_funnel.stages.map((stage) => <div className="analytics-funnel-card" key={stage.key}><span>{stage.label}</span><strong>{Number(stage.value).toLocaleString("ru-RU")}</strong></div>)}</div>{analytics.stock_history.length ? <div className="analytics-history-list"><strong>Снимки остатков WB</strong>{analytics.stock_history.slice(-14).map((row) => <div className="analytics-history-row" key={row.date}><span>{row.date}</span><b>{Number(row.quantity).toLocaleString("ru-RU")} шт.</b><small>{row.rows} строк</small></div>)}</div> : <p className="plan-empty">История появится после первой синхронизации WB.</p>}</> : <p className="plan-empty">После восстановления доступа обновите аналитику.</p>}</section> : null}
+
       {message ? <p className="operation-error" role="status">{message}</p> : null}
-      {showForm ? <section className="work-section report-form-section"><SectionHeader kicker="Расписание" title="Новый отчёт"><CalendarDays size={18} /></SectionHeader><form className="settings-form" onSubmit={(event) => { event.preventDefault(); void createDefinition(event.currentTarget); }}><label className="operation-field"><span>Название</span><input name="name" required placeholder="Еженедельная сводка" /></label><label className="operation-field"><span>Периодичность</span><select className="filter-select" name="schedule_type" value={scheduleType} onChange={(event) => setScheduleType(event.target.value as "daily" | "weekly" | "monthly")}><option value="daily">Ежедневно</option><option value="weekly">Еженедельно</option><option value="monthly">Ежемесячно</option></select></label><label className="operation-field"><span>Время МСК</span><input name="schedule_time" required type="time" defaultValue="09:00" /></label>{scheduleType === "weekly" ? <label className="operation-field"><span>День недели</span><select className="filter-select" name="schedule_weekday" defaultValue="0"><option value="0">Понедельник</option><option value="1">Вторник</option><option value="2">Среда</option><option value="3">Четверг</option><option value="4">Пятница</option><option value="5">Суббота</option><option value="6">Воскресенье</option></select></label> : null}{scheduleType === "monthly" ? <label className="operation-field"><span>Число месяца</span><input name="schedule_day" min="1" max="28" type="number" defaultValue="1" /></label> : null}<fieldset className="report-metrics"><legend>Что включить</legend>{metricOptions.map(([code, label], index) => <label key={code}><input defaultChecked={index < 3} name="metrics" type="checkbox" value={code} />{label}</label>)}</fieldset><fieldset className="report-metrics"><legend>Доставка</legend><label><input disabled={!delivery.email_configured} name="email_enabled" type="checkbox" />Email{delivery.email_configured ? ` · ${delivery.email || "аккаунт"}` : " · не настроен"}</label><label><input disabled={!delivery.telegram_linked} name="telegram_enabled" type="checkbox" />Telegram{delivery.telegram_linked ? " · привязан" : " · сначала привяжите чат"}</label></fieldset><div className="operation-actions"><button className="ghost-button" type="button" onClick={() => setShowForm(false)}>Отмена</button><button className="primary-button" disabled={busyId === -1} type="submit"><CheckCircle2 size={16} />{busyId === -1 ? "Сохраняем" : "Сохранить расписание"}</button></div></form></section> : null}
+      {showForm ? <section className="work-section report-form-section"><SectionHeader kicker="Расписание" title="Новый отчёт"><CalendarDays size={18} /></SectionHeader><form className="settings-form" onSubmit={(event) => { event.preventDefault(); void createDefinition(event.currentTarget); }}><label className="operation-field"><span>Название</span><input name="name" required placeholder="Еженедельная сводка" /></label><label className="operation-field"><span>Периодичность</span><select className="filter-select" name="schedule_type" value={scheduleType} onChange={(event) => setScheduleType(event.target.value as "daily" | "weekly" | "monthly")}><option value="daily">Ежедневно</option><option value="weekly">Еженедельно</option><option value="monthly">Ежемесячно</option></select></label><label className="operation-field"><span>Время МСК</span><input name="schedule_time" required type="time" defaultValue="09:00" /></label>{scheduleType === "weekly" ? <label className="operation-field"><span>День недели</span><select className="filter-select" name="schedule_weekday" defaultValue="0"><option value="0">Понедельник</option><option value="1">Вторник</option><option value="2">Среда</option><option value="3">Четверг</option><option value="4">Пятница</option><option value="5">Суббота</option><option value="6">Воскресенье</option></select></label> : null}{scheduleType === "monthly" ? <label className="operation-field"><span>Число месяца</span><input name="schedule_day" min="1" max="28" type="number" defaultValue="1" /></label> : null}<fieldset className="report-metrics"><legend>Что включить</legend>{metricOptions.map(([code, label]) => <label key={code}><input defaultChecked name="metrics" type="checkbox" value={code} />{label}</label>)}</fieldset><fieldset className="report-metrics"><legend>Доставка</legend><label><input defaultChecked={delivery.email_configured} disabled={!delivery.email_configured} name="email_enabled" type="checkbox" />Email{delivery.email_configured ? ` · ${delivery.email || "аккаунт"}` : " · не настроен"}</label><label><input defaultChecked={delivery.telegram_linked} disabled={!delivery.telegram_linked} name="telegram_enabled" type="checkbox" />Telegram{delivery.telegram_linked ? " · привязан" : " · сначала привяжите чат"}</label></fieldset><div className="operation-actions"><button className="ghost-button" type="button" onClick={() => setShowForm(false)}>Отмена</button><button className="primary-button" disabled={busyId === -1} type="submit"><CheckCircle2 size={16} />{busyId === -1 ? "Сохраняем" : "Сохранить расписание"}</button></div></form></section> : null}
 
       <div className="content-grid">
         <section className="work-section">
@@ -2310,18 +3118,19 @@ function ReportsView({
 
           <div className="report-subsection">
             <SectionHeader kicker="Автоматическая отправка" title="Расписания"><span className="muted-count">{operations?.definitions.length ?? reportCards.length}</span></SectionHeader>
-            {operations?.definitions.length ? <div className="report-list">{operations.definitions.map((report) => <article className="report-row good" key={report.id}><div><span>{report.schedule_type === "daily" ? "Ежедневно" : report.schedule_type === "weekly" ? "Еженедельно" : "Ежемесячно"} · {report.schedule_time} МСК · {definitionMetricCount(report)} разделов</span><h3>{report.name}</h3><p>Последний запуск: {report.last_run_at ?? "ещё не было"} · {report.email_enabled ? "Email" : "без email"} · {report.telegram_enabled ? "Telegram" : "без Telegram"}</p></div><StatusPill tone="good">включён</StatusPill><div className="action-controls"><button className="icon-button" aria-label="Сформировать PDF сейчас" title="Сформировать PDF сейчас" disabled={busyId === report.id} type="button" onClick={() => void runDefinition(report.id)}><Play size={16} /></button><button className="icon-button" aria-label="Удалить расписание" title="Удалить расписание" disabled={busyId === report.id} type="button" onClick={() => void removeDefinition(report.id)}><Trash2 size={16} /></button></div></article>)}</div> : <p className="plan-empty">Расписаний пока нет. Создайте ежедневный, еженедельный или ежемесячный отчёт.</p>}
+            {operationsError ? <div className="data-banner stale" role="status">Расписания недоступны: {operationsError}</div> : operations ? (operations.definitions.length ? <div className="report-list">{operations.definitions.map((report) => <article className={cx("report-row", report.enabled ? "good" : "paused")} key={report.id}><div><span>{report.schedule_type === "daily" ? "Ежедневно" : report.schedule_type === "weekly" ? "Еженедельно" : "Ежемесячно"} · {report.schedule_time} МСК · {definitionMetricCount(report)} разделов</span><h3>{report.name}</h3><p>Последний запуск: {report.last_run_at ?? "ещё не было"} · {report.email_enabled ? "Email" : "без email"} · {report.telegram_enabled ? "Telegram" : "без Telegram"}</p></div><StatusPill tone={report.enabled ? "good" : "warn"}>{report.enabled ? "включён" : "пауза"}</StatusPill><div className="action-controls"><button className="icon-button" aria-label={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} title={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} disabled={busyId === report.id} type="button" onClick={() => void toggleDefinition(report)}><Play size={16} /></button><button className="icon-button" aria-label="Изменить расписание" title="Изменить расписание" disabled={busyId === report.id} type="button" onClick={() => void editDefinition(report)}><Pencil size={16} /></button><button className="icon-button" aria-label="Сформировать PDF сейчас" title="Сформировать PDF сейчас" disabled={busyId === report.id} type="button" onClick={() => void runDefinition(report.id)}><Play size={16} /></button><button className="icon-button" aria-label="Удалить расписание" title="Удалить расписание" disabled={busyId === report.id} type="button" onClick={() => void removeDefinition(report.id)}><Trash2 size={16} /></button></div></article>)}</div> : <p className="plan-empty">Расписаний пока нет. Создайте ежедневный, еженедельный или ежемесячный отчёт.</p>) : <p className="plan-empty">Загружаем расписания…</p>}
           </div>
         </section>
 
         <aside className="insight-column">
           <section className="panel">
             <SectionHeader compact kicker="Запуски" title="Файлы и ошибки"><BarChart3 size={20} /></SectionHeader>
-            {operations?.runs.length ? <div className="export-list">{operations.runs.map((run) => <article className={cx("export-row", `run-${run.status}`)} key={run.id}><div><strong>{run.definition_name || `Отчёт #${run.definition_id}`}</strong><span>{run.metric_count ?? 0} разделов · {run.finished_at ?? run.started_at}</span>{run.error ? <small className="run-error-text">{run.error}</small> : null}{run.delivery_error ? <small className="run-error-text">{run.delivery_error}</small> : null}</div><div className="run-actions"><StatusPill tone={runTone(run.status)}>{runLabel(run.status)}</StatusPill>{run.status === "ok" && run.file_available ? <button className="icon-button" aria-label="Скачать PDF" title="Скачать PDF" type="button" onClick={() => void downloadSavedReport(run.id)}><Download size={16} /></button> : null}</div></article>)}</div> : exportItems.length ? <div className="export-list">{exportItems.map((item) => <ExportRow item={item} key={item.name} />)}</div> : <p className="plan-empty">Запусков ещё не было</p>}
+            {operationsError ? <p className="plan-empty">История запусков недоступна до восстановления API.</p> : operations ? (operations.runs.length ? <div className="export-list">{operations.runs.map((run) => <article className={cx("export-row", `run-${run.status}`)} key={run.id}><div><strong>{run.definition_name || `Отчёт #${run.definition_id}`}</strong><span>{run.metric_count ?? 0} разделов · {run.finished_at ?? run.started_at}</span>{run.error ? <small className="run-error-text">{run.error}</small> : null}{run.delivery_error ? <small className="run-error-text">{run.delivery_error}</small> : null}</div><div className="run-actions"><StatusPill tone={runTone(run.status)}>{runLabel(run.status)}</StatusPill>{run.delivery_requested ? <small className={run.delivery_status === "error" ? "run-error-text" : "muted"}>{deliveryLabel(run.delivery_status)}</small> : null}{run.status === "ok" && run.file_available ? <button className="icon-button" aria-label="Скачать PDF" title="Скачать PDF" type="button" onClick={() => void downloadSavedReport(run.id)}><Download size={16} /></button> : null}</div></article>)}</div> : exportItems.length ? <div className="export-list">{exportItems.map((item) => <ExportRow item={item} key={item.name} />)}</div> : <p className="plan-empty">Запусков ещё не было</p>) : <p className="plan-empty">Загружаем историю запусков…</p>}
           </section>
 
           <section className="panel">
             <SectionHeader compact kicker="Доставка" title="Email и Telegram"><Bell size={20} /></SectionHeader>
+            {deliveryError ? <div className="data-banner stale" role="status">Настройки доставки недоступны: {deliveryError}</div> : null}
             <div className="delivery-settings">
               <div><strong>Email</strong><span>{delivery.email_configured ? `${delivery.email || "настроен"} · адрес аккаунта` : "SMTP не настроен"}</span></div>
               <div><strong>Telegram</strong><span>{delivery.telegram_linked ? `привязан к @${delivery.telegram_bot_username}` : delivery.telegram_configured ? `не привязан · @${delivery.telegram_bot_username}` : "бот не настроен"}</span></div>
@@ -2416,13 +3225,22 @@ function ProductionStageRow({ onOpen, stage }: { onOpen?: () => void; stage: Pro
 
 function ProductionTaskRow({
   onAction,
+  onOpen,
   task,
 }: {
   onAction: (label: string, itemLabel: string) => void;
+  onOpen?: (task: ProductionTask) => void;
   task: ProductionTask;
 }) {
+  const open = () => {
+    if (onOpen) {
+      onOpen(task);
+      return;
+    }
+    onAction("Партия", task.sku);
+  };
   return (
-    <article className={cx("production-row", "detail-trigger", task.tone)} role="button" tabIndex={0} onClick={() => onAction("Партия", task.sku)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onAction("Партия", task.sku); } }}>
+    <article className={cx("production-row", "detail-trigger", task.tone)} role="button" tabIndex={0} onClick={open} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}>
       <div>
         <span>{task.sku}</span>
         <h3>{task.title}</h3>
@@ -2453,15 +3271,55 @@ function MaterialNeedRow({ item, onOpen }: { item: MaterialNeed; onOpen?: () => 
   return onOpen ? <button className={cx("material-row", "detail-trigger", item.tone)} type="button" onClick={onOpen}>{content}</button> : <article className={cx("material-row", item.tone)}>{content}</article>;
 }
 
+function FbsSupplyDialog({
+  busy,
+  error,
+  item,
+  onClose,
+  onLoadBarcode,
+}: {
+  busy: boolean;
+  error: string | null;
+  item: { id: string; detail: FbsSupplyDetail; barcode: FbsSupplyBarcode | null };
+  onClose: () => void;
+  onLoadBarcode: () => Promise<void>;
+}) {
+  const barcodeValue = item.barcode?.barcode ?? item.barcode?.file ?? item.barcode?.url;
+  const imageSource = typeof barcodeValue === "string" && barcodeValue.startsWith("data:image/") ? barcodeValue : null;
+  return <dialog className="plan-drawer operation-dialog" open aria-labelledby="fbs-supply-dialog-title">
+    <div className="dialog-header"><div><span className="eyebrow">WB FBS</span><h2 id="fbs-supply-dialog-title">Поставка {item.id}</h2></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button></div>
+    {error ? <p className="operation-error" role="alert">{error}</p> : null}
+    <div className="fbs-detail-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void onLoadBarcode()}>{busy ? "Загружаю…" : "Получить QR / стикер"}</button></div>
+    {imageSource ? <img className="fbs-barcode-preview" src={imageSource} alt={`QR поставки ${item.id}`} /> : item.barcode ? <p className="form-hint">WB вернул код в формате {String(item.barcode.type ?? "файла")}. Откройте его в кабинете WB для печати.</p> : null}
+    <pre className="fbs-detail-json">{JSON.stringify(item.detail, null, 2)}</pre>
+    <div className="dialog-actions"><button className="ghost-button" type="button" onClick={onClose}>Закрыть</button></div>
+  </dialog>;
+}
+
 function SupplyShipmentRow({
   onAction,
+  onOpen,
+  onOpenFbs,
   shipment,
 }: {
   onAction: (label: string, itemLabel: string) => void;
+  onOpen?: (shipment: SupplyShipment) => void;
+  onOpenFbs?: (supplyId: string) => void;
   shipment: SupplyShipment;
 }) {
+  const open = () => {
+    if (onOpenFbs) {
+      onOpenFbs(shipment.id);
+      return;
+    }
+    if (onOpen) {
+      onOpen(shipment);
+      return;
+    }
+    onAction("Поставка", shipment.id);
+  };
   return (
-    <article className={cx("shipment-row", "detail-trigger", shipment.tone)} role="button" tabIndex={0} onClick={() => onAction("Поставка", shipment.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onAction("Поставка", shipment.id); } }}>
+    <article className={cx("shipment-row", "detail-trigger", shipment.tone)} role="button" tabIndex={0} onClick={open} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}>
       <div>
         <span>{shipment.id}</span>
         <h3>{shipment.supplier}</h3>
@@ -2471,7 +3329,7 @@ function SupplyShipmentRow({
         <Stat label="Сумма" value={shipment.amount} />
       </div>
       <StatusPill tone={shipment.tone}>{shipment.status}</StatusPill>
-      <button className="icon-button" type="button" aria-label="Открыть поставку" onClick={(event) => { event.stopPropagation(); onAction("Поставка", shipment.id); }}>
+      <button className="icon-button" type="button" aria-label={onOpenFbs ? "Открыть поставку WB" : "Открыть поставку"} onClick={(event) => { event.stopPropagation(); open(); }}>
         <ChevronRight size={18} />
       </button>
     </article>
@@ -2681,8 +3539,9 @@ function InventoryTable({ inventory, onOpen }: { inventory: InventoryWatchRow[];
               <span>{row.sku}</span>
               <h3>{row.name}</h3>
             </div>
-            <div>
+            <div className="mobile-sku-meta">
               <strong>{row.stock}</strong>
+              <span className="mobile-sku-margin">Маржа {row.margin}</span>
               <StatusPill tone={row.tone}>{row.signal}</StatusPill>
             </div>
           </article>
@@ -2710,16 +3569,16 @@ function MiniChart({ values }: { values: number[] }) {
   const max = Math.max(...values, 1);
   const formatChartValue = (value: number) => {
     const absolute = Math.abs(value);
-    if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(".0", "")} млн ₽`;
-    if (absolute >= 1_000) return `${Math.round(value / 1_000)} тыс. ₽`;
-    return `${Math.round(value)} ₽`;
+    if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(".0", "")}м`;
+    if (absolute >= 1_000) return `${Math.round(value / 1_000)}к`;
+    return `${Math.round(value)}`;
   };
 
   return (
     <div className="mini-chart" aria-label="График темпа выручки">
       {values.map((value, index) => (
         <div className="mini-chart-bar" key={`${value}-${index}`}>
-          <small>{formatChartValue(value)}</small>
+          <small title={`${Math.round(value).toLocaleString("ru-RU")} ₽`}>{formatChartValue(value)}</small>
           <span
             className={index > values.length - 4 ? "hot" : ""}
             style={{ height: `${Math.max(18, (value / max) * 100)}%` }}
@@ -2795,14 +3654,42 @@ function OperationDialog({
   kind,
   onClose,
   onSubmit,
+  productName,
 }: {
   busy: boolean;
   item: string;
   kind: "procurement" | "production";
   onClose: () => void;
   onSubmit: (form: HTMLFormElement) => void;
+  productName: string;
 }) {
   const title = kind === "procurement" ? "Создать заявку" : "Собрать смену";
+  const [norms, setNorms] = useState<ProductionNorm[]>([]);
+  const [productionSku, setProductionSku] = useState(item);
+  const [productionName, setProductionName] = useState(productName);
+  const [productionPlan, setProductionPlan] = useState("1");
+
+  useEffect(() => {
+    if (kind !== "production") return;
+    void getProductionNorms().then((result) => {
+      const enabled = result.items.filter((norm) => Boolean(norm.enabled));
+      setNorms(enabled);
+      const selected = enabled.find((norm) => norm.supplier_article === item);
+      if (selected) {
+        setProductionName(selected.product_name || productName);
+        setProductionPlan(String(Math.max(1, selected.min_batch || 1)));
+      }
+    }).catch(() => setNorms([]));
+  }, [item, kind, productName]);
+
+  const selectProductionSku = (value: string) => {
+    setProductionSku(value);
+    const selected = norms.find((norm) => norm.supplier_article === value);
+    if (selected) {
+      setProductionName(selected.product_name || value);
+      setProductionPlan(String(Math.max(1, selected.min_batch || 1)));
+    }
+  };
   return (
     <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="operation-title">
@@ -2826,9 +3713,10 @@ function OperationDialog({
             <label>Комментарий<input name="note" placeholder="Условия, контакт или примечание" /></label>
           </> : null}
           {kind === "production" ? <>
-            <label>Артикул<input name="sku" required defaultValue={item} placeholder="Артикул продавца" /></label>
-            <label>Товар<input name="product" required placeholder="Название товара" /></label>
-            <label>План смены<input name="quantity" required min="1" type="number" defaultValue="1" /></label>
+            <label>Артикул<input autoComplete="off" list="production-sku-options" name="sku" required value={productionSku} onChange={(event) => selectProductionSku(event.target.value)} placeholder="Выберите настроенный артикул" /><datalist id="production-sku-options">{norms.map((norm) => <option key={norm.nm_id} value={norm.supplier_article}>{norm.product_name}</option>)}</datalist></label>
+            <label>Товар<input name="product" required value={productionName} onChange={(event) => setProductionName(event.target.value)} placeholder="Название товара" /></label>
+            <label>План смены<input name="quantity" required min="1" type="number" value={productionPlan} onChange={(event) => setProductionPlan(event.target.value)} /></label>
+            <label>Дата смены<input name="taskDate" required type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label>
           </> : null}
           <div className="operation-actions"><button className="ghost-button" type="button" onClick={onClose}>Отмена</button><button className="primary-button" disabled={busy} type="submit"><CheckCircle2 size={16} />{busy ? "Сохраняем" : "Подтвердить"}</button></div>
         </form>

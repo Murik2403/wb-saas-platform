@@ -16,11 +16,12 @@ spec.loader.exec_module(api)
 
 
 def test_inventory_keeps_quantity_when_coverage_unknown():
-    data = SimpleNamespace(products=pd.DataFrame([{"Артикул продавца": "test", "Остаток": 66, "Запас, дней": None}]))
+    data = SimpleNamespace(products=pd.DataFrame([{"Артикул продавца": "test", "Остаток": 66, "Запас, дней": None, "Маржа до комиссий WB": 1234.5}]))
     row = api._product_inventory(data)[0]
     assert row["stock"] == 66
     assert row["stock_days"] is None
     assert row["signal"] == "Недостаточно продаж для прогноза"
+    assert row["margin_rub"] == 1234.5
 
 
 def test_inventory_zero_coverage_is_not_missing():

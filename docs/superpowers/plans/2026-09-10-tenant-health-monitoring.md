@@ -42,7 +42,8 @@ def test_tenant_health_router_is_public_but_exact():
     prefix = "traefik.http.routers.tenant-shop-a-health"
     assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/healthz`) && Method(`GET`)"
     assert labels[f"{prefix}.service"] == "tenant-shop-a"
-    assert f"{prefix}.middlewares" not in labels
+    assert labels[f"{prefix}.middlewares"] == "tenant-shop-a-health-rewrite"
+    assert labels["traefik.http.middlewares.tenant-shop-a-health-rewrite.replacePath.path"] == "/_stcore/health"
 
     prefix = "traefik.http.routers.tenant-shop-a-health-legacy"
     assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/_stcore/health`) && Method(`GET`)"

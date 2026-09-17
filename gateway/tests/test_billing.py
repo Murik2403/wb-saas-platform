@@ -62,6 +62,22 @@ class SuccessfulPaymentTests(GatewayDbTestCase):
         self.assertEqual(account["past_due_since"], "")
         self.assertEqual(payment["status"], "succeeded")
 
+    def test_payment_history_returns_newest_attempts(self) -> None:
+        with self.connect() as conn:
+            billing.record_payment_attempt(conn, self.account_id, "yk-history", "manual", 2990.0)
+            rows = billing.list_payments(conn, self.account_id)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["yookassa_payment_id"], "yk-history")
+
+    def test_successful_refund_marks_payment_and_access_past_due(self) -> None:
+        with self.connect() as conn:
+            billing.record_payment_attempt(conn, self.account_id, "yk-refund", "manual", 2990.0, status="succeeded")
+            billing.apply_refund(conn, self.account_id, "yk-refund", 2990.0, "rf-1")
+            payment = conn.execute("SELECT status FROM payments WHERE yookassa_payment_id='yk-refund'").fetchone()
+            account = accounts.get_account_by_id(conn, self.account_id)
+        self.assertEqual(payment["status"], "canceled")
+        self.assertEqual(account["status"], "past_due")
+
     def test_successful_payment_extends_from_current_period_end_not_from_now(self) -> None:
         # trial still has 14 days left -- paying now should extend from the
         # trial's end, not reset the clock to now+30.

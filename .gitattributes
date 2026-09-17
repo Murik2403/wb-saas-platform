@@ -1,6 +1,6 @@
-# Keep repository text deterministic across Windows development and Linux
-# deployment.  Windows launchers remain directly runnable on Windows.
 * text=auto eol=lf
+
+# Keep scripts that are usually CRLF-safe in Windows-friendly format.
+*.ps1 text eol=crlf
 *.bat text eol=crlf
 *.cmd text eol=crlf
-*.ps1 text eol=crlf

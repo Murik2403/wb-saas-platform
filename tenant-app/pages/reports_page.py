@@ -142,13 +142,13 @@ def render(ctx: dict) -> None:
 
         email_enabled = False
         if delivery.email_is_configured():
-            email_enabled = st.checkbox("Также отправлять на email аккаунта")
+            email_enabled = st.checkbox("Также отправлять на email аккаунта", value=True)
         else:
             st.caption("Отправка на email недоступна: не настроен внутренний API шлюза.")
 
         telegram_enabled = False
         if telegram_linked:
-            telegram_enabled = st.checkbox("Также отправлять в Telegram")
+            telegram_enabled = st.checkbox("Также отправлять в Telegram", value=True)
         elif delivery.internal_api_is_configured():
             st.caption("Отправка в Telegram недоступна: сначала привяжите чат в разделе выше.")
 

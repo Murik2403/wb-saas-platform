@@ -1,10 +1,11 @@
+import asyncio
 from unittest.mock import Mock
 
 import pytest
 from pydantic import ValidationError
 
 import app
-from app import TenantRequest, tenant_container_spec
+from app import TenantExportRequest, TenantRequest, tenant_container_spec
 
 
 def _request() -> TenantRequest:
@@ -50,7 +51,8 @@ def test_tenant_health_router_is_public_but_exact(monkeypatch):
     prefix = "traefik.http.routers.tenant-shop-a-health"
     assert labels[f"{prefix}.rule"] == "Host(`shop-a.app.example.test`) && Path(`/healthz`) && Method(`GET`)"
     assert labels[f"{prefix}.service"] == "tenant-shop-a"
-    assert f"{prefix}.middlewares" not in labels
+    assert labels[f"{prefix}.middlewares"] == "tenant-shop-a-health-rewrite"
+    assert labels["traefik.http.middlewares.tenant-shop-a-health-rewrite.replacePath.path"] == "/_stcore/health"
 
 
 def test_tenant_legacy_health_router_is_public_but_exact(monkeypatch):
@@ -92,3 +94,77 @@ def test_caller_cannot_supply_extra_docker_arguments():
             internal_api_url="https://example.test",
             image="attacker:latest",
         )
+
+
+def test_export_request_requires_scoped_internal_secret():
+    request = TenantExportRequest(expected_internal_secret="scoped-secret")
+    assert request.expected_internal_secret == "scoped-secret"
+    with pytest.raises(ValidationError):
+        TenantExportRequest(expected_internal_secret="")
+
+
+def test_export_stream_is_read_only_and_removes_helper(monkeypatch):
+    class FakeContainer:
+        attrs = {"Config": {"Env": ["WB_SAAS_INTERNAL_API_SECRET=scoped-secret"]}}
+
+        def logs(self, **kwargs):
+            assert kwargs == {"stream": True, "stdout": True, "stderr": False}
+            yield b"archive"
+
+        def remove(self, **kwargs):
+            assert kwargs == {"force": True}
+            self.removed = True
+
+    class FakeClient:
+        def __init__(self):
+            self.container = FakeContainer()
+
+        def containers_get(self, name):
+            return self.container
+
+        class Containers:
+            pass
+
+    client = FakeClient()
+    client.containers = type("Containers", (), {})()
+    client.containers.get = lambda name: client.container
+    client.containers.run = lambda *args, **kwargs: client.container
+    monkeypatch.setattr(app, "_client", lambda: client)
+    response = app.export_tenant("shop-a", TenantExportRequest(expected_internal_secret="scoped-secret"))
+    assert response.media_type == "application/gzip"
+    async def read_body():
+        return b"".join([chunk async for chunk in response.body_iterator])
+
+    assert asyncio.run(read_body()) == b"archive"
+    assert client.container.removed is True
+
+
+def test_remove_tenant_purge_removes_volume(monkeypatch):
+    class Volume:
+        def __init__(self):
+            self.removed = False
+
+        def remove(self, **kwargs):
+            assert kwargs == {"force": True}
+            self.removed = True
+
+    class Volumes:
+        def __init__(self):
+            self.volume = Volume()
+
+        def get(self, name):
+            assert name == "wb-tenant-data-shop-a"
+            return self.volume
+
+    class Client:
+        def __init__(self):
+            self.volumes = Volumes()
+            self.containers = type("Containers", (), {})()
+            self.networks = type("Networks", (), {})()
+
+    client = Client()
+    client.containers.get = lambda name: (_ for _ in ()).throw(RuntimeError("already gone"))
+    client.networks.get = lambda name: (_ for _ in ()).throw(RuntimeError("already gone"))
+    monkeypatch.setattr(app, "_client", lambda: client)
+    assert app.remove_tenant("shop-a", purge_volume=True)["status"] == "purged"
+    assert client.volumes.volume.removed is True

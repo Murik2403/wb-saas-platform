@@ -55,6 +55,7 @@ def charge_due_accounts() -> int:
                 description=f"Продление подписки MARKETSHELPER — {account['email']}",
                 payment_method_id=account["payment_method_id"],
                 metadata={"account_id": str(account_id)},
+                customer_email=account["email"],
                 # Deterministic per (account, period being paid for) -- see
                 # module docstring. Stays stable across reruns until this
                 # account's current_period_end actually advances, which only

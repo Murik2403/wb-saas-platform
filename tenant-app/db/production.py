@@ -531,7 +531,8 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
             SELECT t.*, p.material_per_unit, p.material_name, p.blank_type, p.pack_size
               FROM execution_tasks t
               LEFT JOIN production_settings p ON p.nm_id=t.nm_id
-             WHERE t.task_type='production' AND t.task_date=?
+             WHERE (LOWER(TRIM(t.task_type))='production' OR TRIM(t.task_type) IN ('Производство','производство'))
+               AND t.task_date=?
                AND t.actual_units>0
                AND t.status IN ('Изготовлено','Упаковано','Передано на отгрузку')
              ORDER BY t.nm_id, t.task_key
@@ -672,6 +673,21 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                 conn.execute("ROLLBACK TO SAVEPOINT post_production_task")
                 conn.execute("RELEASE SAVEPOINT post_production_task")
                 result["errors"].append(f"{task['supplier_article']}: {exc}")
+        conn.execute(
+            """
+            UPDATE execution_tasks
+               SET status='Закрыто', updated_at=?
+             WHERE (LOWER(TRIM(task_type))='production' OR TRIM(task_type) IN ('Производство','производство'))
+               AND task_date=?
+               AND EXISTS (
+                   SELECT 1 FROM inventory_movements m
+                    WHERE m.source_task_key=execution_tasks.task_key
+                      AND m.movement_type IN ('production_receipt','production_receipt_wip')
+                      AND m.reversed_at IS NULL
+               )
+            """,
+            (datetime.now().isoformat(timespec="seconds"), date_value),
+        )
     result["meters"] = round(float(result["meters"]), 3)
     result["cost_rub"] = round(float(result["cost_rub"]), 2)
     return result

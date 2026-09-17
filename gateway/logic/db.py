@@ -136,7 +136,9 @@ _PG_SCHEMA_STATEMENTS = [
         current_period_end TEXT DEFAULT '',
         payment_method_id TEXT DEFAULT '',
         past_due_since TEXT DEFAULT '',
+        email_verified_at TEXT DEFAULT '',
         pdn_consent_at TEXT DEFAULT '',
+        pdn_policy_version TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
@@ -157,6 +159,19 @@ _PG_SCHEMA_STATEMENTS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id, created_at)",
+    """
+    CREATE TABLE IF NOT EXISTS refunds (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        payment_id INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+        yookassa_refund_id TEXT NOT NULL UNIQUE,
+        amount_rub REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_refunds_account ON refunds(account_id, created_at)",
     """
     CREATE TABLE IF NOT EXISTS sessions (
         token_hash TEXT PRIMARY KEY,
@@ -181,6 +196,29 @@ _PG_SCHEMA_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_tenant_instances_status ON tenant_instances(status)",
     """
+    CREATE TABLE IF NOT EXISTS tenant_memberships (
+        tenant_id INTEGER NOT NULL REFERENCES tenant_instances(id) ON DELETE CASCADE,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, account_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_tenant_memberships_account ON tenant_memberships(account_id)",
+    """
+    CREATE TABLE IF NOT EXISTS tenant_invitations (
+        token_hash TEXT PRIMARY KEY,
+        tenant_id INTEGER NOT NULL REFERENCES tenant_instances(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_tenant_invitations_tenant ON tenant_invitations(tenant_id, email)",
+    """
     CREATE TABLE IF NOT EXISTS telegram_link_codes (
         code TEXT PRIMARY KEY,
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -200,6 +238,36 @@ _PG_SCHEMA_STATEMENTS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_account ON password_reset_tokens(account_id)",
+    """
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_account ON email_verification_tokens(account_id)",
+    """
+    CREATE TABLE IF NOT EXISTS email_change_tokens (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        new_email TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_email_change_tokens_account ON email_change_tokens(account_id)",
+    """
+    CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+        bucket_key TEXT NOT NULL,
+        bucket_start INTEGER NOT NULL,
+        request_count INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY(bucket_key, bucket_start)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_bucket_key ON rate_limit_buckets(bucket_key)",
 ]
 
 
@@ -218,8 +286,22 @@ def _init_db_postgres(conn: _PGConnection) -> None:
     # information_schema.columns instead of PRAGMA table_info.
     if not _pg_column_exists(conn, "accounts", "pdn_consent_at"):
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")
+    if not _pg_column_exists(conn, "accounts", "email_verified_at"):
+        # Existing accounts predate mandatory email confirmation and are
+        # treated as verified; only newly registered rows start unverified.
+        conn.execute("ALTER TABLE accounts ADD COLUMN email_verified_at TEXT DEFAULT ''")
+        conn.execute("UPDATE accounts SET email_verified_at=created_at WHERE email_verified_at='' OR email_verified_at IS NULL")
+    if not _pg_column_exists(conn, "accounts", "pdn_policy_version"):
+        conn.execute("ALTER TABLE accounts ADD COLUMN pdn_policy_version TEXT DEFAULT ''")
     if not _pg_column_exists(conn, "tenant_instances", "telegram_chat_id"):
         conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
+    conn.execute(
+        """
+        INSERT INTO tenant_memberships(tenant_id, account_id, role, created_at, updated_at)
+        SELECT id, account_id, 'owner', created_at, updated_at FROM tenant_instances
+        ON CONFLICT (tenant_id, account_id) DO NOTHING
+        """
+    )
 
 
 def init_db(conn) -> None:
@@ -247,11 +329,15 @@ def init_db(conn) -> None:
             current_period_end TEXT DEFAULT '',
             payment_method_id TEXT DEFAULT '',
             past_due_since TEXT DEFAULT '',
+            email_verified_at TEXT DEFAULT '',
             -- 152-ФЗ: timestamp of explicit consent to personal-data
             -- processing, given via the required checkbox on the
             -- registration form (see gateway/app.py register_submit()).
             -- Empty for accounts created before this column existed.
             pdn_consent_at TEXT DEFAULT '',
+            -- Version of the policy displayed when the consent was given.
+            -- Empty for accounts created before version recording existed.
+            pdn_policy_version TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -274,6 +360,20 @@ def init_db(conn) -> None:
             FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS refunds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            payment_id INTEGER NOT NULL,
+            yookassa_refund_id TEXT NOT NULL UNIQUE,
+            amount_rub REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+            FOREIGN KEY(payment_id) REFERENCES payments(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_refunds_account ON refunds(account_id, created_at);
 
         CREATE TABLE IF NOT EXISTS sessions (
             token_hash TEXT PRIMARY KEY,
@@ -301,6 +401,30 @@ def init_db(conn) -> None:
             FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_tenant_instances_status ON tenant_instances(status);
+
+        CREATE TABLE IF NOT EXISTS tenant_memberships (
+            tenant_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, account_id),
+            FOREIGN KEY(tenant_id) REFERENCES tenant_instances(id) ON DELETE CASCADE,
+            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_tenant_memberships_account ON tenant_memberships(account_id);
+
+        CREATE TABLE IF NOT EXISTS tenant_invitations (
+            token_hash TEXT PRIMARY KEY,
+            tenant_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            FOREIGN KEY(tenant_id) REFERENCES tenant_instances(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_tenant_invitations_tenant ON tenant_invitations(tenant_id, email);
 
         -- One-time codes a tenant's dashboard generates (see
         -- internal_routes.py's /internal/telegram-link-code) so its owner
@@ -334,6 +458,36 @@ def init_db(conn) -> None:
             FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_account ON password_reset_tokens(account_id);
+
+        CREATE TABLE IF NOT EXISTS email_verification_tokens (
+            token_hash TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_account ON email_verification_tokens(account_id);
+
+        CREATE TABLE IF NOT EXISTS email_change_tokens (
+            token_hash TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            new_email TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_email_change_tokens_account ON email_change_tokens(account_id);
+
+        -- Sliding-window counters for auth/webhook rate limiting.
+        CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+            bucket_key TEXT NOT NULL,
+            bucket_start INTEGER NOT NULL,
+            request_count INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY(bucket_key, bucket_start)
+        );
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_bucket_key ON rate_limit_buckets(bucket_key);
         """
     )
     # Migration for databases created before pdn_consent_at existed --
@@ -345,7 +499,21 @@ def init_db(conn) -> None:
     existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(accounts)")}
     if "pdn_consent_at" not in existing_columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")
+    if "pdn_policy_version" not in existing_columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN pdn_policy_version TEXT DEFAULT ''")
+    if "email_verified_at" not in existing_columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN email_verified_at TEXT DEFAULT ''")
+        conn.execute("UPDATE accounts SET email_verified_at=created_at WHERE email_verified_at='' OR email_verified_at IS NULL")
 
     tenant_columns = {row[1] for row in conn.execute("PRAGMA table_info(tenant_instances)")}
     if "telegram_chat_id" not in tenant_columns:
         conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
+
+    # Existing tenants predate multi-user access.  Backfill the owner row
+    # idempotently so every tenant has the same authorization model.
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO tenant_memberships(tenant_id, account_id, role, created_at, updated_at)
+        SELECT id, account_id, 'owner', created_at, updated_at FROM tenant_instances
+        """
+    )

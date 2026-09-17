@@ -93,6 +93,39 @@ def test_production_dashboard_shows_recommendations_when_shift_is_empty(monkeypa
     assert result["metrics"][1]["value"] == 40
 
 
+def test_created_production_shift_is_resolved_and_visible(monkeypatch, tmp_path):
+    database = tmp_path / "tenant.sqlite3"
+    with sqlite3.connect(database) as conn:
+        conn.execute("CREATE TABLE production_settings(nm_id INTEGER, supplier_article TEXT)")
+        conn.execute("CREATE TABLE products_catalog(nm_id INTEGER, product_name TEXT)")
+        conn.execute("INSERT INTO production_settings VALUES(123, 'placemat-4')")
+        conn.execute("INSERT INTO products_catalog VALUES(123, 'Плейсматы 4 шт')")
+    saved = []
+    monkeypatch.setattr(api, "DB_PATH", database)
+    monkeypatch.setattr(api, "save_execution_tasks", lambda frame: saved.extend(frame.to_dict("records")))
+    payload = api.ProductionShiftInput(tasks=[api.ProductionTaskInput(
+        task_key="shift:1", supplier_article="placemat-4", product_name="",
+        planned_units=20, task_date="2026-09-10",
+    )])
+
+    assert api.create_production_shift(payload) == {"saved": 1, "status": "Не начато"}
+    assert saved[0]["task_type"] == "production"
+    assert saved[0]["nm_id"] == 123
+    assert saved[0]["product_name"] == "Плейсматы 4 шт"
+
+
+def test_production_execution_hides_closed_and_keeps_legacy_type(monkeypatch):
+    rows = pd.DataFrame([
+        {"task_key": "open", "task_type": "production", "status": "Не начато"},
+        {"task_key": "legacy", "task_type": "Производство", "status": "В работе"},
+        {"task_key": "closed", "task_type": "production", "status": "Закрыто"},
+        {"task_key": "supply", "task_type": "procurement", "status": "В работе"},
+    ])
+    monkeypatch.setattr(api, "read_table", lambda _: rows)
+
+    assert [row["task_key"] for row in api.get_production_execution()["tasks"]] == ["open", "legacy"]
+
+
 def test_revenue_trend_uses_daily_revenue_from_dashboard(monkeypatch):
     daily = pd.DataFrame([
         {"day": "2026-09-08", "revenue": 1200.0},
@@ -176,3 +209,23 @@ def test_ads_retry_resolves_only_advertising_failure(monkeypatch, tmp_path):
     with sqlite3.connect(api.DB_PATH) as conn:
         conn.execute("UPDATE sync_log SET details='financial_error: failure, ads_error: WB API 500' WHERE id=1")
     assert api.get_data_status()["partial"] is True
+
+
+@pytest.mark.parametrize(
+    ("handler", "expected_key"),
+    [
+        (api.get_overview, "kpis"),
+        (api.get_products, "products"),
+        (api.get_ads, "campaigns"),
+        (api.get_dashboard_ads, "metrics"),
+    ],
+)
+def test_empty_tenant_pages_return_usable_payload(monkeypatch, handler, expected_key):
+    monkeypatch.setattr(api, "table_count", lambda _name: 0)
+    payload = handler(period="7d")
+    assert payload[expected_key] == []
+    assert payload["empty_reason"] == "no_data_yet"
+
+
+def test_legacy_health_endpoints_return_ok():
+    assert api.legacy_health() == {"status": "ok"}

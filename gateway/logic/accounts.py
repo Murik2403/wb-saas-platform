@@ -28,6 +28,7 @@ import config
 PBKDF2_ITERATIONS = 260_000
 SESSION_TOKEN_BYTES = 32
 SESSION_TTL_HOURS = 24 * 30  # 30 days
+EMAIL_VERIFICATION_TTL_HOURS = 24
 ARGON2_HASHER = PasswordHasher(
     time_cost=2,
     memory_cost=19 * 1024,
@@ -48,9 +49,34 @@ ACCOUNT_STATUSES = {"pending", "trialing", "active", "past_due", "canceled"}
 ACCESS_ALLOWED_STATUSES = {"trialing", "active", "past_due"}
 
 TENANT_STATUSES = {"provisioning", "running", "stopped", "failed"}
+TENANT_ROLES = {"owner", "manager", "viewer"}
+TENANT_INVITATION_TTL_DAYS = 7
+
+# This value is stored with each registration consent so the operator can
+# identify the policy edition that was presented to that account.
+PDN_POLICY_VERSION = "2026-09-11"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _SLUG_CHARS_RE = re.compile(r"[^a-z0-9-]+")
+COMMON_WEAK_PASSWORDS = {
+    "password",
+    "12345678",
+    "123456789",
+    "1234567890",
+    "qwerty",
+    "qwertyui",
+    "123456",
+    "1234567",
+    "12345678910",
+    "admin",
+    "welcome",
+    "letmein",
+    "iloveyou",
+    "abc123",
+    "11111111",
+    "00000000",
+    "пароль",
+}
 
 
 def _now_iso() -> str:
@@ -103,6 +129,8 @@ def password_issues(password: str) -> list[str]:
         issues.append("Пароль должен быть не короче 8 символов.")
     if password and password.strip() != password:
         issues.append("Пароль не должен начинаться или заканчиваться пробелом.")
+    if password and password.lower() in COMMON_WEAK_PASSWORDS:
+        issues.append("Пароль слишком распространённый. Выберите более уникальный вариант.")
     return issues
 
 
@@ -140,7 +168,13 @@ def generate_unique_slug(conn: sqlite3.Connection, email: str, max_attempts: int
 # Accounts
 # --------------------------------------------------------------------------
 
-def create_account(conn: sqlite3.Connection, email: str, password: str, pdn_consent: bool = True) -> int:
+def create_account(
+    conn: sqlite3.Connection,
+    email: str,
+    password: str,
+    pdn_consent: bool = True,
+    email_verified: bool = True,
+) -> int:
     # Defaults to True so the many tests/fixtures exercising unrelated
     # behavior (billing, password reset, etc.) don't all need updating --
     # the one caller that matters for real compliance is the actual
@@ -164,11 +198,14 @@ def create_account(conn: sqlite3.Connection, email: str, password: str, pdn_cons
     now = _now_iso()
     cur = conn.execute(
         """
-        INSERT INTO accounts(email, password_hash, password_salt, status, pdn_consent_at, created_at, updated_at)
-        VALUES (?, ?, ?, 'pending', ?, ?, ?)
+        INSERT INTO accounts(
+            email, password_hash, password_salt, status, pdn_consent_at,
+            pdn_policy_version, email_verified_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)
         RETURNING id
         """,
-        (email, password_hash, salt, now, now, now),
+        (email, password_hash, salt, now, PDN_POLICY_VERSION, now if email_verified else "", now, now),
     )
     # By column name, not position ([0]) -- sqlite3.Row supports both, but
     # Postgres's dict_row (see logic/db.py's _connect_postgres) is a plain
@@ -183,6 +220,11 @@ def get_account_by_id(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row 
 
 def get_account_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM accounts WHERE email=?", ((email or "").strip().lower(),)).fetchone()
+
+
+def is_email_verified(account: sqlite3.Row | dict[str, Any] | None) -> bool:
+    """Return whether the account owner has completed email verification."""
+    return bool(account is not None and str(account.get("email_verified_at", "") if isinstance(account, dict) else account["email_verified_at"]))
 
 
 def authenticate_account(conn: sqlite3.Connection, email: str, password: str) -> sqlite3.Row | None:
@@ -202,6 +244,94 @@ def authenticate_account(conn: sqlite3.Connection, email: str, password: str) ->
     return account
 
 
+def change_password(conn: sqlite3.Connection, account_id: int, current_password: str, new_password: str) -> None:
+    account = get_account_by_id(conn, int(account_id))
+    if account is None or not verify_password(current_password, account["password_hash"], account["password_salt"]):
+        raise ValueError("Текущий пароль указан неверно.")
+    issues = password_issues(new_password)
+    if issues:
+        raise ValueError(" ".join(issues))
+    password_hash, salt = hash_password(new_password)
+    conn.execute("UPDATE accounts SET password_hash=?, password_salt=?, updated_at=? WHERE id=?", (password_hash, salt, _now_iso(), int(account_id)))
+    revoke_all_sessions_for_account(conn, int(account_id))
+
+
+def create_email_change_token(conn: sqlite3.Connection, account_id: int, new_email: str, ttl_minutes: int = 60) -> str:
+    email = (new_email or "").strip().lower()
+    if not validate_email(email):
+        raise ValueError("Некорректный email.")
+    existing = get_account_by_email(conn, email)
+    if existing is not None and int(existing["id"]) != int(account_id):
+        raise ValueError("Этот email уже используется.")
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    conn.execute("INSERT INTO email_change_tokens(token_hash, account_id, new_email, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", (_hash_token(token), int(account_id), email, now.isoformat(timespec="seconds"), (now + timedelta(minutes=ttl_minutes)).isoformat(timespec="seconds")))
+    return token
+
+
+def consume_email_change_token(conn: sqlite3.Connection, token: str) -> int:
+    row = conn.execute("SELECT * FROM email_change_tokens WHERE token_hash=?", (_hash_token(token),)).fetchone()
+    if row is None or row["consumed_at"]:
+        raise ValueError("Ссылка подтверждения email недействительна.")
+    expires = datetime.fromisoformat(row["expires_at"])
+    if expires < datetime.now(timezone.utc):
+        raise ValueError("Ссылка подтверждения email истекла.")
+    existing = get_account_by_email(conn, row["new_email"])
+    if existing is not None and int(existing["id"]) != int(row["account_id"]):
+        # The address could have been claimed after the link was sent. Do not
+        # let a late confirmation turn into a raw UNIQUE constraint error.
+        raise ValueError("Этот email уже используется.")
+    now = _now_iso()
+    conn.execute("UPDATE accounts SET email=?, updated_at=? WHERE id=?", (row["new_email"], now, int(row["account_id"])))
+    conn.execute("UPDATE email_change_tokens SET consumed_at=? WHERE token_hash=?", (now, row["token_hash"]))
+    revoke_all_sessions_for_account(conn, int(row["account_id"]))
+    return int(row["account_id"])
+
+
+def create_email_verification_token(conn: sqlite3.Connection, account_id: int, ttl_hours: int = EMAIL_VERIFICATION_TTL_HOURS) -> str:
+    account = get_account_by_id(conn, int(account_id))
+    if account is None:
+        raise ValueError("Аккаунт не найден.")
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    conn.execute(
+        "DELETE FROM email_verification_tokens WHERE account_id=? AND consumed_at IS NULL",
+        (int(account_id),),
+    )
+    conn.execute(
+        "INSERT INTO email_verification_tokens(token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        (_hash_token(token), int(account_id), now.isoformat(timespec="seconds"), (now + timedelta(hours=ttl_hours)).isoformat(timespec="seconds")),
+    )
+    return token
+
+
+def consume_email_verification_token(conn: sqlite3.Connection, token: str) -> int:
+    row = conn.execute(
+        "SELECT * FROM email_verification_tokens WHERE token_hash=?",
+        (_hash_token(token),),
+    ).fetchone()
+    if row is None or row["consumed_at"]:
+        raise ValueError("Ссылка подтверждения email недействительна.")
+    expires = datetime.fromisoformat(row["expires_at"])
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < datetime.now(timezone.utc):
+        raise ValueError("Ссылка подтверждения email истекла.")
+    account = get_account_by_id(conn, int(row["account_id"]))
+    if account is None:
+        raise ValueError("Аккаунт не найден.")
+    now = _now_iso()
+    conn.execute(
+        "UPDATE accounts SET email_verified_at=?, updated_at=? WHERE id=?",
+        (now, now, int(row["account_id"])),
+    )
+    conn.execute(
+        "UPDATE email_verification_tokens SET consumed_at=? WHERE token_hash=?",
+        (now, row["token_hash"]),
+    )
+    return int(row["account_id"])
+
+
 def set_account_status(conn: sqlite3.Connection, account_id: int, status: str) -> None:
     if status not in ACCOUNT_STATUSES:
         raise ValueError(f"Недопустимый статус аккаунта: {status!r}")
@@ -215,6 +345,11 @@ def account_has_access(account: sqlite3.Row | dict[str, Any] | None) -> bool:
     if account is None:
         return False
     return str(account["status"]) in ACCESS_ALLOWED_STATUSES
+
+
+def delete_account(conn: sqlite3.Connection, account_id: int) -> None:
+    """Delete control-plane personal data after the tenant is removed."""
+    conn.execute("DELETE FROM accounts WHERE id=?", (int(account_id),))
 
 
 # --------------------------------------------------------------------------
@@ -295,7 +430,15 @@ def create_tenant_instance(conn: sqlite3.Connection, account_id: int, slug: str)
         """,
         (int(account_id), slug, container_name, now, now),
     )
-    return int(cur.fetchone()["id"])
+    tenant_id = int(cur.fetchone()["id"])
+    conn.execute(
+        """
+        INSERT INTO tenant_memberships(tenant_id, account_id, role, created_at, updated_at)
+        VALUES (?, ?, 'owner', ?, ?)
+        """,
+        (tenant_id, int(account_id), now, now),
+    )
+    return tenant_id
 
 
 def set_tenant_status(conn: sqlite3.Connection, tenant_id: int, status: str, note: str = "") -> None:
@@ -329,6 +472,157 @@ def get_tenant_for_account(conn: sqlite3.Connection, account_id: int) -> sqlite3
 
 def get_tenant_by_slug(conn: sqlite3.Connection, slug: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM tenant_instances WHERE slug=?", (slug,)).fetchone()
+
+
+def get_tenant_by_id(conn: sqlite3.Connection, tenant_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM tenant_instances WHERE id=?", (int(tenant_id),)).fetchone()
+
+
+def get_tenant_membership(conn: sqlite3.Connection, tenant_id: int, account_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM tenant_memberships WHERE tenant_id=? AND account_id=?",
+        (int(tenant_id), int(account_id)),
+    ).fetchone()
+
+
+def get_accessible_tenant_for_account(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | None:
+    """Return the tenant a user can open, including their role.
+
+    Owners are inserted into tenant_memberships for new and migrated tenants,
+    so this single query covers both the original owner flow and invited users.
+    """
+    return conn.execute(
+        """
+        SELECT t.*, tm.role AS membership_role
+        FROM tenant_instances t
+        JOIN tenant_memberships tm ON tm.tenant_id=t.id
+        WHERE tm.account_id=?
+        ORDER BY CASE WHEN tm.role='owner' THEN 0 ELSE 1 END, t.created_at
+        LIMIT 1
+        """,
+        (int(account_id),),
+    ).fetchone()
+
+
+def list_tenant_members(conn: sqlite3.Connection, tenant_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT tm.account_id, tm.role, tm.created_at, tm.updated_at, a.email,
+               a.status AS account_status
+        FROM tenant_memberships tm
+        JOIN accounts a ON a.id=tm.account_id
+        WHERE tm.tenant_id=?
+        ORDER BY CASE WHEN tm.role='owner' THEN 0 WHEN tm.role='manager' THEN 1 ELSE 2 END, a.email
+        """,
+        (int(tenant_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_membership_invitation(
+    conn: sqlite3.Connection,
+    tenant_id: int,
+    email: str,
+    role: str = "viewer",
+    ttl_days: int = TENANT_INVITATION_TTL_DAYS,
+) -> str:
+    email = (email or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise ValueError("Укажите корректный email приглашённого пользователя.")
+    if role not in TENANT_ROLES - {"owner"}:
+        raise ValueError("Можно пригласить только менеджера или наблюдателя.")
+    tenant = conn.execute("SELECT id FROM tenant_instances WHERE id=?", (int(tenant_id),)).fetchone()
+    if tenant is None:
+        raise ValueError("Кабинет не найден.")
+    account = get_account_by_email(conn, email)
+    if account is not None and get_tenant_membership(conn, int(tenant_id), int(account["id"])) is not None:
+        raise ValueError("Этот пользователь уже добавлен в кабинет.")
+    # Only one active invitation per address; issuing a new one invalidates
+    # the old link without exposing the raw token in the database.
+    conn.execute(
+        "DELETE FROM tenant_invitations WHERE tenant_id=? AND email=? AND consumed_at IS NULL",
+        (int(tenant_id), email),
+    )
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    conn.execute(
+        """
+        INSERT INTO tenant_invitations(token_hash, tenant_id, email, role, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (_hash_token(token), int(tenant_id), email, role, now.isoformat(timespec="seconds"),
+         (now + timedelta(days=max(1, int(ttl_days)))).isoformat(timespec="seconds")),
+    )
+    return token
+
+
+def get_pending_membership_invitation(conn: sqlite3.Connection, token: str, email: str = "") -> sqlite3.Row | None:
+    token = (token or "").strip()
+    if not token:
+        return None
+    row = conn.execute(
+        "SELECT * FROM tenant_invitations WHERE token_hash=? AND consumed_at IS NULL",
+        (_hash_token(token),),
+    ).fetchone()
+    if row is None:
+        return None
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        return None
+    if email and str(row["email"]).strip().lower() != (email or "").strip().lower():
+        return None
+    return row
+
+
+def consume_membership_invitation(conn: sqlite3.Connection, token: str, account_id: int) -> int:
+    """Consume an invitation for the logged-in, matching email account."""
+    token = (token or "").strip()
+    row = conn.execute(
+        "SELECT * FROM tenant_invitations WHERE token_hash=?", (_hash_token(token),)
+    ).fetchone()
+    if row is None or row["consumed_at"] is not None:
+        raise ValueError("Приглашение недействительно или уже использовано.")
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise ValueError("Срок действия приглашения истёк.")
+    account = get_account_by_id(conn, int(account_id))
+    if account is None or str(account["email"]).strip().lower() != str(row["email"]).strip().lower():
+        raise ValueError("Это приглашение предназначено для другого email.")
+    existing = get_tenant_membership(conn, int(row["tenant_id"]), int(account_id))
+    now = _now_iso()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO tenant_memberships(tenant_id, account_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (int(row["tenant_id"]), int(account_id), row["role"], now, now),
+        )
+    else:
+        conn.execute(
+            "UPDATE tenant_memberships SET role=?, updated_at=? WHERE tenant_id=? AND account_id=?",
+            (row["role"], now, int(row["tenant_id"]), int(account_id)),
+        )
+    conn.execute("UPDATE tenant_invitations SET consumed_at=? WHERE token_hash=?", (now, row["token_hash"]))
+    return int(row["tenant_id"])
+
+
+def tenant_owner_account(conn: sqlite3.Connection, tenant_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT a.* FROM accounts a JOIN tenant_instances t ON t.account_id=a.id
+        WHERE t.id=?
+        """,
+        (int(tenant_id),),
+    ).fetchone()
+
+
+def tenant_has_access(conn: sqlite3.Connection, tenant: sqlite3.Row | dict[str, Any] | None) -> bool:
+    if tenant is None:
+        return False
+    owner = tenant_owner_account(conn, int(tenant["id"]))
+    return account_has_access(owner)
 
 
 # --------------------------------------------------------------------------

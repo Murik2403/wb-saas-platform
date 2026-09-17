@@ -18,12 +18,13 @@ PARENT_DOMAIN = os.environ.get("WB_SAAS_PARENT_DOMAIN", "localhost")
 TENANT_SUBDOMAIN_PREFIX = os.environ.get("WB_SAAS_TENANT_SUBDOMAIN_PREFIX", "app")
 
 # Docker image tag used for every newly-provisioned tenant container.
-TENANT_IMAGE = os.environ.get("WB_SAAS_TENANT_IMAGE", "wb-dashboard-tenant:latest")
+# New tenants use the finalized React redesign unless explicitly configured otherwise.
+TENANT_IMAGE = os.environ.get("WB_SAAS_TENANT_IMAGE", "wb-dashboard-tenant:redesign")
 
 # Docker network shared by the gateway, Traefik, and every tenant container.
 DOCKER_NETWORK = os.environ.get("WB_SAAS_DOCKER_NETWORK", "wbsaas_net")
 
-# Internal port the tenant Streamlit app listens on inside its container.
+# Internal port the tenant web application listens on inside its container.
 TENANT_INTERNAL_PORT = int(os.environ.get("WB_SAAS_TENANT_INTERNAL_PORT", "8501"))
 
 # Per-tenant resource caps, so one client's runaway sync/report can't starve
@@ -64,6 +65,9 @@ SESSION_COOKIE_NAME = "wb_saas_session"
 TRIAL_DAYS = int(os.environ.get("WB_SAAS_TRIAL_DAYS", "14"))
 BILLING_PERIOD_DAYS = int(os.environ.get("WB_SAAS_BILLING_PERIOD_DAYS", "30"))
 SUBSCRIPTION_PRICE_RUB = float(os.environ.get("WB_SAAS_SUBSCRIPTION_PRICE_RUB", "2990"))
+RECEIPT_ENABLED = os.environ.get("WB_SAAS_RECEIPT_ENABLED", "0") == "1"
+RECEIPT_VAT_CODE = int(os.environ.get("WB_SAAS_VAT_CODE", "1"))
+RECEIPT_TAX_SYSTEM_CODE = int(os.environ.get("WB_SAAS_TAX_SYSTEM_CODE", "1"))
 # How long a client keeps access after a failed/missing payment before
 # being locked out and their container stopped. Long enough that a
 # temporarily-declined card isn't an instant outage, short enough that it's
@@ -138,7 +142,10 @@ INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
 # Error reporting is opt-in: no telemetry leaves the deployment until an
 # operator sets one of these DSNs.
 SENTRY_DSN = os.environ.get("WB_SAAS_SENTRY_DSN", "")
-SENTRY_TENANT_DSN = os.environ.get("WB_SAAS_SENTRY_TENANT_DSN", "")
+# Keep tenant dashboards reporting in the same Sentry project by default,
+# unless a separate tenant DSN is explicitly configured.
+_TENANT_DSN_ENV = os.environ.get("WB_SAAS_SENTRY_TENANT_DSN", "").strip()
+SENTRY_TENANT_DSN = _TENANT_DSN_ENV or SENTRY_DSN
 SENTRY_ENVIRONMENT = os.environ.get("WB_SAAS_SENTRY_ENVIRONMENT", "production")
 # Upper bound for one scheduled-report PDF accepted from a tenant.  The
 # gateway reads at most one byte beyond this value before rejecting it.
@@ -147,6 +154,10 @@ MAX_REPORT_UPLOAD_BYTES = max(1, int(os.environ.get("WB_SAAS_MAX_REPORT_UPLOAD_B
 # Deployment-only master material. provisioning.py derives a different key
 # for every tenant and never sends this value outside gateway.
 TENANT_ENCRYPTION_MASTER_KEY = os.environ.get("WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY", "")
+# Optional retained tenant backup keys. The value is passed only to the
+# matching tenant container and should be supplied by a secret manager.
+TENANT_ENCRYPTION_KEY_ID = os.environ.get("WB_SAAS_TENANT_ENCRYPTION_KEY_ID", "current")
+TENANT_ENCRYPTION_KEYRING = os.environ.get("WB_SAAS_TENANT_ENCRYPTION_KEYRING", "")
 
 # Number of external reverse proxies in front of Traefik that have been
 # explicitly configured as trusted in traefik.yml. A direct public Traefik

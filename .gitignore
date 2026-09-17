@@ -7,12 +7,23 @@
 .verify-*/
 .material-readiness
 tmp-pytest-*/
+tmp-*/
+tmp_pytest*/
+.pytest_tmp/
+.pytest_tmp*/
+.pytest-tmp*/
+.test-tmp-*/
 tmp/
 .tmp*
 .serena/
 .codex/
 *.tar
 *.tar.gz
+# Local release QA exports and generated preview bundles
+.release-*.pdf
+.release-pdf-*.png
+.release-pdf-*.txt
+mh-redesign-lab/dist-contour/
 __pycache__/
 *.pyc
 *.pyo

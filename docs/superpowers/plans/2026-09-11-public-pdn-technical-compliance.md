@@ -30,7 +30,7 @@
 - Consumes: existing CSS custom properties `--font-display` and `--font-mono`.
 - Produces: templates that render with local system fonts and make no request to `fonts.googleapis.com` or `fonts.gstatic.com`.
 
-- [ ] **Step 1: Write the failing regression test**
+- [x] **Step 1: Write the failing regression test**
 
 ```python
 def test_public_templates_do_not_reference_google_fonts(self):
@@ -40,20 +40,20 @@ def test_public_templates_do_not_reference_google_fonts(self):
         self.assertNotIn("fonts.gstatic.com", source)
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python -m unittest gateway.tests.test_public_privacy_assets -v`
 
 Expected: FAIL because both source files currently reference Google Fonts.
 
-- [ ] **Step 3: Replace remote font imports with OS-local CSS stacks**
+- [x] **Step 3: Replace remote font imports with OS-local CSS stacks**
 
 ```css
 --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 ```
 
-- [ ] **Step 4: Run the regression test**
+- [x] **Step 4: Run the regression test**
 
 Run: `python -m unittest gateway.tests.test_public_privacy_assets.PublicPrivacyAssetsTests.test_public_templates_do_not_reference_google_fonts -v`
 
@@ -69,7 +69,7 @@ Expected: PASS.
 - Consumes: `/privacy#cookies` as the existing cookie-information destination.
 - Produces: `#cookie-notice`, accept and decline buttons, and `marketshelper_cookie_notice` local-storage key.
 
-- [ ] **Step 1: Extend the failing template test**
+- [x] **Step 1: Extend the failing template test**
 
 ```python
 def test_base_template_has_cookie_notice_with_a_real_decline_path(self):
@@ -80,13 +80,13 @@ def test_base_template_has_cookie_notice_with_a_real_decline_path(self):
     self.assertIn('marketshelper_cookie_notice', source)
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python -m unittest gateway.tests.test_public_privacy_assets.PublicPrivacyAssetsTests.test_base_template_has_cookie_notice_with_a_real_decline_path -v`
 
 Expected: FAIL because the base template has no notice yet.
 
-- [ ] **Step 3: Implement the notice without optional tracking**
+- [x] **Step 3: Implement the notice without optional tracking**
 
 ```html
 <section id="cookie-notice" role="dialog" aria-label="Использование cookie">
@@ -99,7 +99,7 @@ Expected: FAIL because the base template has no notice yet.
 
 The accompanying script must only hide the notice and write the selected value to `localStorage`; it must not create a tracking cookie or load any third-party script.
 
-- [ ] **Step 4: Run the template test suite**
+- [x] **Step 4: Run the template test suite**
 
 Run: `python -m unittest gateway.tests.test_public_privacy_assets -v`
 
@@ -114,19 +114,19 @@ Expected: PASS.
 - Consumes: passing unit tests and the rendered Jinja base template.
 - Produces: evidence that no Google Font endpoint remains in the modified sources and that public pages expose both cookie choices.
 
-- [ ] **Step 1: Run gateway regression tests**
+- [x] **Step 1: Run gateway regression tests**
 
 Run: `python -m unittest discover -s gateway/tests -v`
 
 Expected: PASS with no failures.
 
-- [ ] **Step 2: Inspect remaining external font references**
+- [x] **Step 2: Inspect remaining external font references**
 
 Run: `rg -n -i "fonts\\.googleapis|fonts\\.gstatic" gateway tenant-app`
 
 Expected: no matches.
 
-- [ ] **Step 3: Refresh the codebase graph**
+- [x] **Step 3: Refresh the codebase graph**
 
 Run: `graphify update .`
 

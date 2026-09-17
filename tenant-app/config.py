@@ -8,8 +8,20 @@ from typing import Any
 from secure_storage import read as read_encrypted, write as write_encrypted
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# Gateway-managed tenant containers keep their persistent volume at
+# /app/data.  The React/Nginx image runs the Python application from
+# /app/tenant-app, while the legacy image runs it from /app, so deriving the
+# data directory only from this file's location makes the redesign silently
+# open a fresh database.  Prefer an explicit override, then the gateway mount,
+# and retain the source-relative path for local/manual deployments.
+_GATEWAY_DATA_DIR = Path("/app/data")
+DATA_DIR = Path(
+    os.environ.get(
+        "WB_SAAS_DATA_DIR",
+        str(_GATEWAY_DATA_DIR if _GATEWAY_DATA_DIR.exists() else BASE_DIR / "data"),
+    )
+)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "wb_dashboard.sqlite3"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 TOKEN_FALLBACK_PATH = DATA_DIR / ".wb_token"
@@ -49,6 +61,10 @@ TENANT_SLUG = os.environ.get("WB_SAAS_TENANT_SLUG", "")
 INTERNAL_API_URL = os.environ.get("WB_SAAS_INTERNAL_API_URL", "")
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
 DATA_ENCRYPTION_KEY = os.environ.get("WB_SAAS_DATA_ENCRYPTION_KEY", "")
+# A JSON object of historical key ids to Fernet keys.  Keep old keys here
+# during rotation so existing encrypted backups remain restorable.
+DATA_ENCRYPTION_KEY_ID = os.environ.get("WB_SAAS_DATA_ENCRYPTION_KEY_ID", "current")
+DATA_ENCRYPTION_KEYRING = os.environ.get("WB_SAAS_DATA_ENCRYPTION_KEYRING", "")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "sync_interval_minutes": 30,
@@ -112,7 +128,10 @@ def save_token(token: str) -> None:
 def get_token() -> str | None:
     if TENANT_SLUG and TOKEN_FALLBACK_PATH.exists():
         value, legacy = read_encrypted(TOKEN_FALLBACK_PATH, DATA_ENCRYPTION_KEY)
-        if value and legacy:
+        # Existing tenants can still have the pre-encryption token file.  Keep
+        # it readable until the gateway supplies a Fernet key; attempting the
+        # migration with an empty key makes every dashboard endpoint fail.
+        if value and legacy and DATA_ENCRYPTION_KEY:
             write_encrypted(TOKEN_FALLBACK_PATH, value, DATA_ENCRYPTION_KEY)
         return value
     try:
@@ -168,7 +187,7 @@ def get_ozon_credentials() -> tuple[str, str] | None:
     blob = None
     if TENANT_SLUG and TOKEN_FALLBACK_PATH_OZON.exists():
         blob, legacy = read_encrypted(TOKEN_FALLBACK_PATH_OZON, DATA_ENCRYPTION_KEY)
-        if blob and legacy:
+        if blob and legacy and DATA_ENCRYPTION_KEY:
             write_encrypted(TOKEN_FALLBACK_PATH_OZON, blob, DATA_ENCRYPTION_KEY)
     else:
         legacy = False

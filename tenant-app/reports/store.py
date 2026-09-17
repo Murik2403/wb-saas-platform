@@ -21,6 +21,18 @@ def _now_msk_naive_iso() -> str:
     db/core.py's _now_msk_naive_iso for the same helper and its history."""
     return datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds")
 
+
+def _ensure_column(conn: sqlite3.Connection, table: str, name: str, ddl: str) -> None:
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if name in existing:
+        return
+    try:
+        conn.execute(ddl)
+    except sqlite3.OperationalError as exc:
+        # Parallel startup can execute schema upgrades twice.
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS report_definitions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,20 +75,42 @@ class ReportStore:
             # report_definitions table that predates email_enabled -- needs
             # a real ALTER TABLE for upgrades in place (same pattern as
             # gateway/logic/db.py's pdn_consent_at migration).
-            existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(report_definitions)")}
-            if "email_enabled" not in existing_columns:
-                conn.execute("ALTER TABLE report_definitions ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 0")
-            if "telegram_enabled" not in existing_columns:
-                conn.execute("ALTER TABLE report_definitions ADD COLUMN telegram_enabled INTEGER NOT NULL DEFAULT 0")
-            run_columns = {row[1] for row in conn.execute("PRAGMA table_info(report_runs)")}
-            if "period_days" not in run_columns:
-                conn.execute("ALTER TABLE report_runs ADD COLUMN period_days INTEGER")
-            if "delivery_requested" not in run_columns:
-                conn.execute("ALTER TABLE report_runs ADD COLUMN delivery_requested INTEGER NOT NULL DEFAULT 0")
-            if "delivery_status" not in run_columns:
-                conn.execute("ALTER TABLE report_runs ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'not_requested'")
-            if "delivery_error" not in run_columns:
-                conn.execute("ALTER TABLE report_runs ADD COLUMN delivery_error TEXT")
+            _ensure_column(
+                conn,
+                "report_definitions",
+                "email_enabled",
+                "ALTER TABLE report_definitions ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 0",
+            )
+            _ensure_column(
+                conn,
+                "report_definitions",
+                "telegram_enabled",
+                "ALTER TABLE report_definitions ADD COLUMN telegram_enabled INTEGER NOT NULL DEFAULT 0",
+            )
+            _ensure_column(
+                conn,
+                "report_runs",
+                "period_days",
+                "ALTER TABLE report_runs ADD COLUMN period_days INTEGER",
+            )
+            _ensure_column(
+                conn,
+                "report_runs",
+                "delivery_requested",
+                "ALTER TABLE report_runs ADD COLUMN delivery_requested INTEGER NOT NULL DEFAULT 0",
+            )
+            _ensure_column(
+                conn,
+                "report_runs",
+                "delivery_status",
+                "ALTER TABLE report_runs ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'not_requested'",
+            )
+            _ensure_column(
+                conn,
+                "report_runs",
+                "delivery_error",
+                "ALTER TABLE report_runs ADD COLUMN delivery_error TEXT",
+            )
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -117,19 +151,34 @@ class ReportStore:
             conn.execute("DELETE FROM report_definitions WHERE id = ?", (definition_id,))
             conn.execute("DELETE FROM report_runs WHERE definition_id = ?", (definition_id,))
 
+    def update_definition(self, definition_id: int, *, name: str, metrics: list[str], schedule_type: str, schedule_time: str,
+                          schedule_weekday: int | None = None, schedule_day: int | None = None,
+                          email_enabled: bool = False, telegram_enabled: bool = False) -> None:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """UPDATE report_definitions SET name = ?, metrics = ?, schedule_type = ?, schedule_time = ?,
+                   schedule_weekday = ?, schedule_day = ?, email_enabled = ?, telegram_enabled = ? WHERE id = ?""",
+                (name, json.dumps(metrics), schedule_type, schedule_time, schedule_weekday, schedule_day,
+                 int(email_enabled), int(telegram_enabled), definition_id),
+            )
+            if cur.rowcount == 0:
+                raise KeyError(definition_id)
+
     def set_last_run(self, definition_id: int, when: str) -> None:
         with self._conn() as conn:
             conn.execute("UPDATE report_definitions SET last_run_at = ? WHERE id = ?", (when, definition_id))
 
     def set_enabled(self, definition_id: int, enabled: bool) -> None:
         with self._conn() as conn:
-            conn.execute("UPDATE report_definitions SET enabled = ? WHERE id = ?", (int(enabled), definition_id))
+            cur = conn.execute("UPDATE report_definitions SET enabled = ? WHERE id = ?", (int(enabled), definition_id))
+            if cur.rowcount == 0:
+                raise KeyError(definition_id)
 
-    def start_run(self, definition_id: int) -> int:
+    def start_run(self, definition_id: int, *, delivery_requested: bool = False) -> int:
         with self._conn() as conn:
             cur = conn.execute(
-                "INSERT INTO report_runs (definition_id, started_at, status) VALUES (?, ?, 'running')",
-                (definition_id, _now_msk_naive_iso()),
+                "INSERT INTO report_runs (definition_id, started_at, status, delivery_requested, delivery_status) VALUES (?, ?, 'running', ?, ?)",
+                (definition_id, _now_msk_naive_iso(), int(delivery_requested), "queued" if delivery_requested else "not_requested"),
             )
             return cur.lastrowid
 
@@ -140,6 +189,13 @@ class ReportStore:
         the API process and leave the browser waiting on a dead request.
         """
         with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT id FROM report_runs WHERE definition_id=? AND period_days IS ? AND delivery_requested=? AND (status IN ('queued','running') OR (status='ok' AND delivery_status='queued')) ORDER BY id DESC LIMIT 1",
+                (definition_id, period_days, int(delivery_requested)),
+            ).fetchone()
+            if existing:
+                return int(existing[0])
             cur = conn.execute(
                 """INSERT INTO report_runs
                    (definition_id, started_at, status, period_days, delivery_requested, delivery_status)
@@ -181,6 +237,8 @@ class ReportStore:
     def requeue_interrupted_runs(self) -> int:
         """Recover jobs abandoned when the container or worker restarted."""
         with self._conn() as conn:
+            # A provider may have accepted the previous request. Do not resend blindly.
+            conn.execute("UPDATE report_runs SET delivery_status='error', delivery_error='Доставка прервана. Проверьте получение перед повторной отправкой.' WHERE status='ok' AND delivery_status='queued'")
             cur = conn.execute(
                 """UPDATE report_runs
                    SET status = 'queued', finished_at = NULL,

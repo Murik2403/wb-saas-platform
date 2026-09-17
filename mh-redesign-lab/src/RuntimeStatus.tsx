@@ -23,7 +23,7 @@ export function RuntimeStatus() {
     return () => { controller.abort(); window.clearInterval(timer); };
   }, []);
   return <div className="runtime-status">
-    <div><h3>Фоновые задачи</h3>{error ? <p>Не удалось проверить состояние задач.</p> : !data ? <p>Проверяем…</p> : !data[0].enabled ? <p>Локальный планировщик выключен. В контейнере задачи обслуживаются отдельными процессами.</p> : Object.entries(data[0].jobs).map(([name, job]) => <p key={name}>{names[name] ?? name}: {states[job.status] ?? job.status}</p>)}<small>Локальные отчёты сохраняются без автоматической отправки. Рекомендации не применяются автоматически.</small></div>
+    <div><h3>Фоновые задачи</h3>{error ? <p>Не удалось проверить состояние задач.</p> : !data ? <p>Проверяем…</p> : !data[0].enabled ? <>{Object.entries(data[0].worker_processes ?? {}).map(([name, running]) => <p key={name}>{names[name] ?? name}: {running ? "процесс запущен" : "процесс не найден"}</p>)}<p>Локальный планировщик выключен. В контейнере задачи обслуживаются отдельными процессами.</p></> : Object.entries(data[0].jobs).map(([name, job]) => <p key={name}>{names[name] ?? name}: {states[job.status] ?? job.status}</p>)}<small>Расписания отчётов обрабатываются фоновым планировщиком. Рекомендации не применяются автоматически без подтверждения.</small></div>
     <div><h3>Последнее обновление разделов</h3>{data && Object.entries(data[1].sections).map(([name, value]) => <p key={name}>{names[name]}: {value ? historyDate(value) : "Нет подтверждённого обновления"}</p>)}</div>
   </div>;
 }

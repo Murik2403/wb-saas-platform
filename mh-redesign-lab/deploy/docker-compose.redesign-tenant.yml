@@ -12,6 +12,8 @@ services:
       MH_ALLOWED_HOSTS: localhost,127.0.0.1,redesign.app.${WB_SAAS_PARENT_DOMAIN}
       WB_SAAS_BILLING_URL: https://${WB_SAAS_PARENT_DOMAIN}/billing
       WB_SAAS_LOGOUT_URL: https://${WB_SAAS_PARENT_DOMAIN}/logout
+      WB_SAAS_SENTRY_DSN: ${WB_SAAS_SENTRY_DSN:-}
+      WB_SAAS_SENTRY_ENVIRONMENT: ${WB_SAAS_SENTRY_ENVIRONMENT:-production}
     labels:
       - traefik.enable=true
       - traefik.http.routers.tenant-redesign.rule=Host(`redesign.app.${WB_SAAS_PARENT_DOMAIN}`)

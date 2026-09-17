@@ -135,6 +135,20 @@ try {
                 height: Math.round(rect.height),
               };
             });
+          const intersects = (first, second) => first && second
+            && first.left < second.right
+            && first.right > second.left
+            && first.top < second.bottom
+            && first.bottom > second.top;
+          const skuOverlaps = Array.from(document.querySelectorAll(".mobile-sku-card"))
+            .filter(visible)
+            .filter((card) => intersects(
+              card.querySelector("h3")?.getBoundingClientRect(),
+              card.querySelector(".status-pill")?.getBoundingClientRect(),
+            )).length;
+          const skuTextOverflow = Array.from(document.querySelectorAll(".mobile-sku-card h3"))
+            .filter(visible)
+            .filter((heading) => heading.scrollWidth > heading.clientWidth + 1).length;
           return {
             title: document.querySelector(".topbar-title")?.textContent?.trim() ?? "",
             documentWidth: document.documentElement.scrollWidth,
@@ -145,6 +159,8 @@ try {
             unlabeledButtons,
             tooSmall: smallControls.length,
             smallControls,
+            skuOverlaps,
+            skuTextOverflow,
           };
         })()`,
       });
@@ -159,6 +175,8 @@ try {
       if (result.mainBlocks === 0) failures.push(`${view}/${size.name}: no main content blocks`);
       if (result.unlabeledButtons > 0) failures.push(`${view}/${size.name}: ${result.unlabeledButtons} unlabeled controls`);
       if (size.mobile && result.tooSmall > 0) failures.push(`${view}/${size.name}: ${result.tooSmall} controls below 32px`);
+      if (size.mobile && result.skuOverlaps > 0) failures.push(`${view}/${size.name}: ${result.skuOverlaps} SKU cards have overlapping name and status`);
+      if (size.mobile && result.skuTextOverflow > 0) failures.push(`${view}/${size.name}: ${result.skuTextOverflow} SKU names overflow their card`);
     }
   }
   client.close();

@@ -10,26 +10,30 @@ covers all 12 sections.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
+import hashlib
 import os
 from contextlib import asynccontextmanager
 import sqlite3
 import re
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+from time import monotonic
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, FiniteFloat
+from pydantic import BaseModel, FiniteFloat, Field
 
 from ads_service import compute_ads
 from backup_tools import create_backup, latest_backup, list_backups
 from calculations import build_dashboard
-from config import DB_PATH, IS_DEMO, get_ozon_credentials, get_token, load_settings, save_settings
+from config import DB_PATH, IS_DEMO, delete_ozon_credentials, delete_token, get_ozon_credentials, get_token, load_settings, save_ozon_credentials, save_settings, save_token
 from db import (
     apply_finished_goods_reconciliation,
     close_production_shift,
@@ -79,11 +83,17 @@ from agents.marketplaces.ozon_client import OzonAgentClient
 from agents.rules import AdRules, PriceRules
 from agent_sync import wb_cost_lookup
 from dashboard_cache import DashboardResponseCache
-from sync import sync_all, sync_ads_only
+from sync import sync_all, sync_ads_only, sync_finances
+from wb_api import WBAPI
+from report_tools import build_finance_excel, build_reconciliation
 from sync_lock import is_sync_running, sync_lock
 from sync_runner import SyncRunner
 from request_security import write_origin_allowed
 from action_plan_executor import ActionPlanExecutor
+from sentry_integration import initialize as initialize_sentry
+
+
+initialize_sentry(service_name="tenant-api")
 
 
 class ActionPlanCreate(BaseModel):
@@ -99,6 +109,7 @@ class ActionPlanPatch(BaseModel):
     assignee: str | None = None
     due_at: str | None = None
     priority: str | None = None
+    result: str | None = None
 
 
 class QuickReportInput(BaseModel):
@@ -131,7 +142,7 @@ class ProcurementCreateInput(BaseModel):
 
 class ProductionTaskInput(BaseModel):
     task_key: str
-    task_type: str = "Производство"
+    task_type: str = "production"
     task_date: date | None = None
     stage: str = ""
     nm_id: int = 0
@@ -151,6 +162,15 @@ class SettingsUpdateInput(BaseModel):
     sync_interval_minutes: int | None = None
     initial_history_days: int | None = None
     agent_interval_minutes: int | None = None
+
+
+class WBTokenInput(BaseModel):
+    token: str = Field(min_length=20, max_length=4096)
+
+
+class OzonCredentialsInput(BaseModel):
+    client_id: str = Field(min_length=1, max_length=256)
+    api_key: str = Field(min_length=8, max_length=4096)
 
 
 class ProductCostInput(BaseModel):
@@ -233,6 +253,10 @@ class ReportDefinitionInput(BaseModel):
     telegram_enabled: bool = False
 
 
+class ReportEnabledInput(BaseModel):
+    enabled: bool
+
+
 class ProductionShiftInput(BaseModel):
     tasks: list[ProductionTaskInput]
 
@@ -308,6 +332,17 @@ def _init_redesign_schema() -> None:
                 updated_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS redesign_price_uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wb_upload_id INTEGER NOT NULL,
+                goods_count INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'queued',
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(redesign_action_plan)").fetchall()}
         for name, definition in (
             ("executor", "TEXT"), ("result", "TEXT"), ("started_at", "TEXT"), ("completed_at", "TEXT"),
@@ -327,6 +362,7 @@ def _init_redesign_schema() -> None:
 
 def _plan_row(row: sqlite3.Row) -> dict:
     item = dict(row)
+    item["id"] = str(item["id"])
     try:
         item["history"] = json.loads(item.get("history") or "[]")
     except (TypeError, ValueError):
@@ -377,20 +413,6 @@ def _execute_plan_operation(title: str, sku: str) -> tuple[str, str] | None:
 def _execute_action_plan_item(item_id: int) -> dict:
     _init_redesign_schema()
     return ActionPlanExecutor(DB_PATH, _inspect_campaign_for_plan, _execute_plan_operation).run(item_id)
-
-
-def _execute_pending_action_plan_items() -> None:
-    """Resume tasks that were queued while the tenant API was offline."""
-    with sqlite3.connect(DB_PATH) as conn:
-        rows = conn.execute(
-            "SELECT id FROM redesign_action_plan WHERE status='created' ORDER BY created_at ASC"
-        ).fetchall()
-    for row in rows:
-        try:
-            _execute_action_plan_item(int(row[0]))
-        except Exception:
-            # A malformed historical task must not prevent this tenant from starting.
-            continue
 
 
 def _records(frame) -> list[dict]:
@@ -472,6 +494,7 @@ def _product_inventory(data, *, prioritize_known_stock: bool = False) -> list[di
     for _, product in products.head(12).iterrows():
         quantity = pd.to_numeric(product.get("Остаток"), errors="coerce")
         stock_days = pd.to_numeric(product.get("Запас, дней"), errors="coerce")
+        margin = pd.to_numeric(product.get("Маржа до комиссий WB"), errors="coerce")
         if pd.isna(stock_days):
             signal, tone = ("Нет данных об остатке" if pd.isna(quantity) else "Недостаточно продаж для прогноза"), "info"
             stock_value: float | None = None
@@ -489,6 +512,7 @@ def _product_inventory(data, *, prioritize_known_stock: bool = False) -> list[di
             "name": str(product.get("Товар", "") or "Товар без названия"),
             "stock_days": stock_value,
             "stock": None if pd.isna(quantity) else float(quantity),
+            "margin_rub": None if pd.isna(margin) else round(float(margin), 2),
             "signal": signal,
             "tone": tone,
         })
@@ -515,6 +539,38 @@ def _stock_coverage(data) -> list[dict]:
             "tone": tone,
         })
     return rows
+
+
+def _production_material_covered(tasks: list[dict]) -> int:
+    """Return how many planned units are covered by confirmed physical material."""
+    settings = read_table("production_settings")
+    materials = read_table("material_inventory_color")
+    if settings.empty or materials.empty:
+        return 0
+    norms = {
+        int(row.get("nm_id") or 0): (
+            str(row.get("material_name") or "").strip().casefold(),
+            max(0.0, float(pd.to_numeric(row.get("material_per_unit", 0), errors="coerce") or 0)),
+        )
+        for _, row in settings.iterrows()
+    }
+    remaining: dict[str, float] = {}
+    for _, row in materials.iterrows():
+        if int(pd.to_numeric(row.get("balance_known", 0), errors="coerce") or 0) != 1:
+            continue
+        key = str(row.get("material_name") or row.get("material_key") or "").strip().casefold()
+        roll_length = max(0.1, float(pd.to_numeric(row.get("roll_length", 0), errors="coerce") or 25.5))
+        remaining[key] = max(0.0, float(pd.to_numeric(row.get("full_rolls", 0), errors="coerce") or 0) * roll_length + float(pd.to_numeric(row.get("partial_meters", 0), errors="coerce") or 0))
+    covered = 0
+    for task in tasks:
+        planned = max(0, int(task.get("planned_units", task.get("planned", 0)) or 0))
+        material_key, rate = norms.get(int(task.get("nm_id") or 0), ("", 0.0))
+        if planned <= 0 or not material_key or rate <= 0 or material_key not in remaining:
+            continue
+        units = min(planned, int((remaining[material_key] + 1e-9) // rate))
+        covered += units
+        remaining[material_key] = max(0.0, remaining[material_key] - units * rate)
+    return covered
 
 
 def _production_panels() -> tuple[list[dict], list[dict]]:
@@ -576,13 +632,24 @@ app = FastAPI(title="MARKETSHELPER tenant API", lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
 dashboard_response_cache = DashboardResponseCache()
 context_response_cache = DashboardResponseCache()
+wb_cost_response_cache = DashboardResponseCache(ttl_seconds=10.0)
+_wb_paid_storage_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wb-paid-storage")
+_wb_paid_storage_lock = Lock()
+_wb_paid_storage_jobs: dict[str, dict[str, object]] = {}
+_wb_cost_jobs: dict[str, dict[str, object]] = {}
+customer_quality_cache: tuple[float, dict] | None = None
 sync_runner = SyncRunner()
 
 
 @app.middleware("http")
 async def invalidate_after_write(request, call_next):
+    headers = getattr(request, "headers", {})
+    tenant_role = headers.get("x-tenant-role", "owner").lower()
+    if tenant_role not in {"owner", "manager", "viewer"}:
+        return JSONResponse(status_code=403, content={"detail": "Роль пользователя не распознана"})
+    if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        return JSONResponse(status_code=403, content={"detail": "Роль наблюдателя доступна только для просмотра"})
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        headers = getattr(request, "headers", {})
         if not write_origin_allowed(headers, headers.get("host", ""), getattr(getattr(request, "url", None), "scheme", "http")):
             return JSONResponse(status_code=403, content={"detail": "Запрос с постороннего сайта запрещён"})
     if IS_DEMO and request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -613,7 +680,6 @@ app.add_middleware(
 def _startup() -> None:
     init_db()
     _init_redesign_schema()
-    _execute_pending_action_plan_items()
 
 
 @app.get("/api/v1/health")
@@ -621,8 +687,15 @@ def health():
     return {"service": "marketshelper-tenant", "version": 2}
 
 
+@app.get("/healthz")
+@app.get("/_stcore/health")
+def legacy_health() -> dict[str, str]:
+    """Compatibility endpoints for external uptime probes and Traefik routing."""
+    return {"status": "ok"}
+
+
 @app.get("/api/v1/session")
-def get_dashboard_session() -> dict:
+def get_dashboard_session(request: Request) -> dict:
     """Return the lightweight identity used by the dashboard shell.
 
     Authentication is handled by the gateway/Traefik middleware before a
@@ -632,7 +705,7 @@ def get_dashboard_session() -> dict:
     slug = os.getenv("WB_SAAS_TENANT_SLUG", "marketshelper-live")
     tenant_name = os.getenv("WB_SAAS_TENANT_NAME", slug)
     return {
-        "user": {"id": slug, "name": "Владелец", "role": "owner"},
+        "user": {"id": request.headers.get("x-tenant-account", slug), "name": "Пользователь", "role": request.headers.get("x-tenant-role", "owner")},
         "tenant": {"id": slug, "name": tenant_name},
         "mode": "tenant",
     }
@@ -640,7 +713,23 @@ def get_dashboard_session() -> dict:
 
 @app.get("/api/v1/jobs")
 def jobs_status():
-    return {"enabled": os.environ.get("MH_LOCAL_JOBS") == "1" and not IS_DEMO, "jobs": local_jobs.status()}
+    workers = {"sync": False, "recommendations": False, "reports": False}
+    proc_root = Path("/proc")
+    if proc_root.exists():
+        for entry in proc_root.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                command = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "ignore")
+            except (OSError, UnicodeError):
+                continue
+            if "sync.py --loop" in command:
+                workers["sync"] = True
+            if "agent_sync.py --loop" in command:
+                workers["recommendations"] = True
+            if "report_scheduler.py --loop" in command:
+                workers["reports"] = True
+    return {"enabled": os.environ.get("MH_LOCAL_JOBS") == "1" and not IS_DEMO, "jobs": local_jobs.status(), "worker_processes": workers}
 
 
 def _build_ctx() -> dict:
@@ -713,6 +802,142 @@ def start_ads_sync():
     if not sync_runner.start(worker):
         raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
     return {"status": "started"}
+
+
+class FinanceSyncInput(BaseModel):
+    days: int = 90
+
+
+class PriceGoodInput(BaseModel):
+    nmID: int = Field(gt=0, strict=True)
+    price: int = Field(gt=0, strict=True)
+    discount: int = Field(ge=0, le=99, strict=True)
+
+
+class PriceUploadInput(BaseModel):
+    goods: list[PriceGoodInput] = Field(min_length=1, max_length=1000)
+
+
+class ProductCardUpdateInput(BaseModel):
+    """Safe subset of card fields editable from the redesigned UI.
+
+    WB overwrites the complete card, so the endpoint reads the authoritative
+    card first and applies only these fields before submitting it. The
+    explicit confirmation prevents an accidental click from becoming a
+    destructive full replacement.
+    """
+
+    confirmed: bool = False
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=5000)
+    brand: str | None = Field(default=None, max_length=255)
+
+
+class ProductCardMediaInput(BaseModel):
+    """Complete replacement list for a card's media URLs."""
+
+    confirmed: bool = False
+    urls: list[str] = Field(min_length=1, max_length=30)
+
+
+class FeedbackAnswerInput(BaseModel):
+    id: str
+    text: str
+    edit: bool = False
+
+
+class QuestionAnswerInput(BaseModel):
+    id: str
+    text: str
+    state: str = "wbRu"
+
+
+class ReturnClaimInput(BaseModel):
+    id: str
+    action: str
+
+
+class ChatMessageInput(BaseModel):
+    reply_sign: str = Field(min_length=1, max_length=255)
+    text: str = Field(min_length=1, max_length=1000)
+
+
+@app.post("/api/v1/sync/finance")
+def start_finance_sync(payload: FinanceSyncInput = FinanceSyncInput()):
+    """Refresh the WB realization/financial report without rewriting other sections."""
+    if not get_token() or is_sync_running():
+        raise HTTPException(status_code=409, detail="WB не подключён или синхронизация уже выполняется")
+    days = max(7, min(365, int(payload.days)))
+    def worker():
+        try:
+            sync_finances(days)
+        finally:
+            dashboard_response_cache.clear()
+            context_response_cache.clear()
+    if not sync_runner.start(worker):
+        raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
+    return {"status": "started", "days": days}
+
+
+@app.get("/api/v1/products/prices")
+def get_wb_product_prices() -> dict:
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    try:
+        return json_safe({"items": WBAPI(token).get_product_prices()})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось получить цены WB: {str(exc)[:300]}") from exc
+
+
+@app.post("/api/v1/products/prices/upload")
+def upload_wb_product_prices(payload: PriceUploadInput) -> dict:
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    if not payload.goods or len(payload.goods) > 1000:
+        raise HTTPException(status_code=422, detail="Передайте от 1 до 1000 товаров")
+    try:
+        result = WBAPI(token, timeout=20).upload_product_prices([good.model_dump() for good in payload.goods])
+        if result.get("error"):
+            raise ValueError(result.get("errorText") or "WB отклонил загрузку")
+        upload_data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        upload_id = int(upload_data.get("id") or upload_data.get("uploadID") or result.get("id") or 0)
+        if upload_id:
+            now = datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds")
+            _init_redesign_schema()
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("INSERT INTO redesign_price_uploads(wb_upload_id, goods_count, status, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?)", (upload_id, len(payload.goods), now, now))
+        return json_safe(result)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось поставить цены WB в загрузку: {str(exc)[:300]}") from exc
+
+
+@app.get("/api/v1/products/prices/uploads/{upload_id}")
+def get_wb_price_upload_status(upload_id: int) -> dict:
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    try:
+        result = json_safe(WBAPI(token, timeout=15).get_price_upload_status(upload_id))
+        _init_redesign_schema()
+        terminal = bool(result.get("terminal"))
+        status = str(result.get("label") or ("completed" if terminal else "processing"))
+        now = datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds")
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE redesign_price_uploads SET status=?, updated_at=? WHERE wb_upload_id=?", (status, now, upload_id))
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось получить статус загрузки цен: {str(exc)[:300]}") from exc
+
+
+@app.get("/api/v1/products/prices/uploads")
+def list_wb_price_uploads() -> dict:
+    _init_redesign_schema()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT wb_upload_id, goods_count, status, error, created_at, updated_at FROM redesign_price_uploads ORDER BY id DESC LIMIT 20").fetchall()
+    return {"items": [dict(row) for row in rows]}
 
 
 @app.get("/api/v1/sync/sections")
@@ -797,14 +1022,21 @@ def get_overview(
 ) -> dict:
     """The "Обзор" screen. `period` is the selector app.py shows above the page
     in Streamlit; `start`/`end` (ISO dates) are only read for period=custom."""
-    if table_count("orders") == 0 and table_count("sales") == 0:
-        raise HTTPException(status_code=409, detail="no_data_yet")
-
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     try:
         window_start, window_end = resolve_window(period, today_msk, start, end)
     except ValueError:
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+    if table_count("orders") == 0 and table_count("sales") == 0:
+        return {
+            "period_label": PERIOD_LABELS.get(period, period),
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+            "kpis": [], "funnel": [], "products": [], "problem_products": [],
+            "alerts": [], "cash_windows": [], "chart": {"rows": []},
+            "empty_reason": "no_data_yet",
+        }
 
     def build() -> dict:
         ctx = {
@@ -839,14 +1071,20 @@ def get_products(
     Same `period`/`start`/`end` contract as /api/overview (app.py's selector
     sits above this page in Streamlit too); no previous-period comparison,
     the page has no trend badges."""
-    if table_count("orders") == 0 and table_count("sales") == 0:
-        raise HTTPException(status_code=409, detail="no_data_yet")
-
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     try:
         window_start, window_end = resolve_window(period, today_msk, start, end)
     except ValueError:
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+    if table_count("orders") == 0 and table_count("sales") == 0:
+        return {
+            "period_label": PERIOD_LABELS.get(period, period),
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+            "products": [],
+            "empty_reason": "no_data_yet",
+        }
 
     def build() -> dict:
         ctx = {
@@ -862,6 +1100,112 @@ def get_products(
     return _dashboard_response(f"products:{period}:{window_start}:{window_end}", build)
 
 
+@app.get("/api/v1/products/cards")
+def get_product_cards() -> dict:
+    """Read the seller's WB cards, including a small media preview."""
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    try:
+        rows = WBAPI(token, timeout=30).get_product_cards()
+    except Exception as exc:
+        return json_safe({"cards": [], "errors": [_customer_quality_error("Карточки WB", exc)]})
+    cards = []
+    for row in rows[:200]:
+        photos = row.get("photos") or row.get("mediaFiles") or []
+        if not isinstance(photos, list):
+            photos = []
+        photo_urls = []
+        for photo in photos:
+            if isinstance(photo, str) and photo.strip():
+                photo_urls.append(photo.strip())
+            elif isinstance(photo, dict):
+                for key in ("big", "c516x688", "square", "tm", "url"):
+                    value = photo.get(key)
+                    if isinstance(value, str) and value.strip():
+                        photo_urls.append(value.strip())
+                        break
+        cards.append({
+            "nm_id": row.get("nmID") or row.get("nmId") or 0,
+            "vendor_code": row.get("vendorCode") or row.get("vendor_code") or "",
+            "title": row.get("title") or row.get("imtName") or "Товар без названия",
+            "brand": row.get("brand") or "",
+            "subject": row.get("subjectName") or row.get("subject") or "",
+            "description": row.get("description") or "",
+            "photos": photo_urls[:3],
+            "sizes": len(row.get("sizes") or []),
+        })
+    return json_safe({"cards": cards, "errors": []})
+
+
+def _wb_write_client() -> WBAPI:
+    """Return a client suitable for an explicitly confirmed WB write."""
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    if IS_DEMO:
+        raise HTTPException(status_code=409, detail="Записи в WB отключены для демо-кабинета")
+    client = WBAPI(token, timeout=30)
+    scope_info = client.token_scope_info()
+    if scope_info.get("read_only"):
+        raise HTTPException(status_code=403, detail="WB-токен доступен только для чтения")
+    return client
+
+
+def _card_nm_id(card: dict) -> int:
+    try:
+        return int(card.get("nmID") or card.get("nmId") or card.get("nm_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+@app.patch("/api/v1/products/cards/{nm_id}")
+def update_wb_product_card(nm_id: int, payload: ProductCardUpdateInput) -> dict:
+    """Update a small text subset while preserving the complete WB card."""
+    if nm_id <= 0:
+        raise HTTPException(status_code=422, detail="Артикул WB должен быть положительным")
+    if not payload.confirmed:
+        raise HTTPException(status_code=422, detail="Подтвердите отправку изменений в WB")
+    changes = payload.model_dump(exclude_none=True, exclude={"confirmed"})
+    if not changes:
+        raise HTTPException(status_code=422, detail="Изменений карточки нет")
+    client = _wb_write_client()
+    try:
+        rows = client.get_product_cards([nm_id])
+        card = next((row for row in rows if _card_nm_id(row) == nm_id), None)
+        if card is None:
+            raise HTTPException(status_code=404, detail="Карточка WB не найдена")
+        updated = dict(card)
+        updated.update(changes)
+        result = client.update_product_card(updated)
+        return json_safe({"status": "submitted", "nm_id": nm_id, "result": result})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось обновить карточку WB: {str(exc)[:300]}") from exc
+
+
+@app.post("/api/v1/products/cards/{nm_id}/media")
+def save_wb_product_media(nm_id: int, payload: ProductCardMediaInput) -> dict:
+    """Replace all media links in a WB card after explicit confirmation."""
+    if nm_id <= 0:
+        raise HTTPException(status_code=422, detail="Артикул WB должен быть положительным")
+    if not payload.confirmed:
+        raise HTTPException(status_code=422, detail="Подтвердите замену медиафайлов в WB")
+    urls = [url.strip() for url in payload.urls if url.strip()]
+    if any(not url.lower().startswith(("http://", "https://")) for url in urls):
+        raise HTTPException(status_code=422, detail="Ссылки на медиафайлы должны начинаться с http:// или https://")
+    try:
+        result = _wb_write_client().save_product_media(nm_id, urls)
+        return json_safe({"status": "submitted", "nm_id": nm_id, "media_count": len(urls), "result": result})
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось обновить медиа WB: {str(exc)[:300]}") from exc
+
+
 @app.get("/api/ads")
 def get_ads(
     period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
@@ -871,14 +1215,20 @@ def get_ads(
     """The "Реклама" screen -- ad KPIs + per-campaign stats for the selected
     period. Same `period`/`start`/`end` contract as /api/overview; no
     previous-period comparison, pages/ads.py draws no trend badges."""
-    if table_count("orders") == 0 and table_count("sales") == 0:
-        raise HTTPException(status_code=409, detail="no_data_yet")
-
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     try:
         window_start, window_end = resolve_window(period, today_msk, start, end)
     except ValueError:
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+    if table_count("orders") == 0 and table_count("sales") == 0:
+        return {
+            "period_label": PERIOD_LABELS.get(period, period),
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+            "kpis": [], "campaigns": [], "funnel": [], "creative_tests": [],
+            "empty_reason": "no_data_yet",
+        }
 
     def build() -> dict:
         ctx = {
@@ -911,6 +1261,349 @@ def get_dashboard_today() -> dict:
         })
 
     return _dashboard_response("dashboard-today", build)
+
+
+@app.get("/api/v1/dashboard/finance")
+def get_dashboard_finance(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """Expose the same itemised WB financial result used by the legacy page."""
+    today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    try:
+        window_start, window_end = resolve_window(period, today_msk, start, end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+    def build() -> dict:
+        data = build_dashboard(window_start, window_end)
+        f = data.financial or {}
+        articles = [
+            ("Разница: выкупы − к перечислению (справочно)", -f.get("sales_to_pay_gap", 0)),
+            ("Эквайринг (уже учтён WB, справочно)", -f.get("acquiring", 0)),
+            ("Комиссия WB (уже учтена, справочно)", -f.get("commission", 0)),
+            ("Логистика", -f.get("logistics", 0)),
+            ("Дополнительная логистика", -f.get("rebill_logistics", 0)),
+            ("Хранение", -f.get("storage", 0)),
+            ("Штрафы", -f.get("penalties", 0)),
+            ("Удержания", -f.get("deductions", 0)),
+            ("Приёмка", -f.get("acceptance", 0)),
+            ("Доплаты WB", f.get("additional_payment", 0)),
+            ("Реклама", -f.get("financial_ad_spend", 0)),
+            ("Себестоимость", -f.get("cost", 0)),
+        ]
+        balance = {}
+        token = get_token()
+        if token:
+            try:
+                balance = WBAPI(token).get_balance()
+            except Exception:
+                balance = {}
+        return json_safe({
+            "period": {"label": PERIOD_LABELS.get(period, period), "start": window_start.isoformat(), "end": window_end.isoformat()},
+            "financial": f,
+            "expense_rows": [{"label": label, "amount": float(amount or 0)} for label, amount in articles],
+            "products": data.financial_products.head(200).to_dict(orient="records") if not data.financial_products.empty else [],
+            "balance": balance,
+        })
+
+    return _dashboard_response(f"finance:{period}:{window_start}:{window_end}", build)
+
+
+@app.get("/api/v1/operations/finance/export")
+def export_finance_workbook(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> Response:
+    """Download the legacy finance workbook from the redesigned dashboard."""
+    today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    try:
+        window_start, window_end = resolve_window(period, today_msk, start, end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+    data = build_dashboard(window_start, window_end)
+    f = data.financial or {}
+    expense_rows = pd.DataFrame([
+        ["Комиссия WB", -f.get("commission", 0)], ["Эквайринг", -f.get("acquiring", 0)],
+        ["Логистика", -f.get("logistics", 0)], ["Дополнительная логистика", -f.get("rebill_logistics", 0)],
+        ["Хранение", -f.get("storage", 0)], ["Штрафы", -f.get("penalties", 0)],
+        ["Удержания", -f.get("deductions", 0)], ["Приёмка", -f.get("acceptance", 0)],
+        ["Доплаты WB", f.get("additional_payment", 0)], ["Реклама", -f.get("financial_ad_spend", 0)],
+        ["Себестоимость", -f.get("cost", 0)],
+    ], columns=["Статья", "Влияние на результат, ₽"])
+    wb_detail = read_table("financial_report")
+    if not wb_detail.empty and "operation_date" in wb_detail.columns:
+        dates = pd.to_datetime(wb_detail["operation_date"], errors="coerce").dt.date
+        wb_detail = wb_detail.loc[(dates >= window_start) & (dates <= window_end)]
+    wb_summary = {"gross_sales": f.get("gross_sales", 0), "sale_units": f.get("sale_units", 0), "return_units": f.get("return_units", 0), "net_units": f.get("net_units", 0), "logistics": f.get("logistics", 0), "penalties": f.get("penalties", 0), "acquiring": f.get("acquiring", 0)}
+    workbook = build_finance_excel(start=window_start, end=window_end, financial=f, ad_spend=f.get("financial_ad_spend", 0), financial_products=data.financial_products, expense_rows=expense_rows, reconciliation=build_reconciliation(f, wb_summary), wb_detail=wb_detail)
+    filename = f"marketshelper-finance-{window_start.isoformat()}-{window_end.isoformat()}.xlsx"
+    return Response(content=workbook, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def _wb_cost_error(label: str, exc: Exception) -> str:
+    import logging
+    logging.getLogger(__name__).warning("WB retention report %s failed: %s", label, exc)
+    detail = str(exc)
+    if "retention_report_too_large" in detail:
+        return f"{label}: отчёт слишком большой для одного запуска. WB вернул частичные данные, поэтому сумма не показывается как полная; повторите с меньшим периодом."
+    if "429" in detail or "частоту" in detail:
+        return f"{label}: WB ограничил частоту запросов. Повторите через минуту."
+    if "401" in detail or "403" in detail:
+        return f"{label}: проверьте доступ токена WB к категории «Аналитика» в настройках."
+    return f"{label}: не удалось загрузить расшифровку WB. Попробуйте обновить позже. Основной финансовый отчёт доступен ниже."
+
+
+def _customer_quality_error(label: str, exc: Exception) -> str:
+    """Turn provider failures into actionable, non-sensitive UI messages."""
+    import logging
+    logging.getLogger(__name__).warning("WB customer quality section %s failed (%s)", label, type(exc).__name__)
+    detail = str(exc)
+    if "401" in detail:
+        return f"{label}: токен WB отклонён, переподключите его в настройках."
+    if "403" in detail:
+        scope = {
+            "rating": "Отзывы/Вопросы",
+            "quarantine": "Цены и скидки",
+        }.get(label, "нужную категорию")
+        return f"{label}: у токена нет доступа к категории «{scope}»."
+    if "404" in detail:
+        return f"{label}: WB временно не предоставляет этот раздел для текущего кабинета."
+    if "400" in detail:
+        return f"{label}: WB отклонил параметры запроса. Повторите после обновления данных."
+    if "429" in detail or "частот" in detail:
+        return f"{label}: WB ограничил частоту запросов. Повторите позже."
+    return f"{label}: данные WB временно недоступны. Повторите позже."
+
+
+def _wb_paid_storage_job_key(token: str, start: date, end: date) -> str:
+    token_fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    return f"{token_fingerprint}:{start.isoformat()}:{end.isoformat()}"
+
+
+def _start_wb_paid_storage_job(token: str, start: date, end: date) -> dict[str, object]:
+    """Start one idempotent paid-storage generation without blocking a dashboard request."""
+    key = _wb_paid_storage_job_key(token, start, end)
+    with _wb_paid_storage_lock:
+        existing = _wb_paid_storage_jobs.get(key)
+        if existing is not None:
+            return dict(existing)
+        state: dict[str, object] = {"status": "processing", "rows": [], "error": ""}
+        _wb_paid_storage_jobs[key] = state
+
+    def worker() -> None:
+        try:
+            rows = WBAPI(token, timeout=15).get_paid_storage_report(start.isoformat(), end.isoformat())
+            result: dict[str, object] = {"status": "ready", "rows": rows, "error": ""}
+        except Exception as exc:  # provider failures are surfaced as a user-facing status
+            result = {"status": "error", "rows": [], "error": _wb_cost_error("Платное хранение", exc)}
+        with _wb_paid_storage_lock:
+            _wb_paid_storage_jobs[key] = result
+
+    _wb_paid_storage_executor.submit(worker)
+    return dict(state)
+
+
+def _compact_wb_cost_rows(rows: list[dict]) -> list[dict]:
+    """Keep dashboard payloads small while preserving numeric report fields."""
+    compact: list[dict] = []
+    for row in rows:
+        item = {key: value for key, value in row.items() if key not in {"photoUrls", "photo_urls", "photos"}}
+        compact.append(item)
+    return compact
+
+
+def _wb_cost_job_key(token: str, start: date, end: date) -> str:
+    return f"{_wb_paid_storage_job_key(token, start, end)}:all"
+
+
+def _start_wb_cost_job(token: str, start: date, end: date) -> dict[str, object]:
+    """Build all WB cost sections in the background.
+
+    Retention endpoints can paginate through thousands of rows and must not
+    run on the request thread, even when only the paid-storage part is
+    configured as background work by the UI.
+    """
+    key = _wb_cost_job_key(token, start, end)
+    with _wb_paid_storage_lock:
+        existing = _wb_cost_jobs.get(key)
+        if existing is not None:
+            return dict(existing)
+        state: dict[str, object] = {
+            "status": "processing",
+            "deductions": [],
+            "measurement_penalties": [],
+            "paid_storage": [],
+            "paid_storage_status": "processing",
+            "errors": [],
+        }
+        _wb_cost_jobs[key] = state
+
+    def worker() -> None:
+        client = WBAPI(token, timeout=15)
+        deductions: list[dict] = []
+        measurement_penalties: list[dict] = []
+        paid_storage: list[dict] = []
+        errors: list[str] = []
+        try:
+            deductions = _compact_wb_cost_rows(client.get_deductions(start.isoformat(), end.isoformat()))
+        except Exception as exc:
+            errors.append(_wb_cost_error("Подмены", exc))
+        try:
+            measurement_penalties = _compact_wb_cost_rows(client.get_measurement_penalties(start.isoformat(), end.isoformat()))
+        except Exception as exc:
+            errors.append(_wb_cost_error("Габариты", exc))
+        paid_storage_status = "ready"
+        try:
+            paid_storage = _compact_wb_cost_rows(client.get_paid_storage_report(start.isoformat(), end.isoformat()))
+        except Exception as exc:
+            paid_storage_status = "error"
+            errors.append(_wb_cost_error("Платное хранение", exc))
+        result: dict[str, object] = {
+            "status": "ready",
+            "deductions": deductions,
+            "measurement_penalties": measurement_penalties,
+            "paid_storage": paid_storage,
+            "paid_storage_status": paid_storage_status,
+            "errors": errors,
+        }
+        with _wb_paid_storage_lock:
+            _wb_cost_jobs[key] = result
+
+    _wb_paid_storage_executor.submit(worker)
+    return dict(state)
+
+
+@app.get("/api/v1/dashboard/finance/wb-costs")
+def get_wb_cost_reports(period: str = DEFAULT_PERIOD, start: date | None = None, end: date | None = None, background: bool = False) -> dict:
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    try:
+        start, end = resolve_window(period, datetime.now(ZoneInfo("Europe/Moscow")).date(), start, end)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if background:
+        job = _start_wb_cost_job(token, start, end)
+        response = {
+            "period": {"start": start.isoformat(), "end": end.isoformat()},
+            "deductions": job.get("deductions", []),
+            "measurement_penalties": job.get("measurement_penalties", []),
+            "paid_storage": job.get("paid_storage", []),
+            "paid_storage_status": job.get("paid_storage_status", "processing"),
+            "errors": job.get("errors", []) or (["Финансовый отчёт WB формируется в фоне; обновите раздел через несколько секунд."] if job.get("status") == "processing" else []),
+        }
+        return json_safe(response)
+
+    def build():
+        client = WBAPI(token, timeout=15)
+        deductions, measurement_penalties, paid_storage, errors = [], [], [], []
+        try:
+            deductions = _compact_wb_cost_rows(client.get_deductions(start.isoformat(), end.isoformat()))
+        except Exception as exc:
+            errors.append(_wb_cost_error("Подмены", exc))
+        try:
+            measurement_penalties = _compact_wb_cost_rows(client.get_measurement_penalties(start.isoformat(), end.isoformat()))
+        except Exception as exc:
+            errors.append(_wb_cost_error("Габариты", exc))
+        paid_storage_status = "disabled"
+        if background:
+            job = _start_wb_paid_storage_job(token, start, end)
+            paid_storage_status = str(job.get("status", "processing"))
+            if paid_storage_status == "ready":
+                paid_storage = _compact_wb_cost_rows(job.get("rows", []) if isinstance(job.get("rows"), list) else [])
+            elif paid_storage_status == "error":
+                errors.append(str(job.get("error") or "Платное хранение: данные WB временно недоступны."))
+            else:
+                errors.append("Платное хранение: отчёт формируется в фоне; обновите раздел через несколько секунд.")
+        else:
+            paid_storage_getter = getattr(client, "get_paid_storage_report", None)
+            if callable(paid_storage_getter):
+                try:
+                    paid_storage = _compact_wb_cost_rows(paid_storage_getter(start.isoformat(), end.isoformat()))
+                    paid_storage_status = "ready"
+                except Exception as exc:
+                    errors.append(_wb_cost_error("Платное хранение", exc))
+                    paid_storage_status = "error"
+        return json_safe({"period": {"start": start.isoformat(), "end": end.isoformat()}, "deductions": deductions, "measurement_penalties": measurement_penalties, "paid_storage": paid_storage, "paid_storage_status": paid_storage_status, "errors": errors})
+
+    return wb_cost_response_cache.get_or_build(f"{hash(token)}:{start}:{end}", build)
+
+
+@app.get("/api/v1/dashboard/customer-quality")
+def get_customer_quality() -> dict:
+    """Expose seller reputation, unread feedbacks and WB price quarantine."""
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    global customer_quality_cache
+    if customer_quality_cache and customer_quality_cache[0] > monotonic():
+        return customer_quality_cache[1]
+    client = WBAPI(token, timeout=15)
+    rating: dict = {}
+    unread: dict = {}
+    quarantine: list[dict] = []
+    claims: dict = {}
+    return_history: list[dict] = []
+    chats: list[dict] = []
+    feedbacks: list[dict] = []
+    questions: list[dict] = []
+    errors: list[str] = []
+    for label, getter in (("rating", client.get_seller_rating), ("unread", client.get_new_feedbacks_questions), ("feedbacks", client.get_feedbacks), ("questions", client.get_questions), ("quarantine", client.get_quarantine_goods), ("returns", client.get_returns_claims), ("return_history", lambda: client.get_goods_returns((datetime.now(ZoneInfo("Europe/Moscow")).date() - timedelta(days=30)).isoformat(), datetime.now(ZoneInfo("Europe/Moscow")).date().isoformat())), ("chats", client.get_seller_chats)):
+        try:
+            value = getter()
+            if label == "rating": rating = value if isinstance(value, dict) else {}
+            elif label == "unread": unread = value if isinstance(value, dict) else {}
+            elif label == "quarantine": quarantine = value if isinstance(value, list) else []
+            elif label == "feedbacks": feedbacks = value if isinstance(value, list) else []
+            elif label == "questions": questions = value if isinstance(value, list) else []
+            elif label == "return_history": return_history = value if isinstance(value, list) else []
+            elif label == "chats": chats = value if isinstance(value, list) else []
+            else: claims = value if isinstance(value, dict) else {}
+        except Exception as exc:
+            errors.append(_customer_quality_error(label, exc))
+    payload = json_safe({"rating": rating, "unread": unread, "feedbacks": feedbacks, "questions": questions, "quarantine": quarantine, "returns": claims, "return_history": return_history, "chats": chats, "errors": errors})
+    customer_quality_cache = (monotonic() + 60.0, payload)
+    return payload
+
+
+@app.post("/api/v1/customer-quality/feedbacks/answer")
+def answer_customer_feedback(payload: FeedbackAnswerInput) -> dict:
+    token = get_token()
+    if not token: raise HTTPException(status_code=409, detail="WB token не подключён")
+    try: return json_safe(WBAPI(token).answer_feedback(payload.id, payload.text, payload.edit))
+    except ValueError as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc: raise HTTPException(status_code=502, detail=f"Не удалось ответить на отзыв WB: {str(exc)[:240]}") from exc
+
+
+@app.post("/api/v1/customer-quality/questions/answer")
+def answer_customer_question(payload: QuestionAnswerInput) -> dict:
+    token = get_token()
+    if not token: raise HTTPException(status_code=409, detail="WB token не подключён")
+    try: return json_safe(WBAPI(token).answer_question(payload.id, payload.text, payload.state))
+    except ValueError as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc: raise HTTPException(status_code=502, detail=f"Не удалось ответить на вопрос WB: {str(exc)[:240]}") from exc
+
+
+@app.post("/api/v1/customer-quality/returns/process")
+def process_customer_return(payload: ReturnClaimInput) -> dict:
+    token = get_token()
+    if not token: raise HTTPException(status_code=409, detail="WB token не подключён")
+    try: return json_safe(WBAPI(token).process_return_claim(payload.id, payload.action))
+    except ValueError as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc: raise HTTPException(status_code=502, detail=f"Не удалось обработать возврат WB: {str(exc)[:240]}") from exc
+
+
+@app.post("/api/v1/customer-quality/chats/message")
+def send_customer_chat_message(payload: ChatMessageInput) -> dict:
+    token = get_token()
+    if not token: raise HTTPException(status_code=409, detail="WB token не подключён")
+    try: return json_safe(WBAPI(token).send_seller_message(payload.reply_sign, payload.text))
+    except ValueError as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc: raise HTTPException(status_code=502, detail=f"Не удалось отправить сообщение в чат WB: {str(exc)[:240]}") from exc
 
 
 @app.get("/api/v1/action-plan/items")
@@ -949,8 +1642,10 @@ def create_action_plan_item(payload: ActionPlanCreate) -> dict:
              json.dumps([{"status": "created", "at": now}], ensure_ascii=False), now, now),
         )
         item_id = cursor.lastrowid
-    item = _execute_action_plan_item(int(item_id))
-    return json_safe({"id": str(item_id), "status": item["status"], "item": _plan_row(item)})
+        item = conn.execute("SELECT * FROM redesign_action_plan WHERE id = ?", (item_id,)).fetchone()
+    # Creating a plan item must not execute it implicitly. The plan is the
+    # durable queue; execution starts only when the user starts the item.
+    return json_safe({"id": str(item_id), "status": "created", "item": _plan_row(item)})
 
 
 @app.patch("/api/v1/action-plan/items/{item_id}")
@@ -974,6 +1669,14 @@ def update_action_plan_item(item_id: int, payload: ActionPlanPatch) -> dict:
             raise HTTPException(status_code=404, detail="action_plan_item_not_found")
         history = json.loads(current["history"] or "[]")
         if "status" in changes and changes["status"] != current["status"]:
+            if current["status"] in {"done", "cancelled"}:
+                raise HTTPException(status_code=409, detail="Задача уже завершена или отменена. Обновите план задач.")
+            if changes["status"] == "done" and not str(changes.get("result") or current["result"] or "").strip():
+                raise HTTPException(status_code=422, detail="Укажите результат выполнения задачи")
+            if changes["status"] in {"in_progress", "done"} and not current["started_at"]:
+                changes["started_at"] = now
+            if changes["status"] in {"done", "cancelled"}:
+                changes["completed_at"] = now
             history.append({"status": changes["status"], "at": now})
         assignments = [f"{key} = ?" for key in changes]
         values = list(changes.values())
@@ -1052,8 +1755,37 @@ def create_production_shift(payload: ProductionShiftInput) -> dict:
         raise HTTPException(status_code=422, detail="Добавьте хотя бы одну задачу смены")
     if any(task.planned_units <= 0 for task in payload.tasks):
         raise HTTPException(status_code=422, detail="Плановое количество должно быть больше нуля")
+    rows: list[dict] = []
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        for task in payload.tasks:
+            item = task.model_dump()
+            article = str(item.get("supplier_article") or "").strip()
+            if not article:
+                raise HTTPException(status_code=422, detail="Укажите артикул производственного товара")
+            if not item.get("task_date"):
+                raise HTTPException(status_code=422, detail="Укажите дату смены")
+            item["task_type"] = "production"
+            if int(item.get("nm_id") or 0) <= 0:
+                match = conn.execute(
+                    """
+                    SELECT p.nm_id,p.supplier_article,COALESCE(c.product_name,'') AS product_name
+                      FROM production_settings p
+                      LEFT JOIN products_catalog c ON c.nm_id=p.nm_id
+                     WHERE LOWER(TRIM(COALESCE(p.supplier_article,'')))=LOWER(TRIM(?))
+                     LIMIT 1
+                    """,
+                    (article,),
+                ).fetchone()
+                if match is None:
+                    raise HTTPException(status_code=422, detail=f"Артикул «{article}» отсутствует в нормах производства")
+                item["nm_id"] = int(match["nm_id"])
+                item["supplier_article"] = str(match["supplier_article"] or article)
+                if not str(item.get("product_name") or "").strip():
+                    item["product_name"] = str(match["product_name"] or article)
+            rows.append(item)
     try:
-        save_execution_tasks(pd.DataFrame([task.model_dump() for task in payload.tasks]))
+        save_execution_tasks(pd.DataFrame(rows))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"saved": len(payload.tasks), "status": "Не начато"}
@@ -1063,7 +1795,9 @@ def create_production_shift(payload: ProductionShiftInput) -> dict:
 def get_production_execution() -> dict:
     tasks = read_table("execution_tasks")
     if not tasks.empty:
-        tasks = tasks.loc[tasks["task_type"].astype(str).str.lower().eq("production")].copy()
+        task_types = tasks["task_type"].astype(str).str.strip().str.casefold()
+        tasks = tasks.loc[task_types.isin({"production", "производство"})].copy()
+        tasks = tasks.loc[~tasks["status"].astype(str).str.strip().str.casefold().eq("закрыто")].copy()
     return json_safe({"tasks": _records(tasks)})
 
 
@@ -1147,7 +1881,7 @@ def list_report_operations() -> dict:
             run["metric_count"] = len(json.loads(run.get("definition_metrics") or "[]"))
         except (TypeError, ValueError, json.JSONDecodeError):
             run["metric_count"] = 0
-    return json_safe({"definitions": store.list_definitions(enabled_only=True), "runs": runs, "metric_labels": METRIC_LABELS})
+    return json_safe({"definitions": store.list_definitions(enabled_only=False), "runs": runs, "metric_labels": METRIC_LABELS})
 
 
 @app.post("/api/v1/operations/reports/definitions")
@@ -1183,6 +1917,44 @@ def create_report_definition(payload: ReportDefinitionInput) -> dict:
 @app.get("/api/v1/operations/reports/delivery")
 def report_delivery_status() -> dict:
     return delivery.get_delivery_status()
+
+
+@app.patch("/api/v1/operations/reports/definitions/{definition_id}")
+def update_report_definition(definition_id: int, payload: ReportDefinitionInput) -> dict:
+    name = payload.name.strip()
+    if not name or not payload.metrics or any(code not in METRIC_LABELS for code in payload.metrics):
+        raise HTTPException(status_code=422, detail="Укажите название и допустимые метрики отчёта")
+    if payload.schedule_type not in {"daily", "weekly", "monthly"}:
+        raise HTTPException(status_code=422, detail="Неизвестная периодичность")
+    try:
+        hour, minute = (int(part) for part in payload.schedule_time.split(":"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Время должно быть в формате ЧЧ:ММ") from None
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise HTTPException(status_code=422, detail="Укажите корректное время")
+    if payload.schedule_type == "weekly" and payload.schedule_weekday not in range(7):
+        raise HTTPException(status_code=422, detail="Выберите день недели")
+    if payload.schedule_type == "monthly" and (payload.schedule_day is None or not 1 <= payload.schedule_day <= 28):
+        raise HTTPException(status_code=422, detail="Выберите число месяца от 1 до 28")
+    store = ReportStore(DB_PATH)
+    try:
+        store.update_definition(definition_id, name=name, metrics=payload.metrics,
+            schedule_type=payload.schedule_type, schedule_time=f"{hour:02d}:{minute:02d}",
+            schedule_weekday=payload.schedule_weekday, schedule_day=payload.schedule_day,
+            email_enabled=payload.email_enabled, telegram_enabled=payload.telegram_enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Расписание не найдено") from exc
+    return {"id": definition_id, "status": "updated"}
+
+
+@app.patch("/api/v1/operations/reports/definitions/{definition_id}/enabled")
+def toggle_report_definition(definition_id: int, payload: ReportEnabledInput) -> dict:
+    store = ReportStore(DB_PATH)
+    try:
+        store.set_enabled(definition_id, payload.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Расписание не найдено") from exc
+    return {"id": definition_id, "enabled": payload.enabled, "status": "updated"}
 
 
 @app.post("/api/v1/operations/reports/telegram/link-code")
@@ -1318,6 +2090,153 @@ def get_dashboard_stock() -> dict:
     return _dashboard_response("dashboard-stock", build)
 
 
+def _catalog_chrt_ids() -> list[int]:
+    ids: set[int] = set()
+    catalog = read_table("products_catalog")
+    if catalog.empty or "raw_json" not in catalog.columns:
+        return []
+    for raw in catalog["raw_json"].tolist():
+        try:
+            card = json.loads(str(raw or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        for size in card.get("sizes") or []:
+            if not isinstance(size, dict):
+                continue
+            for key in ("chrtID", "chrtId", "chrt_id"):
+                try:
+                    value = int(size.get(key) or 0)
+                except (TypeError, ValueError):
+                    value = 0
+                if value > 0:
+                    ids.add(value)
+    return sorted(ids)[:1000]
+
+
+@app.get("/api/v1/operations/stock/seller-warehouses")
+def get_seller_warehouse_stock() -> dict:
+    """Read seller-owned FBS/DBS warehouses and their current quantities."""
+    token = get_token()
+    if not token:
+        return {"warehouses": [], "errors": {"connection": "Подключите токен WB с категорией «Маркетплейс»."}}
+    def build() -> dict:
+        client = WBAPI(token)
+        try:
+            warehouses = client.get_seller_warehouses()
+        except Exception as exc:
+            return {"warehouses": [], "errors": {"warehouses": _wb_cost_error("Склады продавца", exc)}}
+        chrt_ids = _catalog_chrt_ids()
+        output: list[dict] = []
+        errors: dict[str, str] = {}
+        for warehouse in warehouses[:50]:
+            warehouse_id = warehouse.get("id") or warehouse.get("warehouseId")
+            try:
+                warehouse_id = int(warehouse_id or 0)
+            except (TypeError, ValueError):
+                warehouse_id = 0
+            row = {"id": warehouse_id, "name": warehouse.get("name") or f"Склад продавца #{warehouse_id}", "office_id": warehouse.get("officeId"), "processing": bool(warehouse.get("isProcessing")), "stocks": [], "quantity": 0}
+            if warehouse_id > 0 and chrt_ids:
+                try:
+                    stocks = client.get_seller_warehouse_inventory(warehouse_id, chrt_ids)
+                    row["stocks"] = stocks
+                    row["quantity"] = sum(int(item.get("amount") or item.get("quantity") or 0) for item in stocks)
+                except Exception as exc:
+                    errors[str(warehouse_id)] = _wb_cost_error(str(row["name"]), exc)
+            elif not chrt_ids:
+                errors["inventory"] = "Размеры товаров ещё не загружены. Запустите синхронизацию карточек WB."
+            output.append(row)
+        return json_safe({"warehouses": output, "errors": errors})
+    return _dashboard_response("seller-warehouse-stock", build)
+
+
+def _sales_funnel_summary(rows: list[dict]) -> dict:
+    """Normalize WB v3 funnel rows into one stable dashboard payload."""
+    totals = {key: 0.0 for key in ("open_card", "cart", "orders", "order_sum", "buyouts", "buyout_sum", "wishlist")}
+    products: list[dict] = []
+    for row in rows:
+        product = row.get("product") if isinstance(row.get("product"), dict) else {}
+        statistic = row.get("statistic") if isinstance(row.get("statistic"), dict) else {}
+        selected = statistic.get("selected") if isinstance(statistic.get("selected"), dict) else statistic
+        selected = selected.get("period") if isinstance(selected.get("period"), dict) else selected
+        values = {
+            "open_card": selected.get("openCard", selected.get("open_card", 0)),
+            "cart": selected.get("cartCount", selected.get("cart", 0)),
+            "orders": selected.get("orderCount", selected.get("orders", 0)),
+            "order_sum": selected.get("orderSum", selected.get("order_sum", 0)),
+            "buyouts": selected.get("buyoutCount", selected.get("buyouts", 0)),
+            "buyout_sum": selected.get("buyoutSum", selected.get("buyout_sum", 0)),
+            "wishlist": selected.get("addToWishlistCount", selected.get("wishlist", 0)),
+        }
+        clean = {}
+        for key, value in values.items():
+            try:
+                clean[key] = max(0.0, float(value or 0))
+            except (TypeError, ValueError):
+                clean[key] = 0.0
+            totals[key] += clean[key]
+        nm_id = product.get("nmId", product.get("nmID"))
+        products.append({"nm_id": nm_id, "name": product.get("title") or product.get("name") or "Товар", **clean})
+    def integer(value: float) -> int | float:
+        return int(value) if float(value).is_integer() else round(value, 2)
+    return {
+        "stages": [
+            {"key": "open_card", "label": "Переходы в карточку", "value": integer(totals["open_card"])},
+            {"key": "cart", "label": "Добавили в корзину", "value": integer(totals["cart"])},
+            {"key": "orders", "label": "Заказы", "value": integer(totals["orders"])},
+            {"key": "buyouts", "label": "Выкупы", "value": integer(totals["buyouts"])},
+        ],
+        "totals": {key: integer(value) for key, value in totals.items()},
+        "products": sorted(products, key=lambda item: item["open_card"], reverse=True)[:20],
+        "source": "WB Analytics v3",
+    }
+
+
+@app.get("/api/v1/dashboard/analytics")
+def get_dashboard_analytics(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """Expose WB sales funnel and locally retained stock history."""
+    today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    try:
+        window_start, window_end = resolve_window(period, today_msk, start, end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+    def build() -> dict:
+        errors: dict[str, str] = {}
+        funnel = {"stages": [], "totals": {}, "products": [], "source": "WB Analytics v3"}
+        token = get_token()
+        if token and not IS_DEMO:
+            try:
+                funnel = _sales_funnel_summary(WBAPI(token).get_sales_funnel_products(window_start.isoformat(), window_end.isoformat()))
+            except Exception as exc:
+                errors["sales_funnel"] = _wb_cost_error("Воронка продаж", exc)
+        elif not token:
+            errors["sales_funnel"] = "Подключите токен WB с категорией «Аналитика»."
+
+        stocks = read_table("stocks")
+        history: list[dict] = []
+        if not stocks.empty and "snapshot_at" in stocks.columns:
+            frame = stocks.copy()
+            frame["date"] = pd.to_datetime(frame["snapshot_at"], errors="coerce").dt.date
+            frame["quantity"] = pd.to_numeric(frame.get("quantity", 0), errors="coerce").fillna(0)
+            frame = frame.dropna(subset=["date"])
+            for day, group in frame.groupby("date"):
+                history.append({"date": day.isoformat(), "quantity": int(round(float(group["quantity"].sum()))), "rows": int(len(group))})
+            history = sorted(history, key=lambda row: row["date"])[-90:]
+        return json_safe({
+            "period": {"start": window_start.isoformat(), "end": window_end.isoformat()},
+            "sales_funnel": funnel,
+            "stock_history": history,
+            "errors": errors,
+            "partial": bool(errors),
+        })
+
+    return _dashboard_response(f"dashboard-analytics:{period}:{window_start}:{window_end}", build)
+
+
 @app.get("/api/v1/fifo/reconciliation")
 def get_fifo_reconciliation() -> dict:
     """Read-only FIFO diagnostic and its local-reconciliation guard state."""
@@ -1363,14 +2282,20 @@ def get_dashboard_ads(
     end: date | None = None,
 ) -> dict:
     """Ad dashboard with the same shared period contract as the legacy app."""
-    if table_count("orders") == 0 and table_count("sales") == 0:
-        raise HTTPException(status_code=409, detail="no_data_yet")
-
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     try:
         window_start, window_end = resolve_window(period, today_msk, start, end)
     except ValueError:
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+    if table_count("orders") == 0 and table_count("sales") == 0:
+        return {
+            "period_label": PERIOD_LABELS.get(period, period),
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+            "metrics": [], "campaigns": [], "funnel": [], "creative_tests": [],
+            "empty_reason": "no_data_yet",
+        }
 
     def build() -> dict:
         ctx = {
@@ -1394,23 +2319,39 @@ def get_dashboard_production() -> dict:
         today, _ = _today_dashboard()
         shift = today.get("tabs", {}).get("shift", {})
         material = today.get("tabs", {}).get("material", {})
-        tasks = _records(read_table("execution_tasks"))
+        execution = read_table("execution_tasks")
+        if not execution.empty:
+            task_types = execution["task_type"].astype(str).str.strip().str.casefold()
+            execution = execution.loc[task_types.isin({"production", "производство"})].copy()
+            execution = execution.loc[~execution["status"].astype(str).str.strip().str.casefold().eq("закрыто")].copy()
+        tasks = _records(execution)
         settings = _records(read_table("production_settings"))
-        saved_tasks = shift.get("tasks", []) or tasks
+        shift_tasks = [task for task in (shift.get("tasks", []) or []) if str(task.get("status") or "").strip().casefold() != "закрыто"]
+        saved_tasks = shift_tasks or tasks
         recommendations = shift.get("recommendations", []) or []
         visible_tasks = saved_tasks or recommendations
-        planned = shift.get("planned", 0) or sum(int(task.get("planned", 0) or 0) for task in recommendations)
-        covered = shift.get("material_covered", 0) if saved_tasks else sum(
-            int(task.get("planned", 0) or 0)
-            for task in recommendations
-            if task.get("status") != "Заблокировано сырьём"
-        )
+        if saved_tasks:
+            planned = sum(int(task.get("planned_units", task.get("planned", 0)) or 0) for task in saved_tasks)
+            covered = _production_material_covered(saved_tasks)
+        else:
+            planned = shift.get("planned", 0) or sum(int(task.get("planned", 0) or 0) for task in recommendations)
+            covered = sum(
+                int(task.get("planned", 0) or 0)
+                for task in recommendations
+                if task.get("status") != "Заблокировано сырьём"
+            )
         stages, materials = _production_panels()
+        task_word = "задача" if len(saved_tasks) == 1 else "задачи" if 2 <= len(saved_tasks) <= 4 else "задач"
+        stages[-1] = {
+            "label": "Смена",
+            "value": f"{len(saved_tasks)} {task_word} в открытой смене" if saved_tasks else "нет открытых заданий",
+            "status": "active" if saved_tasks else "pending",
+        }
         return json_safe({"metrics": [
-            {"key": "planned", "label": "План смены" if saved_tasks else "К запуску", "value": planned, "note": "комплектов"},
-            {"key": "covered", "label": "Материал подтверждён", "value": covered, "note": "комплектов"},
+            {"key": "planned", "label": "План смены" if saved_tasks else "К запуску", "value": planned, "note": "компл."},
+            {"key": "covered", "label": "Материал подтверждён", "value": covered, "note": "компл."},
             {"key": "configured", "label": "Настроено SKU", "value": len(settings), "note": "параметры производства"},
-        ], "stages": stages, "tasks": visible_tasks, "materials": material.get("rows", []) or materials})
+        ], "stages": stages, "tasks": visible_tasks, "materials": materials or material.get("rows", [])})
 
     return _dashboard_response("dashboard-production", build)
 
@@ -1422,12 +2363,75 @@ def get_dashboard_supply() -> dict:
         procurement = today.get("tabs", {}).get("procurement", {})
         orders = procurement.get("active_orders", []) or _records(read_procurement_orders())
         suppliers = read_suppliers(active_only=True)
+        wb_supplies = []
+        wb_new_orders = []
+        acceptance_coefficients = []
+        transit_tariffs = []
+        errors: dict[str, str] = {}
+        token = get_token()
+        if token:
+            try:
+                client = WBAPI(token)
+                wb_supplies = client.get_fbs_supplies()
+            except Exception as exc:
+                wb_supplies = []
+                errors["fbs_supplies"] = _customer_quality_error("FBS-поставки", exc)
+            try:
+                wb_new_orders = client.get_fbs_new_orders()
+            except Exception as exc:
+                wb_new_orders = []
+                errors["fbs_new_orders"] = _customer_quality_error("Новые сборочные задания", exc)
+            try:
+                acceptance_coefficients = client.get_acceptance_coefficients()
+            except Exception as exc:
+                acceptance_coefficients = []
+                errors["acceptance_coefficients"] = _customer_quality_error("Коэффициенты приёмки", exc)
+            try:
+                transit_tariffs = client.get_transit_tariffs()
+            except Exception as exc:
+                transit_tariffs = []
+                errors["transit_tariffs"] = _customer_quality_error("Тарифы транзита", exc)
+        elif not token:
+            errors["connection"] = "Подключите WB-токен в настройках, чтобы загрузить данные поставок."
         return json_safe({"metrics": [
             {"key": "active", "label": "Активные закупки", "value": len(orders), "note": "не закрыты"},
             {"key": "to_buy", "label": "Товары к заказу", "value": len(procurement.get("products_to_buy", [])), "note": "расчёт WB"},
-        ], "shipments": orders, "suppliers": _records(suppliers)})
+        ], "shipments": orders, "wb_supplies": wb_supplies, "wb_new_orders": wb_new_orders, "acceptance_coefficients": acceptance_coefficients, "transit_tariffs": transit_tariffs, "errors": errors, "suppliers": _records(suppliers)})
 
     return _dashboard_response("dashboard-supply", build)
+
+
+def _fbs_supply_id(value: str) -> str:
+    supply_id = value.strip()
+    if not supply_id or len(supply_id) > 80 or not re.fullmatch(r"[A-Za-z0-9_-]+", supply_id):
+        raise HTTPException(status_code=422, detail="Некорректный идентификатор поставки WB")
+    return supply_id
+
+
+@app.get("/api/v1/operations/supply/fbs/{supply_id}")
+def get_fbs_supply_details(supply_id: str) -> dict:
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    supply_id = _fbs_supply_id(supply_id)
+    try:
+        return json_safe(WBAPI(token, timeout=15).get_fbs_supply_details(supply_id))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=_customer_quality_error("FBS-поставка", exc)) from exc
+
+
+@app.get("/api/v1/operations/supply/fbs/{supply_id}/barcode")
+def get_fbs_supply_barcode(supply_id: str, barcode_type: str = Query("png", alias="type")) -> dict:
+    token = get_token()
+    if not token:
+        raise HTTPException(status_code=409, detail="WB token не подключён")
+    supply_id = _fbs_supply_id(supply_id)
+    if barcode_type not in {"png", "svg"}:
+        raise HTTPException(status_code=422, detail="Тип QR-кода должен быть png или svg")
+    try:
+        return json_safe(WBAPI(token, timeout=15).get_fbs_supply_barcode(supply_id, barcode_type))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=_customer_quality_error("QR поставки FBS", exc)) from exc
 
 
 @app.get("/api/v1/operations/suppliers")
@@ -1496,6 +2500,20 @@ def get_redesign_settings() -> dict:
     return {"sync_interval_minutes": int(settings.get("sync_interval_minutes", 30)), "initial_history_days": int(settings.get("initial_history_days", 90)), "agent_interval_minutes": int(settings.get("agent_interval_minutes", 60)), "wb_connected": bool(get_token()), "ozon_connected": bool(get_ozon_credentials())}
 
 
+@app.get("/api/v1/settings/wb-token")
+def get_wb_token_status() -> dict:
+    """Return token scope metadata without returning or revalidating the token."""
+    token = get_token()
+    if not token:
+        return {"connected": False, "scopes": [], "missing_scopes": [], "scope_metadata_available": False, "read_only": False, "expires_at": None}
+    info = WBAPI(token).token_scope_info()
+    all_scope_labels = list(getattr(WBAPI, "TOKEN_SCOPES", {}).values())
+    if not info.get("known"):
+        return {"connected": True, "scopes": ["Статистика"], "missing_scopes": [label for label in all_scope_labels if label != "Статистика"], "scope_metadata_available": False, "read_only": False, "expires_at": None}
+    scopes = [str(item) for item in info.get("scopes", []) if str(item) in all_scope_labels]
+    return {"connected": True, "scopes": scopes, "missing_scopes": [label for label in all_scope_labels if label not in scopes], "scope_metadata_available": True, "read_only": bool(info.get("read_only")), "expires_at": info.get("expires_at")}
+
+
 @app.patch("/api/v1/settings")
 def update_redesign_settings(payload: SettingsUpdateInput) -> dict:
     settings = load_settings()
@@ -1508,6 +2526,72 @@ def update_redesign_settings(payload: SettingsUpdateInput) -> dict:
         settings[key] = value
     save_settings(settings)
     return get_redesign_settings()
+
+
+@app.post("/api/v1/settings/wb-token")
+def connect_wb_token(payload: WBTokenInput) -> dict:
+    """Validate and securely store a WB token without ever returning it."""
+    token = payload.token.strip()
+    if not token:
+        raise HTTPException(status_code=422, detail="Укажите WB-токен")
+    try:
+        client = WBAPI(token, timeout=10)
+        if not client.test_statistics():
+            raise RuntimeError("WB не подтвердил доступ к статистике")
+        scope_info = client.token_scope_info() if hasattr(client, "token_scope_info") else {"known": False}
+        expires_at = scope_info.get("expires_at") if isinstance(scope_info, dict) else None
+        if expires_at is not None and int(expires_at) <= int(datetime.now(timezone.utc).timestamp()):
+            raise RuntimeError("WB-токен истёк")
+    except Exception as exc:
+        # Keep provider details out of the response and never persist an
+        # unvalidated credential.  The raw exception is intentionally not
+        # logged because some providers echo request data in error bodies.
+        raise HTTPException(status_code=422, detail="WB-токен не прошёл проверку. Проверьте токен и права категории «Статистика».") from exc
+    scope_info = scope_info if isinstance(scope_info, dict) else {"known": False}
+    all_scope_labels = list(getattr(WBAPI, "TOKEN_SCOPES", {}).values()) or [
+        "Контент", "Аналитика", "Цены и скидки", "Маркетплейс", "Статистика", "Продвижение",
+        "Отзывы/Вопросы", "Чат с покупателями", "Поставки", "Возвраты", "Документы", "Финансы",
+    ]
+    scopes = [str(item) for item in scope_info.get("scopes", []) if str(item) in all_scope_labels]
+    if "Статистика" not in scopes:
+        scopes.append("Статистика")
+    missing_scopes = [label for label in all_scope_labels if label not in scopes]
+    if scope_info.get("known"):
+        missing_scopes = [str(item) for item in scope_info.get("missing_scopes", []) if str(item) in all_scope_labels and str(item) not in scopes]
+    save_token(token)
+    global customer_quality_cache
+    customer_quality_cache = None
+    return {
+        "connected": True,
+        "scopes": scopes,
+        "missing_scopes": missing_scopes,
+        "scope_metadata_available": bool(scope_info.get("known")),
+        "read_only": bool(scope_info.get("read_only")),
+        "expires_at": scope_info.get("expires_at"),
+    }
+
+
+@app.delete("/api/v1/settings/wb-token")
+def disconnect_wb_token() -> dict:
+    delete_token()
+    global customer_quality_cache
+    customer_quality_cache = None
+    return {"connected": False, "scopes": [], "missing_scopes": []}
+
+
+@app.post("/api/v1/settings/ozon")
+def connect_ozon_credentials(payload: OzonCredentialsInput) -> dict:
+    try:
+        save_ozon_credentials(payload.client_id, payload.api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Укажите корректные Client-Id и Api-Key Ozon") from exc
+    return {"connected": True}
+
+
+@app.delete("/api/v1/settings/ozon")
+def disconnect_ozon_credentials() -> dict:
+    delete_ozon_credentials()
+    return {"connected": False}
 
 
 @app.get("/api/v1/settings/material-inventory")

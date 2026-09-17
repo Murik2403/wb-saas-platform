@@ -273,11 +273,13 @@ def _pnl(start: date, end: date) -> MetricResult:
     cost = float(fin.get("cost", 0.0))
     ads = float(fin.get("financial_ad_spend", 0.0))
     profit = float(fin.get("profit", 0.0))
+    to_pay = float(fin.get("to_pay", sales))
+    additional = float(fin.get("additional_payment", 0.0))
 
-    categories = ["Продажи", "Расходы WB", "Себестоимость", "Реклама", "Чистая прибыль"]
-    values = [sales, wb_exp, cost, ads, profit]
+    categories = ["Продажи (справочно)", "К перечислению за товар", "Прямые расходы WB", "Себестоимость", "Реклама", "Расчётная прибыль"]
+    values = [sales, to_pay, wb_exp, cost, ads, profit]
     bar_colors = [
-        COLOR_ACCENT, COLOR_CRITICAL, COLOR_WARN, COLOR_ACCENT_STRONG,
+        COLOR_ACCENT, COLOR_ACCENT, COLOR_CRITICAL, COLOR_WARN, COLOR_ACCENT_STRONG,
         COLOR_GOOD if profit >= 0 else COLOR_CRITICAL,
     ]
 
@@ -301,7 +303,9 @@ def _pnl(start: date, end: date) -> MetricResult:
     summary = (
         f"Выручка: {sales:,.0f}₽, удержания WB: {wb_exp:,.0f}₽, "
         f"себестоимость: {cost:,.0f}₽, реклама: {ads:,.0f}₽. "
-        f"Чистая прибыль: {profit:,.0f}₽."
+        f"Расчётная прибыль: {profit:,.0f}₽. К перечислению за товар: {to_pay:,.0f}₽, доплаты WB: {additional:,.0f}₽. "
+        "Прибыль = к перечислению + доплаты − прямые расходы WB − себестоимость − реклама. "
+        "Комиссия уже учтена в сумме к перечислению. Налоги и внешние расходы не включены."
     ).replace(",", " ")
     return MetricResult(title=METRIC_LABELS["pnl"], figure=fig, summary=summary)
 

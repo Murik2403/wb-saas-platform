@@ -40,6 +40,13 @@ class SecretIsValidTests(unittest.TestCase):
         with mock.patch.object(config, "INTERNAL_API_SECRET", "s3cr3t"):
             self.assertFalse(internal_routes._secret_is_valid("wrong"))
 
+    def test_secret_for_other_tenant_is_invalid(self) -> None:
+        from internal_auth import tenant_credential
+
+        with mock.patch.object(config, "INTERNAL_API_SECRET", "s3cr3t"):
+            other_tenant_secret = tenant_credential("s3cr3t", "shop-b")
+            self.assertFalse(internal_routes._secret_is_valid(other_tenant_secret, "shop-a"))
+
     def test_empty_configured_secret_rejects_everything(self) -> None:
         # An unconfigured deployment (INTERNAL_API_SECRET="") must not
         # accept an empty header as "matching" -- that would let anyone in.
@@ -62,6 +69,30 @@ class DeliverReportEmailTests(GatewayDbTestCase):
             with self.assertRaises(HTTPException) as ctx:
                 internal_routes.deliver_report_email("no-such-slug", "Отчёт", b"%PDF-1.4...", "report.pdf")
             self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_secret_for_other_tenant_is_rejected(self) -> None:
+        from internal_auth import tenant_credential
+
+        class Upload:
+            filename = "report.pdf"
+            read_was_called = False
+
+            async def read(self, size: int = -1) -> bytes:
+                self.read_was_called = True
+                return b""
+
+        upload = Upload()
+        with mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect)), \
+             mock.patch.object(config, "INTERNAL_API_SECRET", "s3cr3t"):
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(internal_routes.send_report_email(
+                    SimpleNamespace(headers={"x-internal-secret": tenant_credential("s3cr3t", "shop-b")}),
+                    "shop-a",
+                    "Отчёт",
+                    upload,
+                ))
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertFalse(upload.read_was_called)
 
     def test_known_slug_emails_the_account_owner(self) -> None:
         captured = {}
@@ -183,7 +214,7 @@ class DeliverReportTelegramTests(GatewayDbTestCase):
             captured["file_bytes"] = file_bytes
             captured["filename"] = filename
             captured["caption"] = caption
-            return {}
+            return {"ok": True, "result": {"message_id": 42}}
 
         with mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect)), \
              mock.patch.object(telegram_bot, "send_document", fake_send_document):
@@ -192,6 +223,17 @@ class DeliverReportTelegramTests(GatewayDbTestCase):
         self.assertEqual(captured["chat_id"], "555")
         self.assertEqual(captured["filename"], "report.pdf")
         self.assertIn("Отчёт", captured["caption"])
+
+    def test_telegram_http_200_with_api_error_raises_502(self) -> None:
+        with self.connect() as conn:
+            code = accounts.create_telegram_link_code(conn, self.account_id)
+            accounts.consume_telegram_link_code(conn, code, "555")
+
+        with mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect)), \
+             mock.patch.object(telegram_bot, "send_document", return_value={"ok": False, "error_code": 400, "description": "chat not found"}):
+            with self.assertRaises(HTTPException) as ctx:
+                internal_routes.deliver_report_telegram(self.slug, "Отчёт", b"%PDF-1.4...", "report.pdf")
+            self.assertEqual(ctx.exception.status_code, 502)
 
     def test_telegram_send_failure_raises_502(self) -> None:
         with self.connect() as conn:

@@ -8,6 +8,7 @@ ENV VITE_MH_API_BASE_URL=$VITE_MH_API_BASE_URL \
 COPY mh-redesign-lab/package.json mh-redesign-lab/package-lock.json ./
 RUN npm ci
 COPY mh-redesign-lab/index.html ./
+COPY mh-redesign-lab/public ./public
 COPY mh-redesign-lab/tsconfig.json mh-redesign-lab/tsconfig.node.json mh-redesign-lab/vite.config.ts ./
 COPY mh-redesign-lab/src ./src
 RUN npm run build
@@ -25,13 +26,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nginx \
     && rm -rf /var/lib/apt/lists/*
 
-COPY tenant-app/requirements.txt ./
+COPY tenant-app/requirements.txt tenant-app/requirements.lock ./
 RUN python -m pip install --no-cache-dir 'pip>=26.2,<27' && pip install --no-cache-dir -r requirements.txt
 
 COPY tenant-app/ ./
 # The redesign owns its additive API adapter; the Streamlit source tree remains
 # unchanged on disk and remains available for rollback.
 ARG REDESIGN_BUILD_ID=dev
+LABEL org.opencontainers.image.revision=$REDESIGN_BUILD_ID
 RUN printf '%s' "$REDESIGN_BUILD_ID" > /tmp/redesign-build-id
 COPY mh-redesign-lab/tenant-api/api_server.py ./api_server.py
 COPY mh-redesign-lab/tenant-api/dashboard_cache.py ./dashboard_cache.py

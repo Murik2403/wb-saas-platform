@@ -47,6 +47,7 @@ def create_payment(
     payment_method_id: str | None = None,
     save_payment_method: bool = False,
     metadata: dict[str, Any] | None = None,
+    customer_email: str | None = None,
 ) -> dict[str, Any]:
     """Creates a payment.
 
@@ -68,6 +69,21 @@ def create_payment(
         "capture": True,
         "description": description,
     }
+    if config.RECEIPT_ENABLED:
+        if not customer_email:
+            raise YooKassaError("Для чека 54-ФЗ нужен email покупателя")
+        body["receipt"] = {
+            "customer": {"email": customer_email},
+            "tax_system_code": config.RECEIPT_TAX_SYSTEM_CODE,
+            "items": [{
+                "description": description[:128],
+                "quantity": "1.00",
+                "amount": {"value": f"{amount_rub:.2f}", "currency": "RUB"},
+                "vat_code": config.RECEIPT_VAT_CODE,
+                "payment_subject": "service",
+                "payment_mode": "full_payment",
+            }],
+        }
     if payment_method_id:
         body["payment_method_id"] = payment_method_id
     else:
@@ -97,6 +113,26 @@ def get_payment(payment_id: str) -> dict[str, Any]:
     response = requests.get(f"{_base_url()}/payments/{payment_id}", auth=_auth(), timeout=30)
     if response.status_code >= 400:
         raise YooKassaError(f"YooKassa get_payment failed ({response.status_code}): {response.text}")
+    return response.json()
+
+
+def get_refund(refund_id: str) -> dict[str, Any]:
+    """Fetch authoritative refund status for an unsigned webhook."""
+    response = requests.get(f"{_base_url()}/refunds/{refund_id}", auth=_auth(), timeout=30)
+    if response.status_code >= 400:
+        raise YooKassaError(f"YooKassa refund lookup failed ({response.status_code}): {response.text}")
+    return response.json()
+
+
+def create_refund(payment_id: str, amount_rub: float | None = None, idempotence_key: str | None = None) -> dict[str, Any]:
+    """Request a full or partial refund in YooKassa."""
+    import requests
+    body: dict[str, Any] = {"payment_id": payment_id}
+    if amount_rub is not None:
+        body["amount"] = {"value": f"{amount_rub:.2f}", "currency": "RUB"}
+    response = requests.post(f"{_base_url()}/refunds", json=body, auth=_auth(), headers={"Idempotence-Key": idempotence_key or str(uuid.uuid4())}, timeout=30)
+    if response.status_code >= 400:
+        raise YooKassaError(f"YooKassa refund failed ({response.status_code}): {response.text}")
     return response.json()
 
 

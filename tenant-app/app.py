@@ -69,9 +69,6 @@ except Exception:
 
 st.markdown(
     """
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   /* Same design system as the marketing site (gateway/templates/base.html)
@@ -89,8 +86,8 @@ st.markdown(
   --good:#3ecf8e; --good-soft:rgba(62,207,142,.12);
   --warn:#f2b84b; --warn-soft:rgba(242,184,75,.12);
   --critical:#f2677a; --critical-soft:rgba(242,103,122,.12);
-  --font-display:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,sans-serif;
-  --font-mono:"IBM Plex Mono","SF Mono",monospace;
+  --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  --font-mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
 }
 html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
   font-family: var(--font-display);

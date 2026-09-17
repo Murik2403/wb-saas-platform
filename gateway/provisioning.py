@@ -27,6 +27,8 @@ def _tenant_payload(slug: str, require_auth: bool = True) -> dict[str, object]:
     return {
         "internal_api_secret": tenant_credential(config.INTERNAL_API_SECRET, slug),
         "data_encryption_key": tenant_data_key(config.TENANT_ENCRYPTION_MASTER_KEY, slug),
+        "data_encryption_key_id": config.TENANT_ENCRYPTION_KEY_ID,
+        "data_encryption_keyring": config.TENANT_ENCRYPTION_KEYRING,
         "billing_url": config.billing_url(),
         "logout_url": config.logout_url(),
         "internal_api_url": config.base_url(),
@@ -48,6 +50,16 @@ def _request(method: str, path: str, payload: dict[str, object] | None = None) -
     if not isinstance(body, dict):
         raise RuntimeError("Provisioner returned an invalid response")
     return body
+
+
+def export_tenant(slug: str):
+    """Return the provisioner's streaming tenant archive response."""
+    return requests.post(
+        f"{_provisioner_url()}/v1/tenants/{slug}/export",
+        json={"expected_internal_secret": tenant_credential(config.INTERNAL_API_SECRET, slug)},
+        timeout=(_REQUEST_TIMEOUT_SECONDS, 300),
+        stream=True,
+    )
 
 
 def _run_tenant_container(slug: str, require_auth: bool = True, image: str | None = None) -> None:
@@ -153,6 +165,12 @@ def stop_tenant(slug: str) -> None:
         tenant = accounts.get_tenant_by_slug(conn, slug)
         if tenant is not None:
             accounts.set_tenant_status(conn, int(tenant["id"]), "stopped")
+
+
+def remove_tenant(slug: str, purge_volume: bool = False) -> None:
+    """Remove a tenant; account deletion may explicitly purge its volume."""
+    suffix = "?purge_volume=true" if purge_volume else ""
+    _request("DELETE", f"/v1/tenants/{slug}{suffix}")
 
 
 def upgrade_tenant(slug: str, image: str | None = None) -> bool:

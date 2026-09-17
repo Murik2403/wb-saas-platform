@@ -12,6 +12,7 @@ import type {
   ExpenseSplit,
   ExportItem,
   FinanceLedgerItem,
+  FinanceReportState,
   FunnelStage,
   IconKey,
   InventoryWatchRow,
@@ -56,12 +57,14 @@ export type DashboardViewModel = {
   stockHero: StockHero;
   stockCoverage: StockCoverageRow[];
   stockRules: StockRule[];
+  sellerWarehouses: Array<{ id?: number; name?: string; office_id?: number; quantity?: number; processing?: boolean; stocks?: Array<Record<string, unknown>> }>;
   adsHero: AdsHero;
   campaigns: AdCampaign[];
   adsFunnel: FunnelStage[];
   creativeSignals: CreativeSignal[];
   financeMetrics: DashboardMetric[];
   financeLedger: FinanceLedgerItem[];
+  financeReport: FinanceReportState;
   expenseSplit: ExpenseSplit[];
   cashWindows: CashWindow[];
   productionMetrics: DashboardMetric[];
@@ -70,6 +73,10 @@ export type DashboardViewModel = {
   materialNeeds: MaterialNeed[];
   supplyMetrics: DashboardMetric[];
   supplyShipments: SupplyShipment[];
+  supplyNewOrders: Array<Record<string, unknown>>;
+  acceptanceCoefficients: Array<Record<string, unknown>>;
+  transitTariffs: Array<Record<string, unknown>>;
+  supplyErrors: Record<string, string>;
   supplierPulse: SupplierPulse[];
   assistantMetrics: DashboardMetric[];
   automations: AssistantAutomation[];
@@ -81,15 +88,28 @@ export type DashboardViewModel = {
   chartBars: number[];
   chartBarsWeek: number[];
   productEconomics: ProductEconomicsRow[];
+  productPrices: ProductPriceRow[];
+  productPriceErrors: string[];
+  productCards: ProductCard[];
+  productCardErrors: string[];
+  customerQuality: CustomerQualityData | null;
   dataQuality: DataQualityData | null;
   procurementOrders: Array<Record<string, unknown>>;
 };
 
 export type DataQualityData = { summary: Record<string, unknown>; checks: Array<Record<string, unknown>>; reliability: Array<Record<string, unknown>>; fifo_guard: Record<string, unknown> };
+export type CustomerQualityData = { rating: Record<string, unknown>; unread: Record<string, unknown>; feedbacks: Array<Record<string, unknown>>; questions: Array<Record<string, unknown>>; quarantine: Array<Record<string, unknown>>; returns: Record<string, unknown>; return_history: Array<Record<string, unknown>>; chats: Array<Record<string, unknown>>; errors: string[] };
 export type ReportDefinition = { id: number; name: string; metrics: string; schedule_type: "daily" | "weekly" | "monthly"; schedule_time: string; schedule_weekday: number | null; schedule_day: number | null; enabled: number; email_enabled?: number; telegram_enabled?: number; last_run_at: string | null };
 export type ReportRun = { id: number; definition_id: number; definition_name?: string; definition_metrics?: string; metric_count?: number; started_at: string; finished_at: string | null; status: string; file_path: string | null; file_available?: boolean; error: string | null; delivery_requested?: number; delivery_status?: string; delivery_error?: string | null };
 export type ReportOperations = { definitions: ReportDefinition[]; runs: ReportRun[]; metric_labels: Record<string, string> };
 export type ReportDelivery = { configured: boolean; email_configured: boolean; email?: string; telegram_configured?: boolean; telegram_linked?: boolean; telegram_bot_username?: string };
+export type AnalyticsDashboard = {
+  period: { start: string; end: string };
+  sales_funnel: { stages: Array<{ key: string; label: string; value: number }>; totals: Record<string, number>; products: Array<{ nm_id?: number; name: string; open_card: number; cart: number; orders: number; buyouts: number }>; source: string };
+  stock_history: Array<{ date: string; quantity: number; rows: number }>;
+  errors: Record<string, string>;
+  partial: boolean;
+};
 export type ProductionExecutionTask = { task_key: string; task_type: string; task_date: string | null; stage: string; nm_id: number; supplier_article: string; product_name: string; planned_units: number; actual_units: number; status: string; note: string };
 export type IncidentOperations = { cases: Array<Record<string, unknown>>; summary: Record<string, number> };
 
@@ -109,6 +129,8 @@ export type ProductEconomicsRow = {
   unitCost: number;
   margin: number;
 };
+export type ProductPriceRow = { nmId: number; vendorCode: string; price: number; discount: number; clubDiscount: number; discountedPrice: number; status?: number; errorText?: string | null };
+export type ProductCard = { nmId: number; vendorCode: string; title: string; description?: string; brand: string; subject: string; photos: string[]; sizes: number };
 
 export type DashboardDataState = DashboardViewModel & {
   refreshing: boolean;
@@ -132,20 +154,45 @@ export type FifoReconciliationData = {
 };
 
 export type TenantSettings = { sync_interval_minutes: number; initial_history_days: number; agent_interval_minutes: number; wb_connected: boolean; ozon_connected: boolean };
+export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_scopes: string[]; scope_metadata_available?: boolean; read_only?: boolean; expires_at?: number | null };
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
 export type ProductionNorm = { nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
 export type MaterialInventory = { material_key?: string; material_name: string; balance_known: number | boolean; full_rolls: number; partial_meters: number; roll_length: number; unit: string; tracking_mode: "packaged" | "quantity"; opening_rate_rub: number; note: string; updated_at?: string };
 export type MaterialFifoRow = MaterialInventory & { physical_meters: number; fifo_meters: number; fifo_amount_rub: number; weighted_rate_rub_m: number; next_fifo_rate_rub_m: number; active_layers: number; difference_meters: number };
 export type MaterialInventoryData = { items: MaterialInventory[]; fifo: MaterialFifoRow[]; opening_rate_rub_m: number };
 export type SupplierRecord = { id: number; name: string; contact_person: string; phone: string; messenger: string; email: string; country: string; default_currency: string; payment_terms_days: number; lead_time_days: number; active: number; note: string; order_count?: number; last_order_date?: string | null };
+export type PriceUploadHistoryItem = { wb_upload_id: number; goods_count: number; status: string; error: string; created_at: string; updated_at: string };
 
-export async function startTenantSync(scope: "all" | "ads" = "all"): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/sync${scope === "ads" ? "/ads" : ""}`, { method: "POST" });
+export async function startTenantSync(scope: "all" | "ads" | "finance" = "all", days = 90): Promise<void> {
+  const endpoint = scope === "ads" ? "/ads" : scope === "finance" ? "/finance" : "";
+  const response = await fetch(`${API_BASE_URL}/api/v1/sync${endpoint}`, { method: "POST", headers: scope === "finance" ? { "Content-Type": "application/json" } : undefined, body: scope === "finance" ? JSON.stringify({ days }) : undefined });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || `Не удалось запустить синхронизацию: HTTP ${response.status}`);
   }
 }
+
+export async function uploadProductPrices(goods: Array<{ nmID: number; price: number; discount: number; clubDiscount?: number }>): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/prices/upload`, { method: "POST", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ goods }) });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось обновить цены: HTTP ${response.status}`);
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function getPriceUploadStatus(uploadId: number): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/prices/uploads/${uploadId}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Статус загрузки цен: HTTP ${response.status}`);
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+async function qualityAction(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: "POST", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) throw new Error((await response.text()) || `Операция WB не выполнена: HTTP ${response.status}`);
+  return response.json() as Promise<Record<string, unknown>>;
+}
+export const answerCustomerFeedback = (id: string, text: string, edit = false) => qualityAction("/api/v1/customer-quality/feedbacks/answer", { id, text, edit });
+export const answerCustomerQuestion = (id: string, text: string, state = "wbRu") => qualityAction("/api/v1/customer-quality/questions/answer", { id, text, state });
+export const processCustomerReturn = (id: string, action: string) => qualityAction("/api/v1/customer-quality/returns/process", { id, action });
+export const sendCustomerChatMessage = (replySign: string, text: string) => qualityAction("/api/v1/customer-quality/chats/message", { reply_sign: replySign, text });
 
 export async function getTenantSyncStatus(): Promise<{ status: string; started_at?: string; finished_at?: string; details?: string }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/sync/status`, { headers: apiHeaders() });
@@ -165,6 +212,14 @@ type ApiMetric = {
   comparison_label?: string;
   tone?: ApiTone;
 };
+
+type ApiFinanceResponse = {
+  financial?: Record<string, unknown>;
+  expense_rows?: Array<{ label?: string; amount?: number }>;
+  balance?: { current?: number; for_withdraw?: number };
+};
+type ApiWbCostsResponse = { deductions?: Array<Record<string, unknown>>; measurement_penalties?: Array<Record<string, unknown>>; paid_storage?: Array<Record<string, unknown>>; paid_storage_status?: "disabled" | "processing" | "ready" | "error"; errors?: string[] };
+type ApiCustomerQualityResponse = CustomerQualityData;
 
 type ApiAction = {
   id?: string;
@@ -192,6 +247,7 @@ type ApiInventoryWatchRow = {
   stock_days?: number;
   days_of_stock?: number;
   margin_bps?: number;
+  margin_rub?: number;
   signal?: string;
   tone?: ApiTone;
 };
@@ -312,6 +368,7 @@ type ApiStockResponse = {
   warehouses?: ApiCoverageRow[];
   rules?: ApiRule[];
 };
+type ApiSellerWarehouseResponse = { warehouses?: Array<{ id?: number; name?: string; office_id?: number; quantity?: number; processing?: boolean; stocks?: Array<Record<string, unknown>> }>; errors?: Record<string, string> };
 
 type ApiAdsResponse = {
   sync?: ApiSync;
@@ -334,6 +391,11 @@ type ApiSupplyResponse = {
   sync?: ApiSync;
   metrics?: ApiMetric[];
   shipments?: ApiSupplyShipment[];
+  wb_supplies?: Array<{ id?: string; name?: string; createdAt?: string; closedAt?: string; done?: boolean }>;
+  wb_new_orders?: Array<Record<string, unknown>>;
+  acceptance_coefficients?: Array<Record<string, unknown>>;
+  transit_tariffs?: Array<Record<string, unknown>>;
+  errors?: Record<string, string>;
   suppliers?: Array<{ name?: string; active?: number | boolean; status?: string }>;
 };
 
@@ -431,6 +493,8 @@ type ApiOverviewResponse = {
 type ApiProductsResponse = {
   products?: Array<Record<string, unknown>>;
 };
+type ApiProductCardsResponse = { cards?: Array<Record<string, unknown>>; errors?: string[] };
+type ApiPricesResponse = { items?: Array<Record<string, unknown>>; errors?: string[] };
 
 type ApiDataQualityResponse = DataQualityData;
 type ApiProcurementJournalResponse = { orders?: Array<Record<string, unknown>> };
@@ -440,7 +504,7 @@ const API_MODE = import.meta.env.VITE_MH_API_MODE ?? "auto";
 
 export async function getRuntimeStatus(signal: AbortSignal) {
   return Promise.all([
-    fetchJson<{ enabled: boolean; jobs: Record<string, {status: string; finished_at?: string}> }>("/api/v1/jobs", signal),
+    fetchJson<{ enabled: boolean; jobs: Record<string, {status: string; finished_at?: string}>; worker_processes?: Record<string, boolean> }>("/api/v1/jobs", signal),
     fetchJson<{ sections: Record<string, string | null> }>("/api/v1/sync/sections", signal),
   ]);
 }
@@ -530,7 +594,7 @@ export async function createActionPlanItem(input: {
   return response.json() as Promise<{ id: string; status: ActionPlanItem["status"]; item?: ActionPlanItem }>;
 }
 
-export async function updateActionPlanItem(id: string, patch: Partial<Pick<ActionPlanItem, "status" | "assignee" | "due_at" | "priority">>): Promise<ActionPlanItem> {
+export async function updateActionPlanItem(id: string, patch: Partial<Pick<ActionPlanItem, "status" | "assignee" | "due_at" | "priority" | "result">>): Promise<ActionPlanItem> {
   const response = await fetch(`${API_BASE_URL}/api/v1/action-plan/items/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: apiHeaders(true),
@@ -599,15 +663,16 @@ export function createProductionShift(input: {
   sku: string;
   productName: string;
   plannedUnits: number;
+  taskDate: string;
 }): Promise<{ saved: number; status: string }> {
   return postOperation("/api/v1/operations/production/shift", {
     tasks: [{
       task_key: `redesign:${input.sku}:${new Date().toISOString()}`,
-      task_type: "Производство",
+      task_type: "production",
       supplier_article: input.sku,
       product_name: input.productName,
       planned_units: input.plannedUnits,
-      task_date: new Date().toISOString().slice(0, 10),
+      task_date: input.taskDate,
     }],
   });
 }
@@ -616,6 +681,48 @@ export function postSupplyReceipt(orderId: string, itemId: number, quantity: num
   return postOperation(`/api/v1/operations/supply/${encodeURIComponent(orderId)}/receipt`, {
     items: [{ item_id: itemId, receive_now: quantity }],
   });
+}
+
+export async function updateProductCard(nmId: number, input: { title?: string; description?: string; brand?: string }): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/cards/${nmId}`, {
+    method: "PATCH",
+    headers: { ...apiHeaders(true), "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, confirmed: true }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось обновить карточку WB: HTTP ${response.status}`);
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function saveProductCardMedia(nmId: number, urls: string[]): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/cards/${nmId}/media`, {
+    method: "POST",
+    headers: { ...apiHeaders(true), "Content-Type": "application/json" },
+    body: JSON.stringify({ urls, confirmed: true }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось обновить медиа WB: HTTP ${response.status}`);
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export type FbsSupplyDetail = Record<string, unknown>;
+export type FbsSupplyBarcode = { barcode?: string; file?: string; url?: string; type?: string } & Record<string, unknown>;
+
+export async function getFbsSupplyDetails(supplyId: string): Promise<FbsSupplyDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/operations/supply/fbs/${encodeURIComponent(supplyId)}`, { headers: apiHeaders() });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(payload?.detail || `Поставка WB: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<FbsSupplyDetail>;
+}
+
+export async function getFbsSupplyBarcode(supplyId: string, type: "png" | "svg" = "png"): Promise<FbsSupplyBarcode> {
+  const query = new URLSearchParams({ type });
+  const response = await fetch(`${API_BASE_URL}/api/v1/operations/supply/fbs/${encodeURIComponent(supplyId)}/barcode?${query}`, { headers: apiHeaders() });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(payload?.detail || `QR поставки WB: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<FbsSupplyBarcode>;
 }
 
 export async function getProcurementOperations(): Promise<{ orders: Array<Record<string, unknown>>; items: Array<Record<string, unknown>> }> {
@@ -676,6 +783,43 @@ export function updateTenantSettings(settings: Pick<TenantSettings, "sync_interv
   return patchOperation("/api/v1/settings", settings);
 }
 
+export async function getPriceUploadHistory(): Promise<PriceUploadHistoryItem[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/prices/uploads`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `История загрузок цен: HTTP ${response.status}`);
+  const payload = await response.json() as { items?: PriceUploadHistoryItem[] };
+  return Array.isArray(payload.items) ? payload.items : [];
+}
+
+export async function connectWBToken(token: string): Promise<WBTokenConnection> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/wb-token`, { method: "POST", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось подключить WB: HTTP ${response.status}`);
+  return response.json() as Promise<WBTokenConnection>;
+}
+
+export async function getWBTokenStatus(): Promise<WBTokenConnection> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/wb-token`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Статус WB-токена: HTTP ${response.status}`);
+  return response.json() as Promise<WBTokenConnection>;
+}
+
+export async function disconnectWBToken(): Promise<WBTokenConnection> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/wb-token`, { method: "DELETE", headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось отключить WB: HTTP ${response.status}`);
+  return response.json() as Promise<WBTokenConnection>;
+}
+
+export async function connectOzonCredentials(clientId: string, apiKey: string): Promise<{ connected: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/ozon`, { method: "POST", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ client_id: clientId, api_key: apiKey }) });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось подключить Ozon: HTTP ${response.status}`);
+  return response.json() as Promise<{ connected: boolean }>;
+}
+
+export async function disconnectOzonCredentials(): Promise<{ connected: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/ozon`, { method: "DELETE", headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось отключить Ozon: HTTP ${response.status}`);
+  return response.json() as Promise<{ connected: boolean }>;
+}
+
 export async function getProductCostSettings(): Promise<{ items: ProductCostSetting[] }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/settings/product-costs`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`/api/v1/settings/product-costs: HTTP ${response.status}`);
@@ -728,6 +872,12 @@ export async function getReportDelivery(): Promise<ReportDelivery> {
   const response = await fetch(`${API_BASE_URL}/api/v1/operations/reports/delivery`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`Не удалось получить настройки доставки: HTTP ${response.status}`);
   return response.json() as Promise<ReportDelivery>;
+}
+
+export async function getAnalyticsDashboard(period: DashboardPeriodId = "30d"): Promise<AnalyticsDashboard> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/dashboard/analytics?period=${encodeURIComponent(period)}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error(`/api/v1/dashboard/analytics: HTTP ${response.status}`);
+  return response.json() as Promise<AnalyticsDashboard>;
 }
 
 export async function requestTelegramLinkCode(): Promise<{ code: string; ttl_minutes: number; deep_link: string; bot_username: string }> {
@@ -792,6 +942,14 @@ export function closeProductionExecution(taskDate: string): Promise<{ posted: nu
 
 export function createReportDefinition(payload: { name: string; metrics: string[]; schedule_type: string; schedule_time: string; schedule_weekday?: number; schedule_day?: number; email_enabled?: boolean; telegram_enabled?: boolean }): Promise<{ id: number; status: string }> {
   return postOperation("/api/v1/operations/reports/definitions", payload);
+}
+
+export function updateReportDefinition(id: number, payload: { name: string; metrics: string[]; schedule_type: string; schedule_time: string; schedule_weekday?: number | null; schedule_day?: number | null; email_enabled?: boolean; telegram_enabled?: boolean }): Promise<{ id: number; status: string }> {
+  return fetch(`${API_BASE_URL}/api/v1/operations/reports/definitions/${id}`, { method: "PATCH", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(async (response) => { if (!response.ok) throw new Error((await response.text()) || `Обновление расписания: HTTP ${response.status}`); return response.json(); });
+}
+
+export function setReportDefinitionEnabled(id: number, enabled: boolean): Promise<{ id: number; enabled: boolean; status: string }> {
+  return fetch(`${API_BASE_URL}/api/v1/operations/reports/definitions/${id}/enabled`, { method: "PATCH", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }).then(async (response) => { if (!response.ok) throw new Error((await response.text()) || `Изменение статуса расписания: HTTP ${response.status}`); return response.json(); });
 }
 
 export function generateReportDefinition(id: number): Promise<{ id: number; run_id: number; status: string }> {
@@ -939,28 +1097,41 @@ async function loadApiV1(
   const model = createLiveEmptyViewModel();
   let today: ApiTodayResponse | undefined;
   let stock: ApiStockResponse | undefined;
+  let sellerWarehouseStock: ApiSellerWarehouseResponse | undefined;
   let ads: ApiAdsResponse | undefined;
   let overview: ApiOverviewResponse | undefined;
+  let finance: ApiFinanceResponse | undefined;
+  let wbCosts: ApiWbCostsResponse | undefined;
   let production: ApiProductionResponse | undefined;
   let supply: ApiSupplyResponse | undefined;
   let assistant: ApiAssistantResponse | undefined;
   let reports: ApiReportsResponse | undefined;
   let products: ApiProductsResponse | undefined;
+  let prices: ApiPricesResponse | undefined;
   let dataQuality: ApiDataQualityResponse | undefined;
   let procurementJournal: ApiProcurementJournalResponse | undefined;
+  let customerQuality: ApiCustomerQualityResponse | undefined;
+  let productCards: ApiProductCardsResponse | undefined;
 
   switch (activePage) {
     case "today":
       today = await fetchJson<ApiTodayResponse>("/api/v1/dashboard/today", signal);
       break;
     case "stock":
-      stock = await fetchJson<ApiStockResponse>("/api/v1/dashboard/stock", signal);
+      [stock, sellerWarehouseStock] = await Promise.all([
+        fetchJson<ApiStockResponse>("/api/v1/dashboard/stock", signal),
+        fetchJson<ApiSellerWarehouseResponse>("/api/v1/operations/stock/seller-warehouses", signal).catch(() => ({ warehouses: [], errors: {} })),
+      ]);
       break;
     case "ads":
       ads = await fetchJson<ApiAdsResponse>(`/api/v1/dashboard/ads${periodQuery(selectedPeriod)}`, signal);
       break;
     case "finance":
-      overview = await fetchJson<ApiOverviewResponse>(`/api/overview${periodQuery(selectedPeriod)}`, signal);
+      [overview, finance, wbCosts] = await Promise.all([
+        fetchJson<ApiOverviewResponse>(`/api/overview${periodQuery(selectedPeriod)}`, signal),
+        fetchJson<ApiFinanceResponse>(`/api/v1/dashboard/finance${periodQuery(selectedPeriod)}`, signal),
+        fetchJson<ApiWbCostsResponse>(`/api/v1/dashboard/finance/wb-costs${periodQuery(selectedPeriod)}&background=true`, signal).catch((error) => ({ deductions: [], measurement_penalties: [], paid_storage: [], paid_storage_status: "error" as const, errors: [error instanceof Error ? error.message : "Аналитика WB недоступна"] })),
+      ]);
       break;
     case "production":
       production = await fetchJson<ApiProductionResponse>("/api/v1/dashboard/production", signal);
@@ -978,7 +1149,25 @@ async function loadApiV1(
       reports = await fetchJson<ApiReportsResponse>("/api/v1/dashboard/reports", signal);
       break;
     case "products":
-      products = await fetchJson<ApiProductsResponse>(`/api/products${periodQuery(selectedPeriod)}`, signal);
+      [products, prices, customerQuality, productCards] = await Promise.all([
+        fetchJson<ApiProductsResponse>(`/api/products${periodQuery(selectedPeriod)}`, signal),
+        fetchJson<ApiPricesResponse>("/api/v1/products/prices", signal).catch((error) => ({ items: [], errors: [error instanceof Error ? error.message : "Цены WB недоступны"] })),
+        fetchJson<ApiCustomerQualityResponse>("/api/v1/dashboard/customer-quality", signal).catch((error) => ({
+          rating: {},
+          unread: {},
+          feedbacks: [],
+          questions: [],
+          quarantine: [],
+          returns: {},
+          return_history: [],
+          chats: [],
+          errors: [error instanceof Error ? error.message : "Качество магазина WB недоступно"],
+        })),
+        fetchJson<ApiProductCardsResponse>("/api/v1/products/cards", signal).catch((error) => ({
+          cards: [],
+          errors: [error instanceof Error ? error.message : "Карточки WB недоступны"],
+        })),
+      ]);
       break;
     case "control":
       dataQuality = await fetchJson<ApiDataQualityResponse>("/api/v1/control/data-quality", signal);
@@ -1008,12 +1197,14 @@ async function loadApiV1(
     stockHero: adaptStockHero(stock?.hero, model.stockHero),
     stockCoverage: adaptCoverage(stock?.coverage ?? stock?.warehouses ?? [], model.stockCoverage),
     stockRules: adaptRules(stock?.rules ?? [], model.stockRules),
+    sellerWarehouses: sellerWarehouseStock?.warehouses ?? model.sellerWarehouses,
     adsHero: adaptAdsHero(ads?.hero, ads?.campaigns?.length ? { title: `${ads.campaigns.length} кампаний за выбранный период`, description: "Расходы и выручка по атрибуции рекламного API WB.", tone: "info" } : model.adsHero),
     campaigns: mergedCampaigns,
     adsFunnel: adaptFunnel(ads?.funnel ?? [], model.adsFunnel),
     creativeSignals: adaptCreativeSignals(ads?.creative_tests ?? [], model.creativeSignals),
     financeMetrics: adaptFinanceMetrics(overview, model.financeMetrics),
     financeLedger: adaptFinanceLedger(overview, model.financeLedger),
+    financeReport: adaptFinanceReport(finance, model.financeReport, wbCosts),
     expenseSplit: adaptExpenseSplit(overview, model.expenseSplit),
     cashWindows: adaptCashWindows(overview?.cash_windows ?? []),
     productionMetrics: production?.metrics?.length ? adaptMetrics(production.metrics, []) : adaptProductionMetrics(today, model.productionMetrics),
@@ -1021,7 +1212,11 @@ async function loadApiV1(
     productionTasks: production?.tasks !== undefined ? adaptProductionTasksPayload(production.tasks) : adaptProductionTasks(today, mergedReorder, model.productionTasks),
     materialNeeds: production?.materials !== undefined ? adaptMaterialPayload(production.materials) : adaptMaterialNeeds(today, model.materialNeeds),
     supplyMetrics: supply?.metrics?.length ? adaptMetrics(supply.metrics, []) : adaptSupplyMetrics(today, stock, mergedReorder, model.supplyMetrics),
-    supplyShipments: supply?.shipments !== undefined ? adaptSupplyPayloadShipments(supply.shipments) : adaptSupplyShipments(today, mergedReorder, model.supplyShipments),
+    supplyShipments: supply?.shipments !== undefined ? [...adaptSupplyPayloadShipments(supply.shipments), ...adaptWbSupplies(supply.wb_supplies)] : adaptSupplyShipments(today, mergedReorder, model.supplyShipments),
+    supplyNewOrders: supply?.wb_new_orders ?? [],
+    acceptanceCoefficients: supply?.acceptance_coefficients ?? [],
+    transitTariffs: supply?.transit_tariffs ?? [],
+    supplyErrors: supply?.errors ?? {},
     supplierPulse: supply?.suppliers !== undefined ? adaptSupplierPayload(supply.suppliers) : adaptSupplierPulse(mergedReorder, model.supplierPulse),
     assistantMetrics: assistant?.metrics?.length ? adaptMetrics(assistant.metrics, []) : adaptAssistantMetrics(mergedActions, model.assistantMetrics),
     automations: assistant?.automations !== undefined ? assistant.automations : adaptAutomations(mergedActions, model.automations),
@@ -1033,6 +1228,11 @@ async function loadApiV1(
     chartBars: adaptTrend(today?.revenue_trend_day ?? today?.revenue_trend, model.chartBars),
     chartBarsWeek: adaptTrend(today?.revenue_trend_week ?? today?.revenue_trend, model.chartBarsWeek),
     productEconomics: products?.products ? adaptProductEconomics(products.products) : [],
+    productPrices: adaptProductPrices(prices?.items ?? []),
+    productPriceErrors: prices?.errors ?? [],
+    productCards: adaptProductCards(productCards?.cards ?? []),
+    productCardErrors: productCards?.errors ?? [],
+    customerQuality: customerQuality ?? null,
     dataQuality: dataQuality ?? null,
     procurementOrders: procurementJournal?.orders ?? [],
   };
@@ -1045,6 +1245,10 @@ function periodQuery(selectedPeriod: DashboardPeriod): string {
     if (selectedPeriod.end) query.set("end", selectedPeriod.end);
   }
   return `?${query.toString()}`;
+}
+
+export function financeExportUrl(period: DashboardPeriod): string {
+  return `${API_BASE_URL}/api/v1/operations/finance/export${periodQuery(period)}`;
 }
 
 async function loadLegacyToday(signal: AbortSignal): Promise<DashboardViewModel> {
@@ -1092,6 +1296,12 @@ async function fetchJson<T>(path: string, signal: AbortSignal): Promise<T> {
     }
 
     if (!response.ok) {
+      if (response.status === 409) {
+        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+        if (payload?.detail === "no_data_yet") {
+          return {} as T;
+        }
+      }
       throw new Error(`${path}: HTTP ${response.status}`);
     }
 
@@ -1127,12 +1337,14 @@ function createMockViewModel(syncOverride?: Partial<DashboardSync>): DashboardVi
     stockHero: mock.stockHero,
     stockCoverage: mock.stockCoverage,
     stockRules: mock.stockRules,
+    sellerWarehouses: [],
     adsHero: mock.adsHero,
     campaigns: mock.campaigns,
     adsFunnel: mock.adsFunnel,
     creativeSignals: mock.creativeSignals,
     financeMetrics: mock.financeMetrics,
     financeLedger: mock.financeLedger,
+    financeReport: { rows: [] },
     expenseSplit: mock.expenseSplit,
     cashWindows: [],
     productionMetrics: mock.productionMetrics,
@@ -1141,6 +1353,10 @@ function createMockViewModel(syncOverride?: Partial<DashboardSync>): DashboardVi
     materialNeeds: mock.materialNeeds,
     supplyMetrics: mock.supplyMetrics,
     supplyShipments: mock.supplyShipments,
+    supplyNewOrders: [],
+    acceptanceCoefficients: [],
+    transitTariffs: [],
+    supplyErrors: {},
     supplierPulse: mock.supplierPulse,
     assistantMetrics: mock.assistantMetrics,
     automations: mock.automations,
@@ -1152,6 +1368,7 @@ function createMockViewModel(syncOverride?: Partial<DashboardSync>): DashboardVi
     chartBars: mock.chartBars,
     chartBarsWeek: mock.chartBars,
     productEconomics: [],
+    productPrices: [], productPriceErrors: [], productCards: [], productCardErrors: [], customerQuality: null,
     dataQuality: null,
     procurementOrders: [],
   };
@@ -1167,12 +1384,13 @@ function createLiveEmptyViewModel(syncOverride?: Partial<DashboardSync>): Dashbo
     todayMetrics: [], stockMetrics: [], adsMetrics: [], actions: [], inventory: [], reorderPlan: [],
     stockHero: { primary: "Нет данных по пополнению", primaryNote: "API пока не передал план закупок.", secondary: "-", secondaryNote: "Нет данных", tone: "info" },
     stockCoverage: [], stockRules: [],
+    sellerWarehouses: [],
     adsHero: { title: "Нет данных по рекламе", description: "API пока не передал рекламные показатели.", tone: "info" },
     campaigns: [], adsFunnel: [], creativeSignals: [],
-    financeMetrics: [], financeLedger: [], expenseSplit: [], cashWindows: [],
+    financeMetrics: [], financeLedger: [], financeReport: { rows: [] }, expenseSplit: [], cashWindows: [],
     productionMetrics: [], productionStages: [], productionTasks: [], materialNeeds: [],
-    supplyMetrics: [], supplyShipments: [], supplierPulse: [],
-    assistantMetrics: [], automations: [], agentCandidates: [], agentHistory: [], reportMetrics: [], reportCards: [], exportItems: [], chartBars: [], chartBarsWeek: [], productEconomics: [], dataQuality: null, procurementOrders: [],
+    supplyMetrics: [], supplyShipments: [], supplyNewOrders: [], acceptanceCoefficients: [], transitTariffs: [], supplyErrors: {}, supplierPulse: [],
+    assistantMetrics: [], automations: [], agentCandidates: [], agentHistory: [], reportMetrics: [], reportCards: [], exportItems: [], chartBars: [], chartBarsWeek: [], productEconomics: [], productPrices: [], productPriceErrors: [], productCards: [], productCardErrors: [], customerQuality: null, dataQuality: null, procurementOrders: [],
   };
 }
 
@@ -1251,7 +1469,7 @@ function adaptInventory(input: ApiInventoryWatchRow[], fallback: InventoryWatchR
         : typeof row.stock === "number"
           ? `${formatNumber(row.stock)} шт.`
           : "остатки WB не загружены",
-    margin: typeof row.margin_bps === "number" ? formatPercent(row.margin_bps) : "-",
+    margin: typeof row.margin_rub === "number" ? `${formatNumber(row.margin_rub)} ₽` : typeof row.margin_bps === "number" ? formatPercent(row.margin_bps) : "-",
     signal: text(row.signal, "Нет данных от WB"),
     tone: normalizeTone(row.tone, legacyStockTone(row)),
   }));
@@ -1482,6 +1700,22 @@ function adaptFinanceLedger(overview: ApiOverviewResponse | undefined, fallback:
   ];
 }
 
+export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallback: FinanceReportState, wbCosts?: ApiWbCostsResponse): FinanceReportState {
+  const f = input?.financial ?? {};
+  const rows = (input?.expense_rows ?? []).map((row) => ({ label: text(row.label, "Статья"), amount: Number(row.amount ?? 0) }));
+  const sum = (rows: Array<Record<string, unknown>> | undefined) => (rows ?? []).reduce((total, row) => total + Number(row.bonusSumm ?? row.bonus_sum ?? row.sum ?? row.amount ?? 0), 0);
+  return {
+    lastDate: text(f.report_last_date, fallback.lastDate ?? ""),
+    calculationEnd: text(f.financial_calculation_end, fallback.calculationEnd ?? ""),
+    complete: Boolean(f.financial_period_complete ?? fallback.complete),
+    lagDays: Number(f.financial_lag_days ?? fallback.lagDays ?? 0),
+    rows: rows.length ? rows : fallback.rows,
+    balance: Number(input?.balance?.current ?? fallback.balance ?? 0),
+    forWithdraw: Number(input?.balance?.for_withdraw ?? fallback.forWithdraw ?? 0),
+    wbCosts: wbCosts ? { deductions: sum(wbCosts.deductions), measurementPenalties: (wbCosts.measurement_penalties ?? []).reduce((total, row) => total + Number(row.penaltyAmount ?? 0) - Number(row.reversalAmount ?? 0), 0), paidStorage: (wbCosts.paid_storage ?? []).reduce((total, row) => total + Number(row.warehousePrice ?? row.paidStorage ?? row.storage ?? row.amount ?? row.sum ?? 0), 0), status: wbCosts.paid_storage_status, errors: wbCosts.errors ?? [] } : fallback.wbCosts,
+  };
+}
+
 function adaptExpenseSplit(overview: ApiOverviewResponse | undefined, fallback: ExpenseSplit[]): ExpenseSplit[] {
   const revenue = moneyStringToNumber(findOverviewKpi(overview, "revenue")?.value);
   const profit = moneyStringToNumber(findOverviewKpi(overview, "profit")?.value);
@@ -1534,6 +1768,10 @@ function adaptSupplyPayloadShipments(rows: ApiSupplyShipment[]): SupplyShipment[
     amount: text(order.outstanding_amount ?? order.amount ?? order.total_amount, "0 ₽"),
     tone: normalizeTone(order.tone, statusTone(order.status)),
   }));
+}
+
+function adaptWbSupplies(rows: ApiSupplyResponse["wb_supplies"]): SupplyShipment[] {
+  return (rows ?? []).map((row) => ({ id: text(row.id, "WB-supply"), supplier: text(row.name, "Поставка WB"), status: row.done ? "закрыта" : "активна", eta: text(row.closedAt ?? row.createdAt, "—"), amount: "WB FBS", tone: row.done ? "good" : "info" }));
 }
 
 function adaptProductionMetrics(today: ApiTodayResponse | undefined, fallback: DashboardMetric[]): DashboardMetric[] {
@@ -1761,6 +1999,25 @@ function adaptProductEconomics(rows: Array<Record<string, unknown>>): ProductEco
     adSpend: numberValue(row.ad_spend), drr: numberValue(row.drr), stock: numberValue(row.stock), dailySales: numberValue(row.daily_sales),
     daysOfStock: typeof row.days_of_stock === "number" && Number.isFinite(row.days_of_stock) ? row.days_of_stock : null, unitCost: numberValue(row.unit_cost), margin: numberValue(row.margin),
   }));
+}
+
+function adaptProductPrices(rows: Array<Record<string, unknown>>): ProductPriceRow[] {
+  return rows.flatMap((row) => {
+    const nmId = Number(row.nmID ?? row.nmId ?? 0);
+    const sizes = Array.isArray(row.sizes) ? row.sizes : [row];
+    const first = sizes.find((size) => size && typeof size === "object") as Record<string, unknown> | undefined;
+    if (!nmId || !first) return [];
+    return [{ nmId, vendorCode: text(row.vendorCode, String(nmId)), price: numberValue(first.price ?? row.price), discount: numberValue(first.discount ?? row.discount), clubDiscount: numberValue(first.clubDiscount ?? row.clubDiscount), discountedPrice: numberValue(first.discountedPrice), status: undefined, errorText: first.errorText as string | null | undefined }];
+  });
+}
+
+function adaptProductCards(rows: Array<Record<string, unknown>>): ProductCard[] {
+  return rows.flatMap((row) => {
+    const nmId = Number(row.nm_id ?? row.nmID ?? row.nmId ?? 0);
+    if (!nmId) return [];
+    const photos = Array.isArray(row.photos) ? row.photos.filter((photo): photo is string => typeof photo === "string") : [];
+    return [{ nmId, vendorCode: text(row.vendor_code ?? row.vendorCode, String(nmId)), title: text(row.title, "Товар без названия"), description: text(row.description, ""), brand: text(row.brand, ""), subject: text(row.subject, ""), photos: photos.slice(0, 3), sizes: numberValue(row.sizes) }];
+  });
 }
 
 function numberValue(value: unknown): number {

@@ -46,6 +46,10 @@ class ClientIpTests(unittest.TestCase):
         with patch.object(app_module.config, "TRUSTED_PROXY_HOPS", 1):
             self.assertEqual(app_module._client_ip(request), "198.51.100.4")
 
+    def test_ignores_malformed_forwarded_for_addresses(self) -> None:
+        request = _request([(b"x-forwarded-for", b"not-an-ip,203.0.113.7,bad")], client=("172.18.0.5", 12345))
+        self.assertEqual(app_module._client_ip(request), "203.0.113.7")
+
 
 if __name__ == "__main__":
     unittest.main()

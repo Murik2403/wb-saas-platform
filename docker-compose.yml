@@ -27,23 +27,53 @@ volumes:
   postgres_data:
 
 services:
+  docker-socket-proxy:
+    # Narrowed Docker API surface for the provisioner: only the operations
+    # needed for tenant lifecycle and backups are exposed.
+    image: tecnativa/docker-socket-proxy:0.3
+    restart: unless-stopped
+    networks:
+      - wbsaas_net
+      - provisioning_net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Required so provisioning can create networks/containers via the proxy.
+      # The image's rule engine is resource-based; method-based vars are not
+      # accepted in this tag, so POST must be enabled for the allow-listed
+      # paths above.
+      - POST=1
+      - CONTAINERS=1
+      - CONTAINERS_CREATE=1
+      - CONTAINERS_START=1
+      - CONTAINERS_STOP=1
+      - CONTAINERS_REMOVE=1
+      - CONTAINERS_LIST=1
+      - IMAGES=1
+      - IMAGES_CREATE=1
+      - NETWORKS=1
+      - NETWORKS_CREATE=1
+      - NETWORKS_CONNECT=1
+      - NETWORKS_DISCONNECT=1
+      - VOLUMES=1
+      - VOLUMES_CREATE=1
+
   provisioner:
     build: ./provisioner
     restart: unless-stopped
+    depends_on:
+      - docker-socket-proxy
     networks:
       - provisioning_net
     volumes:
-      # The sole Docker socket mount in this compose project. app.py accepts
-      # a fixed tenant lifecycle contract rather than forwarding Docker API
-      # requests, so a gateway RCE cannot create arbitrary host containers.
-      - /var/run/docker.sock:/var/run/docker.sock
       # The daemon sees the host path from WB_SAAS_BACKUP_DIR while this
       # container sees the same fixed location at /backups for retention.
       - ${WB_SAAS_BACKUP_DIR:-/opt/wb-saas/backups}:/backups
     environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
       - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
-      - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:latest}
+      - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:redesign}
       - WB_SAAS_TENANT_INTERNAL_PORT=${WB_SAAS_TENANT_INTERNAL_PORT:-8501}
       - WB_SAAS_TENANT_MEM_LIMIT=${WB_SAAS_TENANT_MEM_LIMIT:-768m}
       - WB_SAAS_TENANT_CPU_QUOTA=${WB_SAAS_TENANT_CPU_QUOTA:-1.0}
@@ -56,6 +86,7 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    user: "10001:10001"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -100,14 +131,16 @@ services:
     restart: unless-stopped
     networks:
       - wbsaas_net
+      - provisioning_net
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
       - traefik_letsencrypt:/letsencrypt
+    depends_on:
+      - docker-socket-proxy
     environment:
       # Traefik reads TRAEFIK_* env vars as static config directly (unlike
       # ${VAR} placeholders inside traefik.yml, which it does NOT expand).
@@ -139,7 +172,7 @@ services:
     environment:
       - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
       - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
-      - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:latest}
+      - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:redesign}
       - WB_SAAS_DOCKER_NETWORK=${WB_SAAS_DOCKER_NETWORK:-wbsaas_net}
       - WB_SAAS_TENANT_INTERNAL_PORT=${WB_SAAS_TENANT_INTERNAL_PORT:-8501}
       - WB_SAAS_TENANT_MEM_LIMIT=${WB_SAAS_TENANT_MEM_LIMIT:-768m}
@@ -195,6 +228,13 @@ services:
     depends_on:
       provisioner:
         condition: service_healthy
+    healthcheck:
+      # Health endpoint consumed by container orchestrations and uptime checks.
+      # Using plain TCP to localhost avoids routing noise through Traefik.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     user: "10001:10001"
     security_opt:
       - no-new-privileges:true

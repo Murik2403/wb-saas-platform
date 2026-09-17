@@ -20,6 +20,8 @@ def test_campaign_check_is_completed_and_records_ai_result(monkeypatch, tmp_path
         "campaign_id": campaign_id, "spend": "1 200 ₽", "drr": "5,2%", "revenue": "23 000 ₽",
     })
     created = api.create_action_plan_item(api.ActionPlanCreate(title="Проверить", sku="Кампания 34346526"))
+    assert created["status"] == "created"
+    api._execute_action_plan_item(int(created["id"]))
     with sqlite3.connect(api.DB_PATH) as conn:
         row = conn.execute("SELECT status,assignee,executor,result,started_at,completed_at,history FROM redesign_action_plan WHERE id=?", (created["id"],)).fetchone()
     assert row[0] == "done"
@@ -35,6 +37,8 @@ def test_unknown_campaign_is_marked_blocked_with_explanation(monkeypatch, tmp_pa
     _use_plan_db(monkeypatch, tmp_path)
     monkeypatch.setattr(api, "_inspect_campaign_for_plan", lambda campaign_id: None)
     created = api.create_action_plan_item(api.ActionPlanCreate(title="Проверить", sku="Кампания 34346526"))
+    assert created["status"] == "created"
+    api._execute_action_plan_item(int(created["id"]))
     with sqlite3.connect(api.DB_PATH) as conn:
         row = conn.execute("SELECT status,result FROM redesign_action_plan WHERE id=?", (created["id"],)).fetchone()
     assert row[0] == "blocked"
@@ -59,7 +63,7 @@ def test_same_source_action_returns_existing_task_instead_of_duplicate(monkeypat
     with sqlite3.connect(api.DB_PATH) as conn:
         count = conn.execute("SELECT COUNT(*) FROM redesign_action_plan").fetchone()[0]
     assert first["id"] == second["id"]
-    assert second["status"] == "done"
+    assert second["status"] == "created"
     assert count == 1
 
 

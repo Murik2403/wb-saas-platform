@@ -26,6 +26,7 @@ from control_service import (
     compute_control, cost_quality_csv, quality_csv, run_fifo_recheck,
 )
 from calculations import build_dashboard
+from sentry_integration import initialize as initialize_sentry
 from config import DB_PATH, get_token, load_settings
 from db import init_db, last_sync, table_count
 from overview_service import (
@@ -42,6 +43,7 @@ from agents_service import (
 )
 
 app = FastAPI(title="MARKETSHELPER tenant API")
+initialize_sentry(service_name="tenant-api")
 
 # Local-dev only: the Next.js dev server runs on a different port -- 3000 by
 # default, but whatever's free (see .claude/launch.json; this machine already
@@ -60,6 +62,12 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+@app.get("/healthz")
+@app.get("/_stcore/health")
+def healthz():
+    return {"status": "ok"}
 
 
 @app.on_event("startup")

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Аккаунт — MARKETSHELPER{% endblock %}
+{% block card_extra_class %} card-wide{% endblock %}
+{% block content %}
+  <h1>Настройки аккаунта</h1>
+  <p class="subtitle">Текущий email: <strong>{{ account.email }}</strong></p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  {% if message %}<div class="info">{{ message }}</div>{% endif %}
+  <h2>Сменить пароль</h2>
+  <form method="post" action="/account/password">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="current_password">Текущий пароль</label><input id="current_password" name="current_password" type="password" required autocomplete="current-password">
+    <label for="new_password">Новый пароль</label><input id="new_password" name="new_password" type="password" required minlength="8" autocomplete="new-password">
+    <label for="new_password_confirm">Повторите новый пароль</label><input id="new_password_confirm" name="new_password_confirm" type="password" required minlength="8" autocomplete="new-password">
+    <button type="submit">Сменить пароль и завершить сессии</button>
+  </form>
+  <h2>Сменить email</h2>
+  <p>Мы отправим подтверждение на новый адрес. До подтверждения текущий email останется прежним.</p>
+  <form method="post" action="/account/email">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="new_email">Новый email</label><input id="new_email" name="new_email" type="email" required autocomplete="email">
+    <label for="email_current_password">Текущий пароль</label><input id="email_current_password" name="current_password" type="password" required autocomplete="current-password">
+    <button type="submit">Отправить подтверждение</button>
+  </form>
+  <h2>Ваши данные</h2>
+  <p>Скачать архив данных кабинета можно в любой момент. В архиве могут быть зашифрованные учётные данные подключённых магазинов.</p>
+  <p><a class="back-link" href="/account/export">Скачать архив данных</a></p>
+  {% if tenant and tenant.membership_role == 'owner' %}
+  <h2>Команда кабинета</h2>
+  <p>Добавьте коллегу по email. Ссылка действует {{ 7 }} дней, доступ открывается после подтверждения email.</p>
+  <form method="post" action="/account/team/invite">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="team_email">Email пользователя</label><input id="team_email" name="email" type="email" required autocomplete="email">
+    <label for="team_role">Роль</label>
+    <select id="team_role" name="role"><option value="manager">Менеджер</option><option value="viewer" selected>Наблюдатель</option></select>
+    <button type="submit">Пригласить</button>
+  </form>
+  <ul>
+    {% for member in members %}<li>{{ member.email }} — {{ {'owner': 'владелец', 'manager': 'менеджер', 'viewer': 'наблюдатель'}.get(member.role, member.role) }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <h2>Удалить аккаунт</h2>
+  <p>Контейнер, tenant-данные и записи аккаунта будут удалены. Резервные копии не удаляются автоматически и хранятся по регламенту.</p>
+  <form method="post" action="/account/delete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="delete_current_password">Текущий пароль</label><input id="delete_current_password" name="current_password" type="password" required autocomplete="current-password">
+    <label for="delete_confirmation">Введите УДАЛИТЬ</label><input id="delete_confirmation" name="confirmation" type="text" required autocomplete="off">
+    <button type="submit">Удалить аккаунт и кабинет</button>
+  </form>
+  <div class="footer-link"><a href="/billing">Подписка и оплата</a> · <a href="/">Вернуться</a></div>
+{% endblock %}

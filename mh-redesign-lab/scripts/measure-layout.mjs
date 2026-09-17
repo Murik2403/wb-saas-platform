@@ -119,6 +119,11 @@ try {
       const offenders = Array.from(document.querySelectorAll("*"))
         .map((node) => {
           const rect = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          const intentionalEllipsis =
+            style.overflowX === "hidden" &&
+            style.textOverflow === "ellipsis" &&
+            style.whiteSpace === "nowrap";
           return {
             tag: node.tagName.toLowerCase(),
             cls: typeof node.className === "string" ? node.className : "",
@@ -127,10 +132,14 @@ try {
             right: Math.round(rect.right),
             width: Math.round(rect.width),
             scrollWidth: node.scrollWidth,
-            clientWidth: node.clientWidth
+            clientWidth: node.clientWidth,
+            intentionalEllipsis
           };
         })
-        .filter((node) => node.right > window.innerWidth + 1 || node.scrollWidth > node.clientWidth + 1)
+        .filter((node) =>
+          !node.intentionalEllipsis &&
+          (node.right > window.innerWidth + 1 || node.scrollWidth > node.clientWidth + 1)
+        )
         .slice(0, 40);
       return {
         innerWidth: window.innerWidth,

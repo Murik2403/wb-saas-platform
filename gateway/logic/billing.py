@@ -94,6 +94,32 @@ def record_payment_attempt(
     return int(row["id"])
 
 
+def list_payments(conn: sqlite3.Connection, account_id: int, limit: int = 50) -> list[sqlite3.Row]:
+    """Return the account's newest payment attempts for billing history."""
+    bounded = max(1, min(int(limit), 200))
+    return conn.execute(
+        "SELECT id, yookassa_payment_id, kind, amount_rub, status, period_start, period_end, created_at, updated_at "
+        "FROM payments WHERE account_id=? ORDER BY created_at DESC LIMIT ?",
+        (int(account_id), bounded),
+    ).fetchall()
+
+
+def apply_refund(conn: sqlite3.Connection, account_id: int, yookassa_payment_id: str, amount_rub: float, refund_id: str, status: str = "succeeded") -> None:
+    """Record an idempotent YooKassa refund and revoke access for a full refund."""
+    payment = conn.execute("SELECT id FROM payments WHERE account_id=? AND yookassa_payment_id=?", (int(account_id), yookassa_payment_id)).fetchone()
+    if payment is None:
+        raise ValueError("Платёж не найден")
+    now = _now_iso()
+    conn.execute(
+        "INSERT INTO refunds(account_id, payment_id, yookassa_refund_id, amount_rub, status, created_at, updated_at) VALUES(?,?,?,?,?,?,?) "
+        "ON CONFLICT(yookassa_refund_id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
+        (int(account_id), int(payment["id"]), refund_id, float(amount_rub), status, now, now),
+    )
+    if status == "succeeded":
+        conn.execute("UPDATE payments SET status='canceled', updated_at=? WHERE id=?", (now, int(payment["id"])))
+        conn.execute("UPDATE accounts SET status='past_due', current_period_end=?, past_due_since=?, updated_at=? WHERE id=?", (now, now, now, int(account_id)))
+
+
 def apply_successful_payment(
     conn: sqlite3.Connection,
     account_id: int,

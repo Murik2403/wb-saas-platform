@@ -1,4 +1,38 @@
 from reports.store import ReportStore
+from concurrent.futures import ThreadPoolExecutor
+import sqlite3
+
+
+def _initialize_legacy_db(db_path: object) -> None:
+    # emulate DB layout before optional report schema columns were introduced
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE report_definitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            metrics TEXT NOT NULL,
+            schedule_type TEXT NOT NULL,
+            schedule_time TEXT NOT NULL,
+            schedule_weekday INTEGER,
+            schedule_day INTEGER,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            last_run_at TEXT
+        );
+        CREATE TABLE report_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            definition_id INTEGER NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            file_path TEXT,
+            error TEXT
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
 
 
 def make_store(tmp_path) -> ReportStore:
@@ -118,3 +152,30 @@ def test_interrupted_run_is_requeued_after_restart(tmp_path):
     assert run["id"] == run_id
     assert run["status"] == "queued"
     assert "прервана" in run["error"]
+
+
+def test_parallel_init_idempotent_for_legacy_db_schema(tmp_path):
+    # When several workers start at once on an existing database, schema migration
+    # must not fail with "duplicate column name" and must finish with all expected columns.
+    db_path = tmp_path / "parallel_reports.sqlite3"
+    _initialize_legacy_db(db_path)
+
+    def init_once() -> None:
+        ReportStore(db_path)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(lambda _: init_once(), range(12)))
+
+    conn = sqlite3.connect(db_path)
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(report_definitions)").fetchall()}
+        assert "email_enabled" in columns
+        assert "telegram_enabled" in columns
+
+        run_columns = {row[1] for row in conn.execute("PRAGMA table_info(report_runs)").fetchall()}
+        assert "period_days" in run_columns
+        assert "delivery_requested" in run_columns
+        assert "delivery_status" in run_columns
+        assert "delivery_error" in run_columns
+    finally:
+        conn.close()

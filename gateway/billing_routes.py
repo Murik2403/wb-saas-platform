@@ -29,8 +29,18 @@ logger = logging.getLogger("wb_saas_gateway.billing")
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
-webhook_global_limiter = RateLimiter(requests_per_window=120, window_seconds=60)
-webhook_source_limiter = RateLimiter(requests_per_window=20, window_seconds=60)
+webhook_global_limiter = RateLimiter(
+    requests_per_window=120,
+    window_seconds=60,
+    storage_backend="db",
+    db_connect=control_db.connect,
+)
+webhook_source_limiter = RateLimiter(
+    requests_per_window=20,
+    window_seconds=60,
+    storage_backend="db",
+    db_connect=control_db.connect,
+)
 
 
 def _webhook_source_allowed(source: str) -> bool:
@@ -67,6 +77,8 @@ def billing_status(request: Request):
     elif account["status"] == "past_due":
         days_left = billing.days_left_in_grace_period(account)
 
+    with control_db.connect() as conn:
+        payments = billing.list_payments(conn, int(account["id"]))
     csrf_token = csrf.get_or_create_token(request)
     response = templates.TemplateResponse(
         request,
@@ -76,6 +88,7 @@ def billing_status(request: Request):
             "days_left": days_left,
             "price_rub": config.SUBSCRIPTION_PRICE_RUB,
             "csrf_token": csrf_token,
+            "payments": payments,
         },
     )
     csrf.set_cookie(response, csrf_token)
@@ -98,6 +111,7 @@ def billing_checkout(request: Request, csrf_token: str = Form("")):
             return_url=return_url,
             save_payment_method=True,
             metadata={"account_id": str(account["id"])},
+            customer_email=account["email"],
         )
     except yookassa_client.YooKassaError:
         logger.exception("Failed to create YooKassa payment for account %s", account["id"])
@@ -203,6 +217,22 @@ async def yookassa_webhook(request: Request):
     payment_id = (body.get("object") or {}).get("id")
     if not payment_id:
         return JSONResponse({"error": "missing payment id"}, status_code=400)
+
+    event_type = str(body.get("event") or "")
+    if event_type.startswith("refund."):
+        try:
+            refund = yookassa_client.get_refund(payment_id)
+        except yookassa_client.YooKassaError:
+            logger.exception("Failed to verify YooKassa refund %s via API", payment_id)
+            return JSONResponse({"error": "verification failed"}, status_code=502)
+        if str(refund.get("status") or "") == "succeeded":
+            original_payment_id = str(refund.get("payment_id") or "")
+            amount = float(((refund.get("amount") or {}).get("value") or 0))
+            with control_db.connect() as conn:
+                original = conn.execute("SELECT account_id FROM payments WHERE yookassa_payment_id=?", (original_payment_id,)).fetchone()
+                if original is not None:
+                    billing.apply_refund(conn, int(original["account_id"]), original_payment_id, amount, payment_id, status="succeeded")
+        return JSONResponse({"status": "ok"})
 
     try:
         payment = yookassa_client.get_payment(payment_id)

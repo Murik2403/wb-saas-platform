@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from backup_crypto import encrypt_file
 
@@ -42,6 +43,8 @@ class TenantRequest(BaseModel):
 
     internal_api_secret: str = Field(min_length=1, max_length=512)
     data_encryption_key: str = Field(default="", max_length=128)
+    data_encryption_key_id: str = Field(default="current", min_length=1, max_length=128)
+    data_encryption_keyring: str = Field(default="", max_length=8192)
     billing_url: str = Field(min_length=1, max_length=512)
     logout_url: str = Field(min_length=1, max_length=512)
     internal_api_url: str = Field(min_length=1, max_length=512)
@@ -52,6 +55,10 @@ class TenantRequest(BaseModel):
 
 class CredentialCheckRequest(BaseModel):
     expected_secret: str = Field(min_length=1, max_length=512)
+
+
+class TenantExportRequest(BaseModel):
+    expected_internal_secret: str = Field(min_length=1, max_length=512)
 
 
 def _client():
@@ -104,6 +111,8 @@ def _labels(slug: str, require_auth: bool) -> dict[str, str]:
         f"traefik.http.routers.{health_router}.entrypoints": "websecure",
         f"traefik.http.routers.{health_router}.tls.certresolver": TLS_CERT_RESOLVER,
         f"traefik.http.routers.{health_router}.service": router,
+        f"traefik.http.routers.{health_router}.middlewares": f"{health_router}-rewrite",
+        f"traefik.http.middlewares.{health_router}-rewrite.replacePath.path": "/_stcore/health",
         # Keep legacy streamlit tenants monitorable with the original health path.
         f"traefik.http.routers.{health_router_legacy}.rule": (
             f"Host(`{_tenant_host(slug)}`) && Path(`/_stcore/health`) && Method(`GET`)"
@@ -149,6 +158,9 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
     }
     if request.data_encryption_key:
         environment["WB_SAAS_DATA_ENCRYPTION_KEY"] = request.data_encryption_key
+        environment["WB_SAAS_DATA_ENCRYPTION_KEY_ID"] = request.data_encryption_key_id
+    if request.data_encryption_keyring:
+        environment["WB_SAAS_DATA_ENCRYPTION_KEYRING"] = request.data_encryption_keyring
     if request.sentry_dsn:
         environment["WB_SAAS_SENTRY_DSN"] = request.sentry_dsn
         environment["WB_SAAS_SENTRY_ENVIRONMENT"] = request.sentry_environment
@@ -348,7 +360,7 @@ def stop_tenant(slug: str) -> dict[str, str]:
 
 
 @app.delete("/v1/tenants/{slug}")
-def remove_tenant(slug: str) -> dict[str, str]:
+def remove_tenant(slug: str, purge_volume: bool = False) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
     try:
@@ -358,7 +370,12 @@ def remove_tenant(slug: str) -> dict[str, str]:
     except Exception:
         pass
     _remove_network(client, slug)
-    return {"status": "removed"}
+    if purge_volume:
+        try:
+            client.volumes.get(_volume_name(slug)).remove(force=True)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Tenant data purge failed: {exc}") from exc
+    return {"status": "purged" if purge_volume else "removed"}
 
 
 @app.post("/v1/tenants/{slug}/upgrade")
@@ -393,7 +410,8 @@ def reseed_demo() -> dict[str, str]:
             TENANT_IMAGE,
             name="wb-tenant-demo-seed",
             remove=True,
-            command=["python3", "seed_demo_data.py"],
+            entrypoint=["python3"],
+            command=["seed_demo_data.py"],
             network_mode="none",
             volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
             user="10001:10001",
@@ -429,6 +447,62 @@ def verify_internal_secret(slug: str, request: CredentialCheckRequest) -> dict[s
         return {"valid": actual == request.expected_secret}
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Tenant not found: {exc}") from exc
+
+
+def _tenant_internal_secret_matches(slug: str, expected: str, client: Any) -> bool:
+    import hmac
+
+    try:
+        container = client.containers.get(_container_name(slug))
+        environment = container.attrs.get("Config", {}).get("Env", [])
+        actual = next(
+            (value.split("=", 1)[1] for value in environment if value.startswith("WB_SAAS_INTERNAL_API_SECRET=")),
+            "",
+        )
+        return bool(actual) and hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+@app.post("/v1/tenants/{slug}/export")
+def export_tenant(slug: str, request: TenantExportRequest):
+    """Stream a read-only tenant archive after gateway-side ownership proof."""
+    _validate_slug(slug)
+    client = _client()
+    if not _tenant_internal_secret_matches(slug, request.expected_internal_secret, client):
+        raise HTTPException(status_code=403, detail="Invalid tenant credential")
+    helper = None
+    try:
+        helper = client.containers.run(
+            BACKUP_HELPER_IMAGE,
+            command=["tar", "czf", "-", "-C", "/data", "."],
+            detach=True,
+            remove=False,
+            network_mode="none",
+            volumes={_volume_name(slug): {"bind": "/data", "mode": "ro"}},
+            user="0:0",
+            security_opt=["no-new-privileges:true"],
+            cap_drop=["ALL"],
+            read_only=True,
+            tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Docker export failed: {exc}") from exc
+
+    def stream():
+        try:
+            yield from helper.logs(stream=True, stdout=True, stderr=False)
+        finally:
+            try:
+                helper.remove(force=True)
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="marketshelper-{slug}.tar.gz"'},
+    )
 
 
 @app.post("/v1/tenants/{slug}/backup")

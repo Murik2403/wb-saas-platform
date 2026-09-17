@@ -467,4 +467,4 @@ export const exportItems: ExportItem[] = [
 ];
 
 export const chartBars = [42, 57, 49, 66, 62, 78, 74, 91, 86, 96, 88, 104];
-export const mobileNav: PageId[] = ["today", "stock", "ads", "finance"];
+export const mobileNav: PageId[] = ["today", "stock", "production", "supply"];

@@ -8,8 +8,8 @@
 
 ## Tasks
 
-- [ ] Add a tested per-tenant derivation helper in gateway and propagate only the derived key through the provisioner request contract.
-- [ ] Add authenticated token-file encryption to tenant-app, direct `cryptography` dependency, legacy fallback migration, and tests for ciphertext, round-trip, migration, and key absence.
-- [ ] Add a streaming authenticated backup codec in provisioner and replace plaintext host `.tar.gz` output with `.tar.gz.enc`; add decrypt/restore operator flow and policy tests.
-- [ ] Document required secrets, rotation/recovery constraints, and encrypted backup verification in `.env.example` and `DEPLOY.md`.
-- [ ] Regenerate Linux lock files, build images, audit dependencies, run all tests and frontend builds, then commit only P1-4 changes.
+- [x] Add a tested per-tenant derivation helper in gateway and propagate only the derived key through the provisioner request contract.
+- [x] Add authenticated token-file encryption to tenant-app, direct `cryptography` dependency, legacy fallback migration, and tests for ciphertext, round-trip, migration, and key absence.
+- [x] Add a streaming authenticated backup codec in provisioner and replace plaintext host `.tar.gz` output with `.tar.gz.enc`; add decrypt/restore operator flow and policy tests.
+- [x] Document required secrets, rotation/recovery constraints, and encrypted backup verification in `.env.example` and `DEPLOY.md`.
+- [x] Regenerate Linux lock files, build images, audit dependencies, run all tests and frontend builds, then commit only P1-4 changes.

@@ -113,6 +113,6 @@ Set `GLITCHTIP_EVENT_RETENTION_DAYS=30`; keep log ingestion disabled until its s
 
 Run: `docker compose ps`, inspect GlitchTip logs for startup errors, request the HTTPS UI, and confirm the pre-existing UptimeRobot health monitor remains `Up`.
 
-- [ ] **Step 3: Commit only service-owned configuration**
+- [x] **Step 3: Commit only service-owned configuration**
 
 Commit only the new GlitchTip deployment files after verification; leave all unrelated server and repository edits untouched.

@@ -118,3 +118,27 @@ def admin_account_extend(request: Request, account_id: int, days: int = Form(30)
         except ValueError:
             logger.exception("admin: failed to extend account %s", account_id)
     return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/admin/payment/{payment_id}/refund")
+def admin_payment_refund(request: Request, payment_id: str, amount: float | None = Form(None), csrf_token: str = Form("")):
+    """Issue and record a YooKassa refund; only admins with CSRF may invoke it."""
+    account = _require_admin(request)
+    if account is None:
+        return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return RedirectResponse("/admin", status_code=303)
+    try:
+        import yookassa_client
+        refund = yookassa_client.create_refund(payment_id, amount_rub=amount)
+        refund_id = str(refund.get("id") or "")
+        if not refund_id:
+            raise ValueError("YooKassa не вернула идентификатор возврата")
+        with control_db.connect() as conn:
+            payment = conn.execute("SELECT account_id FROM payments WHERE yookassa_payment_id=?", (payment_id,)).fetchone()
+            if payment is None:
+                raise ValueError("Платёж не найден")
+            billing.apply_refund(conn, int(payment["account_id"]), payment_id, float(amount or 0), refund_id, status=str(refund.get("status") or "pending"))
+    except Exception:
+        logger.exception("admin: failed to refund payment")
+    return RedirectResponse("/admin", status_code=303)

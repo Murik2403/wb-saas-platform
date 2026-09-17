@@ -16,6 +16,13 @@
 
 <p class="subtitle">{{ price_rub|int }} ₽ / {{ "30" }} дней. Оплата картой через ЮKassa — данные карты не передаются нам и не хранятся на наших серверах.</p>
 
+<h2>История оплат</h2>
+{% if payments %}
+<table><thead><tr><th>Дата</th><th>Сумма</th><th>Тип</th><th>Статус</th></tr></thead><tbody>
+{% for payment in payments %}<tr><td>{{ payment.created_at[:16] }}</td><td>{{ payment.amount_rub|int }} ₽</td><td>{{ payment.kind }}</td><td>{{ payment.status }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="subtitle">Оплат пока нет.</p>{% endif %}
+
 <form method="post" action="/billing/checkout">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button type="submit">

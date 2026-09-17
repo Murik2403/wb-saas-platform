@@ -7,7 +7,7 @@ import os
 logger = logging.getLogger("marketshelper.tenant.sentry")
 
 
-def initialize() -> None:
+def initialize(service_name: str = "tenant-app") -> None:
     dsn = os.environ.get("WB_SAAS_SENTRY_DSN", "")
     if not dsn:
         return
@@ -18,6 +18,6 @@ def initialize() -> None:
             environment=os.environ.get("WB_SAAS_SENTRY_ENVIRONMENT", "production"),
             send_default_pii=False,
         )
-        sentry_sdk.set_tag("service", "tenant-app")
+        sentry_sdk.set_tag("service", service_name)
     except Exception:
         logger.exception("Sentry initialization failed; tenant dashboard will continue without error reporting")

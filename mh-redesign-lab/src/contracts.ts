@@ -150,6 +150,18 @@ export type CashWindow = {
   detail: string;
 };
 
+export type FinanceExpenseRow = { label: string; amount: number };
+export type FinanceReportState = {
+  lastDate?: string;
+  calculationEnd?: string;
+  complete?: boolean;
+  lagDays?: number;
+  rows: FinanceExpenseRow[];
+  balance?: number;
+  forWithdraw?: number;
+  wbCosts?: { deductions: number; measurementPenalties: number; paidStorage: number; status?: "disabled" | "processing" | "ready" | "error"; errors: string[] };
+};
+
 export type ProductionStage = {
   label: string;
   value: string;

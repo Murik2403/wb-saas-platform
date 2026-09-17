@@ -39,6 +39,9 @@ class PasswordHashingTests(GatewayDbTestCase):
         self.assertTrue(accounts.password_issues("short"))
         self.assertEqual(accounts.password_issues("a long enough password"), [])
 
+    def test_password_issues_flags_common_password(self) -> None:
+        self.assertTrue(accounts.password_issues("password"))
+
 
 class PasswordHashMigrationTests(GatewayDbTestCase):
     def setUp(self) -> None:
@@ -166,8 +169,78 @@ class AccountLifecycleTests(GatewayDbTestCase):
     def test_pdn_consent_timestamp_recorded(self) -> None:
         with self.connect() as conn:
             account_id = accounts.create_account(conn, "seller@shop.ru", "password1234", pdn_consent=True)
-            row = conn.execute("SELECT pdn_consent_at FROM accounts WHERE id=?", (account_id,)).fetchone()
+            row = conn.execute(
+                "SELECT pdn_consent_at, pdn_policy_version FROM accounts WHERE id=?", (account_id,)
+            ).fetchone()
             self.assertTrue(row["pdn_consent_at"])
+            self.assertEqual(row["pdn_policy_version"], accounts.PDN_POLICY_VERSION)
+
+    def test_change_password_requires_current_password_and_revokes_sessions(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(conn, "seller@shop.ru", "password1234")
+            old_token = accounts.create_session(conn, account_id)
+            with self.assertRaisesRegex(ValueError, "Текущий пароль"):
+                accounts.change_password(conn, account_id, "wrong-password", "new-password-123")
+            self.assertIsNotNone(accounts.resolve_session(conn, old_token))
+            accounts.change_password(conn, account_id, "password1234", "new-password-123")
+            self.assertIsNone(accounts.resolve_session(conn, old_token))
+
+        with self.connect() as conn:
+            self.assertIsNone(accounts.authenticate_account(conn, "seller@shop.ru", "password1234"))
+            self.assertIsNotNone(accounts.authenticate_account(conn, "seller@shop.ru", "new-password-123"))
+
+    def test_email_change_token_is_single_use_and_updates_email(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(conn, "seller@shop.ru", "password1234")
+            old_token = accounts.create_session(conn, account_id)
+            token = accounts.create_email_change_token(conn, account_id, "owner@shop.ru")
+            self.assertEqual(accounts.consume_email_change_token(conn, token), account_id)
+            self.assertEqual(accounts.get_account_by_email(conn, "owner@shop.ru")["id"], account_id)
+            self.assertIsNone(accounts.resolve_session(conn, old_token))
+            with self.assertRaisesRegex(ValueError, "недействительна"):
+                accounts.consume_email_change_token(conn, token)
+
+    def test_email_change_rejects_duplicate_and_expired_tokens(self) -> None:
+        with self.connect() as conn:
+            first_id = accounts.create_account(conn, "first@shop.ru", "password1234")
+            accounts.create_account(conn, "second@shop.ru", "password1234")
+            with self.assertRaisesRegex(ValueError, "уже используется"):
+                accounts.create_email_change_token(conn, first_id, "SECOND@SHOP.RU")
+            expired = accounts.create_email_change_token(conn, first_id, "new@shop.ru", ttl_minutes=-1)
+            with self.assertRaisesRegex(ValueError, "истекла"):
+                accounts.consume_email_change_token(conn, expired)
+
+    def test_email_verification_token_is_single_use_and_marks_account(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(
+                conn, "seller@shop.ru", "password1234", email_verified=False
+            )
+            account = accounts.get_account_by_id(conn, account_id)
+            self.assertFalse(accounts.is_email_verified(account))
+            token = accounts.create_email_verification_token(conn, account_id)
+            self.assertEqual(accounts.consume_email_verification_token(conn, token), account_id)
+            self.assertTrue(accounts.is_email_verified(accounts.get_account_by_id(conn, account_id)))
+            with self.assertRaisesRegex(ValueError, "недействительна"):
+                accounts.consume_email_verification_token(conn, token)
+
+    def test_email_verification_rejects_expired_token(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(
+                conn, "seller@shop.ru", "password1234", email_verified=False
+            )
+            token = accounts.create_email_verification_token(conn, account_id, ttl_hours=-1)
+            with self.assertRaisesRegex(ValueError, "истекла"):
+                accounts.consume_email_verification_token(conn, token)
+
+    def test_delete_account_cascades_sessions_and_tenant(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(conn, "seller@shop.ru", "password1234")
+            accounts.create_tenant_instance(conn, account_id, "seller")
+            accounts.create_session(conn, account_id)
+            accounts.delete_account(conn, account_id)
+            self.assertIsNone(accounts.get_account_by_id(conn, account_id))
+            self.assertIsNone(conn.execute("SELECT 1 FROM tenant_instances WHERE account_id=?", (account_id,)).fetchone())
+            self.assertIsNone(conn.execute("SELECT 1 FROM sessions WHERE account_id=?", (account_id,)).fetchone())
 
 
 class SessionTests(GatewayDbTestCase):

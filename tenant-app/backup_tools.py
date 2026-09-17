@@ -5,13 +5,21 @@ import json
 import os
 import shutil
 import sqlite3
+from cryptography.fernet import Fernet, InvalidToken
 import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from config import DATA_DIR, DB_PATH, SETTINGS_PATH
+from config import (
+    DATA_DIR,
+    DATA_ENCRYPTION_KEY,
+    DATA_ENCRYPTION_KEY_ID,
+    DATA_ENCRYPTION_KEYRING,
+    DB_PATH,
+    SETTINGS_PATH,
+)
 from sync_lock import sync_lock, SyncBusyError
 from contextlib import ExitStack
 
@@ -45,6 +53,78 @@ BACKUP_FILENAME_PREFIX = "marketshelper"
 # stay "wb_dashboard.sqlite3" forever, since that's what makes every backup
 # ever created, old or new, still restorable.
 _LEGACY_BACKUP_FILENAME_PREFIX = "wb_dashboard"
+BACKUP_ENCRYPTION_PREFIX = b"mh-backup-enc:v1:"
+BACKUP_ENCRYPTION_PREFIX_V2 = b"mh-backup-enc:v2:"
+
+
+def _backup_keyring() -> dict[str, str]:
+    """Return current and retained Fernet keys indexed by stable key id."""
+    keys: dict[str, str] = {}
+    if DATA_ENCRYPTION_KEY:
+        keys[DATA_ENCRYPTION_KEY_ID or "current"] = DATA_ENCRYPTION_KEY
+    if DATA_ENCRYPTION_KEYRING:
+        try:
+            value = json.loads(DATA_ENCRYPTION_KEYRING)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Некорректный формат WB_SAAS_DATA_ENCRYPTION_KEYRING") from exc
+        if not isinstance(value, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in value.items()):
+            raise RuntimeError("WB_SAAS_DATA_ENCRYPTION_KEYRING должен быть JSON-объектом ключей")
+        keys.update(value)
+    return keys
+
+
+def _fernet_for_key(key: str) -> Fernet:
+    try:
+        return Fernet(key.encode("ascii"))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Некорректный формат ключа шифрования backup") from exc
+
+
+def _backup_fernet() -> Fernet | None:
+    if not DATA_ENCRYPTION_KEY:
+        return None
+    try:
+        return _fernet_for_key(DATA_ENCRYPTION_KEY)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Некорректный формат WB_SAAS_DATA_ENCRYPTION_KEY") from exc
+
+
+def _maybe_encrypt_backup(payload: bytes) -> bytes:
+    fernet = _backup_fernet()
+    if fernet is None:
+        return payload
+    key_id = (DATA_ENCRYPTION_KEY_ID or "current").encode("utf-8")
+    if not key_id or b":" in key_id or len(key_id) > 128:
+        raise RuntimeError("Некорректный WB_SAAS_DATA_ENCRYPTION_KEY_ID")
+    return BACKUP_ENCRYPTION_PREFIX_V2 + key_id + b":" + fernet.encrypt(payload)
+
+
+def _maybe_decrypt_backup(payload: bytes) -> bytes:
+    if payload.startswith(BACKUP_ENCRYPTION_PREFIX_V2):
+        remainder = payload[len(BACKUP_ENCRYPTION_PREFIX_V2):]
+        key_id_raw, separator, encrypted = remainder.partition(b":")
+        if not separator or not key_id_raw:
+            raise RuntimeError("Зашифрованный backup не содержит идентификатор ключа")
+        key_id = key_id_raw.decode("utf-8", errors="strict")
+        key = _backup_keyring().get(key_id)
+        if not key:
+            if not DATA_ENCRYPTION_KEY and not DATA_ENCRYPTION_KEYRING:
+                raise RuntimeError("Требуется WB_SAAS_DATA_ENCRYPTION_KEY для чтения зашифрованного бэкапа")
+            raise RuntimeError(f"Не найден ключ шифрования backup: {key_id}")
+        fernet = _fernet_for_key(key)
+        try:
+            return fernet.decrypt(encrypted)
+        except InvalidToken as exc:
+            raise RuntimeError("Не удалось расшифровать бэкап: неверный ключ") from exc
+    if not payload.startswith(BACKUP_ENCRYPTION_PREFIX):
+        return payload
+    fernet = _backup_fernet()
+    if fernet is None:
+        raise RuntimeError("Требуется WB_SAAS_DATA_ENCRYPTION_KEY для чтения зашифрованного бэкапа")
+    try:
+        return fernet.decrypt(payload[len(BACKUP_ENCRYPTION_PREFIX):])
+    except InvalidToken as exc:
+        raise RuntimeError("Не удалось расшифровать бэкап: неверный ключ") from exc
 
 
 def _backup_glob_patterns() -> list[str]:
@@ -87,13 +167,17 @@ def create_backup(kind: str = "manual", keep: int = 14) -> Path:
         if SETTINGS_PATH.exists():
             shutil.copy2(SETTINGS_PATH, tmp / "settings.json")
 
-        with zipfile.ZipFile(final_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.write(snapshot, arcname="wb_dashboard.sqlite3")
-            zf.write(tmp / "manifest.json", arcname="manifest.json")
-            settings_copy = tmp / "settings.json"
-            if settings_copy.exists():
-                zf.write(settings_copy, arcname="settings.json")
+        with tempfile.TemporaryDirectory(prefix="wb_backup_zip_") as zip_tmp:
+            zip_path = Path(zip_tmp) / "backup.zip"
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.write(snapshot, arcname="wb_dashboard.sqlite3")
+                zf.write(tmp / "manifest.json", arcname="manifest.json")
+                settings_copy = tmp / "settings.json"
+                if settings_copy.exists():
+                    zf.write(settings_copy, arcname="settings.json")
+            payload = zip_path.read_bytes()
 
+    final_path.write_bytes(_maybe_encrypt_backup(payload))
     _prune_backups(max(1, int(keep)))
     return final_path
 
@@ -159,6 +243,7 @@ def _validate_zip_names(zf: zipfile.ZipFile) -> None:
 
 
 def inspect_backup(payload: bytes) -> dict[str, Any]:
+    payload = _maybe_decrypt_backup(payload)
     with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
         _validate_zip_names(zf)
         manifest: dict[str, Any] = {}
@@ -178,6 +263,7 @@ def inspect_backup(payload: bytes) -> dict[str, Any]:
 def restore_backup(payload: bytes, restore_settings: bool = True) -> dict[str, Any]:
     """Use SQLite's transactional backup API; never unlink an active WAL."""
     try:
+        payload = _maybe_decrypt_backup(payload)
         with ExitStack() as guards:
             for name in ("api", "streamlit", "jobs", "agents", "reports"):
                 guards.enter_context(sync_lock(DB_PATH.with_suffix(f".{name}.lock")))

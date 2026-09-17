@@ -5,6 +5,7 @@ import zipfile
 import pytest
 import backup_tools as backup
 import sync_lock
+from cryptography.fernet import Fernet
 
 
 @pytest.fixture
@@ -67,3 +68,49 @@ def test_running_service_blocks_restore(database, tmp_path):
         with pytest.raises(RuntimeError, match="Остановите"):
             backup.restore_backup(archive(tmp_path))
     assert database.execute("SELECT value FROM orders").fetchone()[0] == 1
+
+
+def test_encrypted_backup_can_be_created_and_restored(database, tmp_path, monkeypatch):
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY", key)
+    database.execute("UPDATE orders SET value=9")
+    database.commit()
+    path = backup.create_backup(kind="manual", keep=3)
+    payload = path.read_bytes()
+    assert payload.startswith(backup.BACKUP_ENCRYPTION_PREFIX_V2)
+    assert not zipfile.is_zipfile(payload)
+
+    database.execute("UPDATE orders SET value=1")
+    database.commit()
+    backup.restore_backup(payload)
+    assert database.execute("SELECT value FROM orders").fetchone()[0] == 9
+
+
+def test_encrypted_backup_requires_key_to_restore(database, tmp_path, monkeypatch):
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    database.execute("UPDATE orders SET value=7")
+    database.commit()
+    payload = backup.create_backup(kind="manual", keep=3).read_bytes()
+
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY", "")
+    with pytest.raises(RuntimeError, match="Требуется WB_SAAS_DATA_ENCRYPTION_KEY"):
+        backup.restore_backup(payload)
+
+
+def test_encrypted_backup_survives_key_rotation(database, tmp_path, monkeypatch):
+    old_key = Fernet.generate_key().decode("ascii")
+    new_key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY", old_key)
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY_ID", "2026-09-12")
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEYRING", "")
+    database.execute("UPDATE orders SET value=11")
+    database.commit()
+    payload = backup.create_backup(kind="manual", keep=3).read_bytes()
+
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY", new_key)
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEY_ID", "2026-09-13")
+    monkeypatch.setattr(backup, "DATA_ENCRYPTION_KEYRING", json.dumps({"2026-09-12": old_key}))
+    database.execute("UPDATE orders SET value=1")
+    database.commit()
+    backup.restore_backup(payload)
+    assert database.execute("SELECT value FROM orders").fetchone()[0] == 11

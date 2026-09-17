@@ -11,8 +11,10 @@
 **/node_modules
 **/.next
 **/dist
+**/dist-contour
 **/__pycache__
 **/.pytest_cache
+**/.pytest_tmp*
 **/*.pyc
 **/*.sqlite3
 **/*.sqlite3-*
@@ -29,6 +31,8 @@
 .serena
 .codex
 tmp-pytest-*
+**/.test-tmp-*
+tmp-*
 tmp/
 .tmp*
 **/*.tar

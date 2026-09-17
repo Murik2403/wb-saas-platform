@@ -30,3 +30,27 @@ def test_initialization_uses_non_pii_configuration(monkeypatch):
         send_default_pii=False,
     )
     sdk.set_tag.assert_called_once_with("service", "tenant-app")
+
+
+def test_initialization_allows_service_override(monkeypatch):
+    sdk = mock.Mock()
+    monkeypatch.setenv("WB_SAAS_SENTRY_DSN", "https://key@example.ingest.sentry.io/1")
+    with mock.patch.dict(sys.modules, {"sentry_sdk": sdk}):
+        sentry_integration.initialize(service_name="tenant-api")
+
+    sdk.init.assert_called_once_with(
+        dsn="https://key@example.ingest.sentry.io/1",
+        environment="production",
+        send_default_pii=False,
+    )
+    sdk.set_tag.assert_called_once_with("service", "tenant-api")
+
+
+def test_api_server_import_triggers_sentry_initialization():
+    # The API server process should initialize tenant telemetry even when it is
+    # running separately from Streamlit.
+    with mock.patch("sentry_integration.initialize") as mocked_initialize:
+        sys.modules.pop("api_server", None)
+        import api_server  # noqa: F401
+
+    mocked_initialize.assert_called_once_with(service_name="tenant-api")

@@ -22,3 +22,31 @@ def test_gateway_calls_only_named_provisioner_route():
     assert method == "POST"
     assert path == "/v1/tenants/shop-a"
     assert payload["require_auth"] is True
+
+
+def test_tenant_payload_includes_sentry_if_configured():
+    with (
+        patch.object(config, "SENTRY_TENANT_DSN", "https://tenant.example.ingest.sentry.io/123"),
+        patch.object(config, "SENTRY_ENVIRONMENT", "staging"),
+        patch.object(config, "SENTRY_DSN", "https://gateway.example.ingest.sentry.io/1"),
+        patch.object(config, "TENANT_ENCRYPTION_MASTER_KEY", "encryption-master"),
+        patch.object(config, "INTERNAL_API_SECRET", "test-master"),
+    ):
+        payload = provisioning._tenant_payload("shop-a")
+
+    assert payload["sentry_dsn"] == "https://tenant.example.ingest.sentry.io/123"
+    assert payload["sentry_environment"] == "staging"
+
+
+def test_tenant_payload_omits_sentry_when_missing():
+    with (
+        patch.object(config, "SENTRY_TENANT_DSN", ""),
+        patch.object(config, "SENTRY_DSN", "https://gateway.example.ingest.sentry.io/1"),
+        patch.object(config, "SENTRY_ENVIRONMENT", "production"),
+        patch.object(config, "TENANT_ENCRYPTION_MASTER_KEY", "encryption-master"),
+        patch.object(config, "INTERNAL_API_SECRET", "test-master"),
+    ):
+        payload = provisioning._tenant_payload("shop-a")
+
+    assert payload["sentry_dsn"] == ""
+    assert payload["sentry_environment"] == "production"

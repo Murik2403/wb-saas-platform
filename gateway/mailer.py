@@ -85,6 +85,34 @@ def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -
     return send_email(to_email, subject, body)
 
 
+def send_email_change_email(to_email: str, confirm_url: str, ttl_minutes: int) -> bool:
+    subject = "Подтверждение нового email — MARKETSHELPER"
+    body = f"Подтвердите новый email для MARKETSHELPER в течение {ttl_minutes} минут:\n\n{confirm_url}\n\nЕсли это были не вы, проигнорируйте письмо."
+    return send_email(to_email, subject, body)
+
+
+def send_email_verification_email(to_email: str, verify_url: str, ttl_hours: int) -> bool:
+    subject = "Подтвердите email — MARKETSHELPER"
+    body = (
+        f"Подтвердите email {to_email}, чтобы открыть ваш кабинет MARKETSHELPER. "
+        f"Ссылка действует {ttl_hours} часов:\n\n{verify_url}\n\n"
+        "Если вы не регистрировались в MARKETSHELPER, просто проигнорируйте письмо."
+    )
+    return send_email(to_email, subject, body)
+
+
+def send_tenant_invitation_email(to_email: str, tenant_slug: str, role: str, accept_url: str, ttl_days: int) -> bool:
+    role_label = {"manager": "менеджера", "viewer": "наблюдателя"}.get(role, role)
+    subject = "Приглашение в кабинет MARKETSHELPER"
+    body = (
+        f"Вас пригласили в кабинет MARKETSHELPER ({tenant_slug}) с ролью {role_label}.\n\n"
+        f"Откройте ссылку и войдите или зарегистрируйтесь с этим email в течение {ttl_days} дней:\n"
+        f"{accept_url}\n\n"
+        "Если вы не ожидали приглашение, проигнорируйте это письмо."
+    )
+    return send_email(to_email, subject, body)
+
+
 def send_report_email(to_email: str, report_name: str, pdf_bytes: bytes, filename: str) -> bool:
     subject = f"Отчёт «{report_name}» — MARKETSHELPER"
     body = (

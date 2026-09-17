@@ -159,6 +159,19 @@ class YooKassaWebhookTests(GatewayDbTestCase):
             row = conn.execute("SELECT * FROM payments WHERE yookassa_payment_id='yk-1'").fetchone()
         self.assertEqual(row["status"], "pending")
 
+    def test_refund_succeeded_revokes_access(self) -> None:
+        refund = {"id": "rf-1", "status": "succeeded", "payment_id": "yk-1", "amount": {"value": "2990.00"}}
+        with mock.patch.object(yookassa_client, "get_refund", return_value=refund):
+            response = self._call(_post_request({"event": "refund.succeeded", "object": {"id": "rf-1"}}))
+        self.assertEqual(response.status_code, 200)
+        with self.connect() as conn:
+            account = accounts.get_account_by_id(conn, self.account_id)
+            payment = conn.execute("SELECT status FROM payments WHERE yookassa_payment_id='yk-1'").fetchone()
+            row = conn.execute("SELECT status FROM refunds WHERE yookassa_refund_id='rf-1'").fetchone()
+        self.assertEqual(account["status"], "past_due")
+        self.assertEqual(payment["status"], "canceled")
+        self.assertEqual(row["status"], "succeeded")
+
     def test_invalid_json_returns_400(self) -> None:
         response = self._call(_raw_body_request(b"not json"))
         self.assertEqual(response.status_code, 400)
