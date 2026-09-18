@@ -83,7 +83,8 @@ jobs:
       - name: Run Redesign API Tests
         if: |
           hashFiles('mh-redesign-lab/tenant-api/tests/test_audit_regressions.py') != ''
-        run: cd .. && python -m pytest mh-redesign-lab/tenant-api/tests -q
+        working-directory: mh-redesign-lab/tenant-api
+        run: python -m pytest tests -q
 
   test-frontends:
     name: Build Frontends
@@ -140,20 +141,20 @@ jobs:
         include:
           - name: gateway
             context: gateway
-            dockerfile: Dockerfile
+            dockerfile: gateway/Dockerfile
           - name: provisioner
             context: provisioner
-            dockerfile: Dockerfile
+            dockerfile: provisioner/Dockerfile
           - name: tenant-app
             context: tenant-app
-            dockerfile: Dockerfile
+            dockerfile: tenant-app/Dockerfile
           - name: tenant-staging
             context: .
             dockerfile: mh-redesign-lab/Dockerfile.tenant-staging
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.name }} image
-        run: docker build --file ${{ matrix.dockerfile }} --tag wbsaas/${{ matrix.name }}:${{ github.sha }} ${{ matrix.context }}
+        run: docker build --file ${{ matrix.dockerfile }} --build-arg REDESIGN_BUILD_ID=${{ github.sha }} --tag wbsaas/${{ matrix.name }}:${{ github.sha }} ${{ matrix.context }}
       - name: Scan high and critical vulnerabilities
         uses: aquasecurity/trivy-action@0.35.0
         with:
