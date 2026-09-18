@@ -62,6 +62,10 @@ tenant-app/data/
 # Local graphify knowledge-graph output (generated, per-machine)
 graphify-out/
 
+# Strix pentest runs: findings, PoCs and agent logs from scripts/run_strix_scan.ps1.
+# They can contain live credentials and real request/response bodies -- never commit them.
+strix_runs/
+
 # OS/editor
 .DS_Store
 .idea/

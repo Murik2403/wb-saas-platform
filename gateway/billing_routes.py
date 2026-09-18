@@ -24,11 +24,12 @@ from client_ip import client_ip
 from logging_config import bind_account_context
 from logic import accounts, billing, csrf, db as control_db
 from rate_limiter import RateLimiter
+from template_setup import create_templates
 
 logger = logging.getLogger("wb_saas_gateway.billing")
 
 router = APIRouter()
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+templates = create_templates()
 webhook_global_limiter = RateLimiter(
     requests_per_window=120,
     window_seconds=60,
@@ -261,6 +262,7 @@ async def yookassa_webhook(request: Request):
             billing.apply_successful_payment(
                 conn, account_id, payment_id, payment_method_id=payment_method_id,
                 period_days=config.BILLING_PERIOD_DAYS,
+                is_test=bool(payment.get("test", False)),
             )
         elif status in ("canceled",):
             error = ((payment.get("cancellation_details") or {}).get("reason")) or "canceled"

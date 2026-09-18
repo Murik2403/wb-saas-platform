@@ -13,7 +13,7 @@ import requests
 
 import config
 from internal_auth import tenant_credential, tenant_data_key
-from logic import accounts, billing, db as control_db
+from logic import accounts, billing, growth, db as control_db
 
 logger = logging.getLogger("wb_saas_gateway.provisioning")
 _REQUEST_TIMEOUT_SECONDS = 20
@@ -111,6 +111,9 @@ def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> N
     _wait_for_tenant_cert(slug, timeout_seconds=45)
     with control_db.connect() as conn:
         accounts.mark_tenant_provisioned(conn, tenant_id, account_id)
+        if slug == "demo":
+            growth.set_account_exclusion(conn, account_id, "demo")
+        growth.record_event(conn, account_id, "tenant_ready")
         billing.start_trial(conn, account_id)
     logger.info("Tenant %s (account %s) provisioned successfully, trial started", slug, account_id)
 

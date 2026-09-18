@@ -4018,4 +4018,11 @@ td {
 .onboarding-step small { margin-top: 3px; color: var(--text-secondary, #aeb8c8); }
 .onboarding-inline-form { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; }
 .onboarding-inline-form input { min-width: 0; flex: 1; }
+.onboarding-inline-form select { min-width: 0; width: 100%; flex: 1; padding: 10px; background: var(--surface, #151b25); color: inherit; border: 1px solid var(--border, #2b3442); border-radius: 8px; }
+.onboarding-step > .primary-button { max-width: 100%; white-space: normal; }
+.first-report-card { margin-top: 20px; padding: 20px; border: 1px solid var(--border, #2b3442); border-radius: 12px; }
+.first-report-card h3 { margin-top: 0; overflow-wrap: anywhere; }
+.first-report-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
+.first-report-metrics dt { color: var(--text-secondary, #aeb8c8); font-size: 13px; }
+.first-report-metrics dd { margin: 6px 0 0; font-size: 21px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .onboarding-step { grid-template-columns: auto minmax(0, 1fr); } .onboarding-step > svg, .onboarding-step > .ghost-button, .onboarding-step > span:last-child { grid-column: 2; justify-self: start; } .onboarding-inline-form { grid-column: 1 / -1; flex-wrap: wrap; } }

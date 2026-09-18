@@ -32,6 +32,8 @@ REQUIRED_PATHS = (
     "mh-redesign-lab/package-lock.json",
     "mh-redesign-lab/src/App.tsx",
     "mh-redesign-lab/tenant-api/api_server.py",
+    "mh-redesign-lab/tenant-api/growth_activation.py",
+    "mh-redesign-lab/tenant-api/growth_delivery.py",
     "mh-redesign-lab/tenant-api/tests/test_audit_regressions.py",
     "mh-redesign-lab/scripts/test-history-format.mjs",
     "scripts/deploy_verified_tenant.py",

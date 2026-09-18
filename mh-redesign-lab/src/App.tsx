@@ -1,4 +1,5 @@
 import { SyncHistory, BackupHistory } from "./SyncHistory";
+import { OnboardingPanel } from "./OnboardingPanel";
 import { RuntimeStatus } from "./RuntimeStatus";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -2052,7 +2053,6 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
   const [ozonApiKey, setOzonApiKey] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | "wb-token" | null>(null);
-  const onboardingRequired = Boolean(settings && (!settings.wb_connected || syncRuns.length === 0));
 
   const load = async () => {
     try {
@@ -2158,8 +2158,9 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         await new Promise((resolve) => window.setTimeout(resolve, 5000));
         const status = await getTenantSyncStatus();
         if (status.status === "running") continue;
-        const syncData = await getTenantSyncHistory();
+        const [syncData, costData] = await Promise.all([getTenantSyncHistory(), getProductCostSettings()]);
         setSyncRuns(syncData.runs);
+        setProductCosts(costData.items);
         await onSynced();
         setMessage(status.status === "success" ? "Синхронизация завершена, данные обновлены." : status.status === "partial" ? "Данные обновлены частично. Подробности — в журнале синхронизации." : (status.details || "Синхронизация завершилась с ошибкой"));
         return;
@@ -2247,16 +2248,12 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
           <p>Токены остаются в защищённом tenant-хранилище. Резервные копии не содержат ключей доступа.</p>
         </div>
       </section>
-      {onboardingRequired ? <section className="work-section onboarding-panel" id="onboarding" aria-labelledby="onboarding-title">
-        <SectionHeader kicker="Первый запуск" title="Подготовим кабинет к работе"><Sparkles size={18} /></SectionHeader>
-        <p className="form-hint">Пройдите четыре шага: подключите WB, загрузите историю, укажите себестоимость и включите каналы отчётов.</p>
-        <div className="onboarding-steps">
-          <article className={cx("onboarding-step", settings.wb_connected ? "done" : "current")}><span className="onboarding-step-number">1</span><div><strong>Подключить WB</strong><small>{settings.wb_connected ? "Токен проверен и сохранён" : "Без токена данные и отчёты не загружаются"}</small></div>{!settings.wb_connected ? <div className="onboarding-inline-form"><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="WB API-токен" /><button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : <CheckCircle2 size={18} />}</article>
-          <article className={cx("onboarding-step", !settings.wb_connected ? "locked" : syncRuns.length ? "done" : "current")}><span className="onboarding-step-number">2</span><div><strong>Загрузить историю</strong><small>{syncRuns.length ? `Запусков синхронизации: ${syncRuns.length}` : "Выберите глубину и запустите первую синхронизацию"}</small></div>{settings.wb_connected && !syncRuns.length ? <div className="onboarding-inline-form"><input min="7" max="90" type="number" value={settings.initial_history_days} onChange={(event) => setSettings({ ...settings, initial_history_days: Number(event.target.value) })} /><span>дней</span><button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void startSync("all", settings.initial_history_days)}>{busy === "sync" ? "Синхронизируем" : "Запустить"}</button></div> : settings.wb_connected ? <CheckCircle2 size={18} /> : <span>После шага 1</span>}</article>
-          <article className={cx("onboarding-step", !syncRuns.length ? "locked" : productCosts.length ? "done" : "current")}><span className="onboarding-step-number">3</span><div><strong>Заполнить себестоимость</strong><small>{productCosts.length ? `${productCosts.length} SKU доступны для настройки` : "После синхронизации укажите себестоимость в блоке ниже"}</small></div>{syncRuns.length ? <button className="ghost-button" type="button" onClick={() => document.getElementById("product-costs")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Открыть себестоимость</button> : <span>После шага 2</span>}</article>
-          <article className="onboarding-step"><span className="onboarding-step-number">4</span><div><strong>Включить отчёты</strong><small>Email и Telegram настраиваются в разделе «Отчёты»</small></div><a className="ghost-button" href="?view=reports">Перейти к отчётам</a></article>
-        </div>
-      </section> : null}
+      <OnboardingPanel connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
+        days={settings.initial_history_days} busy={busy !== null} token={wbToken}
+        onTokenChange={setWbToken} onConnect={() => void saveWBToken()}
+        onDaysChange={(days) => setSettings({ ...settings, initial_history_days: days })}
+        onSync={() => void startSync("all", settings.initial_history_days)}
+        onEditCost={(item) => setEditingCost({ ...item })} />
       <div className="content-grid">
         <section className="work-section">
           <SectionHeader kicker="Обновление" title="Интервалы работы"><SlidersHorizontal size={18} /></SectionHeader>

@@ -1,9 +1,54 @@
 {% extends "base.html" %}
 {% block title %}Админ-панель — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
 {% block card_extra_class %} card-wide{% endblock %}
 {% block content %}
 <h1>Админ-панель</h1>
 <p class="subtitle">Все аккаунты и их тенанты, {{ tenants|length }} шт.</p>
+
+<section aria-labelledby="growth-heading">
+  <h2 id="growth-heading">Привлечение и первые результаты</h2>
+  <p>С начала сбора событий; даты и недельные когорты — UTC. Регистрация: {{ growth.registered }};
+    подтверждён email: {{ growth.email_verified }}; кабинет готов: {{ growth.tenant_ready }};
+    начата проба: {{ growth.trials }}; оплатили: {{ growth.paid }}; повторно оплатили: {{ growth.renewed }}.</p>
+  <table>
+    <thead><tr><th>Показатель</th><th>Результат</th><th>Ещё не созрели</th></tr></thead>
+    <tbody>
+      {% for title, metric in [('Активация за 7 дней (A7)', growth.a7), ('Первая оплата за 30 дней (P30)', growth.p30)] %}
+      <tr><td>{{ title }}</td><td>{{ metric.converted }} / {{ metric.eligible }}
+        {% if metric.rate is not none %}({{ '%.1f'|format(metric.rate * 100) }}%){% else %}— нет созревших проб{% endif %}
+      </td><td>{{ metric.pending }}</td></tr>
+      {% endfor %}
+      <tr><td>Стоимость нового плательщика (CAC)</td><td colspan="2">Не рассчитана. {{ growth.cac_reason }}</td></tr>
+    </tbody>
+  </table>
+  <p>Активация — проверенный полезный отчёт на своих данных или подтверждённый производственный результат.
+    Подключение WB и готовность данных сами по себе не считаются активацией. P30 включает только положительные реальные платежи без известного возврата.</p>
+  <p>Исключено служебных аккаунтов: {{ growth.excluded_accounts }}. Без наблюдаемого начала регистрации: {{ growth.untracked_accounts }}.
+    Возвраты по наблюдаемым платежам: {{ growth.refunds }}. Старые данные не восстановлены из статуса подписки.</p>
+  <p>Администраторы из настроенного списка и кабинет demo исключаются автоматически. Остальные исключения задаются вручную в таблице кабинетов.</p>
+  {% if growth.sources %}
+  <h3>Источники организаций</h3>
+  <table>
+    <thead><tr><th>Источник</th><th>Регистрации</th><th>Пробы</th><th>A7</th><th>P30</th></tr></thead>
+    <tbody>{% for source in growth.sources %}
+      <tr><td>{{ source.source }}</td><td>{{ source.registered }}</td><td>{{ source.trials }}</td>
+        <td>{{ source.a7.converted }} / {{ source.a7.eligible }}</td><td>{{ source.p30.converted }} / {{ source.p30.eligible }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <p>Источник фиксируется при регистрации и переносится в пробу только в пределах 30 дней после перехода. unknown — источник неизвестен или окно истекло.</p>
+  {% endif %}
+  {% if growth.cohorts %}
+  <h3>Когорты начала пробы</h3>
+  <table>
+    <thead><tr><th>Неделя с</th><th>Пробы</th><th>A7</th><th>P30</th><th>Ожидают P30</th></tr></thead>
+    <tbody>{% for cohort in growth.cohorts %}
+      <tr><td>{{ cohort.week }}</td><td>{{ cohort.trials }}</td><td>{{ cohort.a7.converted }} / {{ cohort.a7.eligible }}</td>
+        <td>{{ cohort.p30.converted }} / {{ cohort.p30.eligible }}</td><td>{{ cohort.p30.pending }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% endif %}
+</section>
 
 <table>
   <thead>
@@ -44,6 +89,17 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="number" name="days" value="30" min="1" style="width:60px">
           <button type="submit">Продлить</button>
+        </form>
+        <form method="post" action="/admin/account/{{ t.account_id }}/growth-exclusion" style="margin-top:6px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Учёт в воронке
+            <select name="reason">
+              {% for value, label in [('', 'Обычный клиент'), ('test', 'Тест'), ('employee', 'Сотрудник'), ('demo', 'Демо'), ('bot', 'Подтверждённый бот'), ('duplicate', 'Подтверждённый дубль')] %}
+              <option value="{{ value }}" {% if t.growth_exclusion == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="submit">Сохранить</button>
         </form>
       </td>
     </tr>

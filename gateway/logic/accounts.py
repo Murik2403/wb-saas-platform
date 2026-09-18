@@ -54,7 +54,7 @@ TENANT_INVITATION_TTL_DAYS = 7
 
 # This value is stored with each registration consent so the operator can
 # identify the policy edition that was presented to that account.
-PDN_POLICY_VERSION = "2026-09-11"
+PDN_POLICY_VERSION = "2026-09-18"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _SLUG_CHARS_RE = re.compile(r"[^a-z0-9-]+")

@@ -4,6 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}MARKETSHELPER{% endblock %}</title>
+{# SEO/social head. Every public template overrides `description`; private
+   pages (auth forms, /account, /billing, /admin) override `robots` with
+   noindex so they stay out of search results even if a crawler ignores
+   robots.txt. `site_base_url()` comes from app.py -- request.url reports the
+   internal origin behind Traefik and cannot be used for canonical/og:url. #}
+<meta name="description" content="{% block description %}MARKETSHELPER — сервис учёта себестоимости, остатков и производства для продавцов Wildberries.{% endblock %}">
+<meta name="robots" content="{% block robots %}index, follow, max-image-preview:large, max-snippet:-1{% endblock %}">
+<link rel="canonical" href="{{ site_base_url() }}{{ request.url.path }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MARKETSHELPER">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="{{ self.description() }}">
+<meta property="og:url" content="{{ site_base_url() }}{{ request.url.path }}">
+<meta property="og:image" content="{{ site_base_url() }}/static/images/og-cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0a0b12">
+{% if yandex_verification %}<meta name="yandex-verification" content="{{ yandex_verification }}">{% endif %}
+{% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
 <style>
   :root{
     /* Design system agreed in the redesign pitch (see the "MARKETSHELPER:
@@ -44,10 +65,10 @@
      home.html overrides the whole "layout" block for a full-width
      landing page instead -- see the "landing" rules further down. */
   body.card-layout {
-    display: flex; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
   .card {
-    width: 100%; max-width: 400px; margin: 40px 16px;
+    width: calc(100% - 32px); max-width: 400px; margin: 40px 16px;
     background: linear-gradient(180deg, var(--surface-2), var(--surface));
     border: 1px solid var(--border); border-radius: 18px; padding: 32px;
     box-shadow: 0 12px 32px rgba(0,0,0,.35);
@@ -483,9 +504,12 @@
     .floating-cta { left: 14px; right: 14px; bottom: 14px; text-align: center; }
   }
 
-  /* Privacy notice: there are no analytics or advertising cookies on the
-     public site. The two choices remain explicit so a future optional service
-     cannot be introduced without first revisiting this flow. */
+  /* Optional analytics starts only after explicit, revocable consent. */
+  #privacy-settings { text-align: center; padding: 12px 16px 24px; }
+  #cookie-settings-open { width: auto; margin: 0; padding: 6px 12px; background: transparent; color: var(--text-muted); font-size: .8rem; }
+  #cookie-notice[hidden], #cookie-accept[hidden] { display: none; }
+  body:has(#cookie-notice:not([hidden])) .floating-cta { display: none; }
+  #cookie-status:empty { display: none; }
   #cookie-notice {
     position: fixed; right: 20px; bottom: 20px; z-index: 100;
     width: min(420px, calc(100vw - 32px)); padding: 18px;
@@ -518,36 +542,24 @@
   <a href="/contacts">Контакты и реквизиты</a>
 </div>
 {% endif %}
+<div id="privacy-settings" data-available="{{ 'true' if analytics_available() else 'false' }}" data-choice="{{ analytics_consent(request) }}" data-counter="{{ public_metrika_counter(request) }}">
+  <button id="cookie-settings-open" type="button">Настройки cookie</button>
+</div>
 <section id="cookie-notice" role="dialog" aria-label="Использование cookie" aria-live="polite">
-  <p>Мы используем только необходимые cookie для работы и защиты сервиса. Аналитические и рекламные cookie не подключены.</p>
+  {% if analytics_available() %}
+  <p>Необходимые cookie обеспечивают вход и защиту сервиса. С вашего разрешения мы также сохраним источник перехода{% if public_metrika_counter(request) %} и подключим Яндекс Метрику на публичных страницах{% endif %}, чтобы улучшать сайт. Выбор можно изменить в настройках cookie.</p>
+  {% else %}
+  <p>Мы используем только необходимые cookie для работы и защиты сервиса. Необязательная аналитика сейчас отключена.</p>
+  {% endif %}
   <a href="/privacy#cookies">Подробнее в политике обработки данных</a>
   <div class="cookie-actions">
-    <button id="cookie-decline" type="button">Отклонить необязательные</button>
-    <button id="cookie-accept" type="button">Принять все</button>
+    <button id="cookie-decline" type="button">Только необходимые</button>
+    <button id="cookie-accept" type="button" {% if not analytics_available() %}hidden{% endif %}>Разрешить аналитику</button>
   </div>
+  <p id="cookie-status" role="status"></p>
 </section>
-<script>
-  (() => {
-    const storageKey = "marketshelper_cookie_notice";
-    const notice = document.getElementById("cookie-notice");
-    const logChoice = (choice) => {
-      try {
-        const payload = { choice, at: new Date().toISOString() };
-        localStorage.setItem(storageKey, JSON.stringify(payload));
-      } catch (_) {
-        // storage may be disabled in private mode or by policy.
-      }
-      notice.hidden = true;
-    };
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) notice.hidden = true;
-    } catch (_) {
-      // keep the notice visible when storage is unavailable.
-    }
-    document.getElementById("cookie-decline").addEventListener("click", () => logChoice("essential"));
-    document.getElementById("cookie-accept").addEventListener("click", () => logChoice("all"));
-  })();
-</script>
+{# The old marketshelper_cookie_notice choice did not cover optional tracking.
+   v2 requires a fresh explicit choice, validated by a signed server cookie. #}
+<script src="/static/public-analytics.js" defer></script>
 </body>
 </html>

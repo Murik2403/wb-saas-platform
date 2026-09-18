@@ -139,6 +139,9 @@ TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 # --------------------------------------------------------------------------
 
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+# A separate key may be configured; otherwise the internal key is used with
+# purpose-separated HMAC. Empty keys disable optional public analytics.
+GROWTH_COOKIE_SECRET = os.environ.get("WB_SAAS_GROWTH_COOKIE_SECRET", "")
 # Error reporting is opt-in: no telemetry leaves the deployment until an
 # operator sets one of these DSNs.
 SENTRY_DSN = os.environ.get("WB_SAAS_SENTRY_DSN", "")
@@ -189,6 +192,16 @@ DATABASE_URL = os.environ.get("WB_SAAS_DATABASE_URL", "")
 # allowlist, since this is a single-operator tool rather than a
 # multi-admin permission system.
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("WB_SAAS_ADMIN_EMAILS", "").split(",") if e.strip()]
+
+
+# --------------------------------------------------------------------------
+# Public-site analytics and search-engine verification
+# --------------------------------------------------------------------------
+# All three are opt-in: empty value means the corresponding tag is simply not
+# rendered, so local dev and CI never ship a tracker or phone home.
+YANDEX_METRIKA_ID = os.environ.get("WB_SAAS_YANDEX_METRIKA_ID", "").strip()
+YANDEX_VERIFICATION = os.environ.get("WB_SAAS_YANDEX_VERIFICATION", "").strip()
+GOOGLE_VERIFICATION = os.environ.get("WB_SAAS_GOOGLE_VERIFICATION", "").strip()
 
 
 def tenant_host(slug: str) -> str:

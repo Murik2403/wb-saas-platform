@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Регистрация — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, follow{% endblock %}
+{% block description %}Регистрация в MARKETSHELPER: свой кабинет учёта себестоимости и остатков Wildberries. Пробный период начинается после подготовки кабинета, карта не нужна.{% endblock %}
 {% block content %}
 <h1>Создать аккаунт</h1>
-<p class="subtitle">Через минуту мы развернём для вас отдельный личный кабинет.</p>
+<p class="subtitle">Подтвердите email по ссылке из письма — затем мы подготовим ваш кабинет. Пробный период начнётся, когда кабинет будет готов.</p>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 <form method="post" action="/register">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -13,9 +15,9 @@
   <input type="password" id="password" name="password" required minlength="8">
   <label class="checkbox-line">
     <input type="checkbox" id="pdn_consent" name="pdn_consent" required>
-    Согласен(на) с <a href="/offer" target="_blank">публичной офертой</a> и даю
+    <span>Согласен(на) с <a href="/offer" target="_blank">публичной офертой</a> и даю
     <a href="/privacy" target="_blank">согласие на обработку персональных данных</a>
-    по Политике в редакции от {{ policy_version }}
+    по Политике в редакции от {{ policy_version }}</span>
   </label>
   <button type="submit">Зарегистрироваться</button>
 </form>

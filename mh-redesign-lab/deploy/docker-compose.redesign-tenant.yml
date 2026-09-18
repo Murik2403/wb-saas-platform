@@ -9,6 +9,13 @@ services:
       - wb-tenant-data-redesign:/app/tenant-app/data
     environment:
       WB_SAAS_TENANT_SLUG: redesign
+      # The tenant is intentionally outside the gateway Docker network. The
+      # provisioner normally injects these values; the standalone staging
+      # profile must receive the same public HTTPS callback and scoped secret.
+      WB_SAAS_INTERNAL_API_URL: ${WB_SAAS_INTERNAL_API_URL:-https://${WB_SAAS_PARENT_DOMAIN}}
+      # This must be the tenant-scoped credential generated for `redesign`,
+      # never the gateway master secret from the root Compose environment.
+      WB_SAAS_INTERNAL_API_SECRET: ${WB_SAAS_REDESIGN_INTERNAL_API_SECRET:-}
       MH_ALLOWED_HOSTS: localhost,127.0.0.1,redesign.app.${WB_SAAS_PARENT_DOMAIN}
       WB_SAAS_BILLING_URL: https://${WB_SAAS_PARENT_DOMAIN}/billing
       WB_SAAS_LOGOUT_URL: https://${WB_SAAS_PARENT_DOMAIN}/logout

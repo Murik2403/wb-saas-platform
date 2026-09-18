@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import json
 import hashlib
+import math
 import os
 from contextlib import asynccontextmanager
 import sqlite3
@@ -24,7 +25,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -67,6 +68,8 @@ from overview_service import (
     DEFAULT_PERIOD, PERIOD_LABELS, compute_overview, previous_window, resolve_window,
 )
 from products_service import compute_products
+from growth_activation import activation_summary, initialize_growth_schema, record_first_value
+from growth_delivery import deliver_pending_growth_events
 from today_service import compute_today, json_safe
 from ui_helpers import build_data_quality_overview
 from reports.store import ReportStore
@@ -699,6 +702,7 @@ app.add_middleware(
 def _startup() -> None:
     init_db()
     _init_redesign_schema()
+    initialize_growth_schema(DB_PATH)
 
 
 @app.get("/api/v1/health")
@@ -1117,6 +1121,66 @@ def get_products(
         return json_safe(compute_products(ctx))
 
     return _dashboard_response(f"products:{period}:{window_start}:{window_end}", build)
+
+
+class FirstReportViewedInput(BaseModel):
+    nm_id: int = Field(gt=0)
+    report_revision: str = Field(min_length=64, max_length=64)
+
+
+@app.get("/api/v1/growth/activation")
+def get_growth_activation(background_tasks: BackgroundTasks, nm_id: int | None = Query(None, gt=0)) -> dict:
+    """Read readiness; retry only already-recorded events, never create one."""
+    result = activation_summary(DB_PATH, connected=bool(get_token()), is_demo=IS_DEMO, nm_id=nm_id)
+    if not IS_DEMO:
+        background_tasks.add_task(deliver_pending_growth_events, DB_PATH)
+    return result
+
+
+def _build_first_report(nm_id: int) -> dict:
+    summary = activation_summary(DB_PATH, connected=bool(get_token()), is_demo=IS_DEMO, nm_id=nm_id)
+    if not summary["ready_for_report"]:
+        raise HTTPException(status_code=409, detail="Отчёт пока не готов: проверьте подключение, успешную загрузку, себестоимость и данные реализации выбранного товара.")
+    start, end = (date.fromisoformat(summary["period"][key]) for key in ("start", "end"))
+    # Use the same accounting-backed computation as Products. No network calls,
+    # invented data or default zero profit are permitted in this first result.
+    data = build_dashboard(start, end)
+    payload = compute_products({"data": data, "period": "custom", "start": start, "end": end})
+    product = next((row for row in payload["products"] if str(row.get("nm_id")) == str(nm_id)), None)
+    required = ("revenue", "sales", "unit_cost", "margin", "margin_pct")
+    if not product or any(not isinstance(product.get(key), (int, float)) or not math.isfinite(product[key]) for key in required):
+        raise HTTPException(status_code=409, detail="Для этого товара ещё нет полного расчёта экономики. Проверьте реализацию и себестоимость, затем повторите.")
+    if product["unit_cost"] <= 0 or (product["sales"] <= 0 and product["revenue"] == 0):
+        raise HTTPException(status_code=409, detail="Нужны сохранённая себестоимость и реальные продажи выбранного товара.")
+    report = {
+        "nm_id": nm_id,
+        "product": str(product.get("product") or product.get("article") or nm_id),
+        "period": summary["period"],
+        **{key: product[key] for key in required},
+        "limitation": "Результат по загруженной реализации WB и учтённым затратам. Налоги и внешние расходы, которых нет в учёте, сюда не входят.",
+    }
+    report["report_revision"] = hashlib.sha256(json.dumps(report, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return report
+
+
+@app.get("/api/v1/growth/first-report")
+def get_first_growth_report(nm_id: int = Query(..., gt=0)) -> dict:
+    return _build_first_report(nm_id)
+
+
+@app.post("/api/v1/growth/report-viewed")
+def record_growth_report_viewed(payload: FirstReportViewedInput, request: Request, background_tasks: BackgroundTasks) -> dict:
+    # Gateway/Traefik authenticates the session and overwrites these headers.
+    # Unlike a readiness GET, a local request without this identity cannot
+    # create a paid-funnel activation record.
+    if not request.headers.get("x-tenant-account") or request.headers.get("x-tenant-role", "") not in {"owner", "manager"}:
+        raise HTTPException(status_code=401, detail="Войдите в кабинет, чтобы сохранить первый результат.")
+    report = _build_first_report(payload.nm_id)
+    if report["report_revision"] != payload.report_revision:
+        raise HTTPException(status_code=409, detail="Расчёт изменился. Откройте первый отчёт ещё раз.")
+    first = record_first_value(DB_PATH, nm_id=payload.nm_id, occurred_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    background_tasks.add_task(deliver_pending_growth_events, DB_PATH)
+    return {"first_value_verified": True, "first_value_at": first["occurred_at"]}
 
 
 @app.get("/api/v1/products/cards")

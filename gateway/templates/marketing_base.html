@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} — MARKETSHELPER{% endblock %}
+{% block description %}{{ page_description }}{% endblock %}
+{% block body_class %}landing{% endblock %}
+{% block head %}
+<style>
+  .mk-shell { width:min(1080px,100%); margin:auto; padding:0 24px 56px; }
+  .mk-nav { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:24px 0; border-bottom:1px solid var(--border); }
+  .mk-nav nav { display:flex; gap:14px 20px; align-items:center; flex-wrap:wrap; font-size:.9rem; }
+  .mk-nav a,.mk-shell a { text-underline-offset:4px; }
+  .mk-shell a:focus-visible { outline:2px solid var(--accent-strong); outline-offset:5px; border-radius:3px; }
+  .mk-breadcrumb { margin:28px 0 0; font-size:.83rem; color:#b4bad0; }
+  .mk-hero { padding:42px 0 36px; max-width:830px; }
+  .mk-kicker { color:var(--accent-strong); font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; font-weight:650; }
+  .mk-shell h1 { margin:16px 0 22px; font-size:clamp(2rem,5vw,3.5rem); line-height:1.12; letter-spacing:-.035em; }
+  .mk-lead { color:#b4bad0; font-size:1.12rem; line-height:1.7; max-width:70ch; }
+  .mk-shell h2 { font-size:clamp(1.4rem,3vw,1.85rem); line-height:1.25; margin:0 0 20px; letter-spacing:-.02em; }
+  .mk-shell h3 { font-size:1.13rem; line-height:1.4; margin:0 0 12px; }
+  .mk-section { margin:0 0 48px; scroll-margin-top:24px; }
+  .mk-shell p,.mk-shell li { line-height:1.75; }
+  .mk-shell li+li { margin-top:10px; }
+  .mk-shell ul,.mk-shell ol { padding-left:24px; }
+  .mk-shell .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; text-align:center; }
+  .mk-actions { display:flex; gap:12px; flex-wrap:wrap; margin:24px 0 12px; }
+  .mk-small { color:#b4bad0; font-size:.88rem; }
+  .mk-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+  .mk-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px; min-width:0; }
+  .mk-card p { color:#b4bad0; margin:0 0 18px; }
+  .mk-card .mk-step { display:block; color:var(--accent-strong); font-family:var(--font-mono); margin-bottom:20px; }
+  .mk-note { padding:22px 26px; background:var(--accent-soft); border:1px solid var(--border-strong); border-left:3px solid var(--accent); border-radius:12px; }
+  .mk-note p { margin:0; }
+  .mk-note p+p { margin-top:12px; }
+  .mk-example { border:1px solid var(--border-strong); background:var(--surface); border-radius:18px; padding:28px; }
+  .mk-equation { font-family:var(--font-mono); font-size:clamp(.94rem,2vw,1.14rem); color:var(--text); line-height:1.8; overflow-wrap:anywhere; }
+  .mk-toc { border:1px solid var(--border); border-radius:14px; padding:22px 26px; margin:0 0 38px; }
+  .mk-toc ol { margin-bottom:0; }
+  .mk-article { max-width:760px; }
+  .mk-article p { margin:0 0 18px; }
+  .mk-article section { margin:0 0 42px; scroll-margin-top:20px; }
+  .mk-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:12px; margin:20px 0; }
+  .mk-table { width:100%; border-collapse:collapse; font-size:.92rem; }
+  .mk-table th,.mk-table td { padding:13px 16px; text-align:left; vertical-align:top; border-bottom:1px solid var(--border); }
+  .mk-table th { background:var(--surface-2); }
+  .mk-table tr:last-child td { border-bottom:0; }
+  .mk-table td:last-child { font-variant-numeric:tabular-nums; }
+  .mk-cta { margin-top:42px; padding:30px; border:1px solid var(--border-strong); border-radius:18px; background:var(--surface-2); }
+  .mk-footer { margin-top:42px; padding-top:24px; border-top:1px solid var(--border); display:flex; gap:16px; flex-wrap:wrap; font-size:.87rem; }
+  @media(max-width:720px) { .mk-grid { grid-template-columns:1fr; } .mk-shell { padding:0 18px 40px; } .mk-hero { padding-top:30px; } .mk-nav { align-items:flex-start; } .mk-nav .brand { font-size:1rem; } .mk-nav nav { gap:12px 16px; } .mk-note,.mk-example,.mk-cta { padding:21px; } .mk-table th,.mk-table td { padding:10px; } }
+  @media(max-width:420px) { .mk-actions { flex-direction:column; align-items:stretch; } .mk-shell h1 { overflow-wrap:break-word; } }
+</style>
+{% endblock %}
+{% block layout %}
+<div class="mk-shell">
+  <header class="mk-nav">
+    <a class="brand" href="/">MARKETSHELPER</a>
+    <nav aria-label="Основная навигация"><a href="/dlya-proizvoditeley-wb">Производителям</a><a href="/guides">Руководства</a><a href="/pricing">Тариф</a><a href="/login">Войти</a></nav>
+  </header>
+  <main id="main-content">
+    <p class="mk-breadcrumb"><a href="/">Главная</a> / {% block breadcrumb %}{{ page_title }}{% endblock %}</p>
+    {% block marketing_content %}{% endblock %}
+    <aside class="mk-cta" aria-label="Попробовать MARKETSHELPER">
+      <h2>Начните с одного товара</h2>
+      <p>Посмотрите кабинет на вымышленных данных, затем проверьте свой сценарий на одной партии.</p>
+      <div class="mk-actions"><a class="btn btn-primary" href="/register">Попробовать {{ trial_days }} дней</a><a class="btn btn-ghost" href="{{ demo_url }}">Посмотреть демо</a></div>
+      <p class="mk-small">Без привязки карты. Пробный период начинается после подготовки кабинета. Затем — {{ price_rub|int }} ₽ / {{ period_days }} дней. <a href="/pricing">Условия тарифа</a>.</p>
+    </aside>
+  </main>
+  <footer class="mk-footer"><a href="/sebestoimost-wb">Себестоимость WB</a><a href="/fifo-uchet">FIFO по партиям</a><a href="/guides">Руководства</a><a href="/contacts">Контакты</a><a href="/offer">Оферта</a></footer>
+</div>
+{% endblock %}

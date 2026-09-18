@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Готовим кабинет — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
 {% block head %}
 <meta http-equiv="refresh" content="3">
 {% endblock %}
@@ -10,4 +11,7 @@
 {% if status == "failed" %}
   <div class="error">Не получилось развернуть кабинет автоматически. Мы уже знаем об этом — напишите нам, если это не пройдёт в течение нескольких минут.</div>
 {% endif %}
+
+{# Lifecycle events are recorded on the server. This refreshing page must
+   never create repeated signup conversions or load optional trackers. #}
 {% endblock %}

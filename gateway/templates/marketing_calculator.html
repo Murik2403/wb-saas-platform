@@ -1,0 +1,37 @@
+<div class="calc-wrap">
+  <div class="calc-form">
+    <div class="calc-field"><label for="calcPrice">Цена продажи, ₽</label><input type="number" id="calcPrice" inputmode="decimal" value="1200" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcCost">Себестоимость, ₽</label><input type="number" id="calcCost" inputmode="decimal" value="420" min="0" step="any"><span class="hint">закупка или производство одной единицы</span></div>
+    <div class="calc-field"><label for="calcCommission">Комиссия WB, %</label><input type="number" id="calcCommission" inputmode="decimal" value="17" min="0" max="100" step="any"><span class="hint">пример условный — подставьте свою ставку</span></div>
+    <div class="calc-field"><label for="calcLogistics">Логистика и упаковка, ₽</label><input type="number" id="calcLogistics" inputmode="decimal" value="90" min="0" step="any"><span class="hint">упаковку не дублируйте, если включили в себестоимость</span></div>
+    <div class="calc-field wide"><label for="calcAds">Реклама на единицу, ₽</label><input type="number" id="calcAds" inputmode="decimal" value="60" min="0" step="any"></div>
+  </div>
+  <div class="calc-result" aria-live="polite" aria-atomic="true">
+    <div><div class="label">Предварительная маржа с единицы</div><div class="calc-big good" id="calcProfit">426 ₽</div></div>
+    <div><div class="label">Доля от цены продажи</div><div class="calc-sub" id="calcMargin">35,5%</div></div>
+    <p id="calcError" class="calc-note" hidden>Введите неотрицательные числа во всех полях. Комиссия — от 0 до 100%.</p>
+    <p class="calc-note">Это не чистая прибыль. Не учтены скидки и корректировки цены, хранение, приёмка, возвраты, эквайринг, другие начисления, налоги и общие расходы. Введённые суммы рассчитываются в браузере и не отправляются на сервер.</p>
+    <noscript><p class="calc-note">Для пересчёта включите JavaScript. Сейчас показан условный пример для значений по умолчанию.</p></noscript>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var inputs = ["calcPrice", "calcCost", "calcCommission", "calcLogistics", "calcAds"].map(function(id) { return document.getElementById(id); });
+  var profitEl = document.getElementById("calcProfit"), marginEl = document.getElementById("calcMargin"), errorEl = document.getElementById("calcError");
+  function calculate() {
+    var values = inputs.map(function(input) { return input.value.trim() === "" ? NaN : Number(input.value); });
+    var valid = values.every(function(value, index) { return Number.isFinite(value) && value >= 0 && (index !== 2 || value <= 100); });
+    inputs.forEach(function(input,index) { input.setAttribute("aria-invalid", String(!Number.isFinite(values[index]) || values[index] < 0 || (index === 2 && values[index] > 100))); });
+    errorEl.hidden = valid;
+    if (!valid) { profitEl.textContent = "—"; marginEl.textContent = "—"; profitEl.className = "calc-big"; return; }
+    var price = values[0], profit = price - values[1] - price * values[2] / 100 - values[3] - values[4];
+    if (!Number.isFinite(profit)) { profitEl.textContent = "—"; marginEl.textContent = "—"; errorEl.hidden = false; return; }
+    profitEl.textContent = profit.toLocaleString("ru-RU", {maximumFractionDigits:2}) + " ₽";
+    marginEl.textContent = price > 0 ? (profit / price * 100).toLocaleString("ru-RU", {maximumFractionDigits:1}) + "%" : "Не определена при нулевой цене";
+    profitEl.className = "calc-big " + (profit < 0 ? "critical" : profit === 0 ? "warn" : "good");
+  }
+  inputs.forEach(function(input) { input.addEventListener("input", calculate); });
+  calculate();
+})();
+</script>

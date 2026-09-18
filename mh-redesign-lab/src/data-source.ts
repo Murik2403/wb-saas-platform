@@ -928,6 +928,50 @@ export type TenantSyncRun = {
   details: string | null;
 };
 
+export type ActivationSummary = {
+  schema_version: number;
+  is_demo: boolean;
+  wb_connected: boolean;
+  sync: { state: string; complete: boolean; successful_full_sync_at: string | null };
+  selected_product: { nm_id: number | null; cost_configured: boolean; has_financial_rows: boolean };
+  ready_for_report: boolean;
+  next_step: string;
+  first_value_verified: boolean;
+  first_value_at: string | null;
+};
+
+export type FirstGrowthReport = {
+  nm_id: number;
+  product: string;
+  period: { start: string; end: string };
+  revenue: number;
+  sales: number;
+  unit_cost: number;
+  margin: number;
+  margin_pct: number;
+  limitation: string;
+  report_revision: string;
+};
+
+export async function getActivationSummary(nmId: number | null): Promise<ActivationSummary> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/growth/activation${nmId ? `?nm_id=${nmId}` : ""}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error("Не удалось проверить готовность первого отчёта. Повторите проверку.");
+  return response.json() as Promise<ActivationSummary>;
+}
+
+export async function getFirstGrowthReport(nmId: number): Promise<FirstGrowthReport> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/growth/first-report?nm_id=${nmId}`, { headers: apiHeaders() });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error.detail === "string" ? error.detail : "Не удалось рассчитать первый отчёт. Проверьте загрузку и себестоимость.");
+  }
+  return response.json() as Promise<FirstGrowthReport>;
+}
+
+export function recordFirstReportViewed(report: FirstGrowthReport): Promise<{ first_value_verified: boolean; first_value_at: string }> {
+  return postOperation("/api/v1/growth/report-viewed", { nm_id: report.nm_id, report_revision: report.report_revision });
+}
+
 export async function getTenantSyncHistory(): Promise<{ runs: TenantSyncRun[] }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/sync/history`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`/api/v1/sync/history: HTTP ${response.status}`);

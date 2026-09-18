@@ -21,21 +21,25 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import config
 import mailer
 import password_breach
+import growth_web
 from client_ip import client_ip as _client_ip
 from admin_routes import router as admin_router
 from billing_routes import router as billing_router
 from internal_routes import router as internal_router
+from growth_internal import router as growth_internal_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
-from logic import accounts, compliance, csrf, db as control_db, password_reset
+from logic import accounts, compliance, csrf, db as control_db, password_reset, growth
 from rate_limiter import RateLimiter
 from sentry_integration import initialize as initialize_sentry
+from template_setup import create_templates
+from marketing_routes import create_marketing_router, PUBLIC_MARKETING_PATHS
 
 setup_logging()
 initialize_sentry()
@@ -51,15 +55,19 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 app.add_middleware(StructuredLoggingMiddleware)
+app.add_middleware(growth_web.AcquisitionMiddleware)
+app.include_router(growth_web.router)
 app.include_router(billing_router)
 app.include_router(admin_router)
 app.include_router(internal_router)
+app.include_router(growth_internal_router)
 app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
     name="static",
 )
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+templates = create_templates()
+app.include_router(create_marketing_router(templates))
 
 
 def _render_auth_form_error(request: Request, template_name: str, context: dict, status_code: int):
@@ -212,6 +220,76 @@ def privacy_page(request: Request):
     return templates.TemplateResponse(request, "privacy.html", {"policy_version": accounts.PDN_POLICY_VERSION})
 
 
+# --------------------------------------------------------------------------
+# Crawler-facing endpoints
+# --------------------------------------------------------------------------
+
+# The public, indexable surface of the gateway. Everything else (auth forms,
+# /account, /billing, /admin, /provisioning) is both disallowed here and
+# marked noindex in the templates, so a crawler that ignores robots.txt still
+# does not put a customer's billing page into a search index.
+_SITEMAP_PATHS: tuple[tuple[str, str, str], ...] = (
+    # path, changefreq, priority
+    ("/", "weekly", "1.0"),
+    ("/pricing", "monthly", "0.9"),
+    ("/contacts", "yearly", "0.4"),
+    ("/compliance", "yearly", "0.3"),
+    ("/offer", "yearly", "0.3"),
+    ("/privacy", "yearly", "0.3"),
+) + tuple((path, "monthly", "0.7") for path in PUBLIC_MARKETING_PATHS)
+
+_ROBOTS_DISALLOW = (
+    "/login",
+    "/logout",
+    "/account",
+    "/billing",
+    "/admin",
+    "/provisioning",
+    "/forgot-password",
+    "/reset-password",
+    "/verify-email",
+    "/verify-email-sent",
+    "/team/accept",
+    "/auth/verify",
+    "/internal/",
+    "/webhooks/",
+    "/healthz",
+)
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt() -> PlainTextResponse:
+    lines = ["User-agent: *"]
+    lines += [f"Disallow: {path}" for path in _ROBOTS_DISALLOW]
+    lines += [
+        "Allow: /",
+        "",
+        # Yandex is the search engine that matters for this audience and it is
+        # the one that still reads Clean-param/Host-style directives.
+        f"Sitemap: {config.base_url()}/sitemap.xml",
+        "",
+    ]
+    return PlainTextResponse("\n".join(lines))
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml() -> Response:
+    base = config.base_url()
+    urls = "".join(
+        f"<url><loc>{base}{path}</loc>"
+        f"<changefreq>{changefreq}</changefreq>"
+        f"<priority>{priority}</priority></url>"
+        for path, changefreq, priority in _SITEMAP_PATHS
+    )
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"{urls}"
+        "</urlset>"
+    )
+    return Response(content=body, media_type="application/xml")
+
+
 @app.get("/register", response_class=HTMLResponse)
 def register_form(request: Request, invite: str = ""):
     account = _current_account(request)
@@ -267,6 +345,12 @@ def register_submit(
             if invitation is None:
                 slug = accounts.generate_unique_slug(conn, email)
                 accounts.create_tenant_instance(conn, account_id, slug)
+                attribution, touched_at = growth_web.registration_source(request)
+                growth.capture_registration_source(
+                    conn, account_id, attribution,
+                    consent=growth_web.consent_choice(request) == "analytics",
+                    touch_at=touched_at,
+                )
             verification_token = accounts.create_email_verification_token(conn, account_id)
         except ValueError as exc:
             return _render_auth_form_error(
@@ -298,6 +382,8 @@ def verify_email(request: Request, background_tasks: BackgroundTasks, token: str
             if invite:
                 accounts.consume_membership_invitation(conn, invite, account_id)
             tenant = accounts.get_accessible_tenant_for_account(conn, account_id)
+            if tenant is not None and int(tenant["account_id"]) == account_id:
+                growth.record_event(conn, account_id, "email_verified")
             session_token = accounts.create_session(conn, account_id)
     except ValueError as exc:
         return templates.TemplateResponse(request, "verify_email_sent.html", {"error": str(exc)}, status_code=400)

@@ -140,14 +140,20 @@ jobs:
         include:
           - name: gateway
             context: gateway
+            dockerfile: Dockerfile
           - name: provisioner
             context: provisioner
+            dockerfile: Dockerfile
           - name: tenant-app
             context: tenant-app
+            dockerfile: Dockerfile
+          - name: tenant-staging
+            context: .
+            dockerfile: mh-redesign-lab/Dockerfile.tenant-staging
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.name }} image
-        run: docker build --tag wbsaas/${{ matrix.name }}:${{ github.sha }} ${{ matrix.context }}
+        run: docker build --file ${{ matrix.dockerfile }} --tag wbsaas/${{ matrix.name }}:${{ github.sha }} ${{ matrix.context }}
       - name: Scan high and critical vulnerabilities
         uses: aquasecurity/trivy-action@0.35.0
         with:

@@ -10,20 +10,19 @@ mutating route here follows the same CSRF pattern as billing_routes.py.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 import config
 from logging_config import bind_account_context
-from logic import accounts, billing, csrf, db as control_db
+from logic import accounts, billing, csrf, growth, db as control_db
+from template_setup import create_templates
 
 logger = logging.getLogger("wb_saas_gateway.admin")
 
 router = APIRouter()
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+templates = create_templates()
 
 
 def _current_account(request: Request):
@@ -55,15 +54,33 @@ def admin_dashboard(request: Request):
 
     with control_db.connect() as conn:
         tenants = accounts.list_all_tenants_overview(conn)
+        growth_report = growth.growth_summary(conn)
+        exclusions = {int(row["account_id"]): row["exclusion_reason"] for row in conn.execute("SELECT account_id,exclusion_reason FROM growth_sources").fetchall()}
+        for tenant in tenants:
+            tenant["growth_exclusion"] = exclusions.get(tenant["account_id"], "")
 
     csrf_token = csrf.get_or_create_token(request)
     response = templates.TemplateResponse(
         request,
         "admin_dashboard.html",
-        {"tenants": tenants, "csrf_token": csrf_token},
+        {"tenants": tenants, "csrf_token": csrf_token, "growth": growth_report},
     )
     csrf.set_cookie(response, csrf_token)
     return response
+
+
+@router.post("/admin/account/{account_id}/growth-exclusion")
+def admin_growth_exclusion(request: Request, account_id: int, reason: str = Form(""), csrf_token: str = Form("")):
+    if _require_admin(request) is None:
+        return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return RedirectResponse("/admin", status_code=303)
+    if reason not in growth.EXCLUSION_REASONS:
+        return RedirectResponse("/admin", status_code=303)
+    with control_db.connect() as conn:
+        if accounts.get_account_by_id(conn, account_id) is not None:
+            growth.set_account_exclusion(conn, account_id, reason)
+    return RedirectResponse("/admin", status_code=303)
 
 
 @router.post("/admin/tenant/{slug}/stop")

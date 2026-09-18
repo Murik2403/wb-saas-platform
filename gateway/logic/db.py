@@ -37,6 +37,39 @@ DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "gateway.sqlite
 
 _PLACEHOLDER_RE = re.compile(r"\?")
 
+# Additive, portable tables: upgrades never infer historical registrations,
+# trials or conversions from mutable subscription state.
+_GROWTH_SCHEMA_STATEMENTS = [
+    """CREATE TABLE IF NOT EXISTS growth_sources (
+        account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        attribution_json TEXT NOT NULL DEFAULT '{}',
+        touch_at TEXT NOT NULL DEFAULT '',
+        registered_at TEXT NOT NULL DEFAULT '',
+        trial_at TEXT NOT NULL DEFAULT '',
+        trial_attribution_json TEXT NOT NULL DEFAULT '{}',
+        attribution_status TEXT NOT NULL DEFAULT 'unknown',
+        exclusion_reason TEXT NOT NULL DEFAULT ''
+    )""",
+    """CREATE TABLE IF NOT EXISTS growth_events (
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        event_name TEXT NOT NULL,
+        event_key TEXT NOT NULL DEFAULT '',
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        PRIMARY KEY (account_id, event_name, event_key)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_growth_events_time ON growth_events(event_name, occurred_at)",
+    """CREATE TABLE IF NOT EXISTS growth_payment_exclusions (
+        payment_id INTEGER PRIMARY KEY REFERENCES payments(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL
+    )""",
+]
+
+
+def _init_growth_schema(conn) -> None:
+    for statement in _GROWTH_SCHEMA_STATEMENTS:
+        conn.execute(statement)
+
 
 def _translate_placeholders(sql: str) -> str:
     """'?' (sqlite3 style) -> '%s' (psycopg style). Safe as a blind
@@ -307,6 +340,7 @@ def _init_db_postgres(conn: _PGConnection) -> None:
 def init_db(conn) -> None:
     if config.DB_BACKEND == "postgres":
         _init_db_postgres(conn)
+        _init_growth_schema(conn)
         return
 
     conn.executescript(
@@ -517,3 +551,4 @@ def init_db(conn) -> None:
         SELECT id, account_id, 'owner', created_at, updated_at FROM tenant_instances
         """
     )
+    _init_growth_schema(conn)

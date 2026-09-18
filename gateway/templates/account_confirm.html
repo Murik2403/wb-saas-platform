@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Email — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
 {% block content %}
   {% if error %}<div class="error">{{ error }}</div><div class="footer-link"><a href="/account">Вернуться в аккаунт</a></div>
   {% else %}<div class="info">Email подтверждён. Войдите заново.</div><div class="footer-link"><a href="/login">Войти</a></div>{% endif %}

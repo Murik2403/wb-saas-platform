@@ -79,6 +79,7 @@ def charge_due_accounts() -> int:
                 billing.apply_successful_payment(
                     conn, account_id, payment["id"], payment_method_id=payment_method_id,
                     period_days=config.BILLING_PERIOD_DAYS,
+                    is_test=bool(payment.get("test", False)),
                 )
                 logger.info("Account %s charged successfully", account_id)
             elif status == "canceled":

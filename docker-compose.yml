@@ -181,6 +181,12 @@ services:
       - WB_SAAS_PROVISIONER_URL=http://provisioner:8001
       - WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY=${WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY:-}
       - WB_SAAS_COOKIE_SECURE=${WB_SAAS_COOKIE_SECURE:-1}
+      # Optional public analytics and verification: .env alone does not
+      # inject values into a service with an explicit environment list.
+      - WB_SAAS_GROWTH_COOKIE_SECRET=${WB_SAAS_GROWTH_COOKIE_SECRET:-}
+      - WB_SAAS_YANDEX_METRIKA_ID=${WB_SAAS_YANDEX_METRIKA_ID:-}
+      - WB_SAAS_YANDEX_VERIFICATION=${WB_SAAS_YANDEX_VERIFICATION:-}
+      - WB_SAAS_GOOGLE_VERIFICATION=${WB_SAAS_GOOGLE_VERIFICATION:-}
       - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@file
       - WB_SAAS_TLS_CERT_RESOLVER=letsencrypt
       # Billing (logic/billing.py, yookassa_client.py) -- previously missing

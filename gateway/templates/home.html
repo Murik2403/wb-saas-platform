@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}MARKETSHELPER — учёт себестоимости и остатков для продавцов Wildberries{% endblock %}
+{% block description %}Учёт себестоимости, остатков и производства для продавцов Wildberries: FIFO по партиям закупки, сырьё и выпуск. {{ trial_days }} дней пробного периода без карты.{% endblock %}
 {% block body_class %}landing{% endblock %}
 {% block layout %}
 <div class="landing-wrap">
@@ -9,7 +10,7 @@
     <div class="links">
       <a class="section-link" href="#features">Возможности</a>
       <a class="section-link" href="#calculator">Калькулятор</a>
-      <a class="section-link" href="#compare">Сравнение</a>
+      <a href="/guides">Руководства</a>
       <a class="section-link" href="#faq">Вопросы</a>
       <a href="/pricing">Тарифы</a>
       <a href="/login">Войти</a>
@@ -38,16 +39,16 @@
     </div>
     <div class="hero-content">
       <div class="hero-badge">Продавцам WB — и тем, кто производит свой товар</div>
-      <h1>Себестоимость, которая не врёт</h1>
-      <p class="lead">Не «средняя по больнице», а партия за партией — как в бухгалтерии, а не в калькуляторе. FIFO по факту закупки для сырья и готовой продукции: видно, сколько реально стоит именно то, что уехало со склада сегодня. Плюс продажи, реклама и остатки — всё в одном изолированном кабинете под ваш магазин.</p>
+      <h1>Себестоимость по партиям и учёт производства для продавцов Wildberries</h1>
+      <p class="lead">Сырьё, выпуск и остатки — рядом с данными вашего магазина. Учитывайте закупки по партиям FIFO, разбирайте стоимость производства и сопоставляйте её с продажами WB. Начните с одного товара и проверьте расчёт на своих данных.</p>
       <div class="btn-row">
         <a class="btn btn-primary" href="/register">Начать бесплатно</a>
-        <a class="btn btn-ghost" href="/pricing">Тарифы</a>
+        <a class="btn btn-ghost" href="/dlya-proizvoditeley-wb#one-batch">Посмотреть пример на одной партии</a>
       </div>
-      <div class="trial-note">{{ trial_days }} дней пробного периода, карта не нужна</div>
+      <div class="trial-note">{{ trial_days }} дней пробного периода, карта не нужна. Затем {{ price_rub|int }} ₽ / {{ period_days }} дней</div>
     </div>
     <div class="mini-dash" id="heroDash">
-      <div class="mini-dash-head"><span>app.marketshelper.ru</span><span class="live">● online</span></div>
+      <div class="mini-dash-head"><span>Пример показателей</span><span>Вымышленные данные</span></div>
       <div class="mini-kpis">
         <div class="mini-kpi"><div class="l">Выкупы сегодня</div><div class="v" data-count="142" data-format="int">0</div></div>
         <div class="mini-kpi"><div class="l">Выручка</div><div class="v" data-count="184320" data-format="rub">0 ₽</div></div>
@@ -92,7 +93,7 @@
 
   <div class="trust-line reveal">
     <span class="hero-badge badge-trust"><span aria-hidden="true">🔒</span> Свой контейнер и своя база данных на каждого клиента</span>
-    <p>Не общая инфраструктура с чужими продавцами — данные разных аккаунтов физически не пересекаются.</p>
+    <p>Клиентские кабинеты используют отдельные контейнеры и базы данных. Серверные ресурсы платформы могут быть общими.</p>
   </div>
 
   <div class="section reveal section-layers">
@@ -104,8 +105,8 @@
     </div>
     <div class="section-head">
       <div class="eyebrow">Для кого</div>
-      <h2>Продаёте на WB и сами производите? Обычная аналитика для вас не считается</h2>
-      <p>Сервисы аналитики WB останавливаются на продажах. ERP вроде 1С считают производство, но это отдельное внедрение с программистом. Если вы просто перепродаёте товар, вам не нужен модуль производства — аналитика продаж и финансовый учёт работают и без него. Но если вы сами шьёте, режете, печатаете или льёте свой товар — сырьё, партии, закупки и календарь мощности в том же кабинете, без сведения двух инструментов руками в Excel.</p>
+      <h2>Продаёте готовый товар или выпускаете свой?</h2>
+      <p>Выберите рабочий сценарий. Для перепродажи важны закупочная стоимость, продажи и остатки. Для собственного производства добавляются сырьё, состав изделия, выпуск партий и планирование. <a href="/dlya-proizvoditeley-wb">Разобрать сценарий производителя →</a></p>
     </div>
     <div class="audience-toggle" role="group" aria-label="Кто вы">
       <button type="button" class="at-btn" data-audience="seller">Я продавец</button>
@@ -126,7 +127,7 @@
       <div class="audience-card highlight" data-audience="producer">
         <div class="tag">Продавец-производитель</div>
         <h3>Производите товар сами</h3>
-        <p>Кроме продаж нужен учёт сырья, партий и мощности — а это редко где есть вместе с аналитикой WB.</p>
+        <p>Свяжите данные о сырье, партиях и мощности с работой вашего магазина.</p>
         <ul>
           <li>Всё то же, что у продавца, плюс:</li>
           <li>FIFO себестоимость сырья по факту закупки</li>
@@ -140,11 +141,9 @@
 
   <div class="founder-note reveal">
     <div class="founder-note-tag">Почему это вообще появилось</div>
-    <p class="founder-note-text">Я сам продаю на Wildberries под брендом HOME DIY — и сам упёрся в то, что обычные
-    инструменты считают себестоимость «в среднем», а не по факту закупки конкретной партии сырья, и не
-    показывают, что реально готово к отгрузке, а что ещё в работе — всё приходилось сводить вручную в
-    таблицах. MARKETSHELPER — это то, что я в итоге написал для себя, а потом открыл остальным
-    продавцам-производителям.</p>
+    <p class="founder-note-text">Я продаю на Wildberries под брендом HOME DIY. В своём учёте мне нужно было связать
+    закупки конкретных партий сырья, выпуск и готовность товара к отгрузке — эти данные я сводил вручную в таблицах.
+    MARKETSHELPER появился из этой рабочей задачи, а затем стал доступен другим продавцам-производителям.</p>
     <div class="founder-note-author">Мурат Вороков, основатель MARKETSHELPER</div>
   </div>
 
@@ -174,136 +173,25 @@
     </div>
     <div class="section-head">
       <div class="eyebrow">Калькулятор</div>
-      <h2>Узнайте настоящую маржу — не «после скидок WB», а после всего</h2>
-      <p>Себестоимость по факту закупки, комиссия, реклама, логистика — вычтено всё, до того как цифра попадёт на экран. Введите свои значения — ничего никуда не отправляется, считается прямо в браузере. Это ровно то, что дальше в кабинете считается автоматически по каждому товару и по факту закупки сырья, без сюрпризов в конце месяца.</p>
+      <h2>Оцените маржу по выбранным расходам</h2>
+      <p>Введите цену, себестоимость, комиссию, логистику и рекламу на единицу. Получится предварительная маржа после этих статей, а не чистая прибыль. Введённые суммы считаются в браузере и не отправляются на сервер. <a href="/calculator">Открыть калькулятор отдельно →</a></p>
     </div>
-    <div class="calc-wrap">
-      <div class="calc-form">
-        <div class="calc-field">
-          <label for="calcPrice">Цена продажи, ₽</label>
-          <input type="number" id="calcPrice" inputmode="decimal" value="1200" min="0" step="1">
-        </div>
-        <div class="calc-field">
-          <label for="calcCost">Себестоимость, ₽</label>
-          <input type="number" id="calcCost" inputmode="decimal" value="420" min="0" step="1">
-          <span class="hint">сырьё и производство — или закупка, если перепродаёте</span>
-        </div>
-        <div class="calc-field">
-          <label for="calcCommission">Комиссия WB, %</label>
-          <input type="number" id="calcCommission" inputmode="decimal" value="17" min="0" max="100" step="0.5">
-          <span class="hint">зависит от категории — подставьте свою</span>
-        </div>
-        <div class="calc-field">
-          <label for="calcLogistics">Логистика и упаковка, ₽</label>
-          <input type="number" id="calcLogistics" inputmode="decimal" value="90" min="0" step="1">
-        </div>
-        <div class="calc-field wide">
-          <label for="calcAds">Реклама на единицу, ₽</label>
-          <input type="number" id="calcAds" inputmode="decimal" value="60" min="0" step="1">
-        </div>
-      </div>
-      <div class="calc-result">
-        <div>
-          <div class="label">Прибыль с единицы</div>
-          <div class="calc-big" id="calcProfit">0 ₽</div>
-        </div>
-        <div>
-          <div class="label">Маржа от цены продажи</div>
-          <div class="calc-sub" id="calcMargin">0%</div>
-        </div>
-        <p class="calc-note">Прикидка для быстрой оценки — без скидок, эквайринга и хранения. В кабинете расчёт идёт по фактической себестоимости из FIFO-слоёв сырья.</p>
-      </div>
-    </div>
+    {% include "marketing_calculator.html" %}
   </div>
 
-  <div class="section reveal section-compare" id="compare">
-    <div class="section-decor" aria-hidden="true">
-      <div class="cmp-grid"></div>
-      <span class="cmp-check cmp-check-a">✓</span>
-      <span class="cmp-check cmp-check-b">✓</span>
-      <span class="cmp-check cmp-check-c">✓</span>
-    </div>
+  <section class="section" id="compare">
     <div class="section-head">
-      <div class="eyebrow">Сравнение</div>
-      <h2>Чем это отличается от других вариантов</h2>
-      <p>Мы изучили рынок сервисов для продавцов Wildberries. Специализированные сервисы аналитики закрывают только продажи. Тяжёлые ERP-системы вроде 1С умеют считать производство, но это отдельное внедрение с программистом. Готового сервиса «из коробки», который сочетает и то, и другое, мы на рынке не нашли.</p>
+      <div class="eyebrow">Проверьте свой сценарий</div>
+      <h2>Один товар, понятные исходные данные, проверяемый результат</h2>
+      <p>Сервисы аналитики и системы учёта решают разные задачи, а их возможности могут пересекаться. Выбирайте по своему процессу: состав изделия, партии сырья, выпуск и данные WB. Сравните результат на одном товаре до переноса всего ассортимента.</p>
     </div>
-    <div class="compare-wrap">
-      <table class="compare-table">
-        <thead>
-          <tr>
-            <th>Возможность</th>
-            <th>Сервисы аналитики WB</th>
-            <th>1С / ERP с доработкой</th>
-            <th class="ms-col">MARKETSHELPER</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Аналитика продаж и остатков WB</td>
-            <td class="yes">есть</td>
-            <td class="maybe">после настройки</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr>
-            <td>Юнит-экономика по каждому товару</td>
-            <td class="yes">есть</td>
-            <td class="maybe">после настройки</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr>
-            <td>FIFO себестоимость сырья по партиям закупки</td>
-            <td class="no">нет</td>
-            <td class="maybe">при доработке</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr>
-            <td>Учёт незавершённого производства</td>
-            <td class="no">нет</td>
-            <td class="maybe">при доработке</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr>
-            <td>Закупка сырья в любых единицах измерения</td>
-            <td class="no">нет</td>
-            <td class="maybe">при доработке</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr>
-            <td>Календарь производственной мощности под спрос WB</td>
-            <td class="no">нет</td>
-            <td class="no">нет</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr>
-            <td>Готово из коробки, без программиста и внедрения</td>
-            <td class="yes">есть</td>
-            <td class="no">нет</td>
-            <td class="ms-col yes">есть</td>
-          </tr>
-          <tr class="compare-price-row">
-            <td>Стоимость в месяц</td>
-            <td class="maybe">от ~2 000 ₽ — но без производства и себестоимости по партиям</td>
-            <td class="maybe">разовое внедрение от программиста + постоянная поддержка</td>
-            <td class="ms-col yes">{{ price_rub|int }} ₽ — с производством и FIFO</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="feature-row">
+      <article class="feature"><h3>Себестоимость товара</h3><p>Разделите стоимость производства и расходы продажи. Узнайте, что включено в итог.</p><a href="/sebestoimost-wb">Разобрать состав расчёта →</a></article>
+      <article class="feature"><h3>FIFO по партиям</h3><p>Проследите стоимость двух поступлений через один выпуск и остаток.</p><a href="/fifo-uchet">Посмотреть пример FIFO →</a></article>
+      <article class="feature"><h3>Переход из таблиц</h3><p>Подготовьте справочники, начальные остатки и контрольный SKU.</p><a href="/guides/iz-excel-v-uchet">Открыть план перехода →</a></article>
     </div>
-    <p class="compare-note">Сравнение по категориям сервисов, а не с конкретными брендами. Стоимость — по открытым тарифам на рынке на август 2026 года; сервисы с похожим набором функций (производство, сырьё, FIFO-себестоимость) в среднем стоят в 5–10 раз дороже.</p>
-  </div>
-
-  <div class="quote-block reveal">
-    <div class="quote-mark">&ldquo;</div>
-    <p class="quote-text">Издержки существуют не для того, чтобы их считать. Издержки существуют для того, чтобы их сокращать.</p>
-    <div class="quote-author">
-      <img class="quote-photo" src="/static/images/taiichi-ohno.jpg" alt="Тайити Оно" width="52" height="52" loading="lazy">
-      <div>
-        <div class="quote-author-name">Тайити Оно</div>
-        <div class="quote-author-role">создатель производственной системы Toyota</div>
-      </div>
-    </div>
-  </div>
+    <p><a href="/guides">Все практические руководства →</a></p>
+  </section>
 
   <div class="section reveal" id="faq">
     <div class="section-head">
@@ -312,8 +200,8 @@
     </div>
     <div class="faq">
       <details class="faq-item">
-        <summary>Чем это отличается от 1С?</summary>
-        <p>1С — гибкая платформа, которую можно донастроить под производство, но это отдельный проект с программистом: недели или месяцы внедрения. MARKETSHELPER — готовый сервис: регистрация, свой изолированный кабинет и рабочий учёт сырья, партий и закупок с первого дня, без технического специалиста.</p>
+        <summary>Как понять, подходит ли сервис моему производству?</summary>
+        <p>Посмотрите демо, затем проверьте один товар: материал, поступления, состав изделия и выпуск. Сверьте стоимость и остатки с ручным расчётом. Специфические процессы и задачи обязательного бухгалтерского учёта оценивайте отдельно. <a href="/guides/iz-excel-v-uchet">План проверки на одном SKU</a>.</p>
       </details>
       <details class="faq-item">
         <summary>А если я просто перепродаю товар, без своего производства?</summary>
@@ -325,11 +213,11 @@
       </details>
       <details class="faq-item">
         <summary>Данные разных продавцов где-то пересекаются?</summary>
-        <p>Нет. Каждый клиент работает в собственном изолированном контейнере с отдельной базой данных — окружения разных аккаунтов физически разделены.</p>
+        <p>Для каждого клиента создаются отдельный контейнер и база данных. Серверные ресурсы платформы могут быть общими; доступ к клиентскому кабинету ограничен его авторизацией.</p>
       </details>
       <details class="faq-item">
         <summary>Нужна ли карта для пробного периода?</summary>
-        <p>Нет — {{ trial_days }} дней пробного периода без привязки карты.</p>
+        <p>Нет — {{ trial_days }} дней пробного периода без привязки карты. Пробный период начинается после подготовки кабинета.</p>
       </details>
     </div>
   </div>
@@ -344,6 +232,8 @@
   <div class="landing-footer">
     <div>
       <a href="/pricing">Тарифы</a>
+      <a href="/dlya-proizvoditeley-wb">Производителям WB</a>
+      <a href="/guides">Руководства</a>
       <a href="/offer">Оферта</a>
       <a href="/privacy">Обработка персональных данных</a>
       <a href="/contacts">Контакты и реквизиты</a>
@@ -449,32 +339,6 @@
     }
   }
 
-  /* ---- margin calculator: pure client-side, nothing sent anywhere ---- */
-  var calcIds = ["calcPrice", "calcCost", "calcCommission", "calcLogistics", "calcAds"];
-  var calcInputs = calcIds.map(function (id) { return document.getElementById(id); });
-  var calcProfitEl = document.getElementById("calcProfit");
-  var calcMarginEl = document.getElementById("calcMargin");
-  function runCalc() {
-    if (!calcProfitEl || !calcMarginEl) return;
-    function num(el) { var v = parseFloat(el && el.value); return isFinite(v) ? v : 0; }
-    var price = num(document.getElementById("calcPrice"));
-    var cost = num(document.getElementById("calcCost"));
-    var commissionPct = num(document.getElementById("calcCommission"));
-    var logistics = num(document.getElementById("calcLogistics"));
-    var ads = num(document.getElementById("calcAds"));
-    var commissionAmount = price * (commissionPct / 100);
-    var profit = price - cost - commissionAmount - logistics - ads;
-    var marginPct = price > 0 ? (profit / price) * 100 : 0;
-    calcProfitEl.textContent = Math.round(profit).toLocaleString("ru-RU") + " ₽";
-    calcMarginEl.textContent = marginPct.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
-    calcProfitEl.classList.remove("good", "warn", "critical");
-    if (profit <= 0) calcProfitEl.classList.add("critical");
-    else if (marginPct < 15) calcProfitEl.classList.add("warn");
-    else calcProfitEl.classList.add("good");
-  }
-  calcInputs.forEach(function (el) { if (el) el.addEventListener("input", runCalc); });
-  runCalc();
-
   /* ---- scroll-reveal for sections and feature tiles ---- */
   var revealEls = document.querySelectorAll(".reveal");
   if (revealEls.length && "IntersectionObserver" in window && !reduceMotion) {
@@ -518,5 +382,106 @@
     if (e.key === "Escape") closeLightbox();
   });
 })();
+</script>
+{% endblock %}
+
+{# Structured data. Every FAQ entry below is also visible on the page (the
+   #faq <details> list) -- Yandex and Google both drop FAQ rich results when
+   the markup describes content a visitor cannot see. #}
+{% block head %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "{{ site_base_url() }}/#organization",
+      "name": "MARKETSHELPER",
+      "url": "{{ site_base_url() }}/",
+      "logo": "{{ site_base_url() }}/static/images/og-cover.png",
+      "areaServed": "RU",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer support",
+        "url": "{{ site_base_url() }}/contacts",
+        "availableLanguage": "Russian"
+      }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "{{ site_base_url() }}/#software",
+      "name": "MARKETSHELPER",
+      "url": "{{ site_base_url() }}/",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "Учёт себестоимости и остатков для маркетплейсов",
+      "operatingSystem": "Web",
+      "inLanguage": "ru",
+      "publisher": { "@id": "{{ site_base_url() }}/#organization" },
+      "description": "Сервис учёта себестоимости по FIFO, остатков, закупок сырья и производства для продавцов Wildberries, которые сами производят товар.",
+      "featureList": [
+        "FIFO себестоимость по партиям закупки",
+        "Учёт производства и незавершённого производства",
+        "Сверка остатков с Wildberries",
+        "Закупки сырья и материалов",
+        "Календарь производственных мощностей",
+        "Юнит-экономика по внесённым данным"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "{{ price_rub|int }}",
+        "priceCurrency": "RUB",
+        "url": "{{ site_base_url() }}/pricing",
+        "availability": "https://schema.org/InStock",
+        "description": "{{ trial_days }} дней пробного периода без привязки карты, далее {{ price_rub|int }} ₽ за {{ period_days }} дней"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "{{ site_base_url() }}/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Как понять, подходит ли сервис моему производству?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Посмотрите демо, затем проверьте один товар: материал, поступления, состав изделия и выпуск. Сверьте стоимость и остатки с ручным расчётом. Специфические процессы и задачи обязательного бухгалтерского учёта оценивайте отдельно."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "А если я просто перепродаю товар, без своего производства?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Модуль производства просто не понадобится. Аналитика продаж WB, юнит-экономика и финансовый учёт работают независимо от него."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "В каких единицах можно учитывать сырьё?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "В любых. Каждый материал заводится в своей единице измерения — метры, килограммы, литры, штуки — и в своём способе учёта: фиксированными упаковками заданного размера или просто по количеству, без фиксированной упаковки."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Данные разных продавцов где-то пересекаются?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Для каждого клиента создаются отдельный контейнер и база данных. Серверные ресурсы платформы могут быть общими; доступ к клиентскому кабинету ограничен его авторизацией."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Нужна ли карта для пробного периода?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет — {{ trial_days }} дней пробного периода без привязки карты. Пробный период начинается после подготовки кабинета."
+          }
+        }
+      ]
+    }
+  ]
+}
 </script>
 {% endblock %}

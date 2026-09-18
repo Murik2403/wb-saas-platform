@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import config
-from . import accounts
+from . import accounts, growth
 
 PAYMENT_KINDS = {"initial", "recurring", "manual"}
 PAYMENT_STATUSES = {"pending", "succeeded", "failed", "canceled"}
@@ -58,6 +58,7 @@ def start_trial(conn: sqlite3.Connection, account_id: int, trial_days: int = con
         "UPDATE accounts SET status='trialing', current_period_end=?, past_due_since='', updated_at=? WHERE id=?",
         (period_end, _now_iso(), int(account_id)),
     )
+    growth.record_trial_started(conn, account_id, occurred_at=_now())
 
 
 # --------------------------------------------------------------------------
@@ -126,6 +127,8 @@ def apply_successful_payment(
     yookassa_payment_id: str,
     payment_method_id: str = "",
     period_days: int = config.BILLING_PERIOD_DAYS,
+    *,
+    is_test: bool = False,
 ) -> None:
     """Extends the paid-through date and clears any past_due state.
 
@@ -153,6 +156,16 @@ def apply_successful_payment(
         (_now_iso(), yookassa_payment_id),
     )
     if claimed.rowcount == 0:
+        # Provider test classification may arrive on a later, verified
+        # webhook. It must still correct measurement despite billing's
+        # idempotent early return, without extending access again.
+        if is_test:
+            payment = conn.execute(
+                "SELECT id FROM payments WHERE yookassa_payment_id=? AND account_id=?",
+                (yookassa_payment_id, int(account_id)),
+            ).fetchone()
+            if payment is not None:
+                growth.record_payment_success(conn, account_id, int(payment["id"]), is_test=True, occurred_at=_now())
         return  # already applied, or no matching payment row -- nothing to extend
 
     account = accounts.get_account_by_id(conn, account_id)
@@ -175,6 +188,12 @@ def apply_successful_payment(
         """,
         (new_period_end, payment_method_id, _now_iso(), int(account_id)),
     )
+    payment = conn.execute(
+        "SELECT id FROM payments WHERE yookassa_payment_id=? AND account_id=?",
+        (yookassa_payment_id, int(account_id)),
+    ).fetchone()
+    if payment is not None:
+        growth.record_payment_success(conn, account_id, int(payment["id"]), is_test=is_test, occurred_at=_now())
 
 
 def admin_extend_period(conn: sqlite3.Connection, account_id: int, days: int) -> None:
