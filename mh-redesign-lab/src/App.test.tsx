@@ -221,6 +221,19 @@ describe("operational detail drawer", () => {
     expect(screen.getByText(/Выручка:/i)).toBeInTheDocument();
   });
 
+  it("keeps account menu links actionable through the gateway", async () => {
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Текущий аккаунт: Demo tenant/i }));
+
+    expect(screen.getByRole("menuitem", { name: /Подписка и оплата/i })).toHaveAttribute("href", expect.stringMatching(/\/billing$/));
+    expect(screen.getByRole("menuitem", { name: /Аккаунт/i })).toHaveAttribute("href", expect.stringMatching(/\/account$/));
+    expect(screen.getByRole("menuitem", { name: /Документы/i })).toHaveAttribute("href", expect.stringMatching(/\/offer$/));
+    expect(screen.getByRole("menuitem", { name: /Поддержка/i })).toHaveAttribute("href", expect.stringMatching(/\/contacts$/));
+  });
+
   it("shows a Content API error instead of an empty cards state", async () => {
     mockedDashboard.productCardErrors = ["/api/v1/products/cards: HTTP 403"];
     window.history.replaceState({}, "", "/?view=products");

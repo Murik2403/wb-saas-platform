@@ -526,8 +526,22 @@ input:focus-visible {
   cursor: pointer;
 }
 
+.session-menu a {
+  width: 100%;
+  border-radius: 6px;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.6rem 0.5rem;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  text-decoration: none;
+}
+
 .session-menu button:hover,
-.session-menu button.selected {
+.session-menu button.selected,
+.session-menu a:hover,
+.session-menu a:focus-visible {
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -540,6 +554,15 @@ input:focus-visible {
 }
 
 .session-menu button small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.session-menu a strong {
+  font-size: 0.78rem;
+}
+
+.session-menu a small {
   color: var(--muted);
   font-size: 0.68rem;
 }

@@ -238,19 +238,23 @@ function App() {
     if (choice.outcome === "accepted") setInstallPrompt(null);
   };
 
-  const getLogoutUrl = () => {
+  const getGatewayUrl = (path: string) => {
     const { protocol, hostname, host } = window.location;
     if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".localhost")) {
-      return `${protocol}//${host}/logout`;
+      return `${protocol}//${host}${path}`;
     }
 
     const hostParts = hostname.split(".");
     const appIndex = hostParts.findIndex((part) => part === "app");
     if (appIndex >= 0 && appIndex + 1 < hostParts.length) {
-      return `${protocol}//${hostParts.slice(appIndex + 1).join(".")}/logout`;
+      return `${protocol}//${hostParts.slice(appIndex + 1).join(".")}${path}`;
     }
 
-    return `${protocol}//${hostParts.slice(1).join(".") || hostname}/logout`;
+    return `${protocol}//${host}${path}`;
+  };
+
+  const getLogoutUrl = () => {
+    return getGatewayUrl("/logout");
   };
 
   const handleLogout = () => {
@@ -951,10 +955,10 @@ function App() {
                       <strong>На главную</strong>
                       <small>Перейти в сводный обзор</small>
                     </button>
-                    <a href="/billing" role="menuitem"><strong>Подписка и оплата</strong><small>Статус тарифа и история платежей</small></a>
-                    <a href="/account" role="menuitem"><strong>Аккаунт</strong><small>Пароль и email</small></a>
-                    <a href="/offer" role="menuitem"><strong>Документы</strong><small>Оферта и политика конфиденциальности</small></a>
-                    <a href="/contacts" role="menuitem"><strong>Поддержка</strong><small>Контакты и помощь по кабинету</small></a>
+                    <a href={getGatewayUrl("/billing")} role="menuitem"><strong>Подписка и оплата</strong><small>Статус тарифа и история платежей</small></a>
+                    <a href={getGatewayUrl("/account")} role="menuitem"><strong>Аккаунт</strong><small>Пароль и email</small></a>
+                    <a href={getGatewayUrl("/offer")} role="menuitem"><strong>Документы</strong><small>Оферта и политика конфиденциальности</small></a>
+                    <a href={getGatewayUrl("/contacts")} role="menuitem"><strong>Поддержка</strong><small>Контакты и помощь по кабинету</small></a>
                     <button className="session-logout" type="button" onClick={handleLogout}>
                       <LogOut size={16} />
                       <strong>Выйти</strong>
