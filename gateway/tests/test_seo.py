@@ -8,6 +8,7 @@ later as a deindexed site or a customer's billing page in search results.
 from __future__ import annotations
 
 import json
+from html.parser import HTMLParser
 import re
 import sys
 from pathlib import Path
@@ -24,6 +25,17 @@ import config  # noqa: E402
 
 PUBLIC_PAGES = ("/", "/pricing", "/contacts", "/compliance", "/offer", "/privacy") + gateway_app.PUBLIC_MARKETING_PATHS
 PRIVATE_PAGES = ("/login", "/forgot-password", "/register")
+
+
+class MetaTags(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.robots: list[str] = []
+
+    def handle_starttag(self, tag, attrs) -> None:
+        values = dict(attrs)
+        if tag == "meta" and (values.get("name") or "").lower() == "robots":
+            self.robots.append(values.get("content") or "")
 
 
 class RobotsAndSitemapTests(unittest.TestCase):
@@ -64,6 +76,21 @@ class PageMetadataTests(unittest.TestCase):
     def _meta(self, html: str, name: str) -> str | None:
         match = re.search(rf'<meta name="{name}" content="([^"]*)"', html)
         return match.group(1) if match else None
+
+    def test_public_and_private_pages_have_exactly_one_robots_tag(self) -> None:
+        for path in PUBLIC_PAGES + PRIVATE_PAGES:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                metadata = MetaTags()
+                metadata.feed(response.text)
+                self.assertEqual(len(metadata.robots), 1, f"{path}: conflicting robots directives {metadata.robots}")
+
+    def test_contacts_and_offer_keep_the_compliance_link(self) -> None:
+        for path in ("/contacts", "/offer"):
+            with self.subTest(path=path):
+                link = re.search(r'<a\s+href="/compliance">[^<]+</a>', self.client.get(path).text)
+                self.assertIsNotNone(link, f"{path}: missing compliance link")
 
     def test_public_pages_are_indexable_and_described(self) -> None:
         for path in PUBLIC_PAGES:
