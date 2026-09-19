@@ -81,13 +81,16 @@ def compute_today(ctx: dict) -> dict:
     payment_due_today = pd.DataFrame()
     if not procurement_orders_today.empty:
         procurement_orders_today = procurement_orders_today.copy()
-        procurement_orders_today["expected_dt"] = pd.to_datetime(procurement_orders_today["expected_date"], errors="coerce").dt.date
-        procurement_orders_today["payment_due_dt"] = pd.to_datetime(procurement_orders_today["payment_due_date"], errors="coerce").dt.date
+        expected_ts = pd.to_datetime(procurement_orders_today["expected_date"], errors="coerce")
+        payment_due_ts = pd.to_datetime(procurement_orders_today["payment_due_date"], errors="coerce")
+        procurement_orders_today["expected_dt"] = expected_ts.dt.date
+        procurement_orders_today["payment_due_dt"] = payment_due_ts.dt.date
         active_proc_mask = ~procurement_orders_today["status"].isin(["Получено", "Отменено"])
-        overdue_procurement_today = procurement_orders_today[active_proc_mask & procurement_orders_today["expected_dt"].notna() & (procurement_orders_today["expected_dt"] < today_msk)].copy()
+        today_ts = pd.Timestamp(today_msk)
+        overdue_procurement_today = procurement_orders_today[active_proc_mask & expected_ts.notna() & expected_ts.lt(today_ts)].copy()
         outstanding_today = pd.to_numeric(procurement_orders_today.get("outstanding_amount", 0), errors="coerce").fillna(0)
         unpaid_mask = (~procurement_orders_today["status"].isin(["Получено", "Отменено"])) & outstanding_today.gt(0.01)
-        payment_due_today = procurement_orders_today[unpaid_mask & procurement_orders_today["payment_due_dt"].notna() & (procurement_orders_today["payment_due_dt"] <= today_msk)].copy()
+        payment_due_today = procurement_orders_today[unpaid_mask & payment_due_ts.notna() & payment_due_ts.le(today_ts)].copy()
 
     cfg_today = production_cfg_today.copy()
     if not cfg_today.empty:
