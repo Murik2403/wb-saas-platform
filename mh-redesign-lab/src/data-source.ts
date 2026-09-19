@@ -1815,7 +1815,7 @@ function adaptSupplyPayloadShipments(rows: ApiSupplyShipment[]): SupplyShipment[
     supplier: text(order.supplier ?? order.supplier_name, "Поставщик"),
     status: text(order.status, "в работе"),
     eta: text(order.eta ?? order.expected_date, "уточнить"),
-    amount: text(order.outstanding_amount ?? order.amount ?? order.total_amount, "0 ₽"),
+    amount: formatRubAmount(order.outstanding_amount ?? order.amount ?? order.total_amount),
     tone: normalizeTone(order.tone, statusTone(order.status)),
   }));
 }
@@ -2324,6 +2324,11 @@ function formatPercent(value: number): string {
 
 function formatMoney(kop: number): string {
   return `${formatNumber(Math.round(kop / 100))} ₽`;
+}
+
+function formatRubAmount(value: unknown): string {
+  const amount = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(amount) ? `${formatNumber(Math.round(amount))} ₽` : "0 ₽";
 }
 
 function formatNumber(value: number): string {
