@@ -1,11 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { DashboardDataState } from "./data-source";
 import type { PageId } from "./contracts";
-import { getActionPlanItems, updateActionPlanItem, financeExportUrl, adaptFinanceReport, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution } from "./data-source";
+import { getActionPlanItems, updateActionPlanItem, financeExportUrl, adaptFinanceReport, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution, createProcurementOperation, getProcurementOperations } from "./data-source";
 
 const mockedDashboard: DashboardDataState = {
   refreshing: false,
@@ -157,7 +157,7 @@ vi.mock("./data-source", async () => {
     getFifoReconciliation: vi.fn().mockResolvedValue({ preview: [], status: {}, guard: {}, wb_context: {}, runs: [] }),
     getIncidentOperations: vi.fn().mockResolvedValue({ cases: [], summary: {} }),
     getMaterialInventory: vi.fn().mockResolvedValue({ items: [], fifo: [], opening_rate_rub_m: 0 }),
-    getProcurementOperations: vi.fn().mockResolvedValue({ orders: [] }),
+    getProcurementOperations: vi.fn().mockResolvedValue({ orders: [], items: [] }),
     getFbsSupplyDetails: vi.fn().mockResolvedValue({ supplyId: "WB-123", orders: [{ orderId: "O-1" }] }),
     getFbsSupplyBarcode: vi.fn().mockResolvedValue({ barcode: "base64-data", type: "png" }),
     sendCustomerChatMessage: vi.fn().mockResolvedValue({ ok: true }),
@@ -199,6 +199,9 @@ describe("operational detail drawer", () => {
     setChecks(defaultChecks);
     mockedDashboard.financeReport = { rows: [] };
     mockedDashboard.supplyShipments = [];
+    mockedDashboard.procurementOrders = [];
+    mockedDashboard.refresh = vi.fn(async () => undefined);
+    vi.mocked(getProcurementOperations).mockResolvedValue({ orders: [], items: [] });
     mockedDashboard.customerQuality = null;
     mockedDashboard.productCardErrors = [];
     mockedDashboard.productPriceErrors = [];
@@ -219,6 +222,62 @@ describe("operational detail drawer", () => {
     expect(screen.getByRole("heading", { name: /Товар для проверки/i })).toBeInTheDocument();
     expect(screen.getByText(/Артикул: SKU-1/i)).toBeInTheDocument();
     expect(screen.getByText(/Выручка:/i)).toBeInTheDocument();
+  });
+
+  it("enables receipt of a newly created purchase after refresh without remounting supplies", async () => {
+    const order = { id: 41, supplier_name: "QA supplier", status: "Запланировано", outstanding_amount: 376.5 };
+    const item = { id: 42, order_id: 41, product_name: "QA product", quantity: 3, posted_quantity: 0 };
+    vi.mocked(getProcurementOperations)
+      .mockResolvedValueOnce({ orders: [], items: [] })
+      .mockResolvedValue({ orders: [order], items: [item] });
+    vi.mocked(createProcurementOperation).mockResolvedValueOnce({ id: 41, status: "Запланировано" });
+    mockedDashboard.refresh = vi.fn(async () => { mockedDashboard.procurementOrders = [order]; });
+    window.history.replaceState({}, "", "/?view=supply");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Создать заявку" }));
+    const form = within(screen.getByRole("dialog"));
+    await user.type(form.getByLabelText("Поставщик"), "QA supplier");
+    await user.type(form.getByLabelText("Артикул поставщика"), "QA-41");
+    await user.type(form.getByLabelText("Товар"), "QA product");
+    await user.clear(form.getByLabelText("Количество"));
+    await user.type(form.getByLabelText("Количество"), "3");
+    await user.clear(form.getByLabelText("Цена за единицу"));
+    await user.type(form.getByLabelText("Цена за единицу"), "125.5");
+    await user.click(form.getByRole("button", { name: "Подтвердить" }));
+
+    await screen.findByText("Заявка #41");
+    expect(createProcurementOperation).toHaveBeenCalledWith(expect.objectContaining({ quantity: 3, unitPrice: 125.5 }));
+    const receiptButton = screen.getByRole("button", { name: "Провести приёмку" });
+    await waitFor(() => expect(receiptButton).toBeEnabled());
+    await user.click(receiptButton);
+    const receipt = within(screen.getByRole("dialog", { name: "Провести приёмку" }));
+    expect(receipt.getByLabelText("Принято единиц")).toHaveValue(3);
+    expect(receipt.getByRole("option", { name: /QA product/ })).toHaveValue("42");
+  });
+
+  it("keeps refreshed purchase items when an older request finishes later", async () => {
+    let resolveInitial!: (data: Awaited<ReturnType<typeof getProcurementOperations>>) => void;
+    const initial = new Promise<Awaited<ReturnType<typeof getProcurementOperations>>>((resolve) => { resolveInitial = resolve; });
+    const order = { id: 41, supplier_name: "QA supplier", status: "Запланировано", outstanding_amount: 376.5 };
+    const item = { id: 42, order_id: 41, product_name: "QA product", quantity: 3, posted_quantity: 0 };
+    vi.mocked(getProcurementOperations)
+      .mockReturnValueOnce(initial)
+      .mockResolvedValue({ orders: [order], items: [item] });
+    window.history.replaceState({}, "", "/?view=supply");
+    const { default: App } = await import("./App");
+    const { rerender } = render(<App />);
+    await waitFor(() => expect(getProcurementOperations).toHaveBeenCalledTimes(1));
+
+    mockedDashboard.procurementOrders = [order];
+    rerender(<App />);
+    const receiptButton = await screen.findByRole("button", { name: "Провести приёмку" });
+    await waitFor(() => expect(receiptButton).toBeEnabled());
+
+    await act(async () => { resolveInitial({ orders: [], items: [] }); });
+    expect(receiptButton).toBeEnabled();
   });
 
   it("keeps account menu links actionable through the gateway", async () => {

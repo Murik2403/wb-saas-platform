@@ -2604,7 +2604,19 @@ function SupplyView({
   const [fbsDialog, setFbsDialog] = useState<{ id: string; detail: FbsSupplyDetail; barcode: FbsSupplyBarcode | null } | null>(null);
   const [fbsBusy, setFbsBusy] = useState(false);
   const [fbsError, setFbsError] = useState<string | null>(null);
-  useEffect(() => { void Promise.all([getProcurementOperations(), getSuppliers()]).then(([operations, directory]) => { setProcurementItems(operations.items); setSuppliers(directory.items); }).catch(() => setOperationError("Не удалось загрузить данные поставок")); }, []);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([getProcurementOperations(), getSuppliers()])
+      .then(([operations, directory]) => {
+        if (!active) return;
+        setProcurementItems(operations.items);
+        setSuppliers(directory.items);
+      })
+      .catch(() => {
+        if (active) setOperationError("Не удалось загрузить данные поставок");
+      });
+    return () => { active = false; };
+  }, [procurementOrders]);
   const saveSupplierRecord = async (item: SupplierRecord) => {
     setSupplierBusy(true);
     try {
