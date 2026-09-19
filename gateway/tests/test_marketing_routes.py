@@ -32,6 +32,12 @@ class PageParser(HTMLParser):
         self.h1_count += tag == "h1"
 
 
+def page_parser_links(html: str) -> list[str]:
+    parser = PageParser()
+    parser.feed(html)
+    return parser.links
+
+
 class MarketingRouteTests(unittest.TestCase):
     def setUp(self):
         app = FastAPI()
@@ -65,6 +71,21 @@ class MarketingRouteTests(unittest.TestCase):
                 self.assertIn("4190 ₽ / 31 дней", html)
                 self.assertIn("Попробовать 21 дней", html)
                 self.assertNotIn("2990 ₽", html)
+
+    def test_cost_page_has_safe_seo_content_and_internal_links(self):
+        html = self.client.get("/sebestoimost-wb?utm_source=test").text
+        self.assertIn("Себестоимость товара на Wildberries: расчёт и учёт партий", html)
+        self.assertIn("Себестоимость товара на WB: расчёт и учёт партий — MARKETSHELPER", html)
+        self.assertIn("Как рассчитать себестоимость товара на Wildberries: материалы, выпуск и партии FIFO.", html)
+        self.assertEqual(html.count("<h1>"), 1)
+        self.assertEqual(html.count('id="unit-cost"'), 1)
+        self.assertEqual(html.count('id="service"'), 1)
+        self.assertEqual(html.count("<summary>"), 6)
+        for href in ("/calculator", "/fifo-uchet", "/guides/fifo-po-partiyam", "/guides/pribyl-i-rashody-wb", "/dlya-proizvoditeley-wb", "/guides/iz-excel-v-uchet", "/guides/fifo-ili-srednyaya-v-akcii"):
+            self.assertIn(f'href="{href}"', html)
+        internal_links = [link for link in page_parser_links(html) if link.startswith("/")]
+        self.assertTrue(internal_links)
+        self.assertTrue(all("utm_" not in link for link in internal_links))
 
     def test_unknown_page_is_not_a_generic_landing(self):
         self.assertEqual(self.client.get("/guides/not-a-guide").status_code, 404)
