@@ -655,8 +655,8 @@ export function createProcurementOperation(input: {
       supplier_article: input.supplierArticle,
       product_name: input.productName,
       quantity: input.quantity,
+      // Supplier currency; the API applies the order-level exchange_rate.
       supplier_unit_price: input.unitPrice,
-      exchange_rate: input.exchangeRate,
     }],
   });
 }

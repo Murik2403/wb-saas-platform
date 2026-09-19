@@ -126,6 +126,10 @@ class ProcurementItemInput(BaseModel):
     supplier_article: str = ""
     product_name: str = ""
     quantity: FiniteFloat
+    # React sends the supplier price in the order currency. The procurement
+    # store converts it using the order's exchange_rate; unit_price is the
+    # older, already-RUB cost and remains accepted for existing callers.
+    supplier_unit_price: FiniteFloat = Field(default=0, ge=0)
     unit_price: FiniteFloat = 0
     note: str = ""
 
