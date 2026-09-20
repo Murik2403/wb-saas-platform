@@ -2828,6 +2828,72 @@ def remove_manual_expense(expense_id: int) -> dict:
     return {"message": "Расход удалён"}
 
 
+@app.get("/api/v1/dashboard/management-economics")
+def get_management_economics(
+    nm_id: int = Query(..., gt=0),
+    start: date = Query(...),
+    end: date = Query(...),
+) -> dict:
+    """Return a separate management view with explicit manual-expense coverage."""
+    if end < start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+    data = build_dashboard(start, end)
+    products = getattr(data, "financial_products", pd.DataFrame())
+    product = pd.DataFrame()
+    if not products.empty and "Артикул WB" in products.columns:
+        product = products[pd.to_numeric(products["Артикул WB"], errors="coerce") == nm_id]
+    row = product.iloc[0].to_dict() if not product.empty else {}
+
+    def number(*keys: str) -> float:
+        for key in keys:
+            value = pd.to_numeric(row.get(key), errors="coerce")
+            if pd.notna(value):
+                return float(value)
+        return 0.0
+
+    revenue = number("Выкупы по цене покупателя", "Выручка")
+    units = number("Продано нетто", "Продажи, шт", "Продажи", "Количество")
+    base_profit = number("Чистая прибыль", "Прибыль", "Маржа")
+    if not row:
+        status = "no_product_data"
+    else:
+        status = "ok"
+    expenses = read_manual_expenses(nm_id=nm_id, start=start, end=end)
+    rows = []
+    manual_total = 0.0
+    excluded_total = 0.0
+    for expense in expenses:
+        amount = float(expense["amount_rub"])
+        basis = expense["allocation_basis"]
+        expense_start = date.fromisoformat(str(expense["period_start"]))
+        expense_end = date.fromisoformat(str(expense["period_end"]))
+        overlap_start, overlap_end = max(start, expense_start), min(end, expense_end)
+        overlap_days = max((overlap_end - overlap_start).days + 1, 0)
+        expense_days = max((expense_end - expense_start).days + 1, 1)
+        period_share = min(overlap_days / expense_days, 1.0)
+        allocated = amount * units if basis == "per_unit" else revenue * amount / 100 if basis == "revenue_pct" else amount * period_share
+        excluded = expense["article"] == "wb_commission"
+        if excluded:
+            excluded_total += allocated
+        else:
+            manual_total += allocated
+        rows.append({**expense, "allocated_rub": round(allocated, 2), "excluded_from_result": excluded})
+    covered = {item["article"] for item in expenses}
+    return json_safe({
+        "nm_id": nm_id,
+        "data_status": status,
+        "period": {"start": start.isoformat(), "end": end.isoformat()},
+        "revenue_rub": round(revenue, 2),
+        "units": round(units, 2),
+        "accounting_profit_rub": round(base_profit, 2),
+        "manual_expenses_rub": round(manual_total, 2),
+        "management_profit_rub": round(base_profit - manual_total, 2),
+        "excluded_wb_commission_rub": round(excluded_total, 2),
+        "coverage": {"covered": sorted(covered), "missing": sorted(set(EXPENSE_ARTICLES) - covered), "count": len(covered), "total": len(EXPENSE_ARTICLES), "percent": round(len(covered) / len(EXPENSE_ARTICLES) * 100, 2)},
+        "items": rows,
+    })
+
+
 @app.patch("/api/v1/settings/product-costs")
 def update_product_costs(payload: ProductCostsUpdateInput) -> dict:
     if not payload.items:
