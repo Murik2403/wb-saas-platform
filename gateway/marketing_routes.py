@@ -22,6 +22,7 @@ MARKETING_PAGES = (
     ("/guides/nezavershennoe-proizvodstvo", "marketing_guide_nzp.html", "Незавершённое производство: где деньги между сырьём и продажей", "Где лежат деньги производителя между закупкой сырья и выплатой WB, как оценить НЗП и сверить баланс. Сквозной пример на условных числах."),
     ("/sverka-ostatkov-wb", "marketing_sverka.html", "Сервис сверки остатков WB: расхождение по каждому артикулу", "MARKETSHELPER сравнивает ваш учёт с остатками Wildberries по каждому артикулу с учётом товара в пути и показывает расхождение в штуках и рублях."),
     ("/guides/zamena-servisov-analitiki", "marketing_guide_zamena.html", "Как выбрать сервис аналитики WB: рынок, свой магазин или учёт", "Рынок, свой магазин или учёт себестоимости: какой класс инструментов нужен под задачу, что изменилось в данных WB в 2025 году и что проверить перед переходом."),
+    ("/ob-avtore", "marketing_author.html", "Об авторе: Мурат Вороков, основатель MARKETSHELPER", "Кто пишет руководства MARKETSHELPER: Мурат Вороков, основатель сервиса и продавец на Wildberries. Задачи, из которых вырос сервис, и темы, в которых он не эксперт."),
     ("/vs-1c", "marketing_vs_1c.html", "Учёт на маркетплейсах для продавца WB: MARKETSHELPER или 1С", "Учёт товаров, партий и продаж на Wildberries: что делает MARKETSHELPER, а что остаётся за 1С:Бухгалтерией и бухгалтером. Сравнение с УНФ, УТ и КА."),
 )
 PUBLIC_MARKETING_PATHS = tuple(page[0] for page in MARKETING_PAGES)
@@ -30,6 +31,9 @@ PUBLIC_MARKETING_PATHS = tuple(page[0] for page in MARKETING_PAGES)
 # verifiable from /contacts -- the site is run by a single ИП who sells on WB.
 AUTHOR_NAME = "Мурат Вороков"
 AUTHOR_ROLE = "основатель MARKETSHELPER, продавец на Wildberries"
+AUTHOR_LEGAL_NAME = "Индивидуальный предприниматель Вороков Мурат Валерьевич"
+# The page the byline and the Person @id in the JSON-LD point at.
+AUTHOR_PATH = "/ob-avtore"
 
 # Publication / last-change dates for the guides, kept here rather than in the
 # templates so the visible byline and the Article JSON-LD cannot drift apart.
@@ -43,6 +47,10 @@ GUIDE_DATES: dict[str, tuple[str, str]] = {
     "/guides/nezavershennoe-proizvodstvo": ("2026-09-19", "2026-09-19"),
     "/guides/zamena-servisov-analitiki": ("2026-09-19", "2026-09-20"),
 }
+
+# Guides the author page links to, in site order; derived so a new guide is
+# listed on the author page by adding it to MARKETING_PAGES and GUIDE_DATES.
+AUTHOR_GUIDES = tuple((path, title) for path, _, title, _ in MARKETING_PAGES if path in GUIDE_DATES)
 
 
 def llms_txt(base_url: str) -> str:
@@ -65,7 +73,7 @@ def llms_txt(base_url: str) -> str:
     lines += [
         "",
         "## Автор материалов",
-        f"{AUTHOR_NAME} — {AUTHOR_ROLE}.",
+        f"{AUTHOR_NAME} — {AUTHOR_ROLE}. Подробнее: {base_url}{AUTHOR_PATH}",
         "",
     ]
     return "\n".join(lines)
@@ -86,6 +94,9 @@ def create_marketing_router(templates: Jinja2Templates) -> APIRouter:
                 "article_modified": modified,
                 "author_name": AUTHOR_NAME,
                 "author_role": AUTHOR_ROLE,
+                "author_path": AUTHOR_PATH,
+                "author_legal_name": AUTHOR_LEGAL_NAME,
+                "author_guides": AUTHOR_GUIDES,
                 "trial_days": config.TRIAL_DAYS,
                 "price_rub": config.SUBSCRIPTION_PRICE_RUB,
                 "period_days": config.BILLING_PERIOD_DAYS,

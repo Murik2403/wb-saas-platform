@@ -1,0 +1,71 @@
+{% extends "marketing_base.html" %}
+{% block breadcrumb %}Об авторе{% endblock %}
+{% block head %}{{ super() }}
+{# The same Person node the guides reference by @id, now with a url and a page
+   of its own. One author in the graph, not two: @id is identical to the one in
+   the Article markup in marketing_base.html. `sameAs` is deliberately absent --
+   the site publishes no public profile, and a guessed link is worse than none. #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "{{ site_base_url() }}/#organization",
+      "name": "MARKETSHELPER",
+      "url": "{{ site_base_url() }}/"
+    },
+    {
+      "@type": "Person",
+      "@id": "{{ site_base_url() }}/#author",
+      "name": {{ author_name|tojson }},
+      "jobTitle": {{ author_role|tojson }},
+      "url": "{{ site_base_url() }}{{ request.url.path }}",
+      "mainEntityOfPage": "{{ site_base_url() }}{{ request.url.path }}",
+      "worksFor": { "@id": "{{ site_base_url() }}/#organization" }
+    }
+  ]
+}
+</script>
+{% endblock %}
+{% block marketing_content %}
+<header class="mk-hero">
+  <span class="mk-kicker">Об авторе</span>
+  <h1>{{ author_name }}</h1>
+  <p class="mk-lead">{{ author_role|capitalize }}. Сервис и все руководства на этом сайте я веду сам: материалы подписаны моим именем, потому что отвечаю за них я, а не редакция.</p>
+</header>
+<div class="mk-article">
+<section class="mk-section" aria-labelledby="kto-title">
+  <h2 id="kto-title">Кто я</h2>
+  <p>Меня зовут {{ author_name }}. Я основатель MARKETSHELPER и действующий продавец на Wildberries. Сервис оказывает {{ author_legal_name }} — реквизиты, ИНН, ОГРНИП и адрес опубликованы на странице <a href="/contacts">«Контакты и реквизиты»</a>.</p>
+  <p>Отдельной редакции у проекта нет. Тексты руководств пишу я, примеры в них — учебные, на условных числах, чтобы арифметику можно было проверить вручную.</p>
+</section>
+<section class="mk-section" aria-labelledby="zachem-title">
+  <h2 id="zachem-title">Из каких задач вырос сервис</h2>
+  <p>MARKETSHELPER появился из моих собственных рабочих вопросов, на которые отчёты кабинета WB не отвечают:</p>
+  <ul>
+    <li><strong>Себестоимость по фактическим партиям.</strong> Сырьё закупается по разным ценам, а списывается на выпуск в порядке поступления. Пока партии не разделены, себестоимость выпущенного товара — это средняя по складу, и решение о цене принимается по приблизительной цифре. Об этом — <a href="/fifo-uchet">FIFO по партиям</a> и <a href="/sebestoimost-wb">расчёт себестоимости</a>.</li>
+    <li><strong>Производство.</strong> Между закупкой сырья и отгрузкой есть норма расхода на комплект и рабочая смена, после закрытия которой появляется партия готового товара со своей стоимостью: сырьё, упаковка, работа и прочие затраты. Этот кусок учёта обычно живёт в таблицах.</li>
+    <li><strong>Сверка остатков.</strong> Остаток в своём учёте и остаток на WB расходятся — из-за товара в пути, приёмки и пересорта. Пока расхождение не разобрано по артикулам, непонятно, где ошибка: в учёте или на складе маркетплейса.</li>
+  </ul>
+  <p>Сервис — это те же расчёты, доведённые до рабочего экрана. Если ваш сценарий другой, честнее проверить его на одном товаре за пробный период, чем верить описанию.</p>
+</section>
+<section class="mk-section mk-note" aria-labelledby="ne-title">
+  <h2 id="ne-title">Чего я не берусь консультировать</h2>
+  <p><strong>Бухгалтерский и налоговый учёт.</strong> Я не бухгалтер. Проводки, налоги, декларации и книга учёта — к вашему бухгалтеру или в <a href="/vs-1c">1С:Бухгалтерию</a>. В сервисе их нет, и в руководствах я не даю рекомендаций по налогообложению.</p>
+  <p><strong>Внешняя аналитика ниш и конкурентов.</strong> Выбор ниши, оценка спроса и цен конкурентов — не моя область и не область сервиса: он работает только с данными вашего кабинета и вашего учёта. Что именно решает какой класс инструментов, разобрано в руководстве <a href="/guides/zamena-servisov-analitiki">о выборе сервиса аналитики</a>.</p>
+</section>
+<section class="mk-section" aria-labelledby="guides-title">
+  <h2 id="guides-title">Руководства, которые я написал</h2>
+  <ul>
+    {% for path, title in author_guides %}<li><a href="{{ path }}">{{ title }}</a></li>
+    {% endfor %}
+  </ul>
+  <p>Полный список — на странице <a href="/guides">«Руководства»</a>.</p>
+</section>
+<section class="mk-section" aria-labelledby="svyaz-title">
+  <h2 id="svyaz-title">Связаться и проверить реквизиты</h2>
+  <p>Email, телефон и юридические реквизиты ({{ author_legal_name }}) — на странице <a href="/contacts">«Контакты и реквизиты»</a>. Если в расчёте на сайте ошибка, напишите: исправлю и проставлю дату обновления в руководстве.</p>
+</section>
+</div>
+{% endblock %}
