@@ -66,8 +66,29 @@ _GROWTH_SCHEMA_STATEMENTS = [
 ]
 
 
+# Trial onboarding sequence (logic/trial_emails.py +
+# scripts/run_trial_emails.py). The composite primary key IS the
+# duplicate-send guard: the runner claims a row before handing the message
+# to SMTP, so a re-run or crashed worker can never mail the same step
+# twice. The opt-out lives in its own table on purpose -- it gates this
+# sequence only, never transactional mail (password reset, receipts).
+_TRIAL_EMAIL_SCHEMA_STATEMENTS = [
+    """CREATE TABLE IF NOT EXISTS trial_emails (
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        email_key TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'sent',
+        PRIMARY KEY (account_id, email_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS trial_email_optouts (
+        account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        opted_out_at TEXT NOT NULL
+    )""",
+]
+
+
 def _init_growth_schema(conn) -> None:
-    for statement in _GROWTH_SCHEMA_STATEMENTS:
+    for statement in _GROWTH_SCHEMA_STATEMENTS + _TRIAL_EMAIL_SCHEMA_STATEMENTS:
         conn.execute(statement)
 
 

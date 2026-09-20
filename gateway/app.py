@@ -35,7 +35,7 @@ from billing_routes import router as billing_router
 from internal_routes import router as internal_router
 from growth_internal import router as growth_internal_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
-from logic import accounts, compliance, csrf, db as control_db, password_reset, growth
+from logic import accounts, compliance, csrf, db as control_db, password_reset, growth, trial_emails
 from rate_limiter import RateLimiter
 from sentry_integration import initialize as initialize_sentry
 from template_setup import create_templates
@@ -254,6 +254,7 @@ _ROBOTS_DISALLOW = (
     "/internal/",
     "/webhooks/",
     "/healthz",
+    "/unsubscribe",
 )
 
 
@@ -367,6 +368,40 @@ def register_submit(
         accounts.EMAIL_VERIFICATION_TTL_HOURS,
     )
     return RedirectResponse("/verify-email-sent", status_code=303)
+
+
+@app.get("/unsubscribe", response_class=HTMLResponse)
+def unsubscribe_form(request: Request, token: str = ""):
+    """Opt-out of the trial onboarding sequence (link in every such email).
+
+    GET only confirms: it must never change anything. Corporate mail scanners
+    and antivirus link-prefetchers open every URL in a message, so a GET that
+    unsubscribed would quietly opt out people who never clicked. The HMAC
+    token in the link is the authorization; no session is required.
+    Transactional mail (password, email confirmation, payments) is unaffected.
+    """
+    valid = trial_emails.account_id_from_token(token) is not None
+    return templates.TemplateResponse(
+        request,
+        "unsubscribe.html",
+        {"token": token, "error": "" if valid else "Ссылка отписки недействительна или устарела."},
+        status_code=200 if valid else 400,
+    )
+
+
+@app.post("/unsubscribe", response_class=HTMLResponse)
+def unsubscribe(request: Request, token: str = Form("")):
+    account_id = trial_emails.account_id_from_token(token)
+    if account_id is None:
+        return templates.TemplateResponse(
+            request,
+            "unsubscribe.html",
+            {"token": "", "error": "Ссылка отписки недействительна или устарела."},
+            status_code=400,
+        )
+    with control_db.connect() as conn:
+        trial_emails.record_optout(conn, account_id)
+    return templates.TemplateResponse(request, "unsubscribe.html", {"done": True})
 
 
 @app.get("/verify-email-sent", response_class=HTMLResponse)
