@@ -28,7 +28,7 @@ def fixture_tree(root):
         copies.append("COPY mh-redesign-lab/" + name + " ./" + name)
     write(root, "mh-redesign-lab/Dockerfile.tenant-staging", "\n".join(copies) + "\nLABEL org.opencontainers.image.revision=$REDESIGN_BUILD_ID\nRUN npm run build\nCOPY --from=frontend-build /frontend/dist /usr/share/nginx/html\n")
     write(root, "mh-redesign-lab/src/data-source.ts", "\n".join(route for _, route in gate.GROWTH_ROUTES))
-    write(root, "mh-redesign-lab/deploy/nginx.tenant-staging.conf", "location /api/ { proxy_pass http://127.0.0.1:8001; }\nlocation = /healthz { proxy_pass http://127.0.0.1:8001/healthz; }")
+    write(root, "mh-redesign-lab/deploy/nginx.tenant-staging.conf", "location /api/ { proxy_pass http://127.0.0.1:8001; proxy_set_header X-Tenant-Account $http_x_tenant_account; proxy_set_header X-Tenant-Role $http_x_tenant_role; }\nlocation = /healthz { proxy_pass http://127.0.0.1:8001/healthz; }")
     return root
 
 
@@ -70,6 +70,13 @@ def test_missing_health_route_is_detected(tmp_path):
     api = tmp_path / "mh-redesign-lab/tenant-api/api_server.py"
     api.write_text(api.read_text().replace('@app.get("/healthz")', '@app.get("/health-typo")'))
     assert any("GET /healthz" in message for message in gate.check_sources(tmp_path)["failures"])
+
+
+def test_tenant_identity_headers_must_reach_api_proxy(tmp_path):
+    fixture_tree(tmp_path)
+    nginx = tmp_path / "mh-redesign-lab/deploy/nginx.tenant-staging.conf"
+    nginx.write_text(nginx.read_text().replace("proxy_set_header X-Tenant-Role $http_x_tenant_role;", ""))
+    assert any("authenticated X-Tenant-Role" in message for message in gate.check_sources(tmp_path)["failures"])
 
 
 def test_missing_frontend_build_input_is_detected(tmp_path):

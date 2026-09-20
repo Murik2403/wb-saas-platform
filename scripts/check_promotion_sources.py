@@ -139,6 +139,9 @@ def check_sources(root: Path) -> dict:
     for location in ("location /api/", "location = /healthz"):
         if location not in nginx:
             failures.append(f"Tenant nginx is missing {location}")
+    for header in ("X-Tenant-Account", "X-Tenant-Role"):
+        if f"proxy_set_header {header} $http_{header.lower().replace('-', '_')};" not in nginx:
+            failures.append(f"Tenant nginx does not forward authenticated {header}")
     checks.append("Tenant nginx API and health proxy locations examined")
     standalone_compose = lab / "deploy/docker-compose.redesign-tenant.yml"
     if standalone_compose.is_file():
