@@ -10,6 +10,8 @@
     <div><div class="label">Предварительная маржа с единицы</div><div class="calc-big good" id="calcProfit">426 ₽</div></div>
     <div><div class="label">Доля от цены продажи</div><div class="calc-sub" id="calcMargin">35,5%</div></div>
     <p id="calcError" class="calc-note" hidden>Введите неотрицательные числа во всех полях. Комиссия — от 0 до 100%.</p>
+    <p><button type="button" class="btn btn-ghost" id="calcDownload">Скачать расчёт в CSV</button></p>
+    <p class="calc-note">Файл собирается в браузере. Как только вы меняете значения, адрес страницы обновляется — скопируйте его из адресной строки, чтобы отправить этот расчёт коллеге.</p>
     <p class="calc-note">Это не чистая прибыль. Не учтены скидки и корректировки цены, хранение, приёмка, возвраты, эквайринг, другие начисления, налоги и общие расходы. Введённые суммы рассчитываются в браузере и не отправляются на сервер.</p>
     <noscript><p class="calc-note">Для пересчёта включите JavaScript. Сейчас показан условный пример для значений по умолчанию.</p></noscript>
   </div>
@@ -17,21 +19,96 @@
 <script>
 (function () {
   "use strict";
-  var inputs = ["calcPrice", "calcCost", "calcCommission", "calcLogistics", "calcAds"].map(function(id) { return document.getElementById(id); });
+  var FIELDS = [
+    {id: "calcPrice", param: "price", label: "Цена продажи", max: 1e9},
+    {id: "calcCost", param: "cost", label: "Себестоимость", max: 1e9},
+    {id: "calcCommission", param: "commission", label: "Комиссия WB", max: 100},
+    {id: "calcLogistics", param: "logistics", label: "Логистика и упаковка", max: 1e9},
+    {id: "calcAds", param: "ads", label: "Реклама на единицу", max: 1e9}
+  ];
+  var inputs = FIELDS.map(function (field) { return document.getElementById(field.id); });
   var profitEl = document.getElementById("calcProfit"), marginEl = document.getElementById("calcMargin"), errorEl = document.getElementById("calcError");
-  function calculate() {
-    var values = inputs.map(function(input) { return input.value.trim() === "" ? NaN : Number(input.value); });
-    var valid = values.every(function(value, index) { return Number.isFinite(value) && value >= 0 && (index !== 2 || value <= 100); });
-    inputs.forEach(function(input,index) { input.setAttribute("aria-invalid", String(!Number.isFinite(values[index]) || values[index] < 0 || (index === 2 && values[index] > 100))); });
+  var downloadEl = document.getElementById("calcDownload");
+  var ready = null;
+
+  function number(value) { return String(Math.round(value * 100) / 100).replace(".", ","); }
+
+  // Query-string values are untrusted: reject anything non-numeric or negative,
+  // clamp the rest, and only ever assign them to input.value — never to markup.
+  function clamped(raw, max) {
+    if (raw === null || String(raw).trim() === "") { return null; }
+    var value = Number(String(raw).replace(",", "."));
+    if (!Number.isFinite(value) || value < 0) { return null; }
+    return Math.min(value, max);
+  }
+
+  function restore() {
+    if (typeof location === "undefined" || typeof URLSearchParams === "undefined") { return; }
+    var query = new URLSearchParams(location.search || "");
+    FIELDS.forEach(function (field, index) {
+      var value = clamped(query.get(field.param), field.max);
+      if (value !== null) { inputs[index].value = String(value); }
+    });
+  }
+
+  function syncUrl(values) {
+    if (typeof history === "undefined" || !history.replaceState || typeof URLSearchParams === "undefined") { return; }
+    var query = new URLSearchParams();
+    FIELDS.forEach(function (field, index) { query.set(field.param, String(values[index])); });
+    try { history.replaceState(null, "", location.pathname + "?" + query.toString()); } catch (error) { /* sandboxed frames and file:// refuse this */ }
+  }
+
+  function csv(values, profit) {
+    var price = values[0];
+    var rows = [
+      ["Показатель", "Сумма ₽"],
+      [FIELDS[0].label, price],
+      [FIELDS[1].label, -values[1]],
+      [FIELDS[2].label + " " + number(values[2]) + "%", -(price * values[2] / 100)],
+      [FIELDS[3].label, -values[3]],
+      [FIELDS[4].label, -values[4]],
+      ["Предварительная маржа", profit],
+      ["Доля от цены продажи %", price > 0 ? profit / price * 100 : "не определена"]
+    ];
+    return "﻿" + rows.map(function (row) {
+      return row.map(function (cell) { return typeof cell === "number" ? number(cell) : cell; }).join(";");
+    }).join("\r\n") + "\r\n";
+  }
+
+  function download() {
+    if (!ready) { return; }
+    var url = URL.createObjectURL(new Blob([csv(ready.values, ready.profit)], {type: "text/csv;charset=utf-8"}));
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = "marketshelper-raschet.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function calculate(edited) {
+    var values = inputs.map(function (input) { return input.value.trim() === "" ? NaN : Number(input.value); });
+    function ok(value, index) { return Number.isFinite(value) && value >= 0 && value <= FIELDS[index].max; }
+    var valid = values.every(ok);
+    inputs.forEach(function (input, index) { input.setAttribute("aria-invalid", String(!ok(values[index], index))); });
     errorEl.hidden = valid;
+    ready = null;
+    downloadEl.disabled = true;
     if (!valid) { profitEl.textContent = "—"; marginEl.textContent = "—"; profitEl.className = "calc-big"; return; }
     var price = values[0], profit = price - values[1] - price * values[2] / 100 - values[3] - values[4];
     if (!Number.isFinite(profit)) { profitEl.textContent = "—"; marginEl.textContent = "—"; errorEl.hidden = false; return; }
     profitEl.textContent = profit.toLocaleString("ru-RU", {maximumFractionDigits:2}) + " ₽";
     marginEl.textContent = price > 0 ? (profit / price * 100).toLocaleString("ru-RU", {maximumFractionDigits:1}) + "%" : "Не определена при нулевой цене";
     profitEl.className = "calc-big " + (profit < 0 ? "critical" : profit === 0 ? "warn" : "good");
+    ready = {values: values, profit: profit};
+    downloadEl.disabled = false;
+    if (edited) { syncUrl(values); }
   }
-  inputs.forEach(function(input) { input.addEventListener("input", calculate); });
-  calculate();
+
+  inputs.forEach(function (input) { input.addEventListener("input", function () { calculate(true); }); });
+  downloadEl.addEventListener("click", download);
+  restore();
+  calculate(false);
 })();
 </script>
