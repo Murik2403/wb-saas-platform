@@ -35,7 +35,7 @@ from billing_routes import router as billing_router
 from internal_routes import router as internal_router
 from growth_internal import router as growth_internal_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
-from logic import accounts, compliance, csrf, db as control_db, password_reset, growth
+from logic import accounts, compliance, csrf, db as control_db, password_reset, growth, trial_emails
 from rate_limiter import RateLimiter
 from sentry_integration import initialize as initialize_sentry
 from template_setup import create_templates
@@ -367,6 +367,24 @@ def register_submit(
         accounts.EMAIL_VERIFICATION_TTL_HOURS,
     )
     return RedirectResponse("/verify-email-sent", status_code=303)
+
+
+@app.get("/unsubscribe", response_class=PlainTextResponse)
+def unsubscribe(token: str = ""):
+    """One-click opt-out of the trial onboarding sequence (link in every one
+    of those emails). No session required -- the HMAC token in the link is
+    the authorization, and a mail client that prefetches it only unsubscribes
+    the person it was addressed to. Transactional mail is unaffected."""
+    account_id = trial_emails.account_id_from_token(token)
+    if account_id is None:
+        return PlainTextResponse("Ссылка отписки недействительна.", status_code=400)
+    with control_db.connect() as conn:
+        trial_emails.record_optout(conn, account_id)
+    return PlainTextResponse(
+        "Вы отписаны от обучающей цепочки писем MARKETSHELPER.\n\n"
+        "Письма о пароле, подтверждении email и об оплате продолжат приходить — "
+        "они нужны для работы аккаунта."
+    )
 
 
 @app.get("/verify-email-sent", response_class=HTMLResponse)
