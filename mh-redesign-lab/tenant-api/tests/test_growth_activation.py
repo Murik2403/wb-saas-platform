@@ -34,6 +34,27 @@ def test_read_only_readiness_does_not_backfill_activation(growth_db):
         assert conn.execute("SELECT COUNT(*) FROM growth_event_outbox").fetchone()[0] == 0
 
 
+def test_missing_selection_recommends_latest_sold_sku(growth_db):
+    with sqlite3.connect(growth_db) as conn:
+        conn.execute("INSERT INTO financial_report VALUES(2,456,'2026-09-18',1,900)")
+        conn.execute("INSERT INTO financial_report VALUES(3,789,'2026-09-18',3,1200)")
+    result = activation_summary(growth_db, connected=True, is_demo=False, nm_id=None)
+    assert result["selected_product"]["nm_id"] is None
+    assert result["recommended_product"] == {
+        "nm_id": 789,
+        "product_name": "",
+        "supplier_article": "",
+        "latest_sale_at": "2026-09-18",
+    }
+
+
+def test_missing_selection_does_not_recommend_non_sold_rows(growth_db):
+    with sqlite3.connect(growth_db) as conn:
+        conn.execute("DELETE FROM financial_report")
+        conn.execute("INSERT INTO financial_report VALUES(2,456,'2026-09-18',0,0)")
+    assert activation_summary(growth_db, connected=True, is_demo=False, nm_id=None)["recommended_product"] is None
+
+
 @pytest.mark.parametrize("status", ["error", "partial", "running"])
 def test_failed_partial_or_running_sync_does_not_count(growth_db, status):
     with sqlite3.connect(growth_db) as conn:

@@ -34,6 +34,13 @@ describe("first report onboarding", () => {
     await waitFor(() => expect(recordFirstReportViewed).toHaveBeenCalledWith(report));
   });
 
+  it("preselects the first sold SKU after a successful sync when none is selected", async () => {
+    vi.mocked(getActivationSummary).mockResolvedValue({ ...summary, selected_product: { nm_id: null, cost_configured: false, has_financial_rows: false }, ready_for_report: false, next_step: "cost", recommended_product: { nm_id: 123, product_name: "Тестовый товар", supplier_article: "test", latest_sale_at: "2026-09-18" } });
+    render(<OnboardingPanel {...props} />);
+    await waitFor(() => expect(screen.getByLabelText("Товар для первого отчёта")).toHaveValue("123"));
+    expect(screen.getByText("Предвыбран первый товар с продажами за загруженный период.")).toBeVisible();
+  });
+
   it("keeps the failed sync checklist visible and report disabled", async () => {
     vi.mocked(getActivationSummary).mockResolvedValue({ ...summary, sync: { state: "error", complete: false, successful_full_sync_at: null }, ready_for_report: false, next_step: "sync" });
     render(<OnboardingPanel {...props} runs={[{ ...props.runs[0], status: "error" }]} />);

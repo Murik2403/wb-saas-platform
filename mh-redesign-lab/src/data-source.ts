@@ -934,6 +934,7 @@ export type ActivationSummary = {
   wb_connected: boolean;
   sync: { state: string; complete: boolean; successful_full_sync_at: string | null };
   selected_product: { nm_id: number | null; cost_configured: boolean; has_financial_rows: boolean };
+  recommended_product?: { nm_id: number; product_name: string; supplier_article: string; latest_sale_at: string } | null;
   ready_for_report: boolean;
   next_step: string;
   first_value_verified: boolean;

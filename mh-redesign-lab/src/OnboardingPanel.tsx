@@ -60,7 +60,14 @@ export function OnboardingPanel(props: Props) {
   useEffect(() => {
     let current = true;
     setSummary(null); setReport(null); setError("");
-    void getActivationSummary(nmId).then((value) => { if (current) setSummary(value); })
+    void getActivationSummary(nmId).then((value) => {
+      if (!current) return;
+      setSummary(value);
+      const recommended = value.recommended_product;
+      if (nmId === null && value.sync.complete && recommended?.nm_id && props.costs.some((cost) => cost.nm_id === recommended.nm_id)) {
+        setNmId((selected) => selected ?? recommended.nm_id);
+      }
+    })
       .catch((reason) => { if (current) setError(reason instanceof Error ? reason.message : "Не удалось проверить готовность отчёта"); });
     return () => { current = false; };
   }, [props.connected, props.runs, props.costs, nmId, refresh]);
@@ -106,6 +113,7 @@ export function OnboardingPanel(props: Props) {
         <span className="onboarding-step-number">3</span><div><strong>Выбрать товар и проверить себестоимость</strong><small>Укажите всю себестоимость единицы: закупку или сырьё, производство и упаковку. Нулевое значение не считается заполненным.</small></div>
         <div className="onboarding-inline-form"><select aria-label="Товар для первого отчёта" value={nmId ?? ""} disabled={!syncComplete || loading} onChange={(event) => setNmId(event.target.value ? Number(event.target.value) : null)}><option value="">Выберите товар</option>{props.costs.map((cost) => <option key={cost.nm_id} value={cost.nm_id}>{cost.product_name || cost.supplier_article || cost.nm_id} · WB {cost.nm_id}</option>)}</select>{evidence.selected ? <button className="ghost-button" disabled={props.busy} type="button" onClick={() => props.onEditCost(evidence.selected!)}>{costComplete ? "Проверить стоимость" : "Указать стоимость"}</button> : null}</div>
         {syncComplete && !props.costs.length ? <p className="form-hint">Товары ещё не появились. Проверьте каталог и историю загрузки ниже.</p> : null}
+        {syncComplete && nmId && summary?.recommended_product?.nm_id === nmId && !summary.selected_product.nm_id ? <p className="form-hint" role="status">Предвыбран первый товар с продажами за загруженный период.</p> : null}
       </article>
       <article className={`onboarding-step ${summary?.ready_for_report ? "current" : "locked"}`}>
         <span className="onboarding-step-number">4</span><div><strong>Открыть первый отчёт</strong><small>{summary?.next_step === "financial_data" ? "По выбранному товару нет реализации WB. Выберите проданный товар или загрузите нужный период." : "Покажем экономику выбранного товара за 30 дней до последней доступной реализации."}</small></div>

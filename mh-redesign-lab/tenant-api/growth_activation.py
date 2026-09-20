@@ -52,6 +52,31 @@ def activation_summary(db_path: str | Path, *, connected: bool, is_demo: bool, n
         last_finance = None
         financial_rows = 0
         window = None
+        recommended_product = None
+        if not nm_id and full_sync and "financial_report" in tables:
+            sold = conn.execute("""SELECT nm_id, MAX(SUBSTR(operation_date,1,10)) AS latest_sale_at,
+                    SUM(ABS(COALESCE(quantity,0))) AS sold_units,
+                    SUM(ABS(COALESCE(retail_amount,0))) AS revenue
+                FROM financial_report
+                WHERE nm_id > 0 AND (COALESCE(quantity,0) != 0 OR COALESCE(retail_amount,0) != 0)
+                GROUP BY nm_id
+                ORDER BY latest_sale_at DESC, sold_units DESC, revenue DESC, nm_id ASC
+                LIMIT 1""").fetchone()
+            if sold:
+                product_name = ""
+                supplier_article = ""
+                if "products_catalog" in tables:
+                    catalog = conn.execute("""SELECT supplier_article, product_name FROM products_catalog
+                        WHERE nm_id=? LIMIT 1""", (int(sold[0]),)).fetchone()
+                    if catalog:
+                        supplier_article = str(catalog[0] or "")
+                        product_name = str(catalog[1] or "")
+                recommended_product = {
+                    "nm_id": int(sold[0]),
+                    "product_name": product_name,
+                    "supplier_article": supplier_article,
+                    "latest_sale_at": str(sold[1] or ""),
+                }
         if nm_id and "financial_report" in tables:
             row = conn.execute("""SELECT MAX(SUBSTR(operation_date,1,10)) FROM financial_report
                 WHERE nm_id=? AND (COALESCE(quantity,0)!=0 OR COALESCE(retail_amount,0)!=0)""", (nm_id,)).fetchone()
@@ -79,6 +104,7 @@ def activation_summary(db_path: str | Path, *, connected: bool, is_demo: bool, n
                  "successful_full_sync_at": latest["finished_at"] if full_sync else None},
         "selected_product": {"nm_id": nm_id, "cost_configured": cost_ready,
                              "has_financial_rows": bool(financial_rows)},
+        "recommended_product": recommended_product,
         "period": window,
         "ready_for_report": next_step == "open_report",
         "next_step": next_step,
