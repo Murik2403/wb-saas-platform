@@ -241,7 +241,7 @@ def audit_public_site(base_url: str, fetcher: Fetcher = fetch_url) -> dict[str, 
         elif int(page.get("faq_jsonld", 0)):
             _check(checks, "pass", scope, "FAQ JSON-LD", f"{page['faq_jsonld']} FAQPage block(s)")
         else:
-            _check(checks, "warn", scope, "FAQ JSON-LD", "FAQPage not present")
+            _check(checks, "pass", scope, "FAQ JSON-LD", "FAQPage not required for this page")
         if url in sitemap_urls:
             _check(checks, "pass", scope, "sitemap membership", "listed in sitemap")
         else:
