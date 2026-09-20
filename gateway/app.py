@@ -15,6 +15,7 @@ before any paying customer touches it. See ../DEPLOY.md.
 from __future__ import annotations
 
 import logging
+import hashlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,6 +92,18 @@ def _render_auth_form_error(request: Request, template_name: str, context: dict,
 auth_rate_limiter = RateLimiter(
     requests_per_window=10,
     window_seconds=60,
+    storage_backend="db",
+    db_connect=control_db.connect,
+)
+verification_resend_ip_limiter = RateLimiter(
+    requests_per_window=5,
+    window_seconds=15 * 60,
+    storage_backend="db",
+    db_connect=control_db.connect,
+)
+verification_resend_email_limiter = RateLimiter(
+    requests_per_window=3,
+    window_seconds=60 * 60,
     storage_backend="db",
     db_connect=control_db.connect,
 )
@@ -381,7 +394,9 @@ def register_submit(
         verify_url,
         accounts.EMAIL_VERIFICATION_TTL_HOURS,
     )
-    return RedirectResponse("/verify-email-sent", status_code=303)
+    sent_params = {"invite": invite} if invite else {}
+    sent_url = f"/verify-email-sent?{urlencode(sent_params)}" if sent_params else "/verify-email-sent"
+    return RedirectResponse(sent_url, status_code=303)
 
 
 @app.get("/unsubscribe", response_class=HTMLResponse)
@@ -419,8 +434,61 @@ def unsubscribe(request: Request, token: str = Form("")):
 
 
 @app.get("/verify-email-sent", response_class=HTMLResponse)
-def verify_email_sent(request: Request):
-    return templates.TemplateResponse(request, "verify_email_sent.html", {"analytics_goals": ["account_created"]})
+def verify_email_sent(request: Request, invite: str = ""):
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "verify_email_sent.html",
+        {"analytics_goals": ["account_created"], "csrf_token": csrf_token, "invite": invite},
+    )
+    csrf.set_cookie(response, csrf_token)
+    return response
+
+
+@app.post("/resend-verification", response_class=HTMLResponse)
+def resend_verification(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    email: str = Form(""),
+    csrf_token: str = Form(""),
+    invite: str = Form(""),
+):
+    """Resend confirmation without revealing whether an email is registered."""
+    normalized_email = (email or "").strip().lower()
+    email_key = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()
+    allowed = (
+        csrf.verify(request, csrf_token)
+        and verification_resend_ip_limiter.is_allowed(f"resend-verification:{_client_ip(request)}")
+        and verification_resend_email_limiter.is_allowed(f"resend-verification:{email_key}")
+    )
+    if allowed:
+        with control_db.connect() as conn:
+            account = accounts.get_account_by_email(conn, normalized_email)
+            if account is not None and not accounts.is_email_verified(account):
+                token = accounts.create_email_verification_token(conn, int(account["id"]))
+                verify_params = {"token": token}
+                if invite:
+                    verify_params["invite"] = invite
+                verify_url = f"{config.base_url()}/verify-email?{urlencode(verify_params)}"
+                background_tasks.add_task(
+                    mailer.send_email_verification_email,
+                    normalized_email,
+                    verify_url,
+                    accounts.EMAIL_VERIFICATION_TTL_HOURS,
+                )
+    resend_csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "verify_email_sent.html",
+        {
+            "analytics_goals": ["account_created"],
+            "csrf_token": resend_csrf_token,
+            "invite": invite,
+            "resend_message": "Если аккаунт существует и email ещё не подтверждён, мы отправили новое письмо. Проверьте папку «Спам».",
+        },
+    )
+    csrf.set_cookie(response, resend_csrf_token)
+    return response
 
 
 @app.get("/verify-email")

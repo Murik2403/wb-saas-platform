@@ -13,10 +13,10 @@ from .base import GatewayDbTestCase
 REAL_CONNECT = control_db.connect
 
 
-def _request(path: str, method: str = "POST") -> Request:
+def _request(path: str, method: str = "POST", headers=None) -> Request:
     return Request({
         "type": "http",
-        "headers": [],
+        "headers": headers or [],
         "method": method,
         "path": path,
         "client": ("198.51.100.10", 12345),
@@ -89,3 +89,49 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
             account = accounts.get_account_by_id(conn, account_id)
             self.assertTrue(accounts.is_email_verified(account))
             self.assertEqual(accounts.get_tenant_for_account(conn, account_id)["id"], tenant_id)
+
+    def test_resend_verification_queues_new_token_without_enumeration(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(
+                conn, "seller@example.test", "safe-password-123", email_verified=False
+            )
+            old_token = accounts.create_email_verification_token(conn, account_id)
+        background = BackgroundTasks()
+        with (
+            mock.patch.object(app.control_db, "connect", side_effect=self._app_connect),
+            mock.patch.object(app.csrf, "verify", return_value=True),
+            mock.patch.object(app.verification_resend_ip_limiter, "is_allowed", return_value=True),
+            mock.patch.object(app.verification_resend_email_limiter, "is_allowed", return_value=True),
+        ):
+            response = app.resend_verification(
+                _request("/resend-verification", headers=[(b"cookie", b"wb_saas_csrf=csrf")]),
+                background,
+                "seller@example.test",
+                "csrf",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Если аккаунт существует", response.body.decode("utf-8"))
+        self.assertEqual(len(background.tasks), 1)
+        with self.connect() as conn:
+            rows = conn.execute("SELECT token_hash FROM email_verification_tokens").fetchall()
+            self.assertEqual(len(rows), 1)
+            with self.assertRaises(ValueError):
+                accounts.consume_email_verification_token(conn, old_token)
+
+    def test_resend_verification_unknown_email_returns_same_neutral_screen(self) -> None:
+        background = BackgroundTasks()
+        with (
+            mock.patch.object(app.control_db, "connect", side_effect=self._app_connect),
+            mock.patch.object(app.csrf, "verify", return_value=True),
+            mock.patch.object(app.verification_resend_ip_limiter, "is_allowed", return_value=True),
+            mock.patch.object(app.verification_resend_email_limiter, "is_allowed", return_value=True),
+        ):
+            response = app.resend_verification(
+                _request("/resend-verification", headers=[(b"cookie", b"wb_saas_csrf=csrf")]),
+                background,
+                "missing@example.test",
+                "csrf",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Если аккаунт существует", response.body.decode("utf-8"))
+        self.assertEqual(len(background.tasks), 0)

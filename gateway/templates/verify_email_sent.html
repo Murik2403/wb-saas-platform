@@ -5,10 +5,18 @@
 <h1>Проверьте почту</h1>
 {% if error %}
   <div class="error">{{ error }}</div>
-  <p class="subtitle">Запросите новую регистрацию с актуальным email или обратитесь в поддержку.</p>
+  <p class="subtitle">Можно запросить письмо ещё раз ниже. Если проблема сохраняется, обратитесь в поддержку.</p>
 {% else %}
   <p class="subtitle">Мы отправили письмо со ссылкой подтверждения. Кабинет начнёт разворачиваться после перехода по ней.</p>
   <div class="info">Ссылка действует 24 часа. Если письма нет, проверьте папку «Спам».</div>
 {% endif %}
+{% if resend_message %}<div class="info">{{ resend_message }}</div>{% endif %}
+<form method="post" action="/resend-verification">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="invite" value="{{ invite or '' }}">
+  <label for="resend-email">Email регистрации</label>
+  <input type="email" id="resend-email" name="email" autocomplete="email" required>
+  <button type="submit">Отправить письмо ещё раз</button>
+</form>
 <div class="footer-link"><a href="/login">Вернуться ко входу</a></div>
 {% endblock %}
