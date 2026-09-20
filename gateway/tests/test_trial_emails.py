@@ -221,18 +221,42 @@ class UnsubscribeTests(GatewayDbTestCase):
         self.assertIsNone(trial_emails.account_id_from_token(f"{self.account_id}.deadbeef"))
         self.assertIsNone(trial_emails.account_id_from_token(token.replace(str(self.account_id), "99", 1)))
 
-    def test_public_route_records_the_optout_and_confirms_in_plain_text(self) -> None:
+    def test_get_confirms_without_changing_anything(self) -> None:
+        """Mail scanners and antivirus prefetchers open every link in a message,
+        so the GET must not opt anyone out -- it only renders the confirmation."""
+        from fastapi.testclient import TestClient
         import app
 
         real = control_db.connect
+        token = trial_emails.unsubscribe_token(self.account_id)
         with mock.patch.object(app.control_db, "connect", lambda *a, **k: real(self.db_path)):
-            response = app.unsubscribe(trial_emails.unsubscribe_token(self.account_id))
-            rejected = app.unsubscribe("1.not-a-signature")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Вы отписаны".encode(), response.body)
+            client = TestClient(app.app)
+            shown = client.get("/unsubscribe", params={"token": token})
+            rejected = client.get("/unsubscribe", params={"token": "1.not-a-signature"})
+        self.assertEqual(shown.status_code, 200)
+        self.assertIn("<form", shown.text)
+        self.assertIn("noindex", shown.text)
+        self.assertEqual(rejected.status_code, 400)
+        self.assertNotIn("<form", rejected.text)
+        with self.connect() as conn:
+            self.assertFalse(trial_emails.is_opted_out(conn, self.account_id))
+
+    def test_post_records_the_optout(self) -> None:
+        from fastapi.testclient import TestClient
+        import app
+
+        real = control_db.connect
+        token = trial_emails.unsubscribe_token(self.account_id)
+        with mock.patch.object(app.control_db, "connect", lambda *a, **k: real(self.db_path)):
+            client = TestClient(app.app)
+            done = client.post("/unsubscribe", data={"token": token})
+            rejected = client.post("/unsubscribe", data={"token": "1.not-a-signature"})
+        self.assertEqual(done.status_code, 200)
+        self.assertIn("Вы отписаны", done.text)
         self.assertEqual(rejected.status_code, 400)
         with self.connect() as conn:
             self.assertTrue(trial_emails.is_opted_out(conn, self.account_id))
+
 
     def test_optout_is_recorded_idempotently(self) -> None:
         with self.connect() as conn:

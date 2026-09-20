@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Отписка от писем — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+{% if done %}
+  <h1>Вы отписаны</h1>
+  <p class="subtitle">Обучающие письма больше не придут.</p>
+  <div class="info">Письма о пароле, подтверждении email и об оплате продолжат приходить — они нужны для работы аккаунта.</div>
+{% elif error %}
+  <h1>Ссылка не подошла</h1>
+  <div class="error">{{ error }}</div>
+  <p class="subtitle">Откройте ссылку из последнего письма целиком или напишите в поддержку.</p>
+{% else %}
+  <h1>Отписаться от обучающих писем?</h1>
+  <p class="subtitle">Это короткая серия писем о том, как получить первый отчёт по вашему товару.</p>
+  {# The opt-out happens on POST, never on GET: corporate mail scanners and
+     antivirus link-prefetchers open every URL in a message, and a GET that
+     unsubscribed would silently opt people out who never clicked. #}
+  <form method="post" action="/unsubscribe">
+    <input type="hidden" name="token" value="{{ token }}">
+    <button class="btn btn-primary" type="submit">Отписаться</button>
+  </form>
+  <div class="info">Письма о пароле, подтверждении email и об оплате продолжат приходить в любом случае.</div>
+{% endif %}
+{% endblock %}

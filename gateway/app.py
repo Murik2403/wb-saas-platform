@@ -254,6 +254,7 @@ _ROBOTS_DISALLOW = (
     "/internal/",
     "/webhooks/",
     "/healthz",
+    "/unsubscribe",
 )
 
 
@@ -369,22 +370,38 @@ def register_submit(
     return RedirectResponse("/verify-email-sent", status_code=303)
 
 
-@app.get("/unsubscribe", response_class=PlainTextResponse)
-def unsubscribe(token: str = ""):
-    """One-click opt-out of the trial onboarding sequence (link in every one
-    of those emails). No session required -- the HMAC token in the link is
-    the authorization, and a mail client that prefetches it only unsubscribes
-    the person it was addressed to. Transactional mail is unaffected."""
+@app.get("/unsubscribe", response_class=HTMLResponse)
+def unsubscribe_form(request: Request, token: str = ""):
+    """Opt-out of the trial onboarding sequence (link in every such email).
+
+    GET only confirms: it must never change anything. Corporate mail scanners
+    and antivirus link-prefetchers open every URL in a message, so a GET that
+    unsubscribed would quietly opt out people who never clicked. The HMAC
+    token in the link is the authorization; no session is required.
+    Transactional mail (password, email confirmation, payments) is unaffected.
+    """
+    valid = trial_emails.account_id_from_token(token) is not None
+    return templates.TemplateResponse(
+        request,
+        "unsubscribe.html",
+        {"token": token, "error": "" if valid else "Ссылка отписки недействительна или устарела."},
+        status_code=200 if valid else 400,
+    )
+
+
+@app.post("/unsubscribe", response_class=HTMLResponse)
+def unsubscribe(request: Request, token: str = Form("")):
     account_id = trial_emails.account_id_from_token(token)
     if account_id is None:
-        return PlainTextResponse("Ссылка отписки недействительна.", status_code=400)
+        return templates.TemplateResponse(
+            request,
+            "unsubscribe.html",
+            {"token": "", "error": "Ссылка отписки недействительна или устарела."},
+            status_code=400,
+        )
     with control_db.connect() as conn:
         trial_emails.record_optout(conn, account_id)
-    return PlainTextResponse(
-        "Вы отписаны от обучающей цепочки писем MARKETSHELPER.\n\n"
-        "Письма о пароле, подтверждении email и об оплате продолжат приходить — "
-        "они нужны для работы аккаунта."
-    )
+    return templates.TemplateResponse(request, "unsubscribe.html", {"done": True})
 
 
 @app.get("/verify-email-sent", response_class=HTMLResponse)
