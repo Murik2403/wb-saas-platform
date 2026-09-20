@@ -134,6 +134,21 @@ class PageMetadataTests(unittest.TestCase):
         for question in faq["mainEntity"]:
             self.assertIn(question["name"], html)
 
+    def test_cost_and_calculator_pages_ship_visible_faq_structured_data(self) -> None:
+        for path in ("/sebestoimost-wb", "/calculator"):
+            with self.subTest(path=path):
+                html = self.client.get(path).text
+                blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+                faq_blocks = [json.loads(block) for block in blocks if '"@type": "FAQPage"' in block]
+                self.assertEqual(len(faq_blocks), 1)
+                faq = faq_blocks[0]
+                self.assertEqual(faq["@type"], "FAQPage")
+                self.assertEqual(len(faq["mainEntity"]), 6)
+                self.assertEqual(html.count("<summary>"), 6)
+                for question in faq["mainEntity"]:
+                    self.assertIn(question["name"], html)
+                    self.assertIn(question["acceptedAnswer"]["text"], html)
+
 
 class AnalyticsOptInTests(unittest.TestCase):
     """The counter must stay off unless it is explicitly configured."""
