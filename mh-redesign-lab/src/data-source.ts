@@ -157,6 +157,7 @@ export type FifoReconciliationData = {
 export type TenantSettings = { sync_interval_minutes: number; initial_history_days: number; agent_interval_minutes: number; wb_connected: boolean; ozon_connected: boolean };
 export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_scopes: string[]; scope_metadata_available?: boolean; read_only?: boolean; expires_at?: number | null };
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
+export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; created_at: string; updated_at: string };
 export type ProductionNorm = { nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
 export type MaterialInventory = { material_key?: string; material_name: string; balance_known: number | boolean; full_rolls: number; partial_meters: number; roll_length: number; unit: string; tracking_mode: "packaged" | "quantity"; opening_rate_rub: number; note: string; updated_at?: string };
 export type MaterialFifoRow = MaterialInventory & { physical_meters: number; fifo_meters: number; fifo_amount_rub: number; weighted_rate_rub_m: number; next_fifo_rate_rub_m: number; active_layers: number; difference_meters: number };
@@ -826,6 +827,23 @@ export async function getProductCostSettings(): Promise<{ items: ProductCostSett
   const response = await fetch(`${API_BASE_URL}/api/v1/settings/product-costs`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`/api/v1/settings/product-costs: HTTP ${response.status}`);
   return response.json() as Promise<{ items: ProductCostSetting[] }>;
+}
+
+export async function getManualExpenses(nmId?: number): Promise<{ items: ManualExpense[] }> {
+  const query = nmId ? `?nm_id=${encodeURIComponent(String(nmId))}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/manual-expenses${query}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error(`/api/v1/settings/manual-expenses: HTTP ${response.status}`);
+  return response.json() as Promise<{ items: ManualExpense[] }>;
+}
+
+export function createManualExpense(payload: Omit<ManualExpense, "id" | "created_at" | "updated_at">): Promise<{ id: number; message: string }> {
+  return postOperation("/api/v1/settings/manual-expenses", payload);
+}
+
+export async function deleteManualExpense(id: number): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/manual-expenses/${id}`, { method: "DELETE", headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось удалить расход: HTTP ${response.status}`);
+  return response.json() as Promise<{ message: string }>;
 }
 
 export async function getProductionNorms(): Promise<{ items: ProductionNorm[] }> {

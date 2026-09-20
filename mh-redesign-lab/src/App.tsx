@@ -69,7 +69,7 @@ import type {
   StockRule,
   Tone,
 } from "./contracts";
-import { financeExportUrl, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type IncidentOperations, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
+import { financeExportUrl, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, getManualExpenses, createManualExpense, deleteManualExpense, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type IncidentOperations, type ManualExpense, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
 import { navItems as fallbackNavItems } from "./mock-dashboard";
 
 const iconByKey: Record<IconKey, LucideIcon> = {
@@ -2040,6 +2040,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
   const [backups, setBackups] = useState<Array<Record<string, unknown>>>([]);
   const [syncRuns, setSyncRuns] = useState<TenantSyncRun[]>([]);
   const [productCosts, setProductCosts] = useState<ProductCostSetting[]>([]);
+  const [manualExpenses, setManualExpenses] = useState<ManualExpense[]>([]);
   const [productionNorms, setProductionNorms] = useState<ProductionNorm[]>([]);
   const [materialInventory, setMaterialInventory] = useState<MaterialInventory[]>([]);
   const [materialFifo, setMaterialFifo] = useState<MaterialFifoRow[]>([]);
@@ -2056,15 +2057,16 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
   const [ozonClientId, setOzonClientId] = useState("");
   const [ozonApiKey, setOzonApiKey] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | "wb-token" | null>(null);
+  const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | "expense" | "wb-token" | null>(null);
 
   const load = async () => {
     try {
-      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), getWBTokenStatus()]);
+      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus, expenseData] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), getWBTokenStatus(), getManualExpenses().catch(() => ({ items: [] as ManualExpense[] }))]);
       setSettings(nextSettings);
       setBackups(backupData.backups);
       setSyncRuns(syncData.runs);
       setProductCosts(costData.items);
+      setManualExpenses(expenseData.items);
       setProductionNorms(normsData.items);
       setMaterialInventory(materialData.items);
       setMaterialFifo(materialData.fifo);
@@ -2204,6 +2206,27 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     }
   };
 
+  const saveExpense = async (form: HTMLFormElement) => {
+    const data = new FormData(form);
+    const nmId = Number(data.get("nm_id"));
+    if (!nmId) { setMessage("Выберите товар"); return; }
+    setBusy("expense");
+    try {
+      await createManualExpense({ nm_id: nmId, article: String(data.get("article") || ""), amount_rub: Number(data.get("amount_rub") || 0), allocation_basis: String(data.get("allocation_basis") || "per_unit") as ManualExpense["allocation_basis"], source: "manual", period_start: String(data.get("period_start") || ""), period_end: String(data.get("period_end") || ""), note: String(data.get("note") || "") });
+      setManualExpenses((await getManualExpenses()).items);
+      form.reset();
+      setMessage("Расход сохранён");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось сохранить расход"); }
+    finally { setBusy(null); }
+  };
+
+  const removeExpense = async (id: number) => {
+    setBusy("expense");
+    try { await deleteManualExpense(id); setManualExpenses((rows) => rows.filter((row) => row.id !== id)); setMessage("Расход удалён"); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось удалить расход"); }
+    finally { setBusy(null); }
+  };
+
   const saveNorm = async (item: ProductionNorm) => {
     setBusy("cost");
     try {
@@ -2327,6 +2350,21 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
           <label className="search-box product-search"><Search size={17} /><input value={costQuery} onChange={(event) => setCostQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label>
         </div>
         {productCosts.length ? <div className="cost-settings-list">{productCosts.filter((item) => `${item.product_name} ${item.supplier_article} ${item.nm_id}`.toLowerCase().includes(costQuery.trim().toLowerCase())).map((item) => <div className="cost-setting-row" key={item.nm_id}><div className="cost-setting-product"><strong>{item.product_name || "Товар без названия"}</strong><span>WB {item.nm_id}{item.supplier_article ? ` · ${item.supplier_article}` : ""}</span></div><div className="cost-setting-amount"><span>Себестоимость</span><strong>{Number(item.cost_per_wb_unit).toLocaleString("ru-RU")} ₽</strong></div><button className="icon-button cost-edit-button" disabled={busy !== null} type="button" aria-label={`Изменить себестоимость: ${item.product_name || item.nm_id}`} title="Изменить себестоимость" onClick={() => setEditingCost(item)}><Pencil size={17} /></button></div>)}</div> : <p className="plan-empty">Каталог товаров ещё не загружен. После синхронизации здесь появятся карточки WB.</p>}
+      </section>
+      <section className="work-section" id="manual-expenses">
+        <SectionHeader kicker="Экономика" title="Дополнительные расходы"><WalletCards size={18} /></SectionHeader>
+        <p className="plan-empty">Внесите расходы, которых нет в отчёте WB. Они хранятся отдельно и участвуют только в управленческом расчёте по выбранной базе.</p>
+        <form className="settings-form" onSubmit={(event) => { event.preventDefault(); void saveExpense(event.currentTarget); }}>
+          <label className="operation-field"><span>Товар</span><select name="nm_id" required defaultValue=""><option value="" disabled>Выберите товар</option>{productCosts.map((item) => <option key={item.nm_id} value={item.nm_id}>{item.product_name || item.supplier_article || item.nm_id} · WB {item.nm_id}</option>)}</select></label>
+          <label className="operation-field"><span>Статья</span><select name="article" defaultValue="packaging_labor"><option value="purchase_production">Закупка / производство</option><option value="logistics_returns">Логистика и возвраты</option><option value="storage">Хранение</option><option value="acceptance">Приёмка</option><option value="advertising">Реклама</option><option value="packaging_labor">Упаковка и труд</option><option value="defects_losses">Брак и потери</option><option value="taxes">Налоги</option><option value="wb_commission">Комиссия WB</option></select></label>
+          <label className="operation-field"><span>Сумма, ₽</span><input name="amount_rub" min="0" required step="0.01" type="number" /></label>
+          <label className="operation-field"><span>База распределения</span><select name="allocation_basis" defaultValue="per_unit"><option value="per_unit">На единицу</option><option value="total">Итого за период</option><option value="revenue_pct">Процент выручки</option></select></label>
+          <label className="operation-field"><span>Период от</span><input name="period_start" required type="date" /></label>
+          <label className="operation-field"><span>Период до</span><input name="period_end" required type="date" /></label>
+          <label className="operation-field"><span>Примечание</span><input name="note" placeholder="Источник или комментарий" /></label>
+          <button className="primary-button" disabled={busy !== null || !productCosts.length} type="submit">{busy === "expense" ? "Сохраняем" : "Добавить расход"}</button>
+        </form>
+        {manualExpenses.length ? <div className="cost-settings-list">{manualExpenses.map((item) => <div className="cost-setting-row" key={item.id}><div className="cost-setting-product"><strong>{item.article}</strong><span>WB {item.nm_id} · {item.period_start} — {item.period_end}</span></div><div className="cost-setting-amount"><span>{item.allocation_basis}</span><strong>{Number(item.amount_rub).toLocaleString("ru-RU")} ₽</strong></div><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeExpense(item.id)}>Удалить</button></div>)}</div> : <p className="plan-empty">Ручных расходов пока нет.</p>}
       </section>
       {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item) => { void saveCost(item).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
       {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item) => { void saveNorm(item); }} /> : null}
