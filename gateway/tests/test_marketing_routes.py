@@ -72,6 +72,13 @@ class MarketingRouteTests(unittest.TestCase):
                 self.assertIn("Попробовать 21 дней", html)
                 self.assertNotIn("2990 ₽", html)
 
+    def test_calculator_metadata_describes_nine_articles(self):
+        html = self.client.get("/calculator").text
+        self.assertIn("Калькулятор маржи WB по девяти статьям расходов — MARKETSHELPER", html)
+        self.assertIn("хранению, рекламе, упаковке, браку и налогам", html)
+        self.assertIn("id=\"calcStorage\"", html)
+        self.assertIn("id=\"calcTax\"", html)
+
     def test_cost_page_has_safe_seo_content_and_internal_links(self):
         html = self.client.get("/sebestoimost-wb?utm_source=test").text
         self.assertIn("Себестоимость товара на Wildberries: расчёт и учёт партий", html)

@@ -2,6 +2,19 @@
 {% block title %}Тарифы — MARKETSHELPER{% endblock %}
 {% block description %}Тарифы MARKETSHELPER: один тариф {{ price_rub|int }} ₽ за {{ period_days }} дней, все модули включены, {{ trial_days }} дней пробного периода без привязки карты.{% endblock %}
 {% block card_extra_class %} card-wide{% endblock %}
+{% block head %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type":"Question","name":"Нужна ли карта для пробного периода?","acceptedAnswer":{"@type":"Answer","text":"Нет. Пробный период {{ trial_days }} дней начинается без привязки банковской карты."}},
+    {"@type":"Question","name":"Сколько стоит подписка?","acceptedAnswer":{"@type":"Answer","text":"Подписка стоит {{ price_rub|int }} ₽ за {{ period_days }} дней."}},
+    {"@type":"Question","name":"Можно ли отменить продление?","acceptedAnswer":{"@type":"Answer","text":"Да. Продление можно отменить в любой момент из личного кабинета."}}
+  ]
+}
+</script>
+{% endblock %}
 {% block content %}
 <h1>Тарифы</h1>
 <p class="subtitle">Учёт себестоимости, FIFO, производство и остатки для продавцов Wildberries.</p>
@@ -28,6 +41,11 @@
   кабинету открывается автоматически сразу после успешной оплаты.</li>
   <li>Отменить подписку можно в любой момент из личного кабинета, без обращения в поддержку.</li>
 </ol>
+
+<h2>Частые вопросы</h2>
+<details><summary>Нужна ли карта для пробного периода?</summary><p>Нет. Пробный период {{ trial_days }} дней начинается без привязки банковской карты.</p></details>
+<details><summary>Сколько стоит подписка?</summary><p>Подписка стоит {{ price_rub|int }} ₽ за {{ period_days }} дней.</p></details>
+<details><summary>Можно ли отменить продление?</summary><p>Да. Продление можно отменить в любой момент из личного кабинета.</p></details>
 
 <h2>Поддержка</h2>
 <p>По вопросам работы сервиса и оплаты — см. страницу <a href="/contacts">«Контакты и реквизиты»</a>.</p>
