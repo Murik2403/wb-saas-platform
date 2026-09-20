@@ -14,6 +14,8 @@
   .mk-kicker { color:var(--accent-strong); font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; font-weight:650; }
   .mk-shell h1 { margin:16px 0 22px; font-size:clamp(2rem,5vw,3.5rem); line-height:1.12; letter-spacing:-.035em; }
   .mk-lead { color:#b4bad0; font-size:1.12rem; line-height:1.7; max-width:70ch; }
+  .mk-byline { margin:18px 0 0; color:var(--text-muted); font-size:.88rem; line-height:1.6; }
+  .mk-byline-author { color:var(--text); font-weight:650; }
   .mk-shell h2 { font-size:clamp(1.4rem,3vw,1.85rem); line-height:1.25; margin:0 0 20px; letter-spacing:-.02em; }
   .mk-shell h3 { font-size:1.13rem; line-height:1.4; margin:0 0 12px; }
   .mk-section { margin:0 0 48px; scroll-margin-top:24px; }
@@ -48,6 +50,44 @@
   @media(max-width:720px) { .mk-grid { grid-template-columns:1fr; } .mk-shell { padding:0 18px 40px; } .mk-hero { padding-top:30px; } .mk-nav { align-items:flex-start; } .mk-nav .brand { font-size:1rem; } .mk-nav nav { gap:12px 16px; } .mk-note,.mk-example,.mk-cta { padding:21px; } .mk-table th,.mk-table td { padding:10px; } }
   @media(max-width:420px) { .mk-actions { flex-direction:column; align-items:stretch; } .mk-shell h1 { overflow-wrap:break-word; } }
 </style>
+{% if article_published %}
+{# Article markup for the guides. The author, the publication date and the
+   "обновлено" date are all printed on the page itself (mk-byline), and the
+   Person is tied to the site's Organization by @id so search engines read one
+   graph rather than an unattached author. #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "{{ site_base_url() }}/#organization",
+      "name": "MARKETSHELPER",
+      "url": "{{ site_base_url() }}/"
+    },
+    {
+      "@type": "Person",
+      "@id": "{{ site_base_url() }}/#author",
+      "name": {{ author_name|tojson }},
+      "jobTitle": {{ author_role|tojson }},
+      "worksFor": { "@id": "{{ site_base_url() }}/#organization" }
+    },
+    {
+      "@type": "Article",
+      "@id": "{{ site_base_url() }}{{ request.url.path }}#article",
+      "headline": {{ page_title|tojson }},
+      "description": {{ page_description|tojson }},
+      "inLanguage": "ru",
+      "datePublished": "{{ article_published }}",
+      "dateModified": "{{ article_modified }}",
+      "author": { "@id": "{{ site_base_url() }}/#author" },
+      "publisher": { "@id": "{{ site_base_url() }}/#organization" },
+      "mainEntityOfPage": "{{ site_base_url() }}{{ request.url.path }}"
+    }
+  ]
+}
+</script>
+{% endif %}
 {% endblock %}
 {% block layout %}
 <div class="mk-shell">
