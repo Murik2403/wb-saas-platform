@@ -23,7 +23,7 @@ MARKETING_PAGES = (
     ("/sverka-ostatkov-wb", "marketing_sverka.html", "Сервис сверки остатков WB: расхождение по каждому артикулу", "MARKETSHELPER сравнивает ваш учёт с остатками Wildberries по каждому артикулу с учётом товара в пути и показывает расхождение в штуках и рублях."),
     ("/guides/zamena-servisov-analitiki", "marketing_guide_zamena.html", "Как выбрать сервис аналитики WB: рынок, свой магазин или учёт", "Рынок, свой магазин или учёт себестоимости: какой класс инструментов нужен под задачу, что изменилось в данных WB в 2025 году и что проверить перед переходом."),
     ("/ob-avtore", "marketing_author.html", "Об авторе: Мурат Вороков, основатель MARKETSHELPER", "Кто пишет руководства MARKETSHELPER: Мурат Вороков, основатель сервиса и продавец на Wildberries. Задачи, из которых вырос сервис, и темы, в которых он не эксперт."),
-    ("/vs-1c", "marketing_vs_1c.html", "Учёт на маркетплейсах для продавца WB: MARKETSHELPER или 1С", "Учёт товаров, партий и продаж на Wildberries: что делает MARKETSHELPER, а что остаётся за 1С:Бухгалтерией и бухгалтером. Сравнение с УНФ, УТ и КА."),
+    ("/vs-1c", "marketing_vs_1c.html", "MARKETSHELPER для управленческого учёта WB", "Себестоимость, партии FIFO и сверка остатков Wildberries в одном рабочем сценарии."),
 )
 PUBLIC_MARKETING_PATHS = tuple(page[0] for page in MARKETING_PAGES)
 
