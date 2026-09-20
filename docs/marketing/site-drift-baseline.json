@@ -2,8 +2,8 @@
   "base_url": "https://marketshelper.ru",
   "pages": {
     "/": {
-      "body_hash": "49ba14eca3e38852",
-      "body_len": 63549,
+      "body_hash": "c49f4b870124c346",
+      "body_len": 66878,
       "canonical": "https://marketshelper.ru/",
       "description": "Продажи WB, себестоимость товара, остатки FIFO, нормы материалов и план-факт производственной смены. 14 дней пробного периода без карты.",
       "final_url": "https://marketshelper.ru/",
@@ -21,10 +21,10 @@
       "title": "MARKETSHELPER — учёт себестоимости и остатков для продавцов Wildberries"
     },
     "/calculator": {
-      "body_hash": "67c2fa10ca8ed55a",
-      "body_len": 61754,
+      "body_hash": "676b99bc56b0e5e4",
+      "body_len": 66414,
       "canonical": "https://marketshelper.ru/calculator",
-      "description": "Предварительная маржа по введённым затратам: цена, себестоимость, комиссия, логистика и реклама. Расчёт в браузере без отправки значений.",
+      "description": "Предварительная маржа по введённым затратам: цена, себестоимость, комиссия, логистика и реклама. Расчёт в браузере, выгрузка в CSV и ссылка на расчёт.",
       "final_url": "https://marketshelper.ru/calculator",
       "h1_count": 1,
       "h1_text": [
@@ -35,11 +35,11 @@
       ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
-      "title": "Калькулятор предварительной маржи WB — MARKETSHELPER"
+      "title": "Калькулятор юнит-экономики WB: маржа, CSV и ссылка на расчёт — MARKETSHELPER"
     },
     "/compliance": {
-      "body_hash": "2b637296d3c4d2f0",
-      "body_len": 41738,
+      "body_hash": "d7c9aee3ff6d2912",
+      "body_len": 41752,
       "canonical": "https://marketshelper.ru/compliance",
       "description": "Как MARKETSHELPER обрабатывает данные продавцов Wildberries: изоляция кабинетов, хранение в РФ, соответствие 152-ФЗ.",
       "final_url": "https://marketshelper.ru/compliance",
@@ -53,8 +53,8 @@
       "title": "Комплаенс и обработка данных — MARKETSHELPER"
     },
     "/contacts": {
-      "body_hash": "44011f92e8c8756e",
-      "body_len": 38583,
+      "body_hash": "f35d82503152d48d",
+      "body_len": 38597,
       "canonical": "https://marketshelper.ru/contacts",
       "description": "Контакты и реквизиты MARKETSHELPER — сервиса учёта себестоимости и остатков для продавцов Wildberries.",
       "final_url": "https://marketshelper.ru/contacts",
@@ -68,8 +68,8 @@
       "title": "Контакты и реквизиты — MARKETSHELPER"
     },
     "/dlya-proizvoditeley-wb": {
-      "body_hash": "55a1b9cccbf4ce41",
-      "body_len": 46230,
+      "body_hash": "dadf72080eeaf7ad",
+      "body_len": 46399,
       "canonical": "https://marketshelper.ru/dlya-proizvoditeley-wb",
       "description": "Сырьё, выпуск партии и себестоимость: рабочий сценарий для собственного и контрактного производства на Wildberries.",
       "final_url": "https://marketshelper.ru/dlya-proizvoditeley-wb",
@@ -83,8 +83,8 @@
       "title": "Учёт производства для продавцов Wildberries — MARKETSHELPER"
     },
     "/fifo-uchet": {
-      "body_hash": "47b2a6b4cbc06e52",
-      "body_len": 45357,
+      "body_hash": "dd41e2f07017760a",
+      "body_len": 45526,
       "canonical": "https://marketshelper.ru/fifo-uchet",
       "description": "Понятный пример FIFO: списание партий в порядке поступления, стоимость выпуска и оценка оставшихся запасов.",
       "final_url": "https://marketshelper.ru/fifo-uchet",
@@ -98,8 +98,8 @@
       "title": "FIFO-учёт сырья и товаров по партиям — MARKETSHELPER"
     },
     "/guides": {
-      "body_hash": "3c691618e66febbb",
-      "body_len": 45609,
+      "body_hash": "0eb7132c4b4246b0",
+      "body_len": 45778,
       "canonical": "https://marketshelper.ru/guides",
       "description": "FIFO, цена акции, сверка остатков, НЗП и переход из Excel: понятные расчёты и проверочные списки для учёта своего производства на WB.",
       "final_url": "https://marketshelper.ru/guides",
@@ -113,8 +113,8 @@
       "title": "Практические руководства для производителей на WB — MARKETSHELPER"
     },
     "/guides/fifo-ili-srednyaya-v-akcii": {
-      "body_hash": "80bd88beacf8e8db",
-      "body_len": 52373,
+      "body_hash": "455dd7114e763cef",
+      "body_len": 55165,
       "canonical": "https://marketshelper.ru/guides/fifo-ili-srednyaya-v-akcii",
       "description": "Как стоимость остатка по FIFO и по средней меняет минимальную цену акции. Условный пример с тремя партиями, проверяемой арифметикой и списком проверки.",
       "final_url": "https://marketshelper.ru/guides/fifo-ili-srednyaya-v-akcii",
@@ -122,14 +122,18 @@
       "h1_text": [
         "Как проверить цену акции по стоимости партий на складе"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Цена акции на WB: проверка по стоимости партий на складе — MARKETSHELPER"
     },
     "/guides/fifo-po-partiyam": {
-      "body_hash": "31e5ee4d23a2137e",
-      "body_len": 47372,
+      "body_hash": "5f2aed14431bc96f",
+      "body_len": 50050,
       "canonical": "https://marketshelper.ru/guides/fifo-po-partiyam",
       "description": "Разбираем списание двух партий сырья, себестоимость выпуска и контроль остатков. Учебный пример с проверяемой арифметикой.",
       "final_url": "https://marketshelper.ru/guides/fifo-po-partiyam",
@@ -137,14 +141,18 @@
       "h1_text": [
         "Как считать FIFO, когда цена сырья изменилась"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Как считать FIFO по партиям: пример и проверка — MARKETSHELPER"
     },
     "/guides/iz-excel-v-uchet": {
-      "body_hash": "a5af17d5e6d54abf",
-      "body_len": 47484,
+      "body_hash": "6718b7ba0abd0e21",
+      "body_len": 49990,
       "canonical": "https://marketshelper.ru/guides/iz-excel-v-uchet",
       "description": "План перехода на одном товаре: подготовка справочников, начальных остатков, партий и контрольного расчёта.",
       "final_url": "https://marketshelper.ru/guides/iz-excel-v-uchet",
@@ -152,14 +160,18 @@
       "h1_text": [
         "Из Excel к учёту партий: начните с одного SKU"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Как перейти из Excel к учёту партий — MARKETSHELPER"
     },
     "/guides/nezavershennoe-proizvodstvo": {
-      "body_hash": "2bff71974b585727",
-      "body_len": 53040,
+      "body_hash": "026a7de0f702dce3",
+      "body_len": 55614,
       "canonical": "https://marketshelper.ru/guides/nezavershennoe-proizvodstvo",
       "description": "Где лежат деньги производителя между закупкой сырья и выплатой WB, как оценить НЗП и сверить баланс. Сквозной пример на условных числах.",
       "final_url": "https://marketshelper.ru/guides/nezavershennoe-proizvodstvo",
@@ -167,14 +179,18 @@
       "h1_text": [
         "Куда уходят деньги между закупкой сырья и продажей"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Незавершённое производство: где деньги между сырьём и продажей — MARKETSHELPER"
     },
     "/guides/pribyl-i-rashody-wb": {
-      "body_hash": "09d644d7e53a67bd",
-      "body_len": 47891,
+      "body_hash": "446cd09b6132a489",
+      "body_len": 50446,
       "canonical": "https://marketshelper.ru/guides/pribyl-i-rashody-wb",
       "description": "Как отделить себестоимость, расходы продажи и движение денег. Пример расчёта результата и проверка исходных данных.",
       "final_url": "https://marketshelper.ru/guides/pribyl-i-rashody-wb",
@@ -182,14 +198,18 @@
       "h1_text": [
         "Почему выплата WB не равна прибыли"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Прибыль на WB: какие расходы проверить — MARKETSHELPER"
     },
     "/guides/sverka-ostatkov-wb": {
-      "body_hash": "c0c9aceef83c0745",
-      "body_len": 53361,
+      "body_hash": "21aa0354a0d27a6b",
+      "body_len": 55898,
       "canonical": "https://marketshelper.ru/guides/sverka-ostatkov-wb",
       "description": "Что сравнивать с остатками WB, как учесть товар в пути, приёмку и пересорт и пройти сверку по шагам. Условный пример на пяти баркодах и список проверки.",
       "final_url": "https://marketshelper.ru/guides/sverka-ostatkov-wb",
@@ -197,14 +217,18 @@
       "h1_text": [
         "Как сверить остатки с Wildberries и найти причину расхождения"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Сверка остатков с Wildberries: причины расхождений и шаги — MARKETSHELPER"
     },
     "/guides/zamena-servisov-analitiki": {
-      "body_hash": "3af5ec85faf3dadb",
-      "body_len": 50896,
+      "body_hash": "106b7e8c29d321bc",
+      "body_len": 53582,
       "canonical": "https://marketshelper.ru/guides/zamena-servisov-analitiki",
       "description": "Рынок, свой магазин или учёт себестоимости: какой класс инструментов нужен под задачу, что изменилось в данных WB в 2025 году и что проверить перед переходом.",
       "final_url": "https://marketshelper.ru/guides/zamena-servisov-analitiki",
@@ -212,14 +236,18 @@
       "h1_text": [
         "Как выбрать сервис аналитики WB под свою задачу"
       ],
-      "jsonld_types": [],
+      "jsonld_types": [
+        "Article",
+        "Organization",
+        "Person"
+      ],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
       "title": "Как выбрать сервис аналитики WB: рынок, свой магазин или учёт — MARKETSHELPER"
     },
     "/login": {
-      "body_hash": "93008be6ca764544",
-      "body_len": 38118,
+      "body_hash": "9703f506e905a2a9",
+      "body_len": 38132,
       "canonical": "https://marketshelper.ru/login",
       "description": "MARKETSHELPER — сервис учёта себестоимости, остатков и производства для продавцов Wildberries.",
       "final_url": "https://marketshelper.ru/login",
@@ -233,8 +261,8 @@
       "title": "Вход — MARKETSHELPER"
     },
     "/offer": {
-      "body_hash": "41ec2a329cbffe1d",
-      "body_len": 43199,
+      "body_hash": "77059ffc7f3382e5",
+      "body_len": 43213,
       "canonical": "https://marketshelper.ru/offer",
       "description": "Публичная оферта на использование сервиса MARKETSHELPER.",
       "final_url": "https://marketshelper.ru/offer",
@@ -248,8 +276,8 @@
       "title": "Публичная оферта — MARKETSHELPER"
     },
     "/pricing": {
-      "body_hash": "9a6cd2c8b2c32876",
-      "body_len": 39045,
+      "body_hash": "e5515a1fa449d8c8",
+      "body_len": 39059,
       "canonical": "https://marketshelper.ru/pricing",
       "description": "Тарифы MARKETSHELPER: один тариф 2990 ₽ за 30 дней, все модули включены, 14 дней пробного периода без привязки карты.",
       "final_url": "https://marketshelper.ru/pricing",
@@ -263,8 +291,8 @@
       "title": "Тарифы — MARKETSHELPER"
     },
     "/privacy": {
-      "body_hash": "31a51f66446d3f07",
-      "body_len": 48179,
+      "body_hash": "f74dc509f784683f",
+      "body_len": 48193,
       "canonical": "https://marketshelper.ru/privacy",
       "description": "Политика обработки персональных данных сервиса MARKETSHELPER.",
       "final_url": "https://marketshelper.ru/privacy",
@@ -278,8 +306,8 @@
       "title": "Политика обработки персональных данных — MARKETSHELPER"
     },
     "/register": {
-      "body_hash": "455b99c78952ba0e",
-      "body_len": 38571,
+      "body_hash": "be826fb1811d2a5b",
+      "body_len": 38585,
       "canonical": "https://marketshelper.ru/register",
       "description": "Регистрация в MARKETSHELPER: свой кабинет учёта себестоимости и остатков Wildberries. Пробный период начинается после подготовки кабинета, карта не нужна.",
       "final_url": "https://marketshelper.ru/register",
@@ -293,8 +321,8 @@
       "title": "Регистрация — MARKETSHELPER"
     },
     "/robots.txt": {
-      "body_hash": "29fb624c9d359aaa",
-      "body_len": 397,
+      "body_hash": "e2966e5a8663fad7",
+      "body_len": 437,
       "disallow": [
         "/account",
         "/admin",
@@ -308,6 +336,7 @@
         "/provisioning",
         "/reset-password",
         "/team/accept",
+        "/unsubscribe",
         "/verify-email",
         "/verify-email-sent",
         "/webhooks/"
@@ -316,8 +345,8 @@
       "status": 200
     },
     "/sebestoimost-wb": {
-      "body_hash": "c8910ba1f0a920f1",
-      "body_len": 63112,
+      "body_hash": "0254ae3e60d012f4",
+      "body_len": 63281,
       "canonical": "https://marketshelper.ru/sebestoimost-wb",
       "description": "Как рассчитать себестоимость товара на Wildberries: материалы, выпуск и партии FIFO. Пример затрат, проверка расходов WB и калькулятор предварительной маржи.",
       "final_url": "https://marketshelper.ru/sebestoimost-wb",
@@ -361,8 +390,8 @@
       "status": 200
     },
     "/sverka-ostatkov-wb": {
-      "body_hash": "40ce98fc38549c37",
-      "body_len": 49324,
+      "body_hash": "8b11f0b0019e6dbd",
+      "body_len": 49493,
       "canonical": "https://marketshelper.ru/sverka-ostatkov-wb",
       "description": "MARKETSHELPER сравнивает ваш учёт с остатками Wildberries по каждому артикулу с учётом товара в пути и показывает расхождение в штуках и рублях.",
       "final_url": "https://marketshelper.ru/sverka-ostatkov-wb",
@@ -376,20 +405,20 @@
       "title": "Сервис сверки остатков WB: расхождение по каждому артикулу — MARKETSHELPER"
     },
     "/vs-1c": {
-      "body_hash": "5455dffe6233044d",
-      "body_len": 51563,
+      "body_hash": "2e624a6469d93d9e",
+      "body_len": 54267,
       "canonical": "https://marketshelper.ru/vs-1c",
-      "description": "Сравнение с 1С:УНФ, УТ, КА и Бухгалтерией для производителя на Wildberries: производство, партии, интеграция с WB. Где 1С подходит лучше.",
+      "description": "Учёт товаров, партий и продаж на Wildberries: что делает MARKETSHELPER, а что остаётся за 1С:Бухгалтерией и бухгалтером. Сравнение с УНФ, УТ и КА.",
       "final_url": "https://marketshelper.ru/vs-1c",
       "h1_count": 1,
       "h1_text": [
-        "MARKETSHELPER или 1С: что выбрать производителю на WB"
+        "Учёт на маркетплейсах: MARKETSHELPER или 1С"
       ],
       "jsonld_types": [],
       "robots": "index, follow, max-image-preview:large, max-snippet:-1",
       "status": 200,
-      "title": "MARKETSHELPER или 1С: что выбрать производителю на WB — MARKETSHELPER"
+      "title": "Учёт на маркетплейсах для продавца WB: MARKETSHELPER или 1С — MARKETSHELPER"
     }
   },
-  "taken_at": "2026-09-20T20:34:48+00:00"
+  "taken_at": "2026-09-20T20:51:41+00:00"
 }
