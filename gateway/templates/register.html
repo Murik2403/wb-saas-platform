@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Регистрация — MARKETSHELPER{% endblock %}
 {% block robots %}noindex, follow{% endblock %}
-{% block description %}Регистрация в MARKETSHELPER: свой кабинет учёта себестоимости и остатков Wildberries. Пробный период начинается после подготовки кабинета, карта не нужна.{% endblock %}
+{% block description %}Регистрация в MARKETSHELPER: свой кабинет учёта себестоимости и остатков Wildberries. Пробный период {{ trial_days }} дней начинается после подготовки кабинета, карта не нужна.{% endblock %}
 {% block content %}
 <h1>Создать аккаунт</h1>
-<p class="subtitle">Подтвердите email по ссылке из письма — затем мы подготовим ваш кабинет. Пробный период начнётся, когда кабинет будет готов.</p>
+<p class="subtitle">Подтвердите email по ссылке из письма — затем мы подготовим ваш кабинет. Пробный период на {{ trial_days }} дней начнётся, когда кабинет будет готов. Карта не нужна.</p>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 <form method="post" action="/register">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
