@@ -33,21 +33,32 @@ import config
 EMAIL_KEYS = ("1", "2", "2b", "3", "4", "5", "6", "7")
 
 # --------------------------------------------------------------------------
-# Unconfirmed facts -- see "Что нужно уточнить перед отправкой" in the doc.
-# Filling one of these in is a decision for the owner, not for this module;
-# until then the corresponding email refuses to send (see the placeholder
-# check in scripts/run_trial_emails.py).
+# Facts from "Что нужно уточнить перед отправкой" in the doc. Filling one in
+# is a decision for the owner, not for this module; while a TODO_ constant is
+# empty the corresponding email refuses to send (see the placeholder check in
+# scripts/run_trial_emails.py).
 # --------------------------------------------------------------------------
 
-# %УСЛОВИЯ_ХРАНЕНИЯ% in email 5. The doc is explicit that a retention
-# period cannot be derived from GRACE_PERIOD_DAYS and needs the owner's
-# confirmation against the policy and the actual deletion procedure.
-TODO_DATA_RETENTION = ""
+# Owner's decision of 20.09.2026 for %УСЛОВИЯ_ХРАНЕНИЯ% (email 5) and
+# %ПОДТВЕРЖДЁННЫЕ_УСЛОВИЯ_ВОЗВРАТА_И_ХРАНЕНИЯ% (email 7): a floor, never a
+# promise of deletion. Nothing here deletes tenant data on a schedule --
+# remove_tenant(purge_volume=True) is only ever run by hand -- so "не менее
+# N дней" stays true whatever happens, while "удалим через N дней" would not.
+# If automatic purging is ever introduced, this constant and the /privacy
+# page must be revisited together (see DEPLOY.md, the trial-emails cron).
+DATA_RETENTION_MIN_DAYS = 90
 
-# %ПОДТВЕРЖДЁННЫЕ_УСЛОВИЯ_ВОЗВРАТА_И_ХРАНЕНИЯ% in email 7. Same reason,
-# plus: if the tenant's data is already deleted, email 7 must not be sent
-# at all -- the runner cannot check that today.
-TODO_RETURN_TERMS = ""
+DATA_RETENTION = (
+    f"после окончания пробы кабинет останавливается, а данные аккаунта "
+    f"сохраняются не менее {DATA_RETENTION_MIN_DAYS} дней; если нужно удалить их "
+    f"раньше, напишите в поддержку"
+)
+
+RETURN_TERMS = (
+    f"Данные аккаунта сохраняются не менее {DATA_RETENTION_MIN_DAYS} дней после "
+    f"окончания пробы, поэтому работу можно продолжить с того же места; если нужно "
+    f"удалить их раньше, напишите в поддержку"
+)
 
 # The doc asks to verify screen names and deep links before using them
 # ("Интерфейс и ссылки"). Until that is done every CTA points at the
@@ -152,6 +163,12 @@ def due_email_key(
         return None
     if not _parse(account["email_verified_at"]):
         return None
+    # Consent for this marketing chain rides on the PDN consent recorded at
+    # registration (owner's decision of 20.09.2026). Accounts that predate
+    # the pdn_consent_at column have it empty and stay out of the sequence:
+    # a missing record is treated as no consent, never as an old yes.
+    if not _parse(account["pdn_consent_at"]):
+        return None
     status = account["status"] or ""
     # A paid customer never re-enters the sequence, even if a later charge
     # fails and drops them back to past_due/canceled.
@@ -210,6 +227,58 @@ def due_email_key(
     return None
 
 
+def passed_email_keys(
+    account: Mapping[str, Any],
+    events: Mapping[str, datetime | str],
+    now: datetime | None = None,
+    *,
+    sent: Mapping[str, datetime | str] | None = None,
+) -> dict[str, datetime]:
+    """Steps this account has already outgrown -> the moment they closed.
+
+    Used only by ``run_trial_emails.py --backfill``: marking these as skipped
+    lets an account that was mid-trial when the sequence was switched on
+    enter at the step matching its real day instead of restarting at email 1,
+    and stops a reminder about a date that has already passed.
+
+    A step is behind once the *next* step is due -- an account on day 9 has
+    outgrown 1, 2/2b and 3 and is exactly where email 4 belongs. Emails 4 and
+    5 close together, when the trial is inside email 5's window; email 6
+    closes with the trial. Email 7 is never listed: it is a win-back that is
+    still true after the trial ended, and its own conditions gate it.
+    """
+    now = now or _now()
+    sent = sent or {}
+    trial_started = _parse(events.get("trial_started"))
+    if trial_started is None:
+        return {}
+    # Emails 2 and 2b are one step (doc rule 7), so both keys are marked:
+    # whichever branch would have fired, the step is behind this account.
+    # (key, when it was due, when it stopped being due). The row is stamped
+    # with the due moment, not the close moment: a skipped step is logged as
+    # of the day it would have gone out, so the one-email-per-day guard in
+    # due_email_key does not also hold back the first real message.
+    steps: list[tuple[str, datetime, datetime]] = [
+        ("1", trial_started, trial_started + timedelta(days=2)),
+        ("2", trial_started + timedelta(days=2), trial_started + timedelta(days=5)),
+        ("2b", trial_started + timedelta(days=2), trial_started + timedelta(days=5)),
+        ("3", trial_started + timedelta(days=5), trial_started + timedelta(days=9)),
+    ]
+    period_end = _parse(account["current_period_end"])
+    if period_end is not None:
+        # The reminder windows of due_email_key: email 5 runs from 3 to 2
+        # days before the end, email 6 in the last 24 hours. Email 4 is an
+        # onboarding task, not a goodbye -- it closes when 5 takes over.
+        steps.append(("4", trial_started + timedelta(days=9), period_end - timedelta(days=2)))
+        steps.append(("5", period_end - timedelta(days=3), period_end - timedelta(days=2)))
+        steps.append(("6", period_end - timedelta(days=1), period_end))
+    return {
+        key: due
+        for key, due, closes in steps
+        if closes < now and key not in sent
+    }
+
+
 # --------------------------------------------------------------------------
 # Bodies
 # --------------------------------------------------------------------------
@@ -259,8 +328,8 @@ def render_email(
         "billing": config.billing_url(),
         "access": _access_after_trial(grace_days),
         "support": SUPPORT_CHANNEL or "%КАНАЛ_ПОДДЕРЖКИ%",
-        "retention": TODO_DATA_RETENTION or "%УСЛОВИЯ_ХРАНЕНИЯ%",
-        "return_terms": TODO_RETURN_TERMS or "%ПОДТВЕРЖДЁННЫЕ_УСЛОВИЯ_ВОЗВРАТА_И_ХРАНЕНИЯ%",
+        "retention": DATA_RETENTION or "%УСЛОВИЯ_ХРАНЕНИЯ%",
+        "return_terms": RETURN_TERMS or "%ПОДТВЕРЖДЁННЫЕ_УСЛОВИЯ_ВОЗВРАТА_И_ХРАНЕНИЯ%",
     }
     subject, body = _BODIES[email_key](ctx)
     return subject, body + _FOOTER.format(unsubscribe_link=unsubscribe_link)
@@ -449,7 +518,8 @@ def growth_events(conn, account_id: int) -> dict[str, str]:
     return {row["event_name"]: row["occurred_at"] for row in rows}
 
 
-def claim_send(conn, account_id: int, email_key: str, *, at: datetime | None = None) -> bool:
+def claim_send(conn, account_id: int, email_key: str, *, at: datetime | None = None,
+               status: str = "sending") -> bool:
     """Reserve one (account, step) slot. False means someone already has it.
 
     Claimed before the message is handed to SMTP, deliberately: losing a
@@ -458,9 +528,9 @@ def claim_send(conn, account_id: int, email_key: str, *, at: datetime | None = N
     if email_key not in EMAIL_KEYS:
         raise ValueError(f"Неизвестное письмо цепочки: {email_key!r}")
     result = conn.execute(
-        "INSERT INTO trial_emails(account_id, email_key, sent_at, status) VALUES (?,?,?,'sending') "
+        "INSERT INTO trial_emails(account_id, email_key, sent_at, status) VALUES (?,?,?,?) "
         "ON CONFLICT(account_id, email_key) DO NOTHING",
-        (int(account_id), email_key, (at or _now()).isoformat(timespec="seconds")),
+        (int(account_id), email_key, (at or _now()).isoformat(timespec="seconds"), status),
     )
     return result.rowcount == 1
 

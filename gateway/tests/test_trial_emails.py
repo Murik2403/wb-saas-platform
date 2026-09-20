@@ -24,6 +24,7 @@ def _account(**overrides) -> dict:
         "email": "seller@shop.ru",
         "status": "trialing",
         "email_verified_at": _iso(NOW - timedelta(days=20)),
+        "pdn_consent_at": _iso(NOW - timedelta(days=20)),
         "current_period_end": _iso(NOW + timedelta(days=10)),
         "past_due_since": "",
     }
@@ -145,6 +146,12 @@ class SelectionTests(unittest.TestCase):
     def test_unverified_email_never_starts_the_sequence(self) -> None:
         self.assertIsNone(self.due(account=_account(email_verified_at="")))
 
+    def test_missing_pdn_consent_never_starts_the_sequence(self) -> None:
+        """Consent for this chain rides on the PDN consent at registration;
+        an account without a recorded one (e.g. created before the column
+        existed) gets nothing."""
+        self.assertIsNone(self.due(account=_account(pdn_consent_at="")))
+
     def test_registration_alone_does_not_start_the_sequence(self) -> None:
         self.assertIsNone(self.due(events={"account_created": _iso(NOW)}))
 
@@ -184,10 +191,20 @@ class ContentTests(unittest.TestCase):
         for key in trial_emails.EMAIL_KEYS:
             subject, body = self.render(key)
             unfilled[key] = trial_emails.unfilled_placeholders(subject + body)
-        self.assertEqual(unfilled["5"], ["%УСЛОВИЯ_ХРАНЕНИЯ%"])
-        self.assertEqual(unfilled["7"], ["%ПОДТВЕРЖДЁННЫЕ_УСЛОВИЯ_ВОЗВРАТА_И_ХРАНЕНИЯ%"])
-        for key in ("1", "2", "2b", "3", "4", "6"):
+        for key in trial_emails.EMAIL_KEYS:
             self.assertEqual(unfilled[key], [], f"email {key} still has placeholders")
+
+    def test_retention_is_a_floor_not_a_deletion_promise(self) -> None:
+        """Nothing purges tenant data on a schedule, so the only honest
+        wording is "не менее N дней" -- see DATA_RETENTION_MIN_DAYS."""
+        days = str(trial_emails.DATA_RETENTION_MIN_DAYS)
+        for key in ("5", "7"):
+            with self.subTest(email=key):
+                _, body = self.render(key)
+                self.assertIn(f"не менее {days} дней", body)
+                self.assertIn("поддержку", body)
+                self.assertNotIn("удалим", body)
+        self.assertIn("кабинет останавливается", self.render("5")[1])
 
     def test_real_period_end_is_substituted(self) -> None:
         _, body = self.render("5")
@@ -363,6 +380,72 @@ class RunnerTests(GatewayDbTestCase):
         with mock.patch.object(self.runner.mailer, "send_email") as send_email:
             self._run(send=True)
         send_email.assert_not_called()
+
+    # --- cold start ------------------------------------------------------
+
+    def _age_trial(self, days: float, *, report: bool = False) -> None:
+        """Move this account's trial back in time, as if the sequence had
+        been switched on while it was already running."""
+        started = datetime.now(timezone.utc) - timedelta(days=days)
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE growth_events SET occurred_at=? WHERE account_id=? AND event_name='trial_started'",
+                (_iso(started), self.account_id),
+            )
+            conn.execute(
+                "UPDATE accounts SET current_period_end=? WHERE id=?",
+                (_iso(started + timedelta(days=14)), self.account_id),
+            )
+            if report:
+                growth.record_event(
+                    conn, self.account_id, "first_useful_report",
+                    occurred_at=started + timedelta(days=4),
+                )
+
+    def _backfilled(self) -> dict[str, str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT email_key, status FROM trial_emails WHERE account_id=?", (self.account_id,)
+            ).fetchall()
+        return {row["email_key"]: row["status"] for row in rows}
+
+    def test_backfill_puts_a_day_nine_trial_at_email_4(self) -> None:
+        self._age_trial(9, report=True)
+        with mock.patch.object(self.runner.mailer, "send_email") as send_email,                 self._patched_connect():
+            self.assertEqual(self.runner.backfill(write=True), 0)
+        send_email.assert_not_called()
+        self.assertEqual(self._backfilled(), {k: "skipped" for k in ("1", "2", "2b", "3")})
+        with self.connect() as conn:
+            decision = self.runner.prepare(conn, self.account_id)
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision[0], "4")
+
+    def test_backfill_skips_everything_before_email_7_for_an_ended_trial(self) -> None:
+        self._age_trial(20)
+        with self._patched_connect():
+            self.runner.backfill(write=True)
+        self.assertEqual(
+            self._backfilled(), {k: "skipped" for k in ("1", "2", "2b", "3", "4", "5", "6")},
+            "email 7 stays available -- its own conditions decide it",
+        )
+
+    def test_backfill_is_idempotent_and_dry_mode_writes_nothing(self) -> None:
+        self._age_trial(9, report=True)
+        with self._patched_connect():
+            self.runner.backfill(write=False)
+        self.assertEqual(self._backfilled(), {})
+        with self._patched_connect():
+            self.runner.backfill(write=True)
+            first = self._backfilled()
+            self.runner.backfill(write=True)
+        self.assertEqual(self._backfilled(), first)
+
+    def test_backfill_from_the_command_line_sends_nothing(self) -> None:
+        self._age_trial(9, report=True)
+        with mock.patch.object(self.runner.mailer, "send_email") as send_email,                 mock.patch.object(sys, "argv", ["run_trial_emails.py", "--backfill"]),                 self._patched_connect():
+            self.assertEqual(self.runner.main(), 0)
+        send_email.assert_not_called()
+        self.assertEqual(set(self._backfilled()), {"1", "2", "2b", "3"})
 
     def test_excluded_growth_account_is_skipped(self) -> None:
         with self.connect() as conn:

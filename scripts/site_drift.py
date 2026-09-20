@@ -29,6 +29,7 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 DEFAULT_SNAPSHOT = "docs/marketing/site-drift-baseline.json"
 EXTRA_PATHS = ["/robots.txt", "/login", "/register"]
@@ -244,6 +245,48 @@ def diff(old: dict, new: dict) -> tuple[list[str], list[str]]:
     return critical, warning
 
 
+# ---------------------------------------------------------------------- mail
+
+
+def _send_email(to_email: str, subject: str, body: str) -> bool:
+    """The gateway's own SMTP sender -- same config, no new dependency and no
+    new config key. Imported lazily so the monitor keeps working (and keeps
+    being stdlib-only) on a machine where the gateway package is absent."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
+    import mailer  # noqa: E402
+
+    return mailer.send_email(to_email, subject, body)
+
+
+def alert(
+    addresses: list[str],
+    base: str,
+    baseline_at: str,
+    critical: list[str],
+    warning: list[str],
+    send_email=_send_email,
+) -> bool:
+    """One message per run, critical first. No drift -> no mail, ever.
+
+    Returns True if there was nothing to send or it went out, False if SMTP
+    refused it -- the caller keeps its own exit code either way."""
+    if not addresses or not (critical or warning):
+        return True
+    subject = (
+        f"[site-drift] {len(critical)} critical, {len(warning)} warnings "
+        f"— {base} (baseline {baseline_at})"
+    )
+    lines = [f"CRITICAL {line}" for line in critical]
+    lines += [f"WARNING {line}" for line in warning]
+    body = (
+        f"Дрейф публичного сайта {base}.\n"
+        f"Базовый снимок: {baseline_at}.\n\n" + "\n".join(lines) + "\n"
+    )
+    # One message, all recipients in one To: header -- an hourly cron must
+    # not multiply a drift into one mail per address.
+    return bool(send_email(", ".join(addresses), subject, body))
+
+
 # ----------------------------------------------------------------- self-test
 
 
@@ -320,6 +363,34 @@ def self_test() -> int:
     check("robots Disallow added", rb, rb_more, crit=["Disallow added"])
     check("robots Disallow removed", rb_more, rb, warn=["Disallow removed"])
 
+    # --- the alert path, with the mailer replaced by a recorder ----------
+    sent: list[tuple[str, str, str]] = []
+
+    def fake_send(to, subject, body):
+        sent.append((to, subject, body))
+        return True
+
+    alert(["ops@x"], "https://x", "2026-09-20T00:00:00+00:00", [], [], send_email=fake_send)
+    assert sent == [], f"clean run must not mail: {sent}"
+    print("  ok  no drift -> no mail")
+
+    crit, warn = diff(snap(base), snap({"/p": page(status=404)}))
+    alert(["ops@x", "ops2@x"], "https://x", "2026-09-20T00:00:00+00:00", crit, warn,
+          send_email=fake_send)
+    assert len(sent) == 1, f"exactly one message expected, got {len(sent)}"
+    to, subject, body = sent[0]
+    assert to == "ops@x, ops2@x", to
+    assert "https://x" in subject and "2026-09-20" in subject, subject
+    for line in crit:
+        assert f"CRITICAL {line}" in body, f"missing critical line in mail: {line}"
+    assert body.index("CRITICAL") < (body.index("WARNING") if "WARNING" in body else len(body))
+    print("  ok  drift -> exactly one message, critical first")
+
+    sent.clear()
+    alert([], "https://x", "t", crit, warn, send_email=fake_send)
+    assert sent == [], "no --email means no mail"
+    print("  ok  no --email -> no mail")
+
     print("self-test: all cases classified correctly")
     return 0
 
@@ -333,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--snapshot", action="store_true", help="write a reference snapshot instead of comparing")
     ap.add_argument("--file", default=DEFAULT_SNAPSHOT, help=f"snapshot path (default {DEFAULT_SNAPSHOT})")
     ap.add_argument("--self-test", action="store_true", help="run the diff self-test, no network")
+    ap.add_argument("--email", action="append", default=[],
+                    help="alert address; repeatable or comma-separated. Mail only when there is drift.")
     args = ap.parse_args(argv)
 
     if args.self_test:
@@ -364,14 +437,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"CRITICAL {line}")
     for line in warning:
         print(f"WARNING {line}")
+
+    addresses = [a.strip() for chunk in args.email for a in chunk.split(",") if a.strip()]
+    # The exit code is decided first: a mail failure is reported, never
+    # allowed to hide the drift that triggered it.
+    code = 1 if critical else 0
+    if not alert(addresses, base, str(baseline.get("taken_at")), critical, warning):
+        print("CRITICAL alert email was refused by SMTP -- see the gateway mailer log")
+        code = 1
+
     if critical:
         print(f"site drift: {len(critical)} critical, {len(warning)} warnings (baseline {baseline.get('taken_at')})")
-        return 1
-    if warning:
+    elif warning:
         print(f"site drift: no critical, {len(warning)} warnings")
-        return 0
-    print(f"no drift: {len(current['pages'])} URLs match baseline {baseline.get('taken_at')}")
-    return 0
+    else:
+        print(f"no drift: {len(current['pages'])} URLs match baseline {baseline.get('taken_at')}")
+    return code
 
 
 if __name__ == "__main__":
