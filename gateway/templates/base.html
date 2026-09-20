@@ -452,9 +452,9 @@
   .calc-field.wide { grid-column: 1 / -1; }
   .calc-field label { font-size: .8rem; color: var(--text-muted); }
   .calc-field .hint { font-size: .72rem; color: var(--text-faint); }
-  .calc-field input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong);
+  .calc-field input, .calc-field select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong);
     background: var(--bg); color: var(--text); font-size: .95rem; font-family: var(--font-mono); }
-  .calc-field input:focus { outline: none; border-color: var(--accent); }
+  .calc-field input:focus, .calc-field select:focus { outline: none; border-color: var(--accent); }
   .calc-result { background: var(--surface-2); padding: 26px 28px; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
   .calc-big { font-family: var(--font-mono); font-weight: 700; font-size: 2.1rem; line-height: 1; }
   .calc-big.good { color: var(--good); }
