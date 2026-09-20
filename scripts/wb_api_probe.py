@@ -60,6 +60,8 @@ PROBES: tuple[dict, ...] = (
     {"id": "feedbacks", "layer": "own", "method": "GET",
      "url": "https://feedbacks-api.wildberries.ru/api/v1/feedbacks",
      "params": {"isAnswered": "true", "take": "1", "skip": "0"}},
+    # 2026-09-20: WB answers 404 "This method is temporarily disabled" (release
+    # note 570). Kept in the probe so the day it comes back is visible.
     {"id": "acceptance-coef", "layer": "own", "method": "GET",
      "url": "https://common-api.wildberries.ru/api/tariffs/v1/acceptance/coefficients"},
     {"id": "cards-list", "layer": "own", "method": "POST",
@@ -197,8 +199,10 @@ def run(label: str, out_path: str, delay: float, timeout: float) -> int:
               file=sys.stderr)
         return 2
 
+    # WB rejects a period that ends today ("current period end date cannot be
+    # today" from analytics-open-api), so the window closes yesterday.
     today = datetime.now(timezone.utc).date()
-    subs = {"date_from": str(today - timedelta(days=7)), "date_to": str(today)}
+    subs = {"date_from": str(today - timedelta(days=8)), "date_to": str(today - timedelta(days=1))}
 
     results = []
     for index, entry in enumerate(PROBES):
