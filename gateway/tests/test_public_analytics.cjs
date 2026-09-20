@@ -17,7 +17,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function boot({ choice = '', available = true, counter = '12345678', href = 'https://marketshelper.test/', stored = {}, respond } = {}) {
+function boot({ choice = '', available = true, counter = '12345678', goals = '', href = 'https://marketshelper.test/', stored = {}, respond } = {}) {
   const scripts = [];
   const requests = [];
   const storage = new Map(Object.entries(stored));
@@ -32,7 +32,7 @@ function boot({ choice = '', available = true, counter = '12345678', href = 'htt
       focus() { this.focused = true; },
     };
   }
-  nodes['privacy-settings'].dataset = { choice, available: String(available), counter };
+  nodes['privacy-settings'].dataset = { choice, available: String(available), counter, goals };
   const window = { location };
   const fetch = (url, options) => {
     requests.push({ url, options: plain(options) });
@@ -113,6 +113,17 @@ test('private page with an empty counter never loads a tracker even after analyt
   await page.click('cookie-accept');
   assert.equal(page.scripts.length, 0);
   assert.deepEqual(page.events(), []);
+});
+
+test('lifecycle goals are sent only after server consent and only from the allowlist', () => {
+  const denied = boot({ choice: 'essential', goals: 'account_created,trial_started' });
+  assert.deepEqual(denied.events(), []);
+  const page = boot({ choice: 'analytics', goals: 'account_created,trial_started,first_useful_report,private_value' });
+  assert.deepEqual(page.events().filter(event => event[1] === 'reachGoal'), [
+    [12345678, 'reachGoal', 'account_created'],
+    [12345678, 'reachGoal', 'trial_started'],
+    [12345678, 'reachGoal', 'first_useful_report'],
+  ]);
 });
 
 test('accept starts analytics only after successful same-origin POST and suppresses double clicks', async () => {

@@ -42,6 +42,18 @@ class GrowthIntegrationTests(GatewayDbTestCase):
         self.assertIn('data-choice=""', response.text)
         self.assertEqual(response.headers["cache-control"], "private, no-store")
 
+    def test_tenant_tracker_config_is_consent_gated_and_cors_scoped(self):
+        response = self.client.get("/privacy/analytics-config", headers={"Origin": "https://shop.app.marketshelper.ru"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"enabled": False, "counter": ""})
+        self.choose("analytics")
+        response = self.client.get("/privacy/analytics-config", headers={"Origin": "https://shop.app.marketshelper.ru"})
+        self.assertEqual(response.json(), {"enabled": True, "counter": "12345678"})
+        self.assertEqual(response.headers["access-control-allow-origin"], "https://shop.app.marketshelper.ru")
+        self.assertEqual(response.headers["access-control-allow-credentials"], "true")
+        denied = self.client.get("/privacy/analytics-config", headers={"Origin": "https://evil.example"})
+        self.assertEqual(denied.status_code, 403)
+
     def test_oversized_consent_body_is_rejected_without_cookie(self):
         response = self.client.post("/privacy/analytics-consent", content='{"choice":"analytics","extra":"' + 'x' * 4096 + '"}', headers={"Origin": "http://testserver", "Content-Type": "application/json"})
         self.assertEqual(response.status_code, 413)

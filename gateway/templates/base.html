@@ -542,7 +542,7 @@
   <a href="/contacts">Контакты и реквизиты</a>
 </div>
 {% endif %}
-<div id="privacy-settings" data-available="{{ 'true' if analytics_available() else 'false' }}" data-choice="{{ analytics_consent(request) }}" data-counter="{{ public_metrika_counter(request) }}">
+<div id="privacy-settings" data-available="{{ 'true' if analytics_available() else 'false' }}" data-choice="{{ analytics_consent(request) }}" data-counter="{{ public_metrika_counter(request) }}" data-goals="{{ analytics_goals|default([])|join(',') }}">
   <button id="cookie-settings-open" type="button">Настройки cookie</button>
 </div>
 <section id="cookie-notice" role="dialog" aria-label="Использование cookie" aria-live="polite">

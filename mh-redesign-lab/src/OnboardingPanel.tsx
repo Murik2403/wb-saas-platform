@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { getActivationSummary, getFirstGrowthReport, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport, type ProductCostSetting, type TenantSyncRun } from "./data-source";
 import { onboardingEvidence } from "./onboarding";
+import { trackMetrikaGoal } from "./metrika";
 
 type Props = {
   connected: boolean;
@@ -26,7 +27,7 @@ function FirstReportCard({ report, onRecorded }: { report: FirstGrowthReport; on
     // Run only after this actual report has been committed to the screen.
     const frame = requestAnimationFrame(() => {
       void recordFirstReportViewed(report).then(() => {
-        if (current) { setSaved(true); setError(""); onRecorded(); }
+        if (current) { setSaved(true); setError(""); onRecorded(); void trackMetrikaGoal("first_useful_report"); }
       }).catch(() => { if (current) setError("Отчёт открыт, но отметку первого результата сохранить не удалось. Повторите сохранение."); });
     });
     return () => { current = false; cancelAnimationFrame(frame); };

@@ -151,3 +151,26 @@ async def save_consent(request: Request):
         if source.get("utm_source"):
             _set_cookie(response, SOURCE_COOKIE, _sign({"utm": source, "touched_at": time.time()}, "source", SOURCE_TTL), SOURCE_TTL)
     return response
+
+
+@router.get("/privacy/analytics-config")
+async def analytics_config(request: Request):
+    """Expose only consent-gated tracker metadata to the tenant SPA.
+
+    The signed HttpOnly cookie remains the source of truth. The endpoint is
+    deliberately tiny and contains no account, attribution, or report data.
+    """
+    origin = request.headers.get("origin", "").rstrip("/")
+    allowed = {str(request.base_url).rstrip("/"), config.base_url().rstrip("/")}
+    if origin and origin not in allowed and not origin.endswith(".app.marketshelper.ru"):
+        raise HTTPException(403, "origin is not allowed")
+    response = JSONResponse({
+        "enabled": consent_choice(request) == "analytics" and str(config.YANDEX_METRIKA_ID).isdigit(),
+        "counter": str(config.YANDEX_METRIKA_ID) if consent_choice(request) == "analytics" else "",
+    })
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    response.headers["Cache-Control"] = "no-store"
+    return response

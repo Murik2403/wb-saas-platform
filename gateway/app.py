@@ -371,7 +371,7 @@ def register_submit(
 
 @app.get("/verify-email-sent", response_class=HTMLResponse)
 def verify_email_sent(request: Request):
-    return templates.TemplateResponse(request, "verify_email_sent.html")
+    return templates.TemplateResponse(request, "verify_email_sent.html", {"analytics_goals": ["account_created"]})
 
 
 @app.get("/verify-email")
@@ -767,9 +767,10 @@ def provisioning_status(request: Request):
     with control_db.connect() as conn:
         tenant = accounts.get_accessible_tenant_for_account(conn, account["id"])
     if tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant):
-        return RedirectResponse(config.tenant_url(tenant["slug"]), status_code=303)
+        return RedirectResponse(f"{config.tenant_url(tenant['slug'])}?mh_goal=trial_started", status_code=303)
     status = tenant["status"] if tenant is not None else "provisioning"
-    return templates.TemplateResponse(request, "provisioning.html", {"status": status})
+    goals = ["trial_started"] if status == "trialing" else []
+    return templates.TemplateResponse(request, "provisioning.html", {"status": status, "analytics_goals": goals})
 
 
 def _redirect_for_account(account) -> RedirectResponse:
@@ -777,7 +778,7 @@ def _redirect_for_account(account) -> RedirectResponse:
         tenant = accounts.get_accessible_tenant_for_account(conn, account["id"])
         can_access = accounts.tenant_has_access(conn, tenant)
     if tenant is not None and tenant["status"] == "running" and can_access:
-        return RedirectResponse(config.tenant_url(tenant["slug"]), status_code=303)
+        return RedirectResponse(f"{config.tenant_url(tenant['slug'])}?mh_goal=trial_started", status_code=303)
     return RedirectResponse("/provisioning", status_code=303)
 
 

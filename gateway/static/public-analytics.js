@@ -31,6 +31,20 @@
     window.ym(Number(counter), "hit", safeUrl.toString(), { referer: "" });
   }
 
+  // Lifecycle conversions are queued only after the server-rendered, signed
+  // consent has initialized the counter. The event name is a fixed allowlist;
+  // no account, email, SKU, or other user data is sent to Metrika.
+  const allowedGoals = new Set(["account_created", "trial_started", "first_useful_report"]);
+  window.marketshelperTrackGoal = function (goal) {
+    if (choice !== "analytics" || !counter || !allowedGoals.has(goal)) return false;
+    startCounter();
+    window.ym(Number(counter), "reachGoal", goal);
+    return true;
+  };
+  for (const goal of (root.dataset.goals || "").split(",")) {
+    if (goal) window.marketshelperTrackGoal(goal);
+  }
+
   function remember(value) {
     try { localStorage.setItem(storageKey, JSON.stringify({ choice: value, version: 2 })); } catch (_) { /* Storage may be unavailable. */ }
   }
