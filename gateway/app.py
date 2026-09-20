@@ -77,6 +77,7 @@ def _render_auth_form_error(request: Request, template_name: str, context: dict,
         **context,
         "csrf_token": csrf_token,
         "policy_version": accounts.PDN_POLICY_VERSION,
+        "trial_days": config.TRIAL_DAYS,
     }
     response = templates.TemplateResponse(
         request, template_name, context, status_code=status_code
@@ -313,7 +314,7 @@ def register_form(request: Request, invite: str = ""):
     response = templates.TemplateResponse(
         request,
         "register.html",
-        {"csrf_token": csrf_token, "policy_version": accounts.PDN_POLICY_VERSION, "invite": invite},
+        {"csrf_token": csrf_token, "policy_version": accounts.PDN_POLICY_VERSION, "trial_days": config.TRIAL_DAYS, "invite": invite},
     )
     csrf.set_cookie(response, csrf_token)
     return response
