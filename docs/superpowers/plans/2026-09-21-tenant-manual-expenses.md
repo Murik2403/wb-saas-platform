@@ -35,6 +35,6 @@
 
 ### Task 3: Follow-up integration
 
-- [ ] Add an explicit management calculation view that reads this table through the shared nine-article contract.
-- [ ] Add UI editing with source and coverage indicators.
-- [ ] Keep accounting-backed profit and WB commission semantics unchanged.
+- [x] Add an explicit management calculation view that reads this table through the shared nine-article contract.
+- [x] Add UI editing with source and coverage indicators.
+- [x] Keep accounting-backed profit and WB commission semantics unchanged.

@@ -62,3 +62,22 @@ def test_management_economics_reports_missing_product(monkeypatch):
 
     assert result["data_status"] == "no_product_data"
     assert result["revenue_rub"] == 0
+
+
+def test_management_economics_revenue_percentage_basis(monkeypatch):
+    monkeypatch.setattr(api, "build_dashboard", lambda *_: SimpleNamespace(financial_products=pd.DataFrame([{
+        "Артикул WB": 123, "Выкупы по цене покупателя": 2000, "Продано нетто": 4, "Чистая прибыль": 900,
+    }])))
+    monkeypatch.setattr(api, "read_manual_expenses", lambda **_: [{
+        "id": 1, "nm_id": 123, "article": "advertising", "amount_rub": 5, "allocation_basis": "revenue_pct", "source": "manual",
+        "period_start": "2026-09-01", "period_end": "2026-09-01", "note": "", "created_at": "", "updated_at": "",
+    }])
+    result = api.get_management_economics(nm_id=123, start=date(2026, 9, 1), end=date(2026, 9, 1))
+    assert result["manual_expenses_rub"] == 100
+
+
+def test_management_economics_rejects_reversed_period():
+    import pytest
+    with pytest.raises(api.HTTPException) as error:
+        api.get_management_economics(nm_id=123, start=date(2026, 9, 2), end=date(2026, 9, 1))
+    assert error.value.status_code == 422
