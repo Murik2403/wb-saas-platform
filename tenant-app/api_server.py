@@ -29,6 +29,7 @@ from calculations import build_dashboard
 from sentry_integration import initialize as initialize_sentry
 from config import DB_PATH, get_token, load_settings
 from db import init_db, last_sync, table_count
+from db.manual_expenses import delete_manual_expense, read_manual_expenses, save_manual_expense
 from overview_service import (
     DEFAULT_PERIOD, PERIOD_LABELS, compute_overview, previous_window, resolve_window,
 )
@@ -62,6 +63,42 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+class ManualExpensePayload(BaseModel):
+    nm_id: int = Field(gt=0)
+    article: str
+    amount_rub: float = Field(ge=0)
+    allocation_basis: str = "per_unit"
+    source: str = "manual"
+    period_start: date
+    period_end: date
+    note: str = ""
+
+
+@app.get("/api/manual-expenses")
+def get_manual_expenses(
+    nm_id: int | None = Query(default=None, gt=0),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    return {"items": read_manual_expenses(nm_id=nm_id, start=start, end=end)}
+
+
+@app.post("/api/manual-expenses")
+def post_manual_expense(payload: ManualExpensePayload) -> dict:
+    try:
+        expense_id = save_manual_expense(**payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"id": expense_id, "message": "Расход сохранён"}
+
+
+@app.delete("/api/manual-expenses/{expense_id}")
+def remove_manual_expense(expense_id: int) -> dict:
+    if not delete_manual_expense(expense_id):
+        raise HTTPException(status_code=404, detail="not_found")
+    return {"message": "Расход удалён"}
 
 
 @app.get("/healthz")

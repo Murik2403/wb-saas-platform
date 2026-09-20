@@ -133,6 +133,25 @@ def init_db() -> None:
                 updated_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS manual_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nm_id INTEGER NOT NULL,
+                article TEXT NOT NULL,
+                amount_rub REAL NOT NULL CHECK (amount_rub >= 0),
+                allocation_basis TEXT NOT NULL DEFAULT 'per_unit',
+                source TEXT NOT NULL DEFAULT 'manual',
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                note TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CHECK (allocation_basis IN ('per_unit','total','revenue_pct')),
+                CHECK (source IN ('manual','import')),
+                CHECK (period_end >= period_start)
+            );
+            CREATE INDEX IF NOT EXISTS idx_manual_expenses_nm_period
+                ON manual_expenses(nm_id, period_start, period_end);
+
             CREATE TABLE IF NOT EXISTS products_catalog (
                 nm_id INTEGER PRIMARY KEY,
                 supplier_article TEXT,
