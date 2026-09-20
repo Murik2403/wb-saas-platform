@@ -22,6 +22,7 @@ if str(GATEWAY_ROOT) not in sys.path:
 
 import app as gateway_app  # noqa: E402
 import config  # noqa: E402
+from marketing_routes import AUTHOR_NAME, AUTHOR_ROLE, GUIDE_DATES  # noqa: E402
 
 PUBLIC_PAGES = ("/", "/pricing", "/contacts", "/compliance", "/offer", "/privacy") + gateway_app.PUBLIC_MARKETING_PATHS
 PRIVATE_PAGES = ("/login", "/forgot-password", "/register")
@@ -148,6 +149,93 @@ class PageMetadataTests(unittest.TestCase):
                 for question in faq["mainEntity"]:
                     self.assertIn(question["name"], html)
                     self.assertIn(question["acceptedAnswer"]["text"], html)
+
+
+class GuideAuthorshipTests(unittest.TestCase):
+    """E-E-A-T: a guide without a visible author and date is an anonymous page.
+
+    The markup is only allowed to say what the reader can see, so the dates in
+    the Article JSON-LD are checked against the dates printed in the byline.
+    """
+
+    def setUp(self) -> None:
+        self.client = TestClient(gateway_app.app)
+
+    def _article_graph(self, html: str) -> dict:
+        """The guide's JSON-LD graph, keyed by @type."""
+        for raw in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+            graph = {node["@type"]: node for node in json.loads(raw).get("@graph", [])}
+            if "Article" in graph:
+                return graph
+        self.fail("no Article JSON-LD on the page")
+
+    def test_every_guide_names_its_author_and_shows_its_dates(self) -> None:
+        for path, (published, modified) in GUIDE_DATES.items():
+            with self.subTest(path=path):
+                html = self.client.get(path).text
+                byline = re.search(r'<p class="mk-byline">(.*?)</p>', html, re.S)
+                self.assertIsNotNone(byline, f"{path}: no byline")
+                self.assertIn(AUTHOR_NAME, byline.group(1))
+                self.assertIn(AUTHOR_ROLE, byline.group(1))
+                self.assertIn(f'<time datetime="{published}">', byline.group(1))
+                visible = re.findall(r'<time datetime="([^"]+)">([^<]+)</time>', byline.group(1))
+                self.assertEqual(visible[0][1], f"{published[8:10]}.{published[5:7]}.{published[:4]}")
+                if modified != published:
+                    self.assertIn(f'<time datetime="{modified}">', byline.group(1))
+                    self.assertEqual(len(visible), 2)
+                else:
+                    self.assertEqual(len(visible), 1, f"{path}: unchanged page claims an update")
+
+    def test_guide_structured_data_matches_the_visible_byline(self) -> None:
+        for path, (published, modified) in GUIDE_DATES.items():
+            with self.subTest(path=path):
+                html = self.client.get(path).text
+                nodes = self._article_graph(html)
+                article, person = nodes["Article"], nodes["Person"]
+                self.assertEqual(article["datePublished"], published)
+                self.assertEqual(article["dateModified"], modified)
+                self.assertIn(f'<time datetime="{published}">', html)
+                # One graph, not two strangers: author and publisher resolve by @id.
+                self.assertEqual(article["author"]["@id"], person["@id"])
+                self.assertEqual(article["publisher"]["@id"], nodes["Organization"]["@id"])
+                self.assertEqual(person["worksFor"]["@id"], nodes["Organization"]["@id"])
+                self.assertEqual(person["name"], AUTHOR_NAME)
+                self.assertIn(person["name"], html)
+                self.assertIn(person["jobTitle"], html)
+                self.assertIn(article["headline"], html)
+
+    def test_only_guides_carry_article_markup(self) -> None:
+        for path in set(gateway_app.PUBLIC_MARKETING_PATHS) - set(GUIDE_DATES):
+            with self.subTest(path=path):
+                self.assertNotIn('"@type": "Article"', self.client.get(path).text)
+
+
+class LlmsTxtTests(unittest.TestCase):
+    """The AI-search summary is generated, so it cannot drift from the site."""
+
+    def setUp(self) -> None:
+        self.client = TestClient(gateway_app.app)
+
+    def test_llms_txt_is_plain_text_and_lists_the_public_marketing_pages(self) -> None:
+        response = self.client.get("/llms.txt")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response.headers["content-type"])
+        listed = re.findall(rf"^- {re.escape(config.base_url())}(\S+?): (.+)$", response.text, re.M)
+        self.assertEqual(
+            sorted(path for path, _ in listed),
+            sorted(gateway_app.PUBLIC_MARKETING_PATHS),
+        )
+        for _, description in listed:
+            self.assertGreater(len(description), 40)
+
+    def test_llms_txt_states_the_boundaries_of_the_service(self) -> None:
+        body = self.client.get("/llms.txt").text
+        for claim in ("не бухгалтерия", "не внешняя аналитика", "Wildberries", "Ozon"):
+            self.assertIn(claim, body)
+
+    def test_llms_txt_is_allowed_by_robots_but_stays_out_of_the_sitemap(self) -> None:
+        self.assertIn("Allow: /llms.txt", self.client.get("/robots.txt").text)
+        self.assertNotIn("/llms.txt", self.client.get("/sitemap.xml").text)
 
 
 class AnalyticsOptInTests(unittest.TestCase):

@@ -1,0 +1,8 @@
+{# Visible authorship block. Dates come from GUIDE_DATES in marketing_routes.py,
+   the same source as the Article JSON-LD in marketing_base.html, so the markup
+   never describes a date the reader cannot see. #}
+<p class="mk-byline">
+  <span class="mk-byline-author">{{ author_name }}</span>, {{ author_role }} ·
+  Опубликовано <time datetime="{{ article_published }}">{{ article_published[8:10] }}.{{ article_published[5:7] }}.{{ article_published[:4] }}</time>{% if article_modified != article_published %} ·
+  Обновлено <time datetime="{{ article_modified }}">{{ article_modified[8:10] }}.{{ article_modified[5:7] }}.{{ article_modified[:4] }}</time>{% endif %}
+</p>

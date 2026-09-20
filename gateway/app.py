@@ -39,7 +39,7 @@ from logic import accounts, compliance, csrf, db as control_db, password_reset, 
 from rate_limiter import RateLimiter
 from sentry_integration import initialize as initialize_sentry
 from template_setup import create_templates
-from marketing_routes import create_marketing_router, PUBLIC_MARKETING_PATHS
+from marketing_routes import create_marketing_router, llms_txt, PUBLIC_MARKETING_PATHS
 
 setup_logging()
 initialize_sentry()
@@ -264,6 +264,8 @@ def robots_txt() -> PlainTextResponse:
     lines += [f"Disallow: {path}" for path in _ROBOTS_DISALLOW]
     lines += [
         "Allow: /",
+        # Plain-text summary of the public site for AI crawlers and assistants.
+        "Allow: /llms.txt",
         "",
         # Yandex is the search engine that matters for this audience and it is
         # the one that still reads Clean-param/Host-style directives.
@@ -271,6 +273,17 @@ def robots_txt() -> PlainTextResponse:
         "",
     ]
     return PlainTextResponse("\n".join(lines))
+
+
+@app.get("/llms.txt", response_class=PlainTextResponse)
+def llms_txt_endpoint() -> PlainTextResponse:
+    """What MARKETSHELPER is, what it is not, and the public pages.
+
+    Built from MARKETING_PAGES so it cannot drift from the site itself. It is
+    deliberately absent from the sitemap: it is a description for assistants,
+    not a page to index.
+    """
+    return PlainTextResponse(llms_txt(config.base_url()))
 
 
 @app.get("/sitemap.xml")

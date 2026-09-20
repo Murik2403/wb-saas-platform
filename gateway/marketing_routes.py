@@ -26,16 +26,66 @@ MARKETING_PAGES = (
 )
 PUBLIC_MARKETING_PATHS = tuple(page[0] for page in MARKETING_PAGES)
 
+# Authorship of the guides. Only facts that are also visible on the page and
+# verifiable from /contacts -- the site is run by a single ИП who sells on WB.
+AUTHOR_NAME = "Мурат Вороков"
+AUTHOR_ROLE = "основатель MARKETSHELPER, продавец на Wildberries"
+
+# Publication / last-change dates for the guides, kept here rather than in the
+# templates so the visible byline and the Article JSON-LD cannot drift apart.
+# Published = the commit that added the template; modified = the last edit.
+GUIDE_DATES: dict[str, tuple[str, str]] = {
+    "/guides/fifo-po-partiyam": ("2026-09-18", "2026-09-20"),
+    "/guides/pribyl-i-rashody-wb": ("2026-09-18", "2026-09-20"),
+    "/guides/iz-excel-v-uchet": ("2026-09-18", "2026-09-20"),
+    "/guides/fifo-ili-srednyaya-v-akcii": ("2026-09-19", "2026-09-20"),
+    "/guides/sverka-ostatkov-wb": ("2026-09-19", "2026-09-19"),
+    "/guides/nezavershennoe-proizvodstvo": ("2026-09-19", "2026-09-19"),
+    "/guides/zamena-servisov-analitiki": ("2026-09-19", "2026-09-20"),
+}
+
+
+def llms_txt(base_url: str) -> str:
+    """Plain-text site summary for AI crawlers, built from MARKETING_PAGES."""
+    lines = [
+        "# MARKETSHELPER",
+        "",
+        "Веб-сервис учёта для продавцов Wildberries: себестоимость товара, партии и",
+        "остатки по FIFO, нормы материалов, производственные смены и сверка остатков с WB.",
+        "",
+        "## Чего сервис не делает",
+        "- Это не бухгалтерия и не налоговая отчётность: декларации и проводки остаются за бухгалтером.",
+        "- Это не внешняя аналитика ниш и конкурентов: сервис работает с данными вашего кабинета.",
+        "- Складской и производственный учёт ведётся только по Wildberries.",
+        "- По Ozon сервис даёт только ценовые рекомендации, без учёта остатков и партий.",
+        "",
+        "## Публичные страницы",
+    ]
+    lines += [f"- {base_url}{path}: {description}" for path, _, _, description in MARKETING_PAGES]
+    lines += [
+        "",
+        "## Автор материалов",
+        f"{AUTHOR_NAME} — {AUTHOR_ROLE}.",
+        "",
+    ]
+    return "\n".join(lines)
+
 
 def create_marketing_router(templates: Jinja2Templates) -> APIRouter:
     """Reuse the gateway's configured template environment and privacy policy."""
     router = APIRouter()
 
-    def endpoint_for(template_name: str, title: str, description: str):
+    def endpoint_for(path: str, template_name: str, title: str, description: str):
+        published, modified = GUIDE_DATES.get(path, (None, None))
+
         async def page(request: Request):
             return templates.TemplateResponse(request, template_name, {
                 "page_title": title,
                 "page_description": description,
+                "article_published": published,
+                "article_modified": modified,
+                "author_name": AUTHOR_NAME,
+                "author_role": AUTHOR_ROLE,
                 "trial_days": config.TRIAL_DAYS,
                 "price_rub": config.SUBSCRIPTION_PRICE_RUB,
                 "period_days": config.BILLING_PERIOD_DAYS,
@@ -44,7 +94,7 @@ def create_marketing_router(templates: Jinja2Templates) -> APIRouter:
         return page
 
     for path, template_name, title, description in MARKETING_PAGES:
-        router.add_api_route(path, endpoint_for(template_name, title, description),
+        router.add_api_route(path, endpoint_for(path, template_name, title, description),
                              methods=["GET"], response_class=HTMLResponse,
                              name="marketing_" + template_name.removesuffix(".html"))
     return router
