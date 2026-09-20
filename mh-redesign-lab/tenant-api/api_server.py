@@ -76,6 +76,14 @@ from reports.store import ReportStore
 from reports.metrics import METRIC_LABELS
 from reports import delivery
 from db.procurement import create_procurement_order, post_procurement_receipt
+from db.manual_expenses import (
+    ALLOCATION_BASES,
+    EXPENSE_ARTICLES,
+    SOURCES,
+    delete_manual_expense,
+    read_manual_expenses,
+    save_manual_expense,
+)
 from db.production import save_execution_tasks
 from db.wb_incidents import apply_wb_incident_loss, create_wb_incident_case, read_wb_incident_cases, record_wb_incident_compensation, wb_incident_financial_summary
 from reports.pdf_builder import build_report_pdf
@@ -189,6 +197,17 @@ class ProductCostInput(BaseModel):
 
 class ProductCostsUpdateInput(BaseModel):
     items: list[ProductCostInput]
+
+
+class ManualExpenseInput(BaseModel):
+    nm_id: int = Field(gt=0)
+    article: str
+    amount_rub: FiniteFloat = Field(ge=0)
+    allocation_basis: str = "per_unit"
+    source: str = "manual"
+    period_start: date
+    period_end: date
+    note: str = ""
 
 
 class ProductionNormInput(BaseModel):
@@ -2771,6 +2790,42 @@ def get_product_costs() -> dict:
     rows["cost_per_wb_unit"] = pd.to_numeric(rows["cost_per_wb_unit"], errors="coerce").fillna(0.0)
     rows = rows.sort_values(["product_name", "supplier_article", "nm_id"], kind="stable")
     return json_safe({"items": _records(rows[["nm_id", "supplier_article", "product_name", "cost_per_wb_unit", "note", "updated_at"]])})
+
+
+@app.get("/api/v1/settings/manual-expenses")
+def get_manual_expenses(
+    nm_id: int | None = Query(default=None, gt=0),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    if start and end and end < start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+    return {"items": read_manual_expenses(nm_id=nm_id, start=start, end=end)}
+
+
+@app.post("/api/v1/settings/manual-expenses")
+def create_manual_expense(payload: ManualExpenseInput) -> dict:
+    try:
+        expense_id = save_manual_expense(
+            nm_id=payload.nm_id,
+            article=payload.article,
+            amount_rub=payload.amount_rub,
+            allocation_basis=payload.allocation_basis,
+            source=payload.source,
+            period_start=payload.period_start.isoformat(),
+            period_end=payload.period_end.isoformat(),
+            note=payload.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"id": expense_id, "message": "Расход сохранён"}
+
+
+@app.delete("/api/v1/settings/manual-expenses/{expense_id}")
+def remove_manual_expense(expense_id: int) -> dict:
+    if not delete_manual_expense(expense_id):
+        raise HTTPException(status_code=404, detail="Расход не найден")
+    return {"message": "Расход удалён"}
 
 
 @app.patch("/api/v1/settings/product-costs")
