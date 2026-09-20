@@ -22,7 +22,7 @@ if str(GATEWAY_ROOT) not in sys.path:
 
 import app as gateway_app  # noqa: E402
 import config  # noqa: E402
-from marketing_routes import AUTHOR_NAME, AUTHOR_ROLE, GUIDE_DATES  # noqa: E402
+from marketing_routes import AUTHOR_GUIDES, AUTHOR_NAME, AUTHOR_PATH, AUTHOR_ROLE, GUIDE_DATES  # noqa: E402
 
 PUBLIC_PAGES = ("/", "/pricing", "/contacts", "/compliance", "/offer", "/privacy") + gateway_app.PUBLIC_MARKETING_PATHS
 PRIVATE_PAGES = ("/login", "/forgot-password", "/register")
@@ -208,6 +208,67 @@ class GuideAuthorshipTests(unittest.TestCase):
         for path in set(gateway_app.PUBLIC_MARKETING_PATHS) - set(GUIDE_DATES):
             with self.subTest(path=path):
                 self.assertNotIn('"@type": "Article"', self.client.get(path).text)
+
+
+class AuthorPageTests(unittest.TestCase):
+    """The guides' Person markup only means something if it resolves to a page.
+
+    The page must be the SAME author node the guides point at, not a second
+    Person with the same name, so the @id is compared against a guide's graph.
+    """
+
+    def setUp(self) -> None:
+        self.client = TestClient(gateway_app.app)
+
+    def _person(self, html: str) -> dict:
+        for raw in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+            for node in json.loads(raw).get("@graph", []):
+                if node["@type"] == "Person":
+                    return node
+        self.fail("no Person JSON-LD on the page")
+
+    def test_author_page_renders_with_one_h1_and_a_description(self) -> None:
+        response = self.client.get(AUTHOR_PATH)
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertEqual(html.count("<h1"), 1)
+        description = re.search(r'<meta name="description" content="([^"]*)"', html).group(1)
+        self.assertGreater(len(description), 40)
+        self.assertIn(AUTHOR_NAME, html)
+        # The honesty section is the point of the page, not decoration.
+        for boundary in ("Бухгалтерский и налоговый учёт", "Внешняя аналитика ниш"):
+            self.assertIn(boundary, html)
+
+    def test_author_page_links_to_every_guide_and_to_the_legal_details(self) -> None:
+        html = self.client.get(AUTHOR_PATH).text
+        self.assertEqual(sorted(path for path, _ in AUTHOR_GUIDES), sorted(GUIDE_DATES))
+        for path, _ in AUTHOR_GUIDES:
+            self.assertIn(f'href="{path}"', html)
+        self.assertIn('href="/contacts"', html)
+
+    def test_author_page_is_listed_in_the_sitemap_and_llms_txt(self) -> None:
+        self.assertIn(f"<loc>{config.base_url()}{AUTHOR_PATH}</loc>", self.client.get("/sitemap.xml").text)
+        self.assertIn(f"{config.base_url()}{AUTHOR_PATH}", self.client.get("/llms.txt").text)
+
+    def test_author_page_reuses_the_person_id_from_the_guides(self) -> None:
+        page = self._person(self.client.get(AUTHOR_PATH).text)
+        guide = self._person(self.client.get(next(iter(GUIDE_DATES))).text)
+        self.assertEqual(page["@id"], guide["@id"])
+        self.assertEqual(page["name"], AUTHOR_NAME)
+        self.assertEqual(page["jobTitle"], AUTHOR_ROLE)
+        self.assertEqual(page["url"], f"{config.base_url()}{AUTHOR_PATH}")
+        self.assertEqual(page["mainEntityOfPage"], f"{config.base_url()}{AUTHOR_PATH}")
+        self.assertEqual(page["worksFor"]["@id"], f"{config.base_url()}/#organization")
+        # No profile is published anywhere on the site, so none may be claimed.
+        self.assertNotIn("sameAs", page)
+
+    def test_every_guide_byline_links_to_the_author_page(self) -> None:
+        for path in GUIDE_DATES:
+            with self.subTest(path=path):
+                byline = re.search(r'<p class="mk-byline">(.*?)</p>', self.client.get(path).text, re.S).group(1)
+                link = re.search(r'<a class="mk-byline-author" href="([^"]+)"', byline)
+                self.assertIsNotNone(link, f"{path}: byline author is not a link")
+                self.assertEqual(link.group(1), AUTHOR_PATH)
 
 
 class LlmsTxtTests(unittest.TestCase):
