@@ -1,18 +1,28 @@
 <div class="calc-wrap">
   <div class="calc-form">
     <div class="calc-field"><label for="calcPrice">Цена продажи, ₽</label><input type="number" id="calcPrice" inputmode="decimal" value="1200" min="0" step="any"></div>
-    <div class="calc-field"><label for="calcCost">Себестоимость, ₽</label><input type="number" id="calcCost" inputmode="decimal" value="420" min="0" step="any"><span class="hint">закупка или производство одной единицы</span></div>
-    <div class="calc-field"><label for="calcCommission">Комиссия WB, %</label><input type="number" id="calcCommission" inputmode="decimal" value="17" min="0" max="100" step="any"><span class="hint">пример условный — подставьте свою ставку</span></div>
-    <div class="calc-field"><label for="calcLogistics">Логистика и упаковка, ₽</label><input type="number" id="calcLogistics" inputmode="decimal" value="90" min="0" step="any"><span class="hint">упаковку не дублируйте, если включили в себестоимость</span></div>
-    <div class="calc-field wide"><label for="calcAds">Реклама на единицу, ₽</label><input type="number" id="calcAds" inputmode="decimal" value="60" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcUnits">Количество единиц</label><input type="number" id="calcUnits" inputmode="decimal" value="1" min="0.01" step="any"><span class="hint">для распределения расходов за период</span></div>
+    <div class="calc-field"><label for="calcCost">Закупка или производство, ₽/шт.</label><input type="number" id="calcCost" inputmode="decimal" value="420" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcCommission">Комиссия WB, %</label><input type="number" id="calcCommission" inputmode="decimal" value="17" min="0" max="100" step="any"><span class="hint">ставка от цены продажи</span></div>
+    <div class="calc-field"><label for="calcLogistics">Логистика WB, ₽/шт.</label><input type="number" id="calcLogistics" inputmode="decimal" value="90" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcReturns">Возвраты и обратная логистика, ₽/шт.</label><input type="number" id="calcReturns" inputmode="decimal" value="0" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcStorage">Хранение, ₽/шт.</label><input type="number" id="calcStorage" inputmode="decimal" value="0" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcAcceptance">Приёмка и удержания, ₽/шт.</label><input type="number" id="calcAcceptance" inputmode="decimal" value="0" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcAds">Реклама, ₽/шт.</label><input type="number" id="calcAds" inputmode="decimal" value="60" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcPackaging">Упаковка и труд, ₽/шт.</label><input type="number" id="calcPackaging" inputmode="decimal" value="0" min="0" step="any"><span class="hint">не дублируйте упаковку в себестоимости</span></div>
+    <div class="calc-field"><label for="calcLosses">Брак и потери, ₽/шт.</label><input type="number" id="calcLosses" inputmode="decimal" value="0" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcTax">Налог, ₽/шт.</label><input type="number" id="calcTax" inputmode="decimal" value="0" min="0" step="any"></div>
+    <div class="calc-field"><label for="calcCapital">Замороженный капитал, ₽</label><input type="number" id="calcCapital" inputmode="decimal" value="0" min="0" step="any"><span class="hint">показывается отдельно и не уменьшает прибыль</span></div>
   </div>
   <div class="calc-result" aria-live="polite" aria-atomic="true">
-    <div><div class="label">Предварительная маржа с единицы</div><div class="calc-big good" id="calcProfit">426 ₽</div></div>
-    <div><div class="label">Доля от цены продажи</div><div class="calc-sub" id="calcMargin">35,5%</div></div>
+    <div><div class="label">Результат по заполненным статьям, с единицы</div><div class="calc-big good" id="calcProfit">426 ₽</div></div>
+    <div><div class="label">Маржа от цены продажи</div><div class="calc-sub" id="calcMargin">35,5%</div></div>
+    <div><div class="label">Покрытие статей</div><div class="calc-sub" id="calcCoverage">4/9</div></div>
+    <div><div class="label">Замороженный капитал</div><div class="calc-sub" id="calcCapitalResult">0 ₽</div></div>
     <p id="calcError" class="calc-note" hidden>Введите неотрицательные числа во всех полях. Комиссия — от 0 до 100%.</p>
     <p><button type="button" class="btn btn-ghost" id="calcDownload">Скачать расчёт в CSV</button></p>
-    <p class="calc-note">Файл собирается в браузере. Как только вы меняете значения, адрес страницы обновляется — скопируйте его из адресной строки, чтобы отправить этот расчёт коллеге.</p>
-    <p class="calc-note">Это не чистая прибыль. Не учтены скидки и корректировки цены, хранение, приёмка, возвраты, эквайринг, другие начисления, налоги и общие расходы. Введённые суммы рассчитываются в браузере и не отправляются на сервер.</p>
+    <p class="calc-note">Расчёт выполняется в браузере. Адрес страницы обновляется при изменении значений — его можно отправить коллеге.</p>
+    <p class="calc-note">Результат включает только заполненные статьи. Доступные расходы WB можно подтвердить отчётом, а остальные данные продавец вводит вручную или импортирует. Это не бухгалтерская прибыль и данные не отправляются на сервер.</p>
     <noscript><p class="calc-note">Для пересчёта включите JavaScript. Сейчас показан условный пример для значений по умолчанию.</p></noscript>
   </div>
 </div>
@@ -21,94 +31,37 @@
   "use strict";
   var FIELDS = [
     {id: "calcPrice", param: "price", label: "Цена продажи", max: 1e9},
-    {id: "calcCost", param: "cost", label: "Себестоимость", max: 1e9},
+    {id: "calcUnits", param: "units", label: "Количество единиц", max: 1e9, min: 0.01},
+    {id: "calcCost", param: "cost", label: "Закупка или производство", max: 1e9},
     {id: "calcCommission", param: "commission", label: "Комиссия WB", max: 100},
-    {id: "calcLogistics", param: "logistics", label: "Логистика и упаковка", max: 1e9},
-    {id: "calcAds", param: "ads", label: "Реклама на единицу", max: 1e9}
+    {id: "calcLogistics", param: "logistics", label: "Логистика WB", max: 1e9},
+    {id: "calcReturns", param: "returns", label: "Возвраты и обратная логистика", max: 1e9},
+    {id: "calcStorage", param: "storage", label: "Хранение", max: 1e9},
+    {id: "calcAcceptance", param: "acceptance", label: "Приёмка и удержания", max: 1e9},
+    {id: "calcAds", param: "ads", label: "Реклама", max: 1e9},
+    {id: "calcPackaging", param: "packaging", label: "Упаковка и труд", max: 1e9},
+    {id: "calcLosses", param: "losses", label: "Брак и потери", max: 1e9},
+    {id: "calcTax", param: "tax", label: "Налог", max: 1e9},
+    {id: "calcCapital", param: "capital", label: "Замороженный капитал", max: 1e12}
   ];
   var inputs = FIELDS.map(function (field) { return document.getElementById(field.id); });
   var profitEl = document.getElementById("calcProfit"), marginEl = document.getElementById("calcMargin"), errorEl = document.getElementById("calcError");
-  var downloadEl = document.getElementById("calcDownload");
+  var coverageEl = document.getElementById("calcCoverage"), capitalEl = document.getElementById("calcCapitalResult"), downloadEl = document.getElementById("calcDownload");
   var ready = null;
-
   function number(value) { return String(Math.round(value * 100) / 100).replace(".", ","); }
-
-  // Query-string values are untrusted: reject anything non-numeric or negative,
-  // clamp the rest, and only ever assign them to input.value — never to markup.
-  function clamped(raw, max) {
-    if (raw === null || String(raw).trim() === "") { return null; }
-    var value = Number(String(raw).replace(",", "."));
-    if (!Number.isFinite(value) || value < 0) { return null; }
-    return Math.min(value, max);
-  }
-
-  function restore() {
-    if (typeof location === "undefined" || typeof URLSearchParams === "undefined") { return; }
-    var query = new URLSearchParams(location.search || "");
-    FIELDS.forEach(function (field, index) {
-      var value = clamped(query.get(field.param), field.max);
-      if (value !== null) { inputs[index].value = String(value); }
-    });
-  }
-
-  function syncUrl(values) {
-    if (typeof history === "undefined" || !history.replaceState || typeof URLSearchParams === "undefined") { return; }
-    var query = new URLSearchParams();
-    FIELDS.forEach(function (field, index) { query.set(field.param, String(values[index])); });
-    try { history.replaceState(null, "", location.pathname + "?" + query.toString()); } catch (error) { /* sandboxed frames and file:// refuse this */ }
-  }
-
-  function csv(values, profit) {
-    var price = values[0];
-    var rows = [
-      ["Показатель", "Сумма ₽"],
-      [FIELDS[0].label, price],
-      [FIELDS[1].label, -values[1]],
-      [FIELDS[2].label + " " + number(values[2]) + "%", -(price * values[2] / 100)],
-      [FIELDS[3].label, -values[3]],
-      [FIELDS[4].label, -values[4]],
-      ["Предварительная маржа", profit],
-      ["Доля от цены продажи %", price > 0 ? profit / price * 100 : "не определена"]
-    ];
-    return "﻿" + rows.map(function (row) {
-      return row.map(function (cell) { return typeof cell === "number" ? number(cell) : cell; }).join(";");
-    }).join("\r\n") + "\r\n";
-  }
-
-  function download() {
-    if (!ready) { return; }
-    var url = URL.createObjectURL(new Blob([csv(ready.values, ready.profit)], {type: "text/csv;charset=utf-8"}));
-    var link = document.createElement("a");
-    link.href = url;
-    link.download = "marketshelper-raschet.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-
+  function clamped(raw, max) { if (raw === null || String(raw).trim() === "") { return null; } var value = Number(String(raw).replace(",", ".")); if (!Number.isFinite(value) || value < 0) { return null; } return Math.min(value, max); }
+  function restore() { if (typeof location === "undefined" || typeof URLSearchParams === "undefined") { return; } var query = new URLSearchParams(location.search || ""); FIELDS.forEach(function (field, index) { var value = clamped(query.get(field.param), field.max); if (value !== null && (!field.min || value >= field.min)) { inputs[index].value = String(value); } }); }
+  function syncUrl(values) { if (typeof history === "undefined" || !history.replaceState || typeof URLSearchParams === "undefined") { return; } var query = new URLSearchParams(); FIELDS.forEach(function (field, index) { query.set(field.param, String(values[index])); }); try { history.replaceState(null, "", location.pathname + "?" + query.toString()); } catch (error) { /* sandboxed frames and file:// refuse this */ } }
+  function articleRows(values, price) { return [[FIELDS[2].label, -values[2]], [FIELDS[3].label + " " + number(values[3]) + "%", -(price * values[3] / 100)], [FIELDS[4].label, -values[4]], [FIELDS[5].label, -values[5]], [FIELDS[6].label, -values[6]], [FIELDS[7].label, -values[7]], [FIELDS[8].label, -values[8]], [FIELDS[9].label, -values[9]], [FIELDS[10].label, -values[10]], [FIELDS[11].label, -values[11]]]; }
+  function csv(values, profit, coverage) { var rows = [["Показатель", "Сумма ₽"], [FIELDS[0].label, values[0]], [FIELDS[1].label, values[1]]].concat(articleRows(values, values[0])); rows.push(["Результат по заполненным статьям", profit], ["Маржа %", values[0] > 0 ? profit / values[0] * 100 : "не определена"], ["Покрытие статей", coverage + "/9"], [FIELDS[12].label, values[12]]); return "﻿" + rows.map(function (row) { return row.map(function (cell) { return typeof cell === "number" ? number(cell) : cell; }).join(";"); }).join("\r\n") + "\r\n"; }
+  function download() { if (!ready) { return; } var url = URL.createObjectURL(new Blob([csv(ready.values, ready.profit, ready.coverage)], {type: "text/csv;charset=utf-8"})); var link = document.createElement("a"); link.href = url; link.download = "marketshelper-raschet.csv"; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); }
   function calculate(edited) {
-    var values = inputs.map(function (input) { return input.value.trim() === "" ? NaN : Number(input.value); });
-    function ok(value, index) { return Number.isFinite(value) && value >= 0 && value <= FIELDS[index].max; }
-    var valid = values.every(ok);
-    inputs.forEach(function (input, index) { input.setAttribute("aria-invalid", String(!ok(values[index], index))); });
-    errorEl.hidden = valid;
-    ready = null;
-    downloadEl.disabled = true;
-    if (!valid) { profitEl.textContent = "—"; marginEl.textContent = "—"; profitEl.className = "calc-big"; return; }
-    var price = values[0], profit = price - values[1] - price * values[2] / 100 - values[3] - values[4];
+    var values = inputs.map(function (input) { return input.value.trim() === "" ? NaN : Number(input.value); }); function ok(value, index) { return Number.isFinite(value) && value >= (FIELDS[index].min || 0) && value <= FIELDS[index].max; } var valid = values.every(ok); inputs.forEach(function (input, index) { input.setAttribute("aria-invalid", String(!ok(values[index], index))); }); errorEl.hidden = valid; ready = null; downloadEl.disabled = true;
+    if (!valid) { profitEl.textContent = "—"; marginEl.textContent = "—"; return; }
+    var price = values[0], profit = price - values[2] - price * values[3] / 100 - values[4] - values[5] - values[6] - values[7] - values[8] - values[9] - values[10] - values[11]; var coverage = [values[2], values[3], values[4] + values[5], values[6], values[7], values[8], values[9], values[10], values[11]].filter(function (value) { return value > 0; }).length;
     if (!Number.isFinite(profit)) { profitEl.textContent = "—"; marginEl.textContent = "—"; errorEl.hidden = false; return; }
-    profitEl.textContent = profit.toLocaleString("ru-RU", {maximumFractionDigits:2}) + " ₽";
-    marginEl.textContent = price > 0 ? (profit / price * 100).toLocaleString("ru-RU", {maximumFractionDigits:1}) + "%" : "Не определена при нулевой цене";
-    profitEl.className = "calc-big " + (profit < 0 ? "critical" : profit === 0 ? "warn" : "good");
-    ready = {values: values, profit: profit};
-    downloadEl.disabled = false;
-    if (edited) { syncUrl(values); }
+    profitEl.textContent = profit.toLocaleString("ru-RU", {maximumFractionDigits:2}) + " ₽"; marginEl.textContent = price > 0 ? (profit / price * 100).toLocaleString("ru-RU", {maximumFractionDigits:1}) + "%" : "Не определена при нулевой цене"; coverageEl.textContent = coverage + "/9"; capitalEl.textContent = values[12].toLocaleString("ru-RU", {maximumFractionDigits:2}) + " ₽"; profitEl.className = "calc-big " + (profit < 0 ? "critical" : profit === 0 ? "warn" : "good"); ready = {values: values, profit: profit, coverage: coverage}; downloadEl.disabled = false; if (edited) { syncUrl(values); }
   }
-
-  inputs.forEach(function (input) { input.addEventListener("input", function () { calculate(true); }); });
-  downloadEl.addEventListener("click", download);
-  restore();
-  calculate(false);
+  inputs.forEach(function (input) { input.addEventListener("input", function () { calculate(true); }); }); downloadEl.addEventListener("click", download); restore(); calculate(false);
 })();
 </script>
