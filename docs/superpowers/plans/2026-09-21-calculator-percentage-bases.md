@@ -23,18 +23,18 @@
 - Modify: `gateway/templates/marketing_calculator.html`
 - Modify: `gateway/tests/test_marketing_calculator.cjs`
 
-- [ ] Add a tax basis selector with `per_unit`, `total`, and `revenue_pct` options.
-- [ ] Apply the selected tax basis in the per-unit profit calculation; keep commission as price percentage.
-- [ ] Persist and restore `tax_basis` in the permalink and include the basis and allocated amount in CSV.
-- [ ] Add tests for total tax allocation, revenue percentage tax, old links without `tax_basis`, and CSV output.
-- [ ] Run the Node calculator regression and the relevant Python marketing/SEO tests.
+- [x] Add a tax basis selector with `per_unit`, `total`, and `revenue_pct` options.
+- [x] Apply the selected tax basis in the per-unit profit calculation; keep commission as price percentage.
+- [x] Persist and restore `tax_basis` in the permalink and include the basis and allocated amount in CSV.
+- [x] Add tests for total tax allocation, revenue percentage tax, old links without `tax_basis`, and CSV output.
+- [x] Run the Node calculator regression and the relevant Python marketing/SEO tests.
 
 ### Task 2: Release verification
 
 **Files:**
 - No source changes.
 
-- [ ] Run the full gateway test suite and `git diff --check`.
-- [ ] Build the gateway image from the commit and verify the image revision.
-- [ ] Back up SQLite and verify `PRAGMA integrity_check` is `ok`.
-- [ ] Switch the gateway container, verify health, `/healthz`, live calculator HTML, and absence of `1С`, `vs-1c`, and `сравнение с`.
+- [x] Run the full gateway test suite and `git diff --check`.
+- [x] Build the gateway image from the commit and verify the image revision.
+- [x] Back up SQLite and verify `PRAGMA integrity_check` is `ok`.
+- [x] Switch the gateway container, verify health, `/healthz`, live calculator HTML, and absence of `1С`, `vs-1c`, and `сравнение с`.
