@@ -59,7 +59,10 @@ def main():
     config["NetworkingConfig"] = {"EndpointsConfig": {name: {"Aliases": [args.container]} for name in original["NetworkSettings"]["Networks"]}}
     stopped = renamed = created = False
     try:
-        docker_api("POST", f"/containers/{args.container}/stop?t=30")
+        # A live tenant may be finishing a WB sync while the release starts.
+        # Give its workers enough time to release SQLite/flock guards cleanly;
+        # Docker still force-stops after this bounded grace period.
+        docker_api("POST", f"/containers/{args.container}/stop?t=60")
         stopped = True
         docker_api("POST", f"/containers/{args.container}/rename?name={previous}")
         renamed = True
