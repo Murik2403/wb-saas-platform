@@ -9,7 +9,7 @@ const basisNames = ['calcCostBasis','calcLogisticsBasis','calcReturnsBasis','cal
 const defaults = [1200,1,420,17,90,0,0,0,60,0,0,0,0];
 function load(search) {
   const nodes = {};
-  names.concat(basisNames,['calcProfit','calcMargin','calcCoverage','calcCapitalResult','calcError','calcDownload']).forEach(id => {
+  names.concat(basisNames,['calcProfit','calcMargin','calcCoverage','calcCoverageNote','calcCapitalResult','calcError','calcDownload']).forEach(id => {
     nodes[id] = { value:'', textContent:'', attrs:{}, hidden:false, disabled:false, className:'', listeners:{},
       setAttribute(k,v){this.attrs[k]=v;}, addEventListener(e,cb){this.listeners[e]=cb;} };
   });
@@ -27,6 +27,7 @@ let page=load();
 assert.equal(page.nodes.calcProfit.textContent,'426 ₽');
 assert.equal(page.nodes.calcMargin.textContent,'35,5%');
 assert.equal(page.nodes.calcCoverage.textContent,'4/9');
+assert.match(page.nodes.calcCoverageNote.textContent,/налог/);
 page.run([100,1,110,0,0,0,0,0,0,0,0,0,0]);
 assert.equal(page.nodes.calcProfit.textContent,'-10 ₽');
 page.run([100,1,0,0,0,0,0,0,0,0,0,0,500]);
@@ -37,6 +38,8 @@ page.nodes.calcDownload.listeners.click();
 assert.match(page.saved.csv,/Возвраты и обратная логистика;-20/);
 assert.match(page.saved.csv,/Налог;-10/);
 page.run([1000,2,100,10,20,30,40,50,60,70,80,90,100]);
+assert.equal(page.nodes.calcCoverage.textContent,'9/9');
+assert.match(page.nodes.calcCoverageNote.textContent,/Все девять/);
 assert.match(page.saved.urls.at(-1),/units=2/);
 page.run([1000,2,400,0,0,0,0,0,0,0,0,0,0]);
 page.nodes.calcCostBasis.value='total';
