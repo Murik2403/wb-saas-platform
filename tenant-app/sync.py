@@ -39,6 +39,16 @@ def _record_first_sync_event() -> None:
             event_name="first_sync_succeeded",
             occurred_at=datetime.now(timezone.utc).isoformat(),
         )
+        # Deliver immediately as well as through the API background hooks.
+        # This prevents a successful unattended sync from leaving the durable
+        # outbox pending until the user opens another activation screen.
+        try:
+            from growth_delivery import deliver_pending_growth_events
+            deliver_pending_growth_events(DB_PATH)
+        except Exception:
+            # Delivery remains retryable from the outbox and must never make a
+            # successful WB import fail.
+            pass
     except Exception:
         # Growth measurement must never make a successful WB import fail. The
         # next sync retries the idempotent outbox insert.
