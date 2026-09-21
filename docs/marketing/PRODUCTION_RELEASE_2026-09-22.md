@@ -29,3 +29,14 @@ Gateway теперь различает три состояния SMTP-тран�
 - `/healthz`, `/robots.txt`, `/sitemap.xml`: HTTP 200.
 - Public SEO audit: `396 pass, 0 warn, 0 fail`; 20 URL в sitemap.
 - Тесты gateway mailer/trial/growth: `70 passed`, `14 subtests passed`.
+
+## Последующее обновление того же выпуска
+
+- Commit: `2bcebd7`.
+- Gateway image: `sha256:bbfaa533a8cca9126b6244aa019ab0f557936a50fb3b5c49aae81c500c42700f`.
+- Добавлено отдельное поле `marketing_consent_at`; согласие на обработку ПДн
+  больше не запускает промо-цепочку.
+- Регистрационная форма получила необязательный opt-in, отписка по-прежнему
+  доступна в каждом письме.
+- После переключения gateway снова `healthy`; полный gateway suite: `342 passed`,
+  `2 skipped`, `146 subtests passed`.
