@@ -1,58 +1,29 @@
-"""Unit tests for the read-only public SEO audit."""
-from __future__ import annotations
-
+import importlib.util
 from pathlib import Path
-import sys
-import unittest
-
-SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
-
-from audit_public_seo import FetchResult, audit_public_site  # noqa: E402
 
 
-BASE = "https://example.test"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "audit_public_seo.py"
+spec = importlib.util.spec_from_file_location("public_seo_audit", SCRIPT)
+audit = importlib.util.module_from_spec(spec)
+assert spec.loader
+spec.loader.exec_module(audit)
 
 
-def fixture_page(canonical: str = f"{BASE}/", link: str = "/pricing") -> str:
-    return f'''<!doctype html><html><head>
-    <title>MARKETSHELPER</title>
-    <meta name="description" content="Описание публичной страницы для проверки поискового аудита">
-    <meta name="robots" content="index, follow">
-    <link rel="canonical" href="{canonical}">
-    <script type="application/ld+json">{{"@type":"FAQPage","mainEntity":[]}}</script>
-    </head><body><h1>Публичная страница</h1><a href="{link}">Тариф</a></body></html>'''
+def test_audit_passes_complete_page():
+    html = '<html><head><title>Маржа</title><meta name="description" content="Расчёт"><link rel="canonical" href="https://example.test/calculator"></head><body><h1>Калькулятор</h1><a href="/pricing">Тариф</a></body></html>'
+    result = audit.audit_html(html, "https://example.test/calculator", known_urls={"https://example.test/pricing"})
+    assert result["status"] == "pass"
 
 
-class PublicSeoAuditTests(unittest.TestCase):
-    def _run(self, pages: dict[str, str], statuses: dict[str, int] | None = None):
-        statuses = statuses or {}
-        sitemap = "<urlset>" + "".join(f"<url><loc>{BASE}{path}</loc></url>" for path in pages) + "</urlset>"
-        bodies = {"/robots.txt": f"User-agent: *\nSitemap: {BASE}/sitemap.xml\n", "/sitemap.xml": sitemap, **pages}
-
-        def fetch(url: str) -> FetchResult:
-            path = url.removeprefix(BASE) or "/"
-            return FetchResult(statuses.get(path, 200 if path in bodies else 404), url, bodies.get(path, ""), "text/html")
-
-        return audit_public_site(BASE, fetch)
-
-    def test_passing_page_has_passes_and_no_failures(self):
-        result = self._run({"/": fixture_page(link="/")})
-        self.assertEqual(result["summary"]["fail"], 0)
-        self.assertGreater(result["summary"]["pass"], 0)
-
-    def test_missing_canonical_is_failure(self):
-        html = fixture_page().replace(f'<link rel="canonical" href="{BASE}/">', "")
-        result = self._run({"/": html})
-        failures = [item for item in result["checks"] if item["status"] == "fail"]
-        self.assertTrue(any(item["check"] == "canonical" for item in failures))
-
-    def test_broken_internal_link_is_failure(self):
-        result = self._run({"/": fixture_page(link="/missing")})
-        failures = [item for item in result["checks"] if item["status"] == "fail"]
-        self.assertTrue(any(item["check"] == "internal link" and "/missing" in item["detail"] for item in failures))
+def test_audit_warns_or_fails_missing_canonical():
+    html = '<title>Маржа</title><meta name="description" content="Расчёт"><h1>Калькулятор</h1>'
+    result = audit.audit_html(html, "https://example.test/calculator")
+    assert result["status"] == "fail"
+    assert {item["code"] for item in result["issues"]} == {"missing_canonical"}
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_audit_finds_broken_internal_link():
+    html = '<title>Маржа</title><meta name="description" content="Расчёт"><link rel="canonical" href="https://example.test/calculator"><h1>Калькулятор</h1><a href="/missing">Нет</a>'
+    result = audit.audit_html(html, "https://example.test/calculator", known_urls={"https://example.test/calculator"})
+    assert result["status"] == "fail"
+    assert any(item["code"] == "broken_internal_links" for item in result["issues"])
