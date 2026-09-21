@@ -168,11 +168,17 @@ def run(send: bool) -> int:
                 logger.info("Account %s: email %s already claimed by another run", account_id, email_key)
                 continue
 
-        delivered = mailer.send_email(account["email"], subject, body)
+        delivery_status = mailer.send_email(account["email"], subject, body)
+        # Keep compatibility with older mailer test doubles while persisting
+        # the real explicit transport state.
+        if isinstance(delivery_status, bool):
+            delivery_status = "accepted" if delivery_status else "failed"
         with control_db.connect() as conn:
-            trial_emails.finish_send(conn, account_id, email_key, delivered=delivered)
-        if delivered:
+            trial_emails.finish_send(conn, account_id, email_key, delivered=delivery_status)
+        if delivery_status == "accepted":
             logger.info("Account %s: sent email %s", account_id, email_key)
+        elif delivery_status == "disabled":
+            logger.warning("Account %s: email %s skipped -- SMTP is disabled", account_id, email_key)
         else:
             logger.error("Account %s: SMTP refused email %s -- not retried", account_id, email_key)
             failures += 1

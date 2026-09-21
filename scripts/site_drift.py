@@ -255,7 +255,8 @@ def _send_email(to_email: str, subject: str, body: str) -> bool:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
     import mailer  # noqa: E402
 
-    return mailer.send_email(to_email, subject, body)
+    status = mailer.send_email(to_email, subject, body)
+    return status == "accepted" or status is True
 
 
 def alert(

@@ -502,9 +502,12 @@ def is_opted_out(conn, account_id: int) -> bool:
 def sent_log(conn, account_id: int) -> dict[str, str]:
     """email_key -> sent_at for everything already claimed, including sends
     that failed at the SMTP step: a failed step is not retried, because a
-    retry cannot tell "never left the building" from "delivered twice"."""
+    retry cannot tell "never left the building" from "delivered twice".
+    A disabled transport is different: it never reached SMTP and remains
+    eligible for a later run."""
     rows = conn.execute(
-        "SELECT email_key, sent_at FROM trial_emails WHERE account_id=?", (int(account_id),)
+        "SELECT email_key, sent_at FROM trial_emails "
+        "WHERE account_id=? AND status <> 'disabled'", (int(account_id),)
     ).fetchall()
     return {row["email_key"]: row["sent_at"] for row in rows}
 
@@ -529,14 +532,23 @@ def claim_send(conn, account_id: int, email_key: str, *, at: datetime | None = N
         raise ValueError(f"Неизвестное письмо цепочки: {email_key!r}")
     result = conn.execute(
         "INSERT INTO trial_emails(account_id, email_key, sent_at, status) VALUES (?,?,?,?) "
-        "ON CONFLICT(account_id, email_key) DO NOTHING",
+        "ON CONFLICT(account_id, email_key) DO UPDATE SET sent_at=excluded.sent_at,status=excluded.status "
+        "WHERE trial_emails.status='disabled'",
         (int(account_id), email_key, (at or _now()).isoformat(timespec="seconds"), status),
     )
     return result.rowcount == 1
 
 
-def finish_send(conn, account_id: int, email_key: str, *, delivered: bool) -> None:
+def finish_send(conn, account_id: int, email_key: str, *, delivered: bool | str) -> None:
+    if isinstance(delivered, bool):
+        # Compatibility for existing callers/tests; new callers should pass
+        # the explicit mailer state.
+        final_status = "sent" if delivered else "failed"
+    elif delivered in {"disabled", "accepted", "failed"}:
+        final_status = delivered
+    else:
+        raise ValueError(f"Unsupported mail delivery status: {delivered!r}")
     conn.execute(
         "UPDATE trial_emails SET status=? WHERE account_id=? AND email_key=?",
-        ("sent" if delivered else "failed", int(account_id), email_key),
+        (final_status, int(account_id), email_key),
     )

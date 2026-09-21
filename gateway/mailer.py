@@ -21,10 +21,12 @@ from __future__ import annotations
 import logging
 import smtplib
 from email.message import EmailMessage
+from typing import Literal
 
 import config
 
 logger = logging.getLogger("wb_saas_gateway.mailer")
+MailerStatus = Literal["disabled", "accepted", "failed"]
 
 
 def build_message(
@@ -41,12 +43,14 @@ def build_message(
     return msg
 
 
-def send_email(to_email: str, subject: str, body_text: str, attachment: tuple[bytes, str] | None = None) -> bool:
-    """Returns True if the message was handed off to an SMTP server (or
-    logged, in the no-SMTP-configured fallback), False on a delivery
-    failure. Never raises -- a mail outage must not turn into a 500 for the
-    person requesting a password reset; the caller should show the same
-    "check your email" message regardless (see logic/password_reset.py).
+def send_email(to_email: str, subject: str, body_text: str, attachment: tuple[bytes, str] | None = None) -> MailerStatus:
+    """Return an explicit transport state without claiming recipient delivery.
+
+    ``disabled`` means no SMTP handoff was attempted, ``accepted`` means the
+    SMTP server accepted the message, and ``failed`` means the handoff failed.
+    Never raises -- a mail outage must not turn into a 500 for the person
+    requesting a password reset; callers should show the same "check your
+    email" message regardless (see logic/password_reset.py).
 
     `attachment`, if given, is (bytes, filename) and is sent as a PDF part --
     the only attachment kind this sends today (see send_report_email)."""
@@ -56,7 +60,7 @@ def send_email(to_email: str, subject: str, body_text: str, attachment: tuple[by
             to_email, subject,
         )
         logger.info("Email body that would have been sent:\n%s", body_text)
-        return True
+        return "disabled"
 
     message = build_message(to_email, subject, body_text, attachment=attachment)
     try:
@@ -66,10 +70,10 @@ def send_email(to_email: str, subject: str, body_text: str, attachment: tuple[by
             if config.SMTP_USER:
                 smtp.login(config.SMTP_USER, config.SMTP_PASSWORD)
             smtp.send_message(message)
-        return True
+        return "accepted"
     except Exception:
         logger.exception("Failed to send email to %s", to_email)
-        return False
+        return "failed"
 
 
 def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -> bool:

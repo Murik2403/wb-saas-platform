@@ -58,8 +58,10 @@ def deliver_report_email(slug: str, report_name: str, pdf_bytes: bytes, filename
     if account is None:
         raise HTTPException(status_code=404, detail="unknown account")
 
-    ok = mailer.send_report_email(account["email"], report_name, pdf_bytes, filename)
-    if not ok:
+    status = mailer.send_report_email(account["email"], report_name, pdf_bytes, filename)
+    # ``True`` remains accepted for older test doubles/integrations while the
+    # real mailer returns the explicit transport state.
+    if status != "accepted" and status is not True:
         raise HTTPException(status_code=502, detail="email delivery failed")
 
 

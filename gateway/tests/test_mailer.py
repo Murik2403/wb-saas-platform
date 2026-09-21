@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 GATEWAY_ROOT = Path(__file__).resolve().parents[1]
@@ -84,9 +85,27 @@ class SendEmailWithoutSmtpConfiguredTests(unittest.TestCase):
     def tearDown(self) -> None:
         config.SMTP_HOST = self._original_host
 
-    def test_returns_true_and_does_not_raise_when_smtp_not_configured(self) -> None:
-        ok = mailer.send_email("client@example.com", "Subject", "Body")
-        self.assertTrue(ok)
+    def test_returns_disabled_and_does_not_claim_smtp_handoff(self) -> None:
+        status = mailer.send_email("client@example.com", "Subject", "Body")
+        self.assertEqual(status, "disabled")
+
+
+class SendEmailTransportStatusTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_host = config.SMTP_HOST
+        config.SMTP_HOST = "smtp.example.test"
+
+    def tearDown(self) -> None:
+        config.SMTP_HOST = self._original_host
+
+    @mock.patch.object(mailer.smtplib, "SMTP")
+    def test_smtp_acceptance_is_explicit(self, smtp):
+        self.assertEqual(mailer.send_email("client@example.com", "Subject", "Body"), "accepted")
+        smtp.return_value.__enter__.return_value.send_message.assert_called_once()
+
+    @mock.patch.object(mailer.smtplib, "SMTP", side_effect=OSError("offline"))
+    def test_smtp_failure_is_explicit(self, smtp):
+        self.assertEqual(mailer.send_email("client@example.com", "Subject", "Body"), "failed")
 
 
 class SendPasswordResetEmailTests(unittest.TestCase):
