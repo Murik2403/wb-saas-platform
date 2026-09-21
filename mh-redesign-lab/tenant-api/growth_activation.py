@@ -8,6 +8,13 @@ import re
 import sqlite3
 
 
+GROWTH_EVENT_NAMES = frozenset({
+    "wb_connected",
+    "first_sync_succeeded",
+    "first_useful_report",
+})
+
+
 def initialize_growth_schema(db_path: str | Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.executescript("""
@@ -25,6 +32,24 @@ def initialize_growth_schema(db_path: str | Path) -> None:
                 last_attempt_at TEXT
             );
         """)
+
+
+def record_growth_event(db_path: str | Path, *, event_name: str, occurred_at: str) -> bool:
+    """Queue one server-verified lifecycle event exactly once.
+
+    The event key is the lifecycle name because these milestones are first-time
+    facts for a tenant. The unique outbox key makes retries from token saving,
+    sync workers, or process restarts harmless.
+    """
+    if event_name not in GROWTH_EVENT_NAMES:
+        raise ValueError("unsupported growth event")
+    initialize_growth_schema(db_path)
+    with sqlite3.connect(db_path) as conn:
+        result = conn.execute(
+            "INSERT OR IGNORE INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES(?,?,?)",
+            (event_name, event_name, occurred_at),
+        )
+        return result.rowcount == 1
 
 
 def activation_summary(db_path: str | Path, *, connected: bool, is_demo: bool, nm_id: int | None) -> dict:

@@ -159,11 +159,11 @@ def test_retry_waits_60_seconds_and_retains_original_occurrence(outbox_db, trans
     assert post.call_args.kwargs["json"]["occurred_at"] == OCCURRED_AT
 
 
-def test_only_pending_first_useful_report_events_are_eligible(outbox_db, transport):
+def test_all_supported_pending_growth_events_are_eligible(outbox_db, transport):
     _, post = transport
     with REAL_CONNECT(outbox_db) as conn:
         conn.execute(
-            "INSERT INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES('diagnostic','first_sync_succeeded',?)",
+            "INSERT INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES('first_sync_succeeded','first_sync_succeeded',?)",
             ((NOW - timedelta(days=5)).isoformat(),),
         )
         conn.execute(
@@ -171,10 +171,10 @@ def test_only_pending_first_useful_report_events_are_eligible(outbox_db, transpo
             ((NOW - timedelta(days=4)).isoformat(), (NOW - timedelta(days=1)).isoformat()),
         )
     result = growth_delivery.deliver_pending_growth_events(outbox_db)
-    assert result == {"status": "complete", "attempted": 1, "delivered": 1}
-    assert post.call_count == 1
-    assert row(outbox_db, "diagnostic")["attempt_count"] == 0
-    assert row(outbox_db, "diagnostic")["delivered_at"] is None
+    assert result == {"status": "complete", "attempted": 2, "delivered": 2}
+    assert post.call_count == 2
+    assert row(outbox_db, "first_sync_succeeded")["attempt_count"] == 1
+    assert row(outbox_db, "first_sync_succeeded")["delivered_at"] is not None
     assert row(outbox_db, "already-delivered")["attempt_count"] == 0
 
 

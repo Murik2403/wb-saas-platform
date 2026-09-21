@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from config import get_token, load_settings
@@ -27,6 +27,22 @@ from db import (
 )
 from wb_api import WBAPI, flatten_ad_stats
 from sync_lock import sync_lock
+
+
+def _record_first_sync_event() -> None:
+    """Queue the first successful full-sync milestone for the tenant API."""
+    try:
+        from growth_activation import record_growth_event
+        from config import DB_PATH
+        record_growth_event(
+            DB_PATH,
+            event_name="first_sync_succeeded",
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:
+        # Growth measurement must never make a successful WB import fail. The
+        # next sync retries the idempotent outbox insert.
+        return
 
 
 def _incremental_from(table: str, default_days: int) -> str:
@@ -142,6 +158,8 @@ def _sync_all_locked() -> dict[str, int | str]:
         details = ", ".join(f"{k}: {v}" for k, v in result.items())
         status = "partial" if any(k.endswith("_error") or k.endswith("_skipped") for k in result) or result.get("fifo_errors", 0) else "success"
         finish_sync_log(log_id, status, details)
+        if status == "success":
+            _record_first_sync_event()
         return result
     except Exception as exc:
         details = ", ".join(f"{k}: {v}" for k, v in result.items())

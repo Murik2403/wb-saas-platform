@@ -111,8 +111,8 @@ class GrowthIntegrationTests(GatewayDbTestCase):
             growth.record_trial_started(conn, account_id)
         return account_id
 
-    def _event(self, slug, *, credential_slug=None, **changes):
-        payload = {"slug": slug, "event_name": "first_useful_report", "event_key": "first_useful_report", "occurred_at": datetime.now(timezone.utc).isoformat(), **changes}
+    def _event(self, slug, *, credential_slug=None, event_name="first_useful_report", **changes):
+        payload = {"slug": slug, "event_name": event_name, "event_key": event_name, "occurred_at": datetime.now(timezone.utc).isoformat(), **changes}
         return self.client.post("/internal/growth/event", json=payload, headers={"X-Internal-Secret": tenant_credential(config.INTERNAL_API_SECRET, credential_slug or slug)})
 
     def test_scoped_event_rejects_other_tenant_and_extra_account_id(self):
@@ -134,3 +134,14 @@ class GrowthIntegrationTests(GatewayDbTestCase):
         self._tenant("one@example.test", "one")
         self.assertEqual(self._event("one", occurred_at=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()).status_code, 422)
         self.assertEqual(self._event("one", occurred_at="2026-09-18T12:00:00").status_code, 422)
+
+    def test_connection_and_sync_events_are_durable_and_idempotent(self):
+        account_id = self._tenant("one@example.test", "one")
+        for name in ("wb_connected", "first_sync_succeeded"):
+            self.assertEqual(self._event("one", event_name=name).status_code, 204)
+            self.assertEqual(self._event("one", event_name=name).status_code, 204)
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT event_name FROM growth_events WHERE account_id=? ORDER BY event_name", (account_id,)
+            ).fetchall()
+        self.assertEqual([row[0] for row in rows], ["account_created", "first_sync_succeeded", "trial_started", "wb_connected"])

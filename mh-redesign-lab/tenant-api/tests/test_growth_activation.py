@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from growth_activation import activation_summary, initialize_growth_schema, record_first_value
+from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 
 
 @pytest.fixture
@@ -110,3 +110,16 @@ def test_outbox_failure_rolls_back_first_value(growth_db):
         record_first_value(growth_db, nm_id=123, occurred_at="2026-09-18T11:00:00+00:00")
     with sqlite3.connect(growth_db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM growth_first_value").fetchone()[0] == 0
+
+
+def test_connection_and_first_sync_events_are_idempotent(growth_db):
+    assert record_growth_event(growth_db, event_name="wb_connected", occurred_at="2026-09-18T10:00:00+00:00")
+    assert not record_growth_event(growth_db, event_name="wb_connected", occurred_at="2026-09-18T11:00:00+00:00")
+    assert record_growth_event(growth_db, event_name="first_sync_succeeded", occurred_at="2026-09-18T10:01:00+00:00")
+    assert not record_growth_event(growth_db, event_name="first_sync_succeeded", occurred_at="2026-09-18T11:01:00+00:00")
+    with sqlite3.connect(growth_db) as conn:
+        rows = conn.execute("SELECT event_key,event_name,occurred_at FROM growth_event_outbox ORDER BY event_key").fetchall()
+    assert rows == [
+        ("first_sync_succeeded", "first_sync_succeeded", "2026-09-18T10:01:00+00:00"),
+        ("wb_connected", "wb_connected", "2026-09-18T10:00:00+00:00"),
+    ]

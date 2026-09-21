@@ -68,7 +68,7 @@ from overview_service import (
     DEFAULT_PERIOD, PERIOD_LABELS, compute_overview, previous_window, resolve_window,
 )
 from products_service import compute_products
-from growth_activation import activation_summary, initialize_growth_schema, record_first_value
+from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 from growth_delivery import deliver_pending_growth_events
 from today_service import compute_today, json_safe
 from ui_helpers import build_data_quality_overview
@@ -2665,6 +2665,7 @@ def connect_wb_token(payload: WBTokenInput) -> dict:
     if scope_info.get("known"):
         missing_scopes = [str(item) for item in scope_info.get("missing_scopes", []) if str(item) in all_scope_labels and str(item) not in scopes]
     save_token(token)
+    record_growth_event(DB_PATH, event_name="wb_connected", occurred_at=datetime.now(timezone.utc).isoformat())
     global customer_quality_cache
     customer_quality_cache = None
     return {
