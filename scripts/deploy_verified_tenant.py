@@ -44,7 +44,10 @@ def main():
     assert original["State"]["Running"], "Original container must be running"
     previous = args.container + "-rollback-" + time.strftime("%Y%m%d-%H%M%S")
     # Uses the application's verified SQLite backup and retains all existing backups.
-    backup = subprocess.run(["docker", "exec", args.container, "python", "-c", "from backup_tools import create_backup,inspect_backup; p=create_backup(keep=1000000); assert inspect_backup(p.read_bytes()); print(p.name)"], capture_output=True, text=True)
+    # The tenant image has a 64 MiB /tmp tmpfs by default.  SQLite's verified
+    # snapshot is larger than that for real tenants, so place temporary backup
+    # files on the persistent data mount instead.
+    backup = subprocess.run(["docker", "exec", "-e", "TMPDIR=/app/data", args.container, "python", "-c", "from backup_tools import create_backup,inspect_backup; p=create_backup(keep=1000000); assert inspect_backup(p.read_bytes()); print(p.name)"], capture_output=True, text=True)
     if backup.returncode:
         raise RuntimeError("Verified pre-release backup failed; original container untouched")
     print("Verified backup:", backup.stdout.strip(), flush=True)
