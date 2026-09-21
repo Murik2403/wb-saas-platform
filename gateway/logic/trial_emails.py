@@ -163,11 +163,10 @@ def due_email_key(
         return None
     if not _parse(account["email_verified_at"]):
         return None
-    # Consent for this marketing chain rides on the PDN consent recorded at
-    # registration (owner's decision of 20.09.2026). Accounts that predate
-    # the pdn_consent_at column have it empty and stay out of the sequence:
-    # a missing record is treated as no consent, never as an old yes.
-    if not _parse(account["pdn_consent_at"]):
+    # Marketing consent is a separate, optional registration choice. Consent
+    # to personal-data processing must never be treated as permission for
+    # promotional/onboarding mail. Missing values are always no consent.
+    if not _parse(account["marketing_consent_at"]):
         return None
     status = account["status"] or ""
     # A paid customer never re-enters the sequence, even if a later charge

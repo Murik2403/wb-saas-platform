@@ -25,6 +25,7 @@ def _account(**overrides) -> dict:
         "status": "trialing",
         "email_verified_at": _iso(NOW - timedelta(days=20)),
         "pdn_consent_at": _iso(NOW - timedelta(days=20)),
+        "marketing_consent_at": _iso(NOW - timedelta(days=20)),
         "current_period_end": _iso(NOW + timedelta(days=10)),
         "past_due_since": "",
     }
@@ -146,11 +147,14 @@ class SelectionTests(unittest.TestCase):
     def test_unverified_email_never_starts_the_sequence(self) -> None:
         self.assertIsNone(self.due(account=_account(email_verified_at="")))
 
-    def test_missing_pdn_consent_never_starts_the_sequence(self) -> None:
-        """Consent for this chain rides on the PDN consent at registration;
-        an account without a recorded one (e.g. created before the column
-        existed) gets nothing."""
-        self.assertIsNone(self.due(account=_account(pdn_consent_at="")))
+    def test_missing_marketing_consent_never_starts_the_sequence(self) -> None:
+        """The optional marketing checkbox is required for this sequence."""
+        self.assertIsNone(self.due(account=_account(marketing_consent_at="")))
+
+    def test_pdn_consent_alone_does_not_start_the_sequence(self) -> None:
+        """Personal-data consent is not promotional-mail consent."""
+        account = _account(pdn_consent_at="", marketing_consent_at="")
+        self.assertIsNone(self.due(account=account))
 
     def test_registration_alone_does_not_start_the_sequence(self) -> None:
         self.assertIsNone(self.due(events={"account_created": _iso(NOW)}))
@@ -229,7 +233,7 @@ class UnsubscribeTests(GatewayDbTestCase):
         self._secret.start()
         self.addCleanup(self._secret.stop)
         with self.connect() as conn:
-            self.account_id = accounts.create_account(conn, "seller@shop.ru", "password1234")
+            self.account_id = accounts.create_account(conn, "seller@shop.ru", "password1234", marketing_consent=True)
 
     def test_token_round_trip_and_rejection(self) -> None:
         token = trial_emails.unsubscribe_token(self.account_id)
@@ -290,7 +294,7 @@ class SendLogTests(GatewayDbTestCase):
         super().setUp()
         self.init_db()
         with self.connect() as conn:
-            self.account_id = accounts.create_account(conn, "seller@shop.ru", "password1234")
+            self.account_id = accounts.create_account(conn, "seller@shop.ru", "password1234", marketing_consent=True)
 
     def test_unique_constraint_prevents_a_second_send(self) -> None:
         with self.connect() as conn:
@@ -344,7 +348,7 @@ class RunnerTests(GatewayDbTestCase):
         self._secret.start()
         self.addCleanup(self._secret.stop)
         with self.connect() as conn:
-            self.account_id = accounts.create_account(conn, "seller@shop.ru", "password1234")
+            self.account_id = accounts.create_account(conn, "seller@shop.ru", "password1234", marketing_consent=True)
             conn.execute(
                 "UPDATE accounts SET email_verified_at=? WHERE id=?",
                 (_iso(datetime.now(timezone.utc)), self.account_id),

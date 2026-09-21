@@ -174,6 +174,7 @@ def create_account(
     password: str,
     pdn_consent: bool = True,
     email_verified: bool = True,
+    marketing_consent: bool = False,
 ) -> int:
     # Defaults to True so the many tests/fixtures exercising unrelated
     # behavior (billing, password reset, etc.) don't all need updating --
@@ -200,12 +201,16 @@ def create_account(
         """
         INSERT INTO accounts(
             email, password_hash, password_salt, status, pdn_consent_at,
-            pdn_policy_version, email_verified_at, created_at, updated_at
+            pdn_policy_version, marketing_consent_at, email_verified_at,
+            created_at, updated_at
         )
-        VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
         RETURNING id
         """,
-        (email, password_hash, salt, now, PDN_POLICY_VERSION, now if email_verified else "", now, now),
+        (
+            email, password_hash, salt, now, PDN_POLICY_VERSION,
+            now if marketing_consent else "", now if email_verified else "", now, now,
+        ),
     )
     # By column name, not position ([0]) -- sqlite3.Row supports both, but
     # Postgres's dict_row (see logic/db.py's _connect_postgres) is a plain

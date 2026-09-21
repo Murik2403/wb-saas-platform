@@ -193,6 +193,7 @@ _PG_SCHEMA_STATEMENTS = [
         email_verified_at TEXT DEFAULT '',
         pdn_consent_at TEXT DEFAULT '',
         pdn_policy_version TEXT DEFAULT '',
+        marketing_consent_at TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
@@ -347,6 +348,8 @@ def _init_db_postgres(conn: _PGConnection) -> None:
         conn.execute("UPDATE accounts SET email_verified_at=created_at WHERE email_verified_at='' OR email_verified_at IS NULL")
     if not _pg_column_exists(conn, "accounts", "pdn_policy_version"):
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_policy_version TEXT DEFAULT ''")
+    if not _pg_column_exists(conn, "accounts", "marketing_consent_at"):
+        conn.execute("ALTER TABLE accounts ADD COLUMN marketing_consent_at TEXT DEFAULT ''")
     if not _pg_column_exists(conn, "tenant_instances", "telegram_chat_id"):
         conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
     conn.execute(
@@ -393,6 +396,9 @@ def init_db(conn) -> None:
             -- Version of the policy displayed when the consent was given.
             -- Empty for accounts created before version recording existed.
             pdn_policy_version TEXT DEFAULT '',
+            -- Separate, optional consent for the trial onboarding marketing
+            -- sequence. Personal-data consent never implies this consent.
+            marketing_consent_at TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -556,6 +562,8 @@ def init_db(conn) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_consent_at TEXT DEFAULT ''")
     if "pdn_policy_version" not in existing_columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_policy_version TEXT DEFAULT ''")
+    if "marketing_consent_at" not in existing_columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN marketing_consent_at TEXT DEFAULT ''")
     if "email_verified_at" not in existing_columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN email_verified_at TEXT DEFAULT ''")
         conn.execute("UPDATE accounts SET email_verified_at=created_at WHERE email_verified_at='' OR email_verified_at IS NULL")

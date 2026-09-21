@@ -50,8 +50,28 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
             account = accounts.get_account_by_email(conn, "seller@example.test")
             tenant = accounts.get_tenant_for_account(conn, int(account["id"]))
             self.assertFalse(accounts.is_email_verified(account))
+            self.assertEqual(account["marketing_consent_at"], "")
             self.assertEqual(tenant["status"], "provisioning")
             self.assertIsNotNone(conn.execute("SELECT 1 FROM email_verification_tokens").fetchone())
+
+    def test_registration_records_optional_marketing_consent_separately(self) -> None:
+        app.auth_rate_limiter.clear()
+        background = BackgroundTasks()
+        with (
+            mock.patch.object(app.control_db, "connect", side_effect=self._app_connect),
+            mock.patch.object(app.csrf, "verify", return_value=True),
+            mock.patch.object(app, "_password_policy_error", return_value=None),
+            mock.patch.object(app.mailer, "send_email_verification_email", return_value=True),
+        ):
+            response = app.register_submit(
+                _request("/register"), background, "optin@example.test", "safe-password-123",
+                "yes", "csrf", marketing_consent="yes",
+            )
+        self.assertEqual(response.status_code, 303)
+        with self.connect() as conn:
+            account = accounts.get_account_by_email(conn, "optin@example.test")
+            self.assertTrue(account["pdn_consent_at"])
+            self.assertTrue(account["marketing_consent_at"])
 
     def test_unverified_login_is_rejected(self) -> None:
         with self.connect() as conn:

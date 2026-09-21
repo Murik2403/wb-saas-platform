@@ -170,10 +170,23 @@ class AccountLifecycleTests(GatewayDbTestCase):
         with self.connect() as conn:
             account_id = accounts.create_account(conn, "seller@shop.ru", "password1234", pdn_consent=True)
             row = conn.execute(
-                "SELECT pdn_consent_at, pdn_policy_version FROM accounts WHERE id=?", (account_id,)
+                "SELECT pdn_consent_at, pdn_policy_version, marketing_consent_at FROM accounts WHERE id=?", (account_id,)
             ).fetchone()
             self.assertTrue(row["pdn_consent_at"])
             self.assertEqual(row["pdn_policy_version"], accounts.PDN_POLICY_VERSION)
+            self.assertEqual(row["marketing_consent_at"], "")
+
+    def test_marketing_consent_is_recorded_separately(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(
+                conn, "seller@shop.ru", "password1234", marketing_consent=True
+            )
+            row = conn.execute(
+                "SELECT pdn_consent_at, marketing_consent_at FROM accounts WHERE id=?",
+                (account_id,),
+            ).fetchone()
+            self.assertTrue(row["pdn_consent_at"])
+            self.assertTrue(row["marketing_consent_at"])
 
     def test_change_password_requires_current_password_and_revokes_sessions(self) -> None:
         with self.connect() as conn:

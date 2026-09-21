@@ -345,6 +345,7 @@ def register_submit(
     pdn_consent: str | None = Form(None),
     csrf_token: str = Form(""),
     invite: str = Form(""),
+    marketing_consent: str | None = Form(None),
 ):
     if not isinstance(invite, str):
         invite = ""
@@ -368,7 +369,11 @@ def register_submit(
                     request, "register.html", {"error": "Приглашение недействительно, истекло или предназначено для другого email.", "email": email, "invite": invite}, 400
                 )
             account_id = accounts.create_account(
-                conn, email, password, pdn_consent=bool(pdn_consent), email_verified=False
+                conn, email, password, pdn_consent=bool(pdn_consent), email_verified=False,
+                # ``Form(None)`` is a truthy marker when this handler is
+                # called directly by unit tests; only an actual submitted
+                # checkbox value grants marketing consent.
+                marketing_consent=isinstance(marketing_consent, str) and bool(marketing_consent),
             )
             if invitation is None:
                 slug = accounts.generate_unique_slug(conn, email)
