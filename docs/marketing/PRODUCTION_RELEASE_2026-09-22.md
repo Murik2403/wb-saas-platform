@@ -16,12 +16,12 @@ Gateway теперь различает три состояния SMTP-тран�
 
 ## Выпуск
 
-- Commit: `11811e19a11927b1960128fc995eed2b056f0837`.
-- Gateway image: `sha256:37060137aeaf561b1ca2e5460aea0a3d142ad1f760926e8d3100fe72787d2b18`.
+- Commit: `77932793993416b73a84cb52deaef36c7027c47f`.
+- Gateway image: `sha256:24e81e87dca5006eaf179c04120789073443146c65d97849cb642ab73b4d19fa`.
 - Сервис переключён через image-only override; tenant-контейнеры и конфигурация
   production не менялись.
 - Rollback tag сохранён на сервере как
-  `mh-gateway:rollback-before-11811e19a11927b1960128fc995eed2b056f0837`.
+  `mh-gateway:rollback-before-77932793993416b73a84cb52deaef36c7027c47f`.
 
 ## Проверка
 
