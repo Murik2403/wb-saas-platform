@@ -12,6 +12,7 @@ GROWTH_EVENT_NAMES = frozenset({
     "wb_connected",
     "first_sync_succeeded",
     "first_useful_report",
+    "first_production_result",
 })
 
 

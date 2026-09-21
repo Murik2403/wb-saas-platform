@@ -123,3 +123,16 @@ def test_connection_and_first_sync_events_are_idempotent(growth_db):
         ("first_sync_succeeded", "first_sync_succeeded", "2026-09-18T10:01:00+00:00"),
         ("wb_connected", "wb_connected", "2026-09-18T10:00:00+00:00"),
     ]
+
+
+def test_first_production_result_is_a_durable_idempotent_event(growth_db):
+    occurred = "2026-09-18T10:02:00+00:00"
+    assert record_growth_event(growth_db, event_name="first_production_result", occurred_at=occurred)
+    assert not record_growth_event(
+        growth_db, event_name="first_production_result", occurred_at="2026-09-18T11:02:00+00:00"
+    )
+    with sqlite3.connect(growth_db) as conn:
+        assert conn.execute(
+            "SELECT event_key,event_name,occurred_at FROM growth_event_outbox WHERE event_key=?",
+            ("first_production_result",),
+        ).fetchone() == ("first_production_result", "first_production_result", occurred)

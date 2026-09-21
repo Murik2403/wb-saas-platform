@@ -8,6 +8,34 @@ from config import DB_PATH, load_settings, get_token
 from sync_lock import sync_lock, SyncBusyError
 
 
+def build_default_jobs():
+    """Build the API's periodic jobs without starting their supervisor."""
+    from backup_tools import ensure_daily_backup
+    from sync import sync_all
+    from agent_sync import run_once
+    from report_scheduler import check_once
+
+    def deliver_growth_events():
+        # The outbox is durable and scoped to this tenant. Keep its retry loop
+        # independent of WB sync and user page visits so a transient
+        # gateway/API outage cannot strand a lifecycle milestone indefinitely.
+        from growth_delivery import deliver_pending_growth_events
+        return deliver_pending_growth_events(DB_PATH)
+
+    return {
+        "backup": (ensure_daily_backup, lambda: 3600),
+        "sync": (lambda: sync_all() if get_token() else None, lambda: max(15, int(load_settings()["sync_interval_minutes"])) * 60),
+        "recommendations": (lambda: run_once() if get_token() else None, lambda: max(15, int(load_settings()["agent_interval_minutes"])) * 60),
+        # Local scheduling generates saved reports. Sending to other people
+        # remains controlled by the production delivery worker.
+        "reports": (lambda: check_once(deliver=False), lambda: 60),
+        # Lifecycle events are retried even when WB is disconnected or no
+        # dashboard request arrives. The outbox itself applies a 60-second
+        # per-event backoff and idempotent delivery.
+        "growth_delivery": (deliver_growth_events, lambda: 60),
+    }
+
+
 class LocalJobs:
     def __init__(self, jobs=None):
         self.stop_event = Event()
@@ -50,18 +78,7 @@ class LocalJobs:
 
     def _loop(self):
         if self.jobs is None:
-            from backup_tools import ensure_daily_backup
-            from sync import sync_all
-            from agent_sync import run_once
-            from report_scheduler import check_once
-            self.jobs = {
-                "backup": (ensure_daily_backup, lambda: 3600),
-                "sync": (lambda: sync_all() if get_token() else None, lambda: max(15, int(load_settings()["sync_interval_minutes"])) * 60),
-                "recommendations": (lambda: run_once() if get_token() else None, lambda: max(15, int(load_settings()["agent_interval_minutes"])) * 60),
-                # Local scheduling generates saved reports. Sending to other
-                # people remains controlled by the production delivery worker.
-                "reports": (lambda: check_once(deliver=False), lambda: 60),
-            }
+            self.jobs = build_default_jobs()
         due = {name: monotonic() + (0 if name == "backup" else interval()) for name, (_, interval) in self.jobs.items()}
         futures = {}
         with self.lock:

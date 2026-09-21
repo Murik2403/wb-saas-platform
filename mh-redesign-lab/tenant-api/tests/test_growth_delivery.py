@@ -167,14 +167,19 @@ def test_all_supported_pending_growth_events_are_eligible(outbox_db, transport):
             ((NOW - timedelta(days=5)).isoformat(),),
         )
         conn.execute(
+            "INSERT INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES('first_production_result','first_production_result',?)",
+            ((NOW - timedelta(days=6)).isoformat(),),
+        )
+        conn.execute(
             "INSERT INTO growth_event_outbox(event_key,event_name,occurred_at,delivered_at) VALUES('already-delivered','first_useful_report',?,?)",
             ((NOW - timedelta(days=4)).isoformat(), (NOW - timedelta(days=1)).isoformat()),
         )
     result = growth_delivery.deliver_pending_growth_events(outbox_db)
-    assert result == {"status": "complete", "attempted": 2, "delivered": 2}
-    assert post.call_count == 2
+    assert result == {"status": "complete", "attempted": 3, "delivered": 3}
+    assert post.call_count == 3
     assert row(outbox_db, "first_sync_succeeded")["attempt_count"] == 1
     assert row(outbox_db, "first_sync_succeeded")["delivered_at"] is not None
+    assert row(outbox_db, "first_production_result")["delivered_at"] is not None
     assert row(outbox_db, "already-delivered")["attempt_count"] == 0
 
 

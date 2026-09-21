@@ -135,13 +135,22 @@ class GrowthIntegrationTests(GatewayDbTestCase):
         self.assertEqual(self._event("one", occurred_at=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()).status_code, 422)
         self.assertEqual(self._event("one", occurred_at="2026-09-18T12:00:00").status_code, 422)
 
-    def test_connection_and_sync_events_are_durable_and_idempotent(self):
+    def test_connection_sync_and_production_events_are_durable_and_idempotent(self):
         account_id = self._tenant("one@example.test", "one")
-        for name in ("wb_connected", "first_sync_succeeded"):
+        for name in ("wb_connected", "first_sync_succeeded", "first_production_result"):
             self.assertEqual(self._event("one", event_name=name).status_code, 204)
             self.assertEqual(self._event("one", event_name=name).status_code, 204)
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT event_name FROM growth_events WHERE account_id=? ORDER BY event_name", (account_id,)
             ).fetchall()
-        self.assertEqual([row[0] for row in rows], ["account_created", "first_sync_succeeded", "trial_started", "wb_connected"])
+        self.assertEqual(
+            [row[0] for row in rows],
+            ["account_created", "first_production_result", "first_sync_succeeded", "trial_started", "wb_connected"],
+        )
+        with self.connect() as conn:
+            activation = conn.execute(
+                "SELECT metadata_json FROM growth_events WHERE account_id=? AND event_name='first_production_result'",
+                (account_id,),
+            ).fetchone()
+        self.assertEqual(activation[0], '{"scenario": "production"}')

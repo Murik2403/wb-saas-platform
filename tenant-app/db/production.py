@@ -6,7 +6,7 @@ import sqlite3
 import hashlib
 from pathlib import Path
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 import pandas as pd
@@ -67,6 +67,34 @@ def save_production_settings(df: pd.DataFrame) -> None:
 # full rationale. Duplicated as a plain constant here (rather than imported)
 # because ui_helpers.py imports from this db package, not the other way round.
 NO_PACKAGE_ROLL_LENGTH = 1_000_000_000.0
+
+
+def _record_first_production_event() -> None:
+    """Queue and best-effort deliver the first successful production result.
+
+    Growth measurement is deliberately isolated from production accounting:
+    a gateway outage or a legacy tenant without the growth tables must never
+    roll back a committed production receipt.
+    """
+    try:
+        from growth_activation import record_growth_event
+        from config import DB_PATH as growth_db_path
+
+        record_growth_event(
+            growth_db_path,
+            event_name="first_production_result",
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+        )
+        try:
+            from growth_delivery import deliver_pending_growth_events
+
+            deliver_pending_growth_events(growth_db_path)
+        except Exception:
+            # The durable outbox remains available for the next retry.
+            pass
+    except Exception:
+        # Growth measurement must never make a successful production result fail.
+        return
 
 
 def save_material_inventory(df: pd.DataFrame) -> None:
@@ -690,4 +718,6 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
         )
     result["meters"] = round(float(result["meters"]), 3)
     result["cost_rub"] = round(float(result["cost_rub"]), 2)
+    if int(result["posted"] or 0) > 0 and int(result["units"] or 0) > 0:
+        _record_first_production_event()
     return result

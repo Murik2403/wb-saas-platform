@@ -37,7 +37,7 @@ def deliver_pending_growth_events(db_path: str | Path, *, limit: int = 10) -> di
             candidates = [dict(row) for row in conn.execute(
                 "SELECT event_key,event_name,occurred_at FROM growth_event_outbox "
                 "WHERE delivered_at IS NULL AND (last_attempt_at IS NULL OR last_attempt_at < ?) "
-                "AND event_name IN ('wb_connected','first_sync_succeeded','first_useful_report') "
+                "AND event_name IN ('wb_connected','first_sync_succeeded','first_useful_report','first_production_result') "
                 "ORDER BY occurred_at LIMIT ?",
                 (cutoff, min(max(int(limit), 1), 10)),
             ).fetchall()]

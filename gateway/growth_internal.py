@@ -15,8 +15,8 @@ router = APIRouter()
 class FirstValueEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
-    event_name: Literal["wb_connected", "first_sync_succeeded", "first_useful_report"]
-    event_key: Literal["wb_connected", "first_sync_succeeded", "first_useful_report"]
+    event_name: Literal["wb_connected", "first_sync_succeeded", "first_useful_report", "first_production_result"]
+    event_key: Literal["wb_connected", "first_sync_succeeded", "first_useful_report", "first_production_result"]
     occurred_at: datetime
 
 
@@ -40,6 +40,8 @@ def receive_first_value(payload: FirstValueEvent, request: Request):
         if payload.event_name == "first_useful_report":
             growth.record_event(conn, owner, "first_report_viewed", occurred_at=when)
             growth.record_activation(conn, owner, "financial", occurred_at=when)
+        elif payload.event_name == "first_production_result":
+            growth.record_activation(conn, owner, "production", occurred_at=when)
         else:
             growth.record_event(conn, owner, payload.event_name, occurred_at=when)
     return Response(status_code=204)
