@@ -24,10 +24,10 @@
 - Create: `docs/marketing/SEO_CLUSTER_REGISTRY.md`
 - Reference: `docs/marketing/SEO_SEBESTOIMOST_WB_REVIEW.md`, `gateway/marketing_routes.py`, `gateway/app.py`
 
-- [ ] Record each initial cluster, intent, owning URL, supporting URLs, evidence source, status, and next review date.
-- [ ] Include the current money pages (`/sebestoimost-wb`, `/calculator`, `/pricing`) and existing guides without inventing new routes.
-- [ ] Mark unknown demand as `unverified` rather than filling guessed volumes.
-- [ ] Review links and route names against the live route tests.
+- [x] Record each initial cluster, intent, owning URL, supporting URLs, evidence source, status, and next review date.
+- [x] Include the current money pages (`/sebestoimost-wb`, `/calculator`, `/pricing`) and existing guides without inventing new routes.
+- [x] Mark unknown demand as `unverified` rather than filling guessed volumes.
+- [x] Review links and route names against the live route tests.
 
 ### Task 2: Prepare a ten-topic content queue
 
@@ -35,10 +35,10 @@
 - Create: `docs/marketing/SEO_CONTENT_QUEUE.md`
 - Reference: `docs/content/01-sebestoimost-wildberries.md`, `docs/content/03-fifo-vs-srednyaya.md`, `docs/content/04-sverka-ostatkov-wb.md`, `docs/content/05-nezavershennoe-proizvodstvo.md`
 
-- [ ] Rank ten topics by commercial proximity and evidence readiness.
-- [ ] Assign each topic to one existing URL or explicitly mark it as a future route requiring review.
-- [ ] Add the factual source set, intended CTA, anti-duplication note, and acceptance gate for every topic.
-- [ ] Keep the first publishing rhythm to one manually reviewed article per week.
+- [x] Rank ten topics by commercial proximity and evidence readiness.
+- [x] Assign each topic to one existing URL or explicitly mark it as a future route requiring review.
+- [x] Add the factual source set, intended CTA, anti-duplication note, and acceptance gate for every topic.
+- [x] Keep the first publishing rhythm to one manually reviewed article per week.
 
 ### Task 3: Add a read-only SEO health audit
 
@@ -46,10 +46,10 @@
 - Create: `scripts/audit_public_seo.py`
 - Test: `gateway/tests/test_public_seo_audit.py`
 
-- [ ] Fetch the configured public routes without authentication.
-- [ ] Check status, canonical, title, description, H1, FAQ JSON-LD, sitemap membership, robots directives, and internal links.
-- [ ] Emit JSON with `pass`, `warn`, and `fail`; never write production data.
-- [ ] Add tests using local fixtures for a passing page, a missing canonical, and a broken internal link.
+- [x] Fetch the configured public routes without authentication.
+- [x] Check status, canonical, title, description, H1, FAQ JSON-LD, sitemap membership, robots directives, and internal links.
+- [x] Emit JSON with `pass`, `warn`, and `fail`; never write production data.
+- [x] Add tests using local fixtures for a passing page, a missing canonical, and a broken internal link.
 
 ### Task 4: Verify the first content slice
 
@@ -67,8 +67,8 @@
 **Files:**
 - Create: `docs/marketing/SEO_OPERATING_CADENCE.md`
 
-- [ ] Define weekly demand review, weekly content review, post-deploy SEO smoke, and monthly refresh review.
-- [ ] Use the existing `scripts/report_growth_funnel.py` for business outcomes; do not substitute visits for activation or payment.
-- [ ] Define stop conditions for duplicate topics, unsupported claims, broken routes, and missing evidence.
+- [x] Define weekly demand review, weekly content review, post-deploy SEO smoke, and monthly refresh review.
+- [x] Use the existing `scripts/report_growth_funnel.py` for business outcomes; do not substitute visits for activation or payment.
+- [x] Define stop conditions for duplicate topics, unsupported claims, broken routes, and missing evidence.
 
 **Completion gate:** Tasks 1-3 are complete with reviewable files and passing tests; Task 4 is complete only after human fact-checking and a verified deploy; Task 5 records the recurring process. Advertising remains a separate owner decision.
