@@ -309,6 +309,19 @@ class SendLogTests(GatewayDbTestCase):
             self.assertFalse(trial_emails.claim_send(conn, self.account_id, "1"))
         self.assertIn("1", log)
 
+    def test_disabled_send_is_not_logged_and_can_be_retried(self) -> None:
+        with self.connect() as conn:
+            trial_emails.claim_send(conn, self.account_id, "1")
+            trial_emails.finish_send(conn, self.account_id, "1", delivered="disabled")
+            self.assertNotIn("1", trial_emails.sent_log(conn, self.account_id))
+            self.assertTrue(trial_emails.claim_send(conn, self.account_id, "1"))
+
+    def test_unknown_delivery_state_is_rejected(self) -> None:
+        with self.connect() as conn:
+            trial_emails.claim_send(conn, self.account_id, "1")
+            with self.assertRaises(ValueError):
+                trial_emails.finish_send(conn, self.account_id, "1", delivered="queued")
+
     def test_unknown_key_cannot_be_claimed(self) -> None:
         with self.connect() as conn:
             with self.assertRaises(ValueError):
@@ -373,6 +386,18 @@ class RunnerTests(GatewayDbTestCase):
             # Second run the same day: nothing more goes out.
             self._run(send=True)
             self.assertEqual(send_email.call_count, 1)
+
+    def test_disabled_transport_does_not_mark_email_sent_and_retries(self) -> None:
+        with mock.patch.object(self.runner.mailer, "send_email", return_value="disabled") as send_email:
+            self.assertEqual(self._run(send=True), 0)
+            self.assertEqual(self._run(send=True), 0)
+            self.assertEqual(send_email.call_count, 2)
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM trial_emails WHERE account_id=? AND email_key='1'",
+                (self.account_id,),
+            ).fetchone()
+        self.assertEqual(row["status"], "disabled")
 
     def test_opted_out_account_is_skipped(self) -> None:
         with self.connect() as conn:

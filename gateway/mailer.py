@@ -76,7 +76,7 @@ def send_email(to_email: str, subject: str, body_text: str, attachment: tuple[by
         return "failed"
 
 
-def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -> bool:
+def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -> MailerStatus:
     subject = "Восстановление пароля — MARKETSHELPER"
     body = (
         f"Кто-то (надеемся, что вы) запросил сброс пароля для аккаунта {to_email} "
@@ -89,13 +89,13 @@ def send_password_reset_email(to_email: str, reset_url: str, ttl_minutes: int) -
     return send_email(to_email, subject, body)
 
 
-def send_email_change_email(to_email: str, confirm_url: str, ttl_minutes: int) -> bool:
+def send_email_change_email(to_email: str, confirm_url: str, ttl_minutes: int) -> MailerStatus:
     subject = "Подтверждение нового email — MARKETSHELPER"
     body = f"Подтвердите новый email для MARKETSHELPER в течение {ttl_minutes} минут:\n\n{confirm_url}\n\nЕсли это были не вы, проигнорируйте письмо."
     return send_email(to_email, subject, body)
 
 
-def send_email_verification_email(to_email: str, verify_url: str, ttl_hours: int) -> bool:
+def send_email_verification_email(to_email: str, verify_url: str, ttl_hours: int) -> MailerStatus:
     subject = "Подтвердите email — MARKETSHELPER"
     body = (
         f"Подтвердите email {to_email}, чтобы открыть ваш кабинет MARKETSHELPER. "
@@ -105,7 +105,7 @@ def send_email_verification_email(to_email: str, verify_url: str, ttl_hours: int
     return send_email(to_email, subject, body)
 
 
-def send_tenant_invitation_email(to_email: str, tenant_slug: str, role: str, accept_url: str, ttl_days: int) -> bool:
+def send_tenant_invitation_email(to_email: str, tenant_slug: str, role: str, accept_url: str, ttl_days: int) -> MailerStatus:
     role_label = {"manager": "менеджера", "viewer": "наблюдателя"}.get(role, role)
     subject = "Приглашение в кабинет MARKETSHELPER"
     body = (
@@ -117,7 +117,7 @@ def send_tenant_invitation_email(to_email: str, tenant_slug: str, role: str, acc
     return send_email(to_email, subject, body)
 
 
-def send_report_email(to_email: str, report_name: str, pdf_bytes: bytes, filename: str) -> bool:
+def send_report_email(to_email: str, report_name: str, pdf_bytes: bytes, filename: str) -> MailerStatus:
     subject = f"Отчёт «{report_name}» — MARKETSHELPER"
     body = (
         f"Автоматический отчёт «{report_name}» из MARKETSHELPER во вложении (PDF).\n\n"
