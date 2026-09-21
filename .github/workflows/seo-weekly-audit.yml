@@ -1,0 +1,27 @@
+name: Weekly public SEO audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 Moscow time (06:00 UTC) every Monday.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run live SEO audit
+        run: python scripts/audit_public_seo.py --base-url https://marketshelper.ru --output seo-audit.json
+      - name: Upload dated audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seo-audit-${{ github.run_id }}
+          path: seo-audit.json
+          retention-days: 30
