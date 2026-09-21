@@ -156,8 +156,12 @@ services:
     build: ./gateway
     restart: unless-stopped
     networks:
-      - wbsaas_net
-      - provisioning_net
+      wbsaas_net:
+        aliases:
+          - gateway
+      provisioning_net:
+        aliases:
+          - gateway
     volumes:
       - gateway_data:/app/data
       # scripts/run_billing_cycle.py and scripts/backup_tenant_volumes.py both
