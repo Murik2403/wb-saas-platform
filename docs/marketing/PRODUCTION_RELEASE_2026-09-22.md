@@ -40,3 +40,12 @@ Gateway теперь различает три состояния SMTP-тран�
   доступна в каждом письме.
 - После переключения gateway снова `healthy`; полный gateway suite: `342 passed`,
   `2 skipped`, `146 subtests passed`.
+
+## Исправление атрибуции кампании
+
+- Commit: `4b85698`.
+- `/vs-1c` добавлен в `PUBLIC_ANALYTICS_PATHS`, поэтому группа `accounting_01`
+  не теряет Метрику и UTM-атрибуцию после согласия на аналитику.
+- Production image: `sha256:6be8b9c94af6c134bae5ff1a6bd285f22eb713814214b76e08dd88237aac33e2`.
+- Проверка: gateway `healthy`, `/vs-1c` HTTP 200, sitemap содержит 21 URL,
+  SEO-аудит `432 pass, 0 warn, 0 fail`.
