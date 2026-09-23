@@ -12,16 +12,27 @@ sys.path.insert(0, str(ROOT / "tenant-app"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import db.core as core
 from production_workspace_api import router
+import production_workspace_api as workspace_api
 
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "DB_PATH", tmp_path / "workspace.sqlite")
+    monkeypatch.setattr(workspace_api.config, "IS_DEMO", False)
     core.init_db()
     app = FastAPI()
     app.include_router(router)
     with TestClient(app) as client:
         yield client
+
+
+def test_read_only_reflects_demo_or_viewer_without_blocking_reads(client, monkeypatch):
+    assert client.get("/api/v1/production-workspace").json()["read_only"] is False
+    assert client.get("/api/v1/production-workspace", headers={"x-tenant-role": "viewer"}).json()["read_only"] is True
+    monkeypatch.setattr(workspace_api.config, "IS_DEMO", True)
+    result = client.get("/api/v1/production-workspace", headers={"x-tenant-role": "owner"})
+    assert result.status_code == 200
+    assert result.json()["read_only"] is True
 
 
 def seed():

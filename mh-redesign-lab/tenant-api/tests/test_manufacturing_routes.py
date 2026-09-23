@@ -16,6 +16,14 @@ from manufacturing_costs_api import router
 PREFIX = "/api/v1/manufacturing-costs"
 
 
+def test_demo_has_no_mutation_actions_even_with_owner_header(client, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "IS_DEMO", True)
+    response = client.get(PREFIX, headers={"x-tenant-role": "owner"})
+    assert response.status_code == 200
+    assert response.json()["allowed_actions"] == []
+
+
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "DB_PATH", tmp_path / "manufacturing.sqlite3")

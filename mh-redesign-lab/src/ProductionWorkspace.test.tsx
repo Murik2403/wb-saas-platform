@@ -18,6 +18,20 @@ it("shows failure without invented stock and can retry", async () => {
   await screen.findByText("Выдать сырьё в НЗП");
 });
 
+it("disables read-only writes but keeps refresh and calendar available", async () => {
+  fetchMock.mockImplementation(async () => json({ ...data, read_only: true }));
+  render(<ProductionWorkspace />);
+  await screen.findByText(/Доступ только для просмотра/);
+  expect(screen.getByLabelText("Расход сырья, м")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Выдать в НЗП" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Сохранить мощность" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Обновить производство" })).not.toBeDisabled();
+  expect(screen.getByLabelText("Начало календаря")).not.toBeDisabled();
+  expect(screen.getByLabelText("Период")).not.toBeDisabled();
+  fireEvent.submit(screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!);
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "GET")).toHaveLength(0);
+});
+
 it("uses catalogue units for issue quantities and historical batch display", async () => {
   fetchMock.mockImplementation(async () => json({ ...data, materials: [...data.materials, { material_name: "Клей", unit: "кг", available_meters: 5 }], wip: { ...data.wip, batches: [{ id: 7, material_name: "Клей", blank_type: "Заготовка", unit: "кг", status: "open", issued_meters: 2.5, material_cost_rub: 250, reversed_at: null }] } }));
   render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");

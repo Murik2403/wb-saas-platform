@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from db.core import connect
@@ -19,6 +19,7 @@ from db.wip import (issue_wip_material, complete_wip_blank_batch,
                     post_manual_wip_packaging, read_wip_blank_batches,
                     read_wip_blank_summary, read_wip_blank_allocations, wip_module_status)
 from today_service import json_safe
+import config
 
 router = APIRouter(prefix="/api/v1/production-workspace", tags=["production-workspace"])
 PositiveInt = Annotated[StrictInt, Field(gt=0, le=10000000)]
@@ -98,7 +99,7 @@ def _capacity() -> dict:
 
 
 @router.get("")
-def workspace(start: date | None = None, days: int = Query(14, ge=1, le=90)) -> dict:
+def workspace(request: Request, start: date | None = None, days: int = Query(14, ge=1, le=90)) -> dict:
     start = start or date.today()
     end = start + timedelta(days=days - 1)
     capacity = _capacity()
@@ -132,7 +133,8 @@ def workspace(start: date | None = None, days: int = Query(14, ge=1, le=90)) -> 
     units = {m["material_key"]: str(m.get("unit") or "м") for m in materials}
     batches = [{**b, "unit": units.get(b["material_key"], "неизвестно")} for b in read_wip_blank_batches().to_dict("records")]
     summary = [{**b, "unit": units.get(b["material_key"], "неизвестно")} for b in read_wip_blank_summary().to_dict("records")]
-    return json_safe({"wip": {"status": wip_module_status(), "batches": batches,
+    return json_safe({"read_only": bool(config.IS_DEMO) or request.headers.get("x-tenant-role", "").lower() == "viewer",
+                      "wip": {"status": wip_module_status(), "batches": batches,
                                "summary": summary, "allocations": read_wip_blank_allocations(100).to_dict("records")},
                       "materials": materials, "products": products, "capacity": capacity, "calendar": calendar,
                       "undated_tasks": [t for t in tasks if not t["task_date"]]})

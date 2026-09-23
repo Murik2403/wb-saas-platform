@@ -76,7 +76,11 @@ def main():
                 actual = docker_api("GET", f"/containers/{args.container}/json")
                 assert actual["Image"] == image["Id"]
                 assert actual["Config"]["Env"] == original["Config"]["Env"]
-                assert actual["Config"]["Labels"] == original["Config"]["Labels"]
+                # Docker merges image metadata with explicitly supplied labels.
+                # Preserve every original routing label while allowing a new
+                # image revision label on older containers that lacked one.
+                expected_labels = {**(image.get("Config", {}).get("Labels") or {}), **(original["Config"].get("Labels") or {})}
+                assert (actual["Config"].get("Labels") or {}) == expected_labels
                 print("DEPLOY_VERIFIED", json.dumps({"container": args.container, "image": image["Id"], "rollback": previous, "probes": 4}), flush=True)
                 return
             time.sleep(3)
