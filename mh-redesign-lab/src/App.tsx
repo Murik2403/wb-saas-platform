@@ -1801,6 +1801,28 @@ function FinanceView({
           {financeLedger.length ? <div className="ledger-list">
             {financeLedger.map((item) => <FinanceLedgerRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
           </div> : <p className="plan-empty">Нет данных о движении денег</p>}
+          {financeReport.fifoPeriodBasis === "sale_date" ? <section className="panel finance-fifo-panel" aria-label="Сверка FIFO-себестоимости продаж">
+            <SectionHeader compact kicker="Себестоимость партий" title="Сверка FIFO по дате продажи">
+              <PackageCheck size={18} />
+            </SectionHeader>
+            <p className="form-hint">Отдельная оценка по датам продаж и возвратов. Она не включена в прибыль выше: финансовый отчёт WB использует даты реализации, а возвраты могут относиться к другому периоду.</p>
+            {financeReport.fifoCosts?.length ? (() => {
+              const rows = financeReport.fifoCosts;
+              const totalEvents = rows.reduce((sum, row) => sum + row.totalEvents, 0);
+              const coveredEvents = rows.reduce((sum, row) => sum + row.coveredEvents, 0);
+              const baseline = rows.reduce((sum, row) => sum + row.baselineCost, 0);
+              const estimated = rows.reduce((sum, row) => sum + row.estimatedFifoCost, 0);
+              const journaled = rows.reduce((sum, row) => sum + row.journaledCost, 0);
+              return <>
+                <div className="cash-grid finance-fifo-summary">
+                  <div className="stat"><span>Оценка по FIFO</span><strong>{Math.round(estimated).toLocaleString("ru-RU")} ₽</strong><small>Для продаж и возвратов выбранного периода</small></div>
+                  <div className="stat"><span>Базовая оценка</span><strong>{Math.round(baseline).toLocaleString("ru-RU")} ₽</strong><small>По себестоимости из настроек товара</small></div>
+                  <div className="stat"><span>События в FIFO-журнале</span><strong>{coveredEvents.toLocaleString("ru-RU")} / {totalEvents.toLocaleString("ru-RU")}</strong><small>{Math.round(totalEvents ? coveredEvents / totalEvents * 100 : 0)}% событий учтено; сумма учтённых событий {Math.round(journaled).toLocaleString("ru-RU")} ₽</small></div>
+                </div>
+                <div className="ledger-list finance-fifo-list">{[...rows].sort((a, b) => Math.abs(b.estimatedFifoCost - b.baselineCost) - Math.abs(a.estimatedFifoCost - a.baselineCost)).slice(0, 8).map((row) => <FinanceLedgerRow key={row.nmId} item={{ label: row.productName || row.supplierArticle || ("WB " + row.nmId), amount: Math.round(row.estimatedFifoCost).toLocaleString("ru-RU") + " ₽", detail: "WB " + row.nmId + " · продажи " + row.saleUnits + " · возвраты " + row.returnUnits + " · база " + Math.round(row.baselineCost).toLocaleString("ru-RU") + " ₽ · ошибки " + row.errorEvents, tone: row.errorEvents ? "warn" : "info" }} />)}</div>
+              </>;
+            })() : <p className="plan-empty">За период нет строк продаж или возвратов.</p>}
+          </section> : null}
           <section className="panel finance-expenses-panel">
             <SectionHeader compact kicker="WB реализация" title="Статьи расходов">
               <span className={financeCoverage.className}>{financeCoverage.label}</span>

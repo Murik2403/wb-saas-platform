@@ -59,6 +59,7 @@ from db import (
     get_fifo_opening_rate,
     set_fifo_opening_rate,
     read_table,
+    read_sales_fifo_cogs,
     table_count,
     wb_fifo_reconciliation_context,
     update_procurement_order,
@@ -1395,6 +1396,7 @@ def get_dashboard_finance(
     def build() -> dict:
         data = build_dashboard(window_start, window_end)
         f = data.financial or {}
+        fifo_cogs = read_sales_fifo_cogs(window_start.isoformat(), window_end.isoformat())
         articles = [
             ("Разница: выкупы − к перечислению (справочно)", -f.get("sales_to_pay_gap", 0)),
             ("Эквайринг (уже учтён WB, справочно)", -f.get("acquiring", 0)),
@@ -1421,6 +1423,10 @@ def get_dashboard_finance(
             "financial": f,
             "expense_rows": [{"label": label, "amount": float(amount or 0)} for label, amount in articles],
             "products": data.financial_products.head(200).to_dict(orient="records") if not data.financial_products.empty else [],
+            # Keep this diagnostic separate: it is grouped by sale_date while
+            # the accounting report above is grouped by WB realization date.
+            "fifo_cogs": fifo_cogs.to_dict(orient="records") if not fifo_cogs.empty else [],
+            "fifo_cogs_period_basis": "sale_date",
             "balance": balance,
         })
 

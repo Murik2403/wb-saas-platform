@@ -219,6 +219,8 @@ type ApiMetric = {
 type ApiFinanceResponse = {
   financial?: Record<string, unknown>;
   expense_rows?: Array<{ label?: string; amount?: number }>;
+  fifo_cogs?: Array<Record<string, unknown>>;
+  fifo_cogs_period_basis?: "sale_date";
   balance?: { current?: number; for_withdraw?: number };
 };
 type ApiWbCostsResponse = { deductions?: Array<Record<string, unknown>>; measurement_penalties?: Array<Record<string, unknown>>; paid_storage?: Array<Record<string, unknown>>; paid_storage_status?: "disabled" | "processing" | "ready" | "error"; errors?: string[] };
@@ -1787,6 +1789,21 @@ export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallba
     complete: Boolean(f.financial_period_complete ?? fallback.complete),
     lagDays: Number(f.financial_lag_days ?? fallback.lagDays ?? 0),
     rows: rows.length ? rows : fallback.rows,
+    fifoCosts: input?.fifo_cogs?.map((row) => ({
+      nmId: Number(row.nm_id ?? 0),
+      supplierArticle: text(row.supplier_article, ""),
+      productName: text(row.product_name, ""),
+      saleUnits: Number(row.sale_units ?? 0),
+      returnUnits: Number(row.return_units ?? 0),
+      netUnits: Number(row.net_units ?? 0),
+      baselineCost: Number(row.baseline_cogs_rub ?? 0),
+      estimatedFifoCost: Number(row.estimated_fifo_cogs_rub ?? 0),
+      journaledCost: Number(row.exact_fifo_cogs_rub ?? 0),
+      coveredEvents: Number(row.covered_events ?? 0),
+      totalEvents: Number(row.total_events ?? 0),
+      errorEvents: Number(row.error_events ?? 0),
+    })) ?? fallback.fifoCosts,
+    fifoPeriodBasis: input?.fifo_cogs_period_basis ?? fallback.fifoPeriodBasis,
     balance: Number(input?.balance?.current ?? fallback.balance ?? 0),
     forWithdraw: Number(input?.balance?.for_withdraw ?? fallback.forWithdraw ?? 0),
     wbCosts: wbCosts ? { deductions: sum(wbCosts.deductions), measurementPenalties: (wbCosts.measurement_penalties ?? []).reduce((total, row) => total + Number(row.penaltyAmount ?? 0) - Number(row.reversalAmount ?? 0), 0), paidStorage: (wbCosts.paid_storage ?? []).reduce((total, row) => total + Number(row.warehousePrice ?? row.paidStorage ?? row.storage ?? row.amount ?? row.sum ?? 0), 0), status: wbCosts.paid_storage_status, errors: wbCosts.errors ?? [] } : fallback.wbCosts,

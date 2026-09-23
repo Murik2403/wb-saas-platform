@@ -151,12 +151,28 @@ export type CashWindow = {
 };
 
 export type FinanceExpenseRow = { label: string; amount: number };
+export type FinanceFifoCostRow = {
+  nmId: number;
+  supplierArticle: string;
+  productName: string;
+  saleUnits: number;
+  returnUnits: number;
+  netUnits: number;
+  baselineCost: number;
+  estimatedFifoCost: number;
+  journaledCost: number;
+  coveredEvents: number;
+  totalEvents: number;
+  errorEvents: number;
+};
 export type FinanceReportState = {
   lastDate?: string;
   calculationEnd?: string;
   complete?: boolean;
   lagDays?: number;
   rows: FinanceExpenseRow[];
+  fifoCosts?: FinanceFifoCostRow[];
+  fifoPeriodBasis?: "sale_date";
   balance?: number;
   forWithdraw?: number;
   wbCosts?: { deductions: number; measurementPenalties: number; paidStorage: number; status?: "disabled" | "processing" | "ready" | "error"; errors: string[] };
