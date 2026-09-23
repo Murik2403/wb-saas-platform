@@ -30,6 +30,7 @@ PUBLIC_ANALYTICS_PATHS = {
     "/", "/pricing", "/dlya-proizvoditeley-wb", "/sebestoimost-wb",
     "/fifo-uchet", "/calculator", "/guides", "/guides/fifo-po-partiyam",
     "/guides/pribyl-i-rashody-wb", "/guides/iz-excel-v-uchet",
+    "/vs-1c",
 }
 router = APIRouter()
 
