@@ -91,9 +91,9 @@ class GrowthIntegrationTests(GatewayDbTestCase):
                 self.assertIn('data-counter=""', response.text)
                 self.assertNotIn("reachGoal", response.text)
 
-    def test_accounting_landing_page_keeps_attribution_after_consent(self):
-        self.choose("analytics", utm_source="yandex", utm_campaign="wb_pilot_01", utm_term="accounting_01")
-        response = self.client.get("/vs-1c?utm_source=yandex&utm_campaign=wb_pilot_01&utm_term=accounting_01")
+    def test_calculator_landing_page_keeps_attribution_after_consent(self):
+        self.choose("analytics", utm_source="yandex", utm_campaign="wb_pilot_01", utm_term="unit_01")
+        response = self.client.get("/calculator?utm_source=yandex&utm_campaign=wb_pilot_01&utm_term=unit_01")
         self.assertEqual(response.status_code, 200)
         self.assertIn('data-counter="12345678"', response.text)
 
