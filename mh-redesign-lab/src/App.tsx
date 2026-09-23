@@ -1805,7 +1805,7 @@ function FinanceView({
             <SectionHeader compact kicker="Себестоимость партий" title="Сверка FIFO по дате продажи">
               <PackageCheck size={18} />
             </SectionHeader>
-            <p className="form-hint">Отдельная оценка по датам продаж и возвратов. Она не включена в прибыль выше: финансовый отчёт WB использует даты реализации, а возвраты могут относиться к другому периоду.</p>
+            <p className="form-hint">Отдельная оценка по датам продаж и возвратов. Она не включена в прибыль выше: финансовый отчёт WB использует даты реализации, а возвраты могут относиться к другому периоду. FIFO-журнал может содержать начальные остатки и временные слои с базовой ставкой, поэтому сумму нельзя считать полностью фактической себестоимостью.</p>
             {financeReport.fifoCosts?.length ? (() => {
               const rows = financeReport.fifoCosts;
               const totalEvents = rows.reduce((sum, row) => sum + row.totalEvents, 0);
@@ -2415,9 +2415,32 @@ function DashboardPeriodControl({
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
 }) {
+  const [draftRange, setDraftRange] = useState(() => ({
+    start: period.start ?? defaultCustomPeriod().start ?? "",
+    end: period.end ?? defaultCustomPeriod().end ?? "",
+  }));
+
+  useEffect(() => {
+    if (period.id === "custom") {
+      setDraftRange({
+        start: period.start ?? defaultCustomPeriod().start ?? "",
+        end: period.end ?? defaultCustomPeriod().end ?? "",
+      });
+    }
+  }, [period.id, period.start, period.end]);
+
   const selectPeriod = (id: DashboardPeriodId) => {
-    setPeriod(id === "custom" ? (period.id === "custom" ? period : defaultCustomPeriod()) : { id });
+    if (id === "custom") {
+      const next = period.id === "custom" ? period : defaultCustomPeriod();
+      setDraftRange({ start: next.start ?? "", end: next.end ?? "" });
+      setPeriod(next);
+      return;
+    }
+    setPeriod({ id });
   };
+
+  const validDraft = Boolean(draftRange.start && draftRange.end && draftRange.start <= draftRange.end);
+  const rangeChanged = draftRange.start !== period.start || draftRange.end !== period.end;
 
   return (
     <div className="period-control" aria-label="Период данных">
@@ -2441,8 +2464,9 @@ function DashboardPeriodControl({
             <input
               aria-label="Дата начала"
               type="date"
-              value={period.start ?? ""}
-              onChange={(event) => setPeriod({ ...period, start: event.target.value })}
+              value={draftRange.start}
+              max={draftRange.end || undefined}
+              onChange={(event) => setDraftRange((range) => ({ ...range, start: event.target.value }))}
             />
           </label>
           <label>
@@ -2450,10 +2474,19 @@ function DashboardPeriodControl({
             <input
               aria-label="Дата окончания"
               type="date"
-              value={period.end ?? ""}
-              onChange={(event) => setPeriod({ ...period, end: event.target.value })}
+              value={draftRange.end}
+              min={draftRange.start || undefined}
+              onChange={(event) => setDraftRange((range) => ({ ...range, end: event.target.value }))}
             />
           </label>
+          <button
+            className="period-apply-button"
+            disabled={!validDraft || !rangeChanged}
+            type="button"
+            onClick={() => setPeriod({ id: "custom", start: draftRange.start, end: draftRange.end })}
+          >
+            Применить
+          </button>
         </div>
       ) : null}
     </div>
