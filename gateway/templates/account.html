@@ -28,16 +28,22 @@
   <p><a class="back-link" href="/account/export">Скачать архив данных</a></p>
   {% if tenant and tenant.membership_role == 'owner' %}
   <h2>Команда кабинета</h2>
+  <h3>API для интеграций</h3>
+  <p>Ключ только для чтения товаров, сырья и партий выпуска этого кабинета. Срок — 90 дней. Создание нового ключа отзывает предыдущий.</p>
+  {% if integration_token %}<p><code>{{ integration_token }}</code></p>{% endif %}
+  <p>Запросы: GET /api/v1/integration/products, /api/v1/integration/materials, /api/v1/integration/releases на домене кабинета. Заголовок: Authorization: Bearer ВАШ_КЛЮЧ. Ответ: items, offset, limit; параметры limit (1–500) и offset.</p>
+  <form method="post" action="/account/integration-token"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" name="action" value="issue">Создать / заменить ключ</button><button type="submit" name="action" value="revoke">Отозвать ключ</button></form>
   <p>Добавьте коллегу по email. Ссылка действует {{ 7 }} дней, доступ открывается после подтверждения email.</p>
   <form method="post" action="/account/team/invite">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label for="team_email">Email пользователя</label><input id="team_email" name="email" type="email" required autocomplete="email">
     <label for="team_role">Роль</label>
-    <select id="team_role" name="role"><option value="manager">Менеджер</option><option value="viewer" selected>Наблюдатель</option></select>
+    <select id="team_role" name="role"><option value="manager">Менеджер</option><option value="viewer" selected>Наблюдатель</option><option value="technologist">Технолог</option><option value="cutter">Закройщик</option><option value="seamstress">Швея</option><option value="warehouse">Кладовщик</option></select>
+    <p>Все сотрудники видят данные кабинета. Производственные роли ограничивают изменения: технолог — спецификации и мощности; закройщик — выдача сырья, заготовки и брак; швея — операции труда и упаковка; кладовщик — выпуск и брак.</p>
     <button type="submit">Пригласить</button>
   </form>
   <ul>
-    {% for member in members %}<li>{{ member.email }} — {{ {'owner': 'владелец', 'manager': 'менеджер', 'viewer': 'наблюдатель'}.get(member.role, member.role) }}</li>{% endfor %}
+    {% for member in members %}<li>{{ member.email }} — {{ {'owner': 'владелец', 'manager': 'менеджер', 'viewer': 'наблюдатель', 'technologist': 'технолог', 'cutter': 'закройщик', 'seamstress': 'швея', 'warehouse': 'кладовщик'}.get(member.role, member.role) }}</li>{% endfor %}
   </ul>
   {% endif %}
   <h2>Удалить аккаунт</h2>

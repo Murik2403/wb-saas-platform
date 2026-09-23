@@ -365,6 +365,8 @@ def init_db(conn) -> None:
     if config.DB_BACKEND == "postgres":
         _init_db_postgres(conn)
         _init_growth_schema(conn)
+        from .integration_tokens import init_schema
+        init_schema(conn)
         return
 
     conn.executescript(
@@ -581,3 +583,5 @@ def init_db(conn) -> None:
         """
     )
     _init_growth_schema(conn)
+    from .integration_tokens import init_schema
+    init_schema(conn)

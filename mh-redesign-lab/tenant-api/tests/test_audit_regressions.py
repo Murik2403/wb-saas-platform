@@ -21,12 +21,13 @@ def test_production_norms_are_exposed_with_catalogue_names(monkeypatch):
         blank_type="Старые болванки",
     )])
     catalog = pd.DataFrame([dict(nm_id=123, product_name="Плейсматы 4 шт")])
-    monkeypatch.setattr(api, "read_table", lambda name: settings if name == "production_settings" else catalog)
+    monkeypatch.setattr(api, "read_table", lambda name: {"production_settings": settings, "products_catalog": catalog}.get(name, pd.DataFrame()))
     item = api.get_production_norms()["items"][0]
     assert item == {
         "nm_id": 123, "supplier_article": "placemat-4", "product_name": "Плейсматы 4 шт",
         "enabled": 1, "material_per_unit": 0.447, "min_batch": 10,
         "pack_size": 4, "blank_type": "Старые болванки",
+        "material_name": "", "material_unit": "м",
     }
 
 
@@ -42,7 +43,7 @@ def test_successful_write_invalidates_dashboard(monkeypatch):
     async def call_next(request):
         api.update_product_costs(api.ProductCostsUpdateInput(items=[api.ProductCostInput(nm_id=123, cost_per_wb_unit=45)]))
         return SimpleNamespace(status_code=200)
-    response = asyncio.run(api.invalidate_after_write(SimpleNamespace(method="PATCH"), call_next))
+    response = asyncio.run(api.invalidate_after_write(SimpleNamespace(method="PATCH", url=SimpleNamespace(path="/api/v1/settings/product-costs", scheme="http")), call_next))
     assert response.status_code == 200
     assert api.dashboard_response_cache.get_or_build("audit", lambda: "new") == "new"
 
@@ -51,7 +52,7 @@ def test_demo_rejects_write_before_handler(monkeypatch):
     monkeypatch.setattr(api, "IS_DEMO", True, raising=False)
     async def call_next(request):
         pytest.fail("Demo must not reach a write handler")
-    response = asyncio.run(api.invalidate_after_write(SimpleNamespace(method="POST"), call_next))
+    response = asyncio.run(api.invalidate_after_write(SimpleNamespace(method="POST", url=SimpleNamespace(path="/api/v1/settings/product-costs", scheme="http")), call_next))
     assert response.status_code == 403
 
 
@@ -181,7 +182,14 @@ def test_operational_panels_use_stock_and_material_inventory(monkeypatch):
     monkeypatch.setattr(api, "read_table", lambda name: settings if name == "production_settings" else materials)
     stages, rows = api._production_panels()
     assert stages[0] == {"label": "Нормы", "value": "2 SKU настроено", "status": "done"}
-    assert rows == [{"name": "Бежевый", "need": "2 рул. по 25.5 м", "stock": "52.0 м", "status": "остаток подтверждён", "tone": "good"}]
+    assert rows == [{"name": "Бежевый", "need": "2 упак. по 25.5 м", "stock": "52.000 м", "status": "остаток подтверждён", "tone": "good"}]
+    materials.loc[0, "unit"] = "кг"
+    materials.loc[0, "tracking_mode"] = "quantity"
+    materials.loc[0, "full_rolls"] = 0
+    materials.loc[0, "roll_length"] = 1_000_000_000
+    _, rows = api._production_panels()
+    assert rows[0]["stock"] == "1.000 кг"
+    assert rows[0]["need"] == "Учёт по количеству"
 
 
 def test_shared_context_is_copied_between_screens(monkeypatch):

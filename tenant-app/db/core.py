@@ -1105,6 +1105,8 @@ def init_db() -> None:
         # v4.6: historical sales already present at the moment of upgrade are
         # registered as a baseline. Only later API events consume FIFO layers.
         _initialize_sales_fifo_baseline_if_needed(conn)
+        from .manufacturing import init_manufacturing_schema
+        init_manufacturing_schema(conn)
 
 def _num(value: Any, default: float = 0.0) -> float:
     try:

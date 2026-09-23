@@ -49,7 +49,7 @@ ACCOUNT_STATUSES = {"pending", "trialing", "active", "past_due", "canceled"}
 ACCESS_ALLOWED_STATUSES = {"trialing", "active", "past_due"}
 
 TENANT_STATUSES = {"provisioning", "running", "stopped", "failed"}
-TENANT_ROLES = {"owner", "manager", "viewer"}
+TENANT_ROLES = {"owner", "manager", "viewer", "technologist", "cutter", "seamstress", "warehouse"}
 TENANT_INVITATION_TTL_DAYS = 7
 
 # This value is stored with each registration consent so the operator can
@@ -535,7 +535,7 @@ def create_membership_invitation(
     if not _EMAIL_RE.match(email):
         raise ValueError("Укажите корректный email приглашённого пользователя.")
     if role not in TENANT_ROLES - {"owner"}:
-        raise ValueError("Можно пригласить только менеджера или наблюдателя.")
+        raise ValueError("Выберите доступную роль сотрудника.")
     tenant = conn.execute("SELECT id FROM tenant_instances WHERE id=?", (int(tenant_id),)).fetchone()
     if tenant is None:
         raise ValueError("Кабинет не найден.")

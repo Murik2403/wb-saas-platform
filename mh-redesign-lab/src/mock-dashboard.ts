@@ -33,7 +33,7 @@ export const navItems: NavItem[] = [
   { id: "finance", label: "Финансы", iconKey: "finance" },
   { id: "production", label: "Производство", iconKey: "production" },
   { id: "supply", label: "Поставки", iconKey: "supply" },
-  { id: "assistant", label: "AI-агенты", iconKey: "assistant" },
+  { id: "assistant", label: "Агенты", iconKey: "assistant" },
   { id: "reports", label: "Отчеты", iconKey: "reports" },
   { id: "products", label: "Товары", iconKey: "products" },
   { id: "control", label: "Контроль", iconKey: "control" },
@@ -72,8 +72,8 @@ export const pageMeta: Record<PageId, PageMeta> = {
     search: "Поставка, склад, статус",
   },
   assistant: {
-    section: "AI-агенты",
-    title: "AI-агенты ChatGPT и Claude",
+    section: "Агенты",
+    title: "Агенты цены и рекламы",
     search: "Сценарий, задача, SKU",
   },
   reports: {

@@ -180,6 +180,7 @@ def post_wb_receipts(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
     return result
 
 def undo_inventory_movement(movement_id: int) -> dict[str, Any]:
+    from .manufacturing import _undo_manufacturing_conn
     from .core import connect
     from .fifo_finished_goods import _reverse_finished_goods_allocations, _reverse_finished_goods_source_layer
     from .fifo_materials import _reverse_fifo_consumption, _reverse_procurement_material_layer
@@ -188,6 +189,10 @@ def undo_inventory_movement(movement_id: int) -> dict[str, Any]:
     from .wip import _reverse_wip_allocations, _reverse_wip_completion, _reverse_wip_issue_batch
     result: dict[str, Any] = {"ok": False, "message": ""}
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        manufacturing_result = _undo_manufacturing_conn(conn, int(movement_id))
+        if manufacturing_result is not None:
+            return manufacturing_result
         movement = conn.execute("SELECT * FROM inventory_movements WHERE id=?", (int(movement_id),)).fetchone()
         if movement is None:
             result["message"] = "Операция не найдена."

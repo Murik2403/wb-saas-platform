@@ -683,12 +683,13 @@ def logout(request: Request):
     return response
 
 
-def _account_page(request: Request, account, message: str = "", error: str = ""):
+def _account_page(request: Request, account, message: str = "", error: str = "", integration_token: str = ""):
     csrf_token = csrf.get_or_create_token(request)
     with control_db.connect() as conn:
         tenant = accounts.get_accessible_tenant_for_account(conn, int(account["id"]))
         members = accounts.list_tenant_members(conn, int(tenant["id"])) if tenant is not None and tenant["membership_role"] == "owner" else []
-    response = templates.TemplateResponse(request, "account.html", {"account": account, "tenant": tenant, "members": members, "csrf_token": csrf_token, "message": message, "error": error})
+    response = templates.TemplateResponse(request, "account.html", {"account": account, "tenant": tenant, "members": members, "csrf_token": csrf_token, "message": message, "error": error, "integration_token": integration_token})
+    response.headers["Cache-Control"] = "no-store"
     csrf.set_cookie(response, csrf_token)
     return response
 
@@ -699,6 +700,28 @@ def account_page(request: Request):
     if account is None:
         return RedirectResponse("/login", status_code=303)
     return _account_page(request, account)
+
+
+@app.post("/account/integration-token")
+def account_integration_token(request: Request, action: str = Form("issue"), csrf_token: str = Form("")):
+    from logic import integration_tokens
+    account = _current_account(request)
+    if account is None:
+        return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return _account_page(request, account, error="Форма устарела, попробуйте ещё раз.")
+    with control_db.connect() as conn:
+        tenant = accounts.get_accessible_tenant_for_account(conn, int(account["id"]))
+        if tenant is None or tenant["membership_role"] != "owner":
+            return Response(status_code=403)
+        if action == "revoke":
+            integration_tokens.revoke(conn, int(tenant["id"]))
+            token = ""
+        elif action == "issue":
+            token = integration_tokens.issue(conn, int(tenant["id"]))
+        else:
+            return Response(status_code=422)
+    return _account_page(request, account, message="Ключ создан. Скопируйте его: он показывается один раз." if token else "Ключ отозван.", integration_token=token)
 
 
 @app.post("/account/team/invite")
@@ -919,6 +942,18 @@ def auth_verify(request: Request):
     forwarded_proto = request.headers.get("x-forwarded-proto", "https")
     forwarded_uri = request.headers.get("x-forwarded-uri", "/")
     slug = _slug_from_host(forwarded_host)
+
+    authorization = request.headers.get("authorization", "")
+    if authorization.startswith("Bearer mh_read_"):
+        from logic import integration_tokens
+        allowed_paths = {"/api/v1/integration/products", "/api/v1/integration/materials", "/api/v1/integration/releases"}
+        path = forwarded_uri.split("?", 1)[0]
+        if not slug or request.headers.get("x-forwarded-method", "GET").upper() != "GET" or path not in allowed_paths:
+            return Response(status_code=403)
+        with control_db.connect() as conn:
+            tenant = accounts.get_tenant_by_slug(conn, slug)
+            allowed = tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant) and integration_tokens.valid(conn, authorization[7:], int(tenant["id"]))
+        return Response(status_code=200 if allowed else 401, headers={"X-Tenant-Role": "integration_reader", "X-Tenant-Account": "integration"} if allowed else {})
 
     account = _current_account(request)
     login_url = f"{('https' if config.COOKIE_SECURE else 'http')}://{config.PARENT_DOMAIN}/login"

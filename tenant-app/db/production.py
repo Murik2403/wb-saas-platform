@@ -544,6 +544,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
     from .fifo_finished_goods import _create_finished_goods_layer
     from .fifo_materials import _consume_material_fifo
     from .wip import _post_wip_packaging_conn, _wip_module_enabled
+    from .manufacturing import _post_release_conn
     date_value = _movement_date_text(task_date)
     result: dict[str, Any] = {
         "posted": 0, "skipped": 0, "errors": [], "units": 0,
@@ -553,6 +554,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
         result["errors"].append("Не указана дата смены.")
         return result
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         use_wip = _wip_module_enabled(conn)
         tasks = conn.execute(
             """
@@ -575,6 +577,26 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
             qty = max(0, int(task["actual_units"] or 0))
             if qty <= 0:
                 result["skipped"] += 1
+                continue
+            bom = conn.execute("SELECT id FROM manufacturing_boms WHERE nm_id=? ORDER BY version DESC LIMIT 1", (int(task["nm_id"] or 0),)).fetchone()
+            if bom is not None:
+                conn.execute("SAVEPOINT post_bom_task")
+                try:
+                    posted = _post_release_conn(
+                        conn, nm_id=int(task["nm_id"]), quantity=qty,
+                        production_date=date_value, source_key=source_key,
+                        supplier_article=str(task["supplier_article"] or ""),
+                        product_name=str(task["product_name"] or ""),
+                    )
+                    conn.execute("RELEASE SAVEPOINT post_bom_task")
+                    result["posted"] += posted["posted"]
+                    result["skipped"] += posted["skipped"]
+                    result["units"] += posted["units"]
+                    result["cost_rub"] += posted["cost_rub"]
+                except Exception as exc:
+                    conn.execute("ROLLBACK TO SAVEPOINT post_bom_task")
+                    conn.execute("RELEASE SAVEPOINT post_bom_task")
+                    result["errors"].append(f"{task['supplier_article']}: {exc}")
                 continue
             if use_wip and str(task["status"] or "") not in {"Упаковано", "Передано на отгрузку"}:
                 result["skipped"] += 1

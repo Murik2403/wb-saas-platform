@@ -159,7 +159,7 @@ export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
 export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; created_at: string; updated_at: string };
 export type ManagementEconomics = { nm_id: number; data_status: string; period: { start: string; end: string }; revenue_rub: number; units: number; accounting_profit_rub: number; manual_expenses_rub: number; management_profit_rub: number; excluded_wb_commission_rub: number; coverage: { covered: string[]; missing: string[]; count: number; total: number; percent: number }; items: Array<ManualExpense & { allocated_rub: number; excluded_from_result: boolean }> };
-export type ProductionNorm = { nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
+export type ProductionNorm = { material_unit?: string; material_name?: string; nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
 export type MaterialInventory = { material_key?: string; material_name: string; balance_known: number | boolean; full_rolls: number; partial_meters: number; roll_length: number; unit: string; tracking_mode: "packaged" | "quantity"; opening_rate_rub: number; note: string; updated_at?: string };
 export type MaterialFifoRow = MaterialInventory & { physical_meters: number; fifo_meters: number; fifo_amount_rub: number; weighted_rate_rub_m: number; next_fifo_rate_rub_m: number; active_layers: number; difference_meters: number };
 export type MaterialInventoryData = { items: MaterialInventory[]; fifo: MaterialFifoRow[]; opening_rate_rub_m: number };
@@ -503,7 +503,7 @@ type ApiPricesResponse = { items?: Array<Record<string, unknown>>; errors?: stri
 type ApiDataQualityResponse = DataQualityData;
 type ApiProcurementJournalResponse = { orders?: Array<Record<string, unknown>> };
 
-const API_BASE_URL = import.meta.env.VITE_MH_API_BASE_URL ?? "/tenant-api";
+export const API_BASE_URL = import.meta.env.VITE_MH_API_BASE_URL ?? "/tenant-api";
 const API_MODE = import.meta.env.VITE_MH_API_MODE ?? "auto";
 
 export async function getRuntimeStatus(signal: AbortSignal) {
@@ -514,7 +514,7 @@ export async function getRuntimeStatus(signal: AbortSignal) {
 }
 const TENANT_STORAGE_KEY = "mh-tenant-id";
 
-function apiHeaders(contentType = false): Record<string, string> {
+export function apiHeaders(contentType = false): Record<string, string> {
   const headers: Record<string, string> = { accept: "application/json" };
   if (contentType) headers["content-type"] = "application/json";
   try {
@@ -1320,8 +1320,8 @@ function periodQuery(selectedPeriod: DashboardPeriod): string {
   return `?${query.toString()}`;
 }
 
-export function financeExportUrl(period: DashboardPeriod): string {
-  return `${API_BASE_URL}/api/v1/operations/finance/export${periodQuery(period)}`;
+export function financeExportUrl(period: DashboardPeriod, format: "xlsx" | "csv" = "xlsx"): string {
+  return `${API_BASE_URL}/api/v1/operations/finance/export${periodQuery(period)}&format=${format}`;
 }
 
 async function loadLegacyToday(signal: AbortSignal): Promise<DashboardViewModel> {

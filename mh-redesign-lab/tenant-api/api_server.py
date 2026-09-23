@@ -626,7 +626,7 @@ def _production_panels() -> tuple[list[dict], list[dict]]:
     known = materials[pd.to_numeric(materials.get("balance_known", 0), errors="coerce").fillna(0).astype(int) == 1] if not materials.empty else materials
     stages = [
         {"label": "Нормы", "value": f"{enabled} SKU настроено", "status": "done" if enabled else "pending"},
-        {"label": "Сырьё", "value": f"{len(known)}/{len(materials)} цветов учтено", "status": "done" if len(known) == len(materials) and len(materials) else "active"},
+        {"label": "Сырьё", "value": f"{len(known)}/{len(materials)} материалов учтено", "status": "done" if len(known) == len(materials) and len(materials) else "active"},
         {"label": "Смена", "value": "нет открытых заданий", "status": "pending"},
     ]
     material_rows: list[dict] = []
@@ -635,10 +635,11 @@ def _production_panels() -> tuple[list[dict], list[dict]]:
         length = float(pd.to_numeric(row.get("roll_length", 0), errors="coerce") or 0)
         partial = float(pd.to_numeric(row.get("partial_meters", 0), errors="coerce") or 0)
         meters = rolls * length + partial
+        unit = str(row.get("unit") or "м")
         material_rows.append({
             "name": str(row.get("material_name") or row.get("material_key") or "Материал"),
-            "need": f"{rolls:.0f} рул. по {length:.1f} м",
-            "stock": f"{meters:.1f} м",
+            "need": "Учёт по количеству" if row.get("tracking_mode") == "quantity" else f"{rolls:.0f} упак. по {length:.1f} {unit}",
+            "stock": f"{meters:.3f} {unit}",
             "status": "остаток подтверждён",
             "tone": "good",
         })
@@ -674,6 +675,12 @@ async def lifespan(app):
 
 
 app = FastAPI(title="MARKETSHELPER tenant API", lifespan=lifespan)
+from production_workspace_api import router as production_workspace_router
+from manufacturing_costs_api import router as manufacturing_costs_router
+from integration_api import router as integration_router
+app.include_router(production_workspace_router)
+app.include_router(manufacturing_costs_router)
+app.include_router(integration_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
 dashboard_response_cache = DashboardResponseCache()
 context_response_cache = DashboardResponseCache()
@@ -688,12 +695,15 @@ sync_runner = SyncRunner()
 
 @app.middleware("http")
 async def invalidate_after_write(request, call_next):
+    from production_permissions import ROLES, write_allowed
     headers = getattr(request, "headers", {})
     tenant_role = headers.get("x-tenant-role", "owner").lower()
-    if tenant_role not in {"owner", "manager", "viewer"}:
+    if tenant_role not in ROLES:
         return JSONResponse(status_code=403, content={"detail": "Роль пользователя не распознана"})
     if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"}:
         return JSONResponse(status_code=403, content={"detail": "Роль наблюдателя доступна только для просмотра"})
+    if not write_allowed(tenant_role, request.method, request.url.path):
+        return JSONResponse(status_code=403, content={"detail": "Эта операция недоступна для вашей производственной роли"})
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         if not write_origin_allowed(headers, headers.get("host", ""), getattr(getattr(request, "url", None), "scheme", "http")):
             return JSONResponse(status_code=403, content={"detail": "Запрос с постороннего сайта запрещён"})
@@ -1422,6 +1432,7 @@ def export_finance_workbook(
     period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
     start: date | None = None,
     end: date | None = None,
+    format: str = Query("xlsx", pattern="^(xlsx|csv)$"),
 ) -> Response:
     """Download the legacy finance workbook from the redesigned dashboard."""
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
@@ -1431,6 +1442,10 @@ def export_finance_workbook(
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
     data = build_dashboard(window_start, window_end)
     f = data.financial or {}
+    if format == "csv":
+        from finance_csv import build_finance_csv
+        filename = f"marketshelper-finance-{window_start.isoformat()}-{window_end.isoformat()}.csv"
+        return Response(content=build_finance_csv(data.financial_products), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     expense_rows = pd.DataFrame([
         ["Комиссия WB", -f.get("commission", 0)], ["Эквайринг", -f.get("acquiring", 0)],
         ["Логистика", -f.get("logistics", 0)], ["Дополнительная логистика", -f.get("rebill_logistics", 0)],
@@ -2932,7 +2947,7 @@ def get_production_norms() -> dict:
     columns = [
         column for column in (
             "nm_id", "supplier_article", "enabled", "material_per_unit",
-            "min_batch", "pack_size", "blank_type",
+            "min_batch", "pack_size", "blank_type", "material_name",
         ) if column in settings.columns
     ]
     rows = settings[columns].copy()
@@ -2944,7 +2959,7 @@ def get_production_norms() -> dict:
     for column, default in {
         "supplier_article": "", "product_name": "", "enabled": 0,
         "material_per_unit": 0.0, "min_batch": 1, "pack_size": 1,
-        "blank_type": "",
+        "blank_type": "", "material_name": "",
     }.items():
         if column not in rows.columns:
             rows[column] = default
@@ -2955,9 +2970,12 @@ def get_production_norms() -> dict:
     rows["min_batch"] = pd.to_numeric(rows["min_batch"], errors="coerce").fillna(1).astype(int)
     rows["pack_size"] = pd.to_numeric(rows["pack_size"], errors="coerce").fillna(1).astype(int)
     rows = rows.sort_values(["supplier_article", "nm_id"], kind="stable")
+    inventory = read_table("material_inventory_color")
+    units = {str(row["material_name"]).strip().casefold(): str(row.get("unit") or "м") for _, row in inventory.iterrows()} if not inventory.empty else {}
+    rows["material_unit"] = rows["material_name"].fillna("").map(lambda name: units.get(str(name).strip().casefold(), "м"))
     return json_safe({"items": _records(rows[[
         "nm_id", "supplier_article", "product_name", "enabled",
-        "material_per_unit", "min_batch", "pack_size", "blank_type",
+        "material_per_unit", "min_batch", "pack_size", "blank_type", "material_name", "material_unit",
     ]])})
 
 

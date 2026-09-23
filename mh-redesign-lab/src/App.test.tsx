@@ -312,6 +312,22 @@ describe("operational detail drawer", () => {
     expect(await screen.findByText("Настройки доставки недоступны: SMTP не настроен")).toBeInTheDocument();
   });
 
+  it("explains where a new Telegram link code must be used", async () => {
+    vi.mocked(getReportDelivery).mockResolvedValueOnce({ configured: true, email_configured: true, email: "client@example.com", telegram_configured: true, telegram_linked: false, telegram_bot_username: "marketshelper_support_bot" });
+    const { requestTelegramLinkCode } = await import("./data-source");
+    vi.mocked(requestTelegramLinkCode).mockResolvedValueOnce({ code: "RAUQVV", ttl_minutes: 15, deep_link: "https://t.me/marketshelper_support_bot?start=link_RAUQVV", bot_username: "marketshelper_support_bot" });
+    window.history.replaceState({}, "", "/?view=reports");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Привязать Telegram" }));
+    expect(await screen.findByText("Как привязать Telegram:")).toBeInTheDocument();
+    expect(screen.getByText("@marketshelper_support_bot")).toBeInTheDocument();
+    expect(screen.getByText(/оператору или в личные сообщения его отправлять не нужно/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "«Аккаунт»" })).toHaveAttribute("href", expect.stringMatching(/\/account$/));
+  });
+
   it("shows report and analytics errors instead of false empty states", async () => {
     vi.mocked(getReportOperations).mockRejectedValueOnce(new Error("API расписаний недоступно"));
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Analytics timeout")));

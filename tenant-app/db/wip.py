@@ -128,6 +128,8 @@ def issue_wip_material(
             result["skipped"] = 1
             result["batch_id"] = int(existing["id"])
             return result
+        inventory = conn.execute("SELECT unit FROM material_inventory_color WHERE material_key=?", (key,)).fetchone()
+        unit = str(inventory["unit"] or "м") if inventory else "м"
         conn.execute("SAVEPOINT issue_wip_material")
         try:
             _apply_material_delta(conn, key, material_name, -meters)
@@ -144,16 +146,16 @@ def issue_wip_material(
                 """,
                 (
                     event_key,"wip_material_issue",0,"",f"НЗП: {blank_type}",0,0,0,"",date_value,None,
-                    batch_key,None,"applied",f"Выдано в НЗП {meters:.3f} м материала «{material_name}»; {note}",
+                    batch_key,None,"applied",f"Выдано в НЗП {meters:.3f} {unit} материала «{material_name}»; {note}",
                     datetime.now().isoformat(timespec="seconds"),None,key,material_name,-meters,0.0,0.0,0.0,0.0,
                 ),
             )
             movement_id = int(movement_cur.lastrowid)
             material_cost, allocations = _consume_material_fifo(conn, movement_id, key, material_name, meters)
-            allocation_note = ", ".join(f"слой #{int(a['layer_id'])}: {a['meters']:.3f} м" for a in allocations)
+            allocation_note = ", ".join(f"слой #{int(a['layer_id'])}: {a['meters']:.3f} {unit}" for a in allocations)
             conn.execute(
                 "UPDATE inventory_movements SET material_cost_rub=?,note=? WHERE id=?",
-                (material_cost, f"Выдано в НЗП {meters:.3f} м «{material_name}» для «{blank_type}»; FIFO {material_cost:.2f} ₽; {allocation_note}; {note}", movement_id),
+                (material_cost, f"Выдано в НЗП {meters:.3f} {unit} «{material_name}» для «{blank_type}»; FIFO {material_cost:.2f} ₽; {allocation_note}; {note}", movement_id),
             )
             now = datetime.now().isoformat(timespec="seconds")
             cur = conn.execute(
@@ -189,6 +191,7 @@ def complete_wip_blank_batch(
     note: str = "",
 ) -> dict[str, Any]:
     from .core import connect
+    from .production import _next_event_key
     qty = max(0, int(produced_units or 0))
     scrap = max(0, int(scrap_units or 0))
     result: dict[str, Any] = {"posted": 0, "skipped": 0, "errors": [], "units": 0, "cost_rub": 0.0, "batch_id": int(batch_id or 0)}
@@ -211,7 +214,7 @@ def complete_wip_blank_batch(
         try:
             unit_cost = round(float(batch["material_cost_rub"] or 0) / qty, 6)
             source_key = f"wip_batch:{int(batch_id)}:completion"
-            event_key = f"wip_blank_receipt|{source_key}|v1"
+            event_key = _next_event_key(conn, "wip_blank_receipt", source_key)
             now = datetime.now().isoformat(timespec="seconds")
             cur = conn.execute(
                 """

@@ -1,0 +1,25 @@
+.manufacturing-costs { margin-top: 24px; min-width: 0; color: var(--text, #edf3f8); }
+.manufacturing-costs .mfg-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; justify-content: space-between; }
+.manufacturing-costs .mfg-heading > div { flex: 1 1 320px; }
+.manufacturing-costs h2, .manufacturing-costs h3 { margin: 0 0 12px; }
+.manufacturing-costs p { line-height: 1.55; margin: 8px 0 16px; }
+.manufacturing-costs .mfg-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.manufacturing-costs form, .manufacturing-costs .mfg-journal { background: var(--panel, #11151d); border: 1px solid #34414d; border-radius: 14px; padding: 20px; min-width: 0; }
+.manufacturing-costs fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.manufacturing-costs legend { font-size: 1.15rem; font-weight: 700; margin-bottom: 10px; }
+.manufacturing-costs .mfg-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; min-width: 0; flex: 1; }
+.manufacturing-costs input, .manufacturing-costs select { width: 100%; min-width: 0; box-sizing: border-box; color: #edf3f8; background: #0b1118; border: 1px solid #627284; border-radius: 8px; padding: 11px; font: inherit; }
+.manufacturing-costs button { border: 1px solid #627284; border-radius: 8px; background: #202b36; color: #edf3f8; padding: 10px 14px; font: inherit; cursor: pointer; min-height: 44px; }
+.manufacturing-costs button.primary-button { background: #22dfbb; color: #061711; font-weight: 700; margin-top: 8px; }
+.manufacturing-costs button:disabled, .manufacturing-costs fieldset:disabled { opacity: .6; cursor: not-allowed; }
+.manufacturing-costs :is(input, select, button):focus-visible { outline: 3px solid #22dfbb; outline-offset: 3px; }
+.manufacturing-costs .mfg-row { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.manufacturing-costs .mfg-row > .mfg-field { flex-basis: 150px; }
+.manufacturing-costs .mfg-row > button { margin-bottom: 14px; }
+.manufacturing-costs .mfg-operation { margin: 14px 0; padding: 14px; border: 1px solid #526170; border-radius: 10px; }
+.manufacturing-costs .mfg-error, .manufacturing-costs .mfg-success { padding: 14px; border-radius: 8px; overflow-wrap: anywhere; }
+.manufacturing-costs .mfg-error { color: #ffd8d8; background: #421f25; border: 1px solid #d97984; }
+.manufacturing-costs .mfg-success { color: #c3ffec; background: #153e33; border: 1px solid #46b992; }
+.manufacturing-costs li, .manufacturing-costs .mfg-journal p { overflow-wrap: anywhere; }
+@media (max-width: 900px) { .manufacturing-costs .mfg-panels { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .manufacturing-costs form, .manufacturing-costs .mfg-journal { padding: 14px; } .manufacturing-costs .mfg-row { display: block; } }

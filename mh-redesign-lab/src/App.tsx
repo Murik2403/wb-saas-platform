@@ -1,3 +1,5 @@
+import { ProductionWorkspace } from "./ProductionWorkspace";
+import { ManufacturingCosts } from "./ManufacturingCosts";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { RuntimeStatus } from "./RuntimeStatus";
@@ -188,6 +190,21 @@ function getInitialDashboardPeriod(): DashboardPeriod {
   return isDashboardPeriodId(id) ? { id } : { id: "30d" };
 }
 
+function gatewayUrlFor(path: string) {
+  const { protocol, hostname, host } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".localhost")) {
+    return `${protocol}//${host}${path}`;
+  }
+
+  const hostParts = hostname.split(".");
+  const appIndex = hostParts.findIndex((part) => part === "app");
+  if (appIndex >= 0 && appIndex + 1 < hostParts.length) {
+    return `${protocol}//${hostParts.slice(appIndex + 1).join(".")}${path}`;
+  }
+
+  return `${protocol}//${host}${path}`;
+}
+
 function App() {
   const [activeNav, setActiveNav] = useState<PageId>(getInitialPage);
   const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>(getInitialDashboardPeriod);
@@ -238,20 +255,7 @@ function App() {
     if (choice.outcome === "accepted") setInstallPrompt(null);
   };
 
-  const getGatewayUrl = (path: string) => {
-    const { protocol, hostname, host } = window.location;
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".localhost")) {
-      return `${protocol}//${host}${path}`;
-    }
-
-    const hostParts = hostname.split(".");
-    const appIndex = hostParts.findIndex((part) => part === "app");
-    if (appIndex >= 0 && appIndex + 1 < hostParts.length) {
-      return `${protocol}//${hostParts.slice(appIndex + 1).join(".")}${path}`;
-    }
-
-    return `${protocol}//${host}${path}`;
-  };
+  const getGatewayUrl = gatewayUrlFor;
 
   const getLogoutUrl = () => {
     return getGatewayUrl("/logout");
@@ -1782,6 +1786,7 @@ function FinanceView({
               <Download size={17} />
               <span>Скачать XLSX</span>
             </a>
+            <a className="secondary-button" href={financeExportUrl(period, "csv")} download><Download size={17} /><span>Скачать CSV</span></a>
         </div>
       </section>
 
@@ -2340,16 +2345,16 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <SectionHeader kicker="Производство" title="Остатки сырья и сверка FIFO"><ClipboardCheck size={18} /></SectionHeader>
         <div className="operation-actions">
           <p className="plan-empty">Сначала укажите фактический остаток по каждому материалу и включите «Подтверждён». После проверки создайте FIFO-слои стартового сырья.</p>
-          <div className="material-fifo-actions"><label className="operation-field"><span>Ставка старого сырья, ₽/м</span><input min="0.01" step="0.01" type="number" value={openingRate} onChange={(event) => setOpeningRate(Number(event.target.value))} /></label><button className="secondary-button" disabled={busy !== null || !materialInventory.length} type="button" onClick={() => void saveMaterials()}>{busy === "material" ? "Сохраняем" : "Сохранить остатки"}</button><button className="primary-button" disabled={busy !== null || !materialInventory.length} type="button" onClick={() => void initializeMaterials()}>{busy === "material" ? "Обновляем FIFO" : "Инициализировать FIFO"}</button></div>
+          <div className="material-fifo-actions"><label className="operation-field"><span>Резервная ставка сырья, ₽/ед.</span><input min="0.01" step="0.01" type="number" value={openingRate} onChange={(event) => setOpeningRate(Number(event.target.value))} /></label><button className="secondary-button" disabled={busy !== null || !materialInventory.length} type="button" onClick={() => void saveMaterials()}>{busy === "material" ? "Сохраняем" : "Сохранить остатки"}</button><button className="primary-button" disabled={busy !== null || !materialInventory.length} type="button" onClick={() => void initializeMaterials()}>{busy === "material" ? "Обновляем FIFO" : "Инициализировать FIFO"}</button></div>
         </div>
-        {materialInventory.length ? <div className="material-inventory-list">{materialInventory.map((item) => { const key = item.material_key || item.material_name.toLowerCase(); const fifo = materialFifo.find((row) => (row.material_key || row.material_name.toLowerCase()) === key); const update = (patch: Partial<MaterialInventory>) => setMaterialInventory((rows) => rows.map((row) => row.material_name === item.material_name ? { ...row, ...patch } : row)); return <div className="material-inventory-row" key={key}><div className="cost-setting-product"><strong>{item.material_name}</strong><span>{fifo ? `Физически ${Number(fifo.physical_meters).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} м · FIFO ${Number(fifo.fifo_meters).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} м · разница ${Number(fifo.difference_meters).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} м` : "FIFO-слой ещё не создан"}</span></div><label className="compact-field"><span>Упаковки</span><input min="0" type="number" value={item.full_rolls} onChange={(event) => update({ full_rolls: Number(event.target.value) })} /></label><label className="compact-field"><span>Остаток</span><input min="0" step="0.1" type="number" value={item.partial_meters} onChange={(event) => update({ partial_meters: Number(event.target.value) })} /></label><label className="compact-field"><span>Размер</span><input min="0.1" step="0.1" type="number" value={item.roll_length} disabled={item.tracking_mode === "quantity"} onChange={(event) => update({ roll_length: Number(event.target.value) })} /></label><label className="compact-field"><span>Учёт</span><select value={item.tracking_mode} onChange={(event) => update({ tracking_mode: event.target.value as MaterialInventory["tracking_mode"] })}><option value="packaged">Рулоны</option><option value="quantity">Количество</option></select></label><label className="checkbox-field material-known"><input type="checkbox" checked={Boolean(item.balance_known)} onChange={(event) => update({ balance_known: event.target.checked })} /> Подтверждён</label></div>; })}</div> : <p className="plan-empty">Материалы пока не загружены.</p>}
+        {materialInventory.length ? <div className="material-inventory-list">{materialInventory.map((item) => { const key = item.material_key || item.material_name.toLowerCase(); const fifo = materialFifo.find((row) => (row.material_key || row.material_name.toLowerCase()) === key); const update = (patch: Partial<MaterialInventory>) => setMaterialInventory((rows) => rows.map((row) => row.material_name === item.material_name ? { ...row, ...patch } : row)); return <div className="material-inventory-row" key={key}><div className="cost-setting-product"><strong>{item.material_name}</strong><span>{fifo ? `Физически ${Number(fifo.physical_meters).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ${item.unit || "м"} · FIFO ${Number(fifo.fifo_meters).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ${item.unit || "м"} · разница ${Number(fifo.difference_meters).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ${item.unit || "м"}` : "FIFO-слой ещё не создан"}</span></div><label className="compact-field"><span>Упаковки</span><input min="0" type="number" value={item.full_rolls} onChange={(event) => update({ full_rolls: Number(event.target.value) })} /></label><label className="compact-field"><span>Остаток, {item.unit || "м"}</span><input min="0" step="0.1" type="number" value={item.partial_meters} onChange={(event) => update({ partial_meters: Number(event.target.value) })} /></label><label className="compact-field"><span>В упаковке, {item.unit || "м"}</span><input min="0.1" step="0.1" type="number" value={item.roll_length} disabled={item.tracking_mode === "quantity"} onChange={(event) => update({ roll_length: Number(event.target.value) })} /></label><label className="compact-field"><span>Единица</span><input aria-label={`Единица ${item.material_name}`} maxLength={16} value={item.unit} onChange={(event) => update({ unit: event.target.value })} /></label><label className="compact-field"><span>Ставка, ₽/{item.unit || "ед."}</span><input type="number" min="0" step="0.01" value={item.opening_rate_rub} onChange={(event) => update({ opening_rate_rub: Number(event.target.value) })} /></label><label className="compact-field"><span>Учёт</span><select value={item.tracking_mode} onChange={(event) => update({ tracking_mode: event.target.value as MaterialInventory["tracking_mode"] })}><option value="packaged">Упаковки</option><option value="quantity">Количество</option></select></label><label className="checkbox-field material-known"><input type="checkbox" checked={Boolean(item.balance_known)} onChange={(event) => update({ balance_known: event.target.checked })} /> Подтверждён</label></div>; })}</div> : <p className="plan-empty">Материалы пока не загружены.</p>}
       </section>
       <section className="work-section" id="production-norms">
         <SectionHeader kicker="Производство" title="Нормы материала"><Factory size={18} /></SectionHeader>
         <div className="operation-actions">
           <p className="plan-empty">Расход указан на комплект. Эти нормы используются при расчёте производственного плана.</p>
         </div>
-        {productionNorms.length ? <div className="production-norms-list">{productionNorms.map((item) => <div className="production-norm-row" key={item.nm_id}><div className="cost-setting-product"><strong>{item.product_name || "Товар без названия"}</strong><span>WB {item.nm_id} · {item.supplier_article}</span></div><div className="production-norm-values"><span>Расход <strong>{Number(item.material_per_unit).toLocaleString("ru-RU", { maximumFractionDigits: 3 })} м/компл.</strong></span><span>Партия <strong>{item.min_batch} компл.</strong></span><span>В комплекте <strong>{item.pack_size} шт.</strong></span></div><span className={item.enabled ? "section-tag" : "section-tag muted-tag"}>{item.enabled ? "Активно" : "Выключено"}</span><button className="icon-button" type="button" aria-label="Изменить норму" title="Изменить норму" onClick={() => setEditingNorm(item)}><Pencil size={17} /></button></div>)}</div> : <p className="plan-empty">Нормы производства пока не заданы.</p>}
+        {productionNorms.length ? <div className="production-norms-list">{productionNorms.map((item) => <div className="production-norm-row" key={item.nm_id}><div className="cost-setting-product"><strong>{item.product_name || "Товар без названия"}</strong><span>WB {item.nm_id} · {item.supplier_article}</span></div><div className="production-norm-values"><span>Расход <strong>{Number(item.material_per_unit).toLocaleString("ru-RU", { maximumFractionDigits: 3 })} {item.material_unit || "м"}/компл.</strong></span><span>Партия <strong>{item.min_batch} компл.</strong></span><span>В комплекте <strong>{item.pack_size} шт.</strong></span></div><span className={item.enabled ? "section-tag" : "section-tag muted-tag"}>{item.enabled ? "Активно" : "Выключено"}</span><button className="icon-button" type="button" aria-label="Изменить норму" title="Изменить норму" onClick={() => setEditingNorm(item)}><Pencil size={17} /></button></div>)}</div> : <p className="plan-empty">Нормы производства пока не заданы.</p>}
       </section>
       <section className="work-section" id="product-costs">
         <SectionHeader kicker="Экономика" title="Себестоимость товаров"><WalletCards size={18} /></SectionHeader>
@@ -2475,6 +2480,8 @@ function ProductionView({
       </section>
 
       <div id="production-shift"><ProductionExecutionPanel onRefresh={onRefresh} /></div>
+      <ProductionWorkspace onChanged={() => void onRefresh()} />
+      <ManufacturingCosts onChanged={() => void onRefresh()} />
 
       <MetricGrid metrics={productionMetrics} onMetricClick={(metric) => onAction("Партия", metric.label)} />
 
@@ -2888,13 +2895,13 @@ function AssistantView({
   const actionOptions = [...new Set(agentCandidates.map((candidate) => candidate.action))];
   return (
     <div className="workspace-view">
-      <section className="hero-strip assistant-hero" aria-label="AI-агенты ChatGPT и Claude">
+      <section className="hero-strip assistant-hero" aria-label="Агенты цены и рекламы">
         <div>
           <div className="eyebrow">
             <Bot size={16} />
-            AI-агенты
+            Агенты
           </div>
-          <h2>AI-агенты ChatGPT и Claude</h2>
+          <h2>Агенты цены и рекламы</h2>
           <p>Рекомендации по рекламе и ценам. Рискованные операции остаются на ручном подтверждении.</p>
         </div>
         <div className="hero-actions">
@@ -3198,7 +3205,8 @@ function ReportsView({
               <div><strong>Email</strong><span>{delivery.email_configured ? `${delivery.email || "настроен"} · адрес аккаунта` : "SMTP не настроен"}</span></div>
               <div><strong>Telegram</strong><span>{delivery.telegram_linked ? `привязан к @${delivery.telegram_bot_username}` : delivery.telegram_configured ? `не привязан · @${delivery.telegram_bot_username}` : "бот не настроен"}</span></div>
             </div>
-            {delivery.telegram_configured ? <div className="telegram-link-box"><button className="secondary-button" type="button" onClick={() => void linkTelegram()}>{delivery.telegram_linked ? "Привязать другой Telegram" : "Привязать Telegram"}</button>{telegramCode ? <><p className="form-hint">Код {telegramCode.code} действует {telegramCode.ttl} минут.</p>{telegramCode.link ? <a className="primary-link-button" href={telegramCode.link} rel="noreferrer" target="_blank">Открыть Telegram и привязать</a> : <p className="form-hint">Отправьте боту команду /link {telegramCode.code}</p>}</> : null}<button className="ghost-button" type="button" onClick={() => void refreshDelivery()}>Обновить статус</button></div> : null}
+            {delivery.email_configured ? <p className="form-hint">Email для отчётов — адрес аккаунта. Изменить его можно в разделе <a href={gatewayUrlFor("/account")}>«Аккаунт»</a>; код подтверждения здесь не вводится.</p> : null}
+            {delivery.telegram_configured ? <div className="telegram-link-box"><button className="secondary-button" type="button" onClick={() => void linkTelegram()}>{delivery.telegram_linked ? "Привязать другой Telegram" : "Привязать Telegram"}</button>{telegramCode ? <><p className="form-hint">Как привязать Telegram:</p><ol className="form-hint telegram-link-steps"><li>Нажмите «Открыть Telegram и привязать» — откроется чат бота <strong>@{delivery.telegram_bot_username}</strong>.</li><li>В Telegram нажмите «Запустить» (Start). Ссылка передаст код боту. Если ссылка не открылась, в чате этого же бота отправьте <code>/link {telegramCode.code}</code>.</li><li>Нажмите «Обновить статус» после ответа бота. Код одноразовый и действует {telegramCode.ttl} минут; оператору или в личные сообщения его отправлять не нужно.</li></ol>{telegramCode.link ? <a className="primary-link-button" href={telegramCode.link} rel="noreferrer" target="_blank">Открыть Telegram и привязать</a> : <p className="form-hint">Откройте чат бота <strong>@{delivery.telegram_bot_username}</strong> и отправьте <code>/link {telegramCode.code}</code>.</p>}</> : null}<button className="ghost-button" type="button" onClick={() => void refreshDelivery()}>Обновить статус</button></div> : null}
           </section>
         </aside>
       </div>
@@ -3824,7 +3832,7 @@ function ProductionNormDialog({ busy, item, onClose, onSubmit }: { busy: boolean
     <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="norm-dialog-title">
       <div className="drawer-header"><div><span className="eyebrow">производство</span><h2 id="norm-dialog-title">Норма материала</h2><p>{item.product_name || item.supplier_article} · WB {item.nm_id}</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
       <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, material_per_unit: Number(material), min_batch: Number(batch), pack_size: Number(pack), enabled: enabled ? 1 : 0 }); }}>
-        <label>Расход на комплект, м<input required min="0" step="0.001" type="number" value={material} onChange={(event) => setMaterial(event.target.value)} /></label>
+        <label>Расход на комплект, {item.material_unit || "м"}<input required min="0" step="0.001" type="number" value={material} onChange={(event) => setMaterial(event.target.value)} /></label>
         <label>Минимальная партия, комплектов<input required min="1" step="1" type="number" value={batch} onChange={(event) => setBatch(event.target.value)} /></label>
         <label>Штук в комплекте<input required min="1" step="1" type="number" value={pack} onChange={(event) => setPack(event.target.value)} /></label>
         <label className="checkbox-field"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> Использовать в производственном плане</label>
