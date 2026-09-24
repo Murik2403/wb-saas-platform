@@ -1,6 +1,7 @@
 """Public content must render, link to real pages and share the live tariff."""
 from html.parser import HTMLParser
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 import sys
 import unittest
@@ -75,9 +76,20 @@ class MarketingRouteTests(unittest.TestCase):
     def test_calculator_metadata_describes_nine_articles(self):
         html = self.client.get("/calculator").text
         self.assertIn("Калькулятор маржи WB по девяти статьям расходов — MARKETSHELPER", html)
+        title = re.search(r"<title>([^<]+)</title>", html)
+        self.assertIsNotNone(title)
+        self.assertEqual(title.group(1), "Калькулятор маржи WB по девяти статьям расходов — MARKETSHELPER")
+        self.assertNotIn("MARKETSHELPER — MARKETSHELPER", title.group(1))
         self.assertIn("хранению, рекламе, упаковке, браку и налогам", html)
         self.assertIn("id=\"calcStorage\"", html)
         self.assertIn("id=\"calcTax\"", html)
+
+    def test_calculator_explains_manual_coverage_for_external_articles(self):
+        html = self.client.get("/calculator").text
+        self.assertIn("учитывает каждую статью только после того, как вы введёте её значение", html)
+        self.assertIn("налог — это введённая вами оценка, а не налоговая консультация", html)
+        self.assertNotIn("Что этот расчёт не учитывает", html)
+        self.assertNotIn("налоги и общие расходы в такой расчёт полностью не входят", html)
 
     def test_cost_page_has_safe_seo_content_and_internal_links(self):
         html = self.client.get("/sebestoimost-wb?utm_source=test").text
@@ -96,3 +108,17 @@ class MarketingRouteTests(unittest.TestCase):
 
     def test_unknown_page_is_not_a_generic_landing(self):
         self.assertEqual(self.client.get("/guides/not-a-guide").status_code, 404)
+
+    def test_retired_accounting_comparison_redirects_to_relevant_page_and_keeps_utm(self):
+        response = self.client.get(
+            "/vs-1c?utm_source=yandex&utm_medium=cpc&utm_campaign=wb_pilot_01&utm_term=accounting_01",
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.headers["location"],
+            "/sebestoimost-wb?utm_source=yandex&utm_medium=cpc&utm_campaign=wb_pilot_01&utm_term=accounting_01",
+        )
+        landing = self.client.get(response.headers["location"])
+        self.assertEqual(landing.status_code, 200)
+        self.assertNotIn("1С", landing.text)

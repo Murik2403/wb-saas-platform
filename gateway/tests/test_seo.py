@@ -110,6 +110,16 @@ class PageMetadataTests(unittest.TestCase):
                 html = self.client.get(path).text
                 self.assertIn("noindex", self._meta(html, "robots") or "")
 
+    def test_public_and_private_pages_reference_a_served_favicon(self) -> None:
+        expected = '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">'
+        for path in PUBLIC_PAGES + PRIVATE_PAGES:
+            with self.subTest(path=path):
+                self.assertIn(expected, self.client.get(path).text)
+        favicon = self.client.get("/static/favicon.svg")
+        self.assertEqual(favicon.status_code, 200)
+        self.assertIn("image/svg+xml", favicon.headers["content-type"])
+        self.assertIn("MARKETSHELPER", favicon.text)
+
     def test_canonical_is_absolute_and_matches_the_path(self) -> None:
         for path in PUBLIC_PAGES:
             with self.subTest(path=path):
