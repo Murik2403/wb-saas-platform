@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}{{ page_title }} — MARKETSHELPER{% endblock %}
+{# Brand suffix only while the whole title stays within the 65-character gate. #}
+{% block title %}{{ page_title }}{% if page_title|length + 16 <= 65 %} — MARKETSHELPER{% endif %}{% endblock %}
 {% block description %}{{ page_description }}{% endblock %}
 {% block body_class %}landing{% endblock %}
 {% block head %}
