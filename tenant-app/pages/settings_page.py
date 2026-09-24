@@ -312,6 +312,7 @@ def render(ctx: dict) -> None:
             costs_detailed = read_table("costs")
             cost_columns = [
                 "nm_id", "cost_per_wb_unit", "material_cost_rub", "packaging_cost_rub",
+                "packaging_cost_status", "packaging_cost_source", "packaging_cost_confirmed_at",
                 "labor_cost_rub", "other_cost_rub", "forecast_material_cost_rub",
                 "forecast_total_cost_rub", "forecast_rate_rub_m", "forecast_source"
             ]
@@ -330,6 +331,21 @@ def render(ctx: dict) -> None:
             if "forecast_source" not in own_cost.columns:
                 own_cost["forecast_source"] = ""
             own_cost["forecast_source"] = own_cost["forecast_source"].fillna("").astype(str)
+            if "packaging_cost_status" not in own_cost.columns:
+                own_cost["packaging_cost_status"] = "unknown"
+            own_cost["packaging_cost_status"] = own_cost["packaging_cost_status"].fillna("unknown").astype(str)
+            if "packaging_cost_source" not in own_cost.columns:
+                own_cost["packaging_cost_source"] = "unknown"
+            own_cost["packaging_cost_source"] = own_cost["packaging_cost_source"].fillna("unknown").astype(str)
+            own_cost["packaging_cost_confirmed"] = own_cost["packaging_cost_status"].eq("confirmed")
+            own_cost["packaging_cost_provenance"] = own_cost.apply(
+                lambda row: (
+                    f"Вручную · {str(row['packaging_cost_confirmed_at'])[:10]}"
+                    if row["packaging_cost_status"] == "confirmed" and pd.notna(row.get("packaging_cost_confirmed_at"))
+                    else ("Вручную" if row["packaging_cost_status"] == "confirmed" else "Не подтверждена")
+                ),
+                axis=1,
+            )
             own_cost["material_name"] = own_cost.get("material_name", "").fillna("").astype(str)
             own_cost["Разница, ₽"] = own_cost["forecast_total_cost_rub"] - own_cost["cost_per_wb_unit"]
             own_cost["apply_forecast"] = False
@@ -345,7 +361,8 @@ def render(ctx: dict) -> None:
                     "nm_id", "supplier_article", "product_name", "blank_type", "pack_size",
                     "material_name", "material_per_unit", "cost_per_wb_unit",
                     "forecast_rate_rub_m", "forecast_material_cost_rub",
-                    "packaging_cost_rub", "labor_cost_rub", "other_cost_rub",
+                    "packaging_cost_rub", "packaging_cost_confirmed", "packaging_cost_provenance",
+                    "labor_cost_rub", "other_cost_rub",
                     "forecast_total_cost_rub", "Разница, ₽", "forecast_source", "apply_forecast"
                 ]],
                 hide_index=True, use_container_width=True, key="forecast_material_cost_editor",
@@ -367,6 +384,10 @@ def render(ctx: dict) -> None:
                     "forecast_rate_rub_m": st.column_config.NumberColumn("Новая ставка, ₽/м", format="%.2f"),
                     "forecast_material_cost_rub": st.column_config.NumberColumn("Материал новой партии, ₽", format="%.2f"),
                     "packaging_cost_rub": st.column_config.NumberColumn("Упаковка, ₽", min_value=0.0, format="%.2f"),
+                    "packaging_cost_confirmed": st.column_config.CheckboxColumn(
+                        "Упаковка подтверждена", help="Отметьте только после ручной проверки суммы. Ноль рублей тоже требует подтверждения."
+                    ),
+                    "packaging_cost_provenance": st.column_config.TextColumn("Источник упаковки", disabled=True),
                     "labor_cost_rub": st.column_config.NumberColumn("Работа, ₽", min_value=0.0, format="%.2f"),
                     "other_cost_rub": st.column_config.NumberColumn("Прочее, ₽", min_value=0.0, format="%.2f"),
                     "forecast_total_cost_rub": st.column_config.NumberColumn("Прогноз новой партии, ₽", format="%.2f"),
@@ -381,7 +402,8 @@ def render(ctx: dict) -> None:
                 if st.button("Сохранить упаковку, работу и прочие расходы", use_container_width=True, key="save_forecast_components"):
                     try:
                         save_auto_cost_settings(forecast_editor[[
-                            "nm_id", "supplier_article", "packaging_cost_rub", "labor_cost_rub", "other_cost_rub"
+                            "nm_id", "supplier_article", "packaging_cost_rub", "packaging_cost_confirmed",
+                            "labor_cost_rub", "other_cost_rub"
                         ]])
                         st.success("Параметры прогноза сохранены. Текущая себестоимость и прибыль не изменены.")
                         st.cache_data.clear(); st.rerun()
@@ -398,7 +420,8 @@ def render(ctx: dict) -> None:
                     else:
                         try:
                             save_auto_cost_settings(forecast_editor[[
-                                "nm_id", "supplier_article", "packaging_cost_rub", "labor_cost_rub", "other_cost_rub"
+                                "nm_id", "supplier_article", "packaging_cost_rub", "packaging_cost_confirmed",
+                                "labor_cost_rub", "other_cost_rub"
                             ]])
                             applied = apply_forecast_costs(forecast_editor[["nm_id", "apply_forecast"]])
                             if applied:

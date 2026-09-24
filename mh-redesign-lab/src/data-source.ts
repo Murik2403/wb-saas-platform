@@ -146,6 +146,30 @@ export type DashboardPeriod = {
   end?: string;
 };
 
+export type FinanceFifoDetailRow = {
+  rrdId: number;
+  operationDate: string;
+  saleDate: string;
+  nmId: number;
+  supplierArticle: string;
+  srid: string;
+  eventType: "sale" | "return";
+  units: number;
+  status: string;
+  reason: string;
+  eligibleCostRub: number | null;
+  observedCostRub: number | null;
+  layerSources: string[];
+};
+
+export type FinanceFifoDetailPage = {
+  period: { start: string; end: string };
+  total: number;
+  offset: number;
+  limit: number;
+  rows: FinanceFifoDetailRow[];
+};
+
 export type FifoReconciliationData = {
   preview: Array<Record<string, unknown>>;
   status: Record<string, unknown>;
@@ -157,8 +181,8 @@ export type FifoReconciliationData = {
 export type TenantSettings = { sync_interval_minutes: number; initial_history_days: number; agent_interval_minutes: number; wb_connected: boolean; ozon_connected: boolean };
 export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_scopes: string[]; scope_metadata_available?: boolean; read_only?: boolean; expires_at?: number | null };
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
-export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; created_at: string; updated_at: string };
-export type ManagementEconomics = { nm_id: number; data_status: string; period: { start: string; end: string }; revenue_rub: number; units: number; accounting_profit_rub: number; manual_expenses_rub: number; management_profit_rub: number; excluded_wb_commission_rub: number; coverage: { covered: string[]; missing: string[]; count: number; total: number; percent: number }; items: Array<ManualExpense & { allocated_rub: number; excluded_from_result: boolean }> };
+export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; include_in_management_result: boolean; created_at: string; updated_at: string };
+export type ManagementEconomics = { nm_id: number; data_status: string; period: { start: string; end: string }; revenue_rub: number; units: number; accounting_profit_rub: number; manual_expenses_rub: number; management_profit_rub: number; excluded_wb_commission_rub: number; excluded_manual_expenses_rub: number; coverage: { covered: string[]; missing: string[]; count: number; total: number; percent: number }; items: Array<ManualExpense & { allocated_rub: number; excluded_from_result: boolean; exclusion_reason: string | null }> };
 export type ProductionNorm = { material_unit?: string; material_name?: string; nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
 export type MaterialInventory = { material_key?: string; material_name: string; balance_known: number | boolean; full_rolls: number; partial_meters: number; roll_length: number; unit: string; tracking_mode: "packaged" | "quantity"; opening_rate_rub: number; note: string; updated_at?: string };
 export type MaterialFifoRow = MaterialInventory & { physical_meters: number; fifo_meters: number; fifo_amount_rub: number; weighted_rate_rub_m: number; next_fifo_rate_rub_m: number; active_layers: number; difference_meters: number };
@@ -221,7 +245,20 @@ type ApiFinanceResponse = {
   expense_rows?: Array<{ label?: string; amount?: number }>;
   fifo_cogs?: Array<Record<string, unknown>>;
   fifo_cogs_period_basis?: "sale_date";
+  fifo_reconciliation?: {
+    sale_return_rows?: number;
+    exact_rows?: number;
+    exact_fifo_cogs_rub?: number;
+    status_counts?: Record<string, number>;
+  };
   balance?: { current?: number; for_withdraw?: number };
+};
+type ApiFinanceFifoDetailPage = {
+  period?: { start?: string; end?: string };
+  total?: number;
+  offset?: number;
+  limit?: number;
+  rows?: Array<Record<string, unknown>>;
 };
 type ApiWbCostsResponse = { deductions?: Array<Record<string, unknown>>; measurement_penalties?: Array<Record<string, unknown>>; paid_storage?: Array<Record<string, unknown>>; paid_storage_status?: "disabled" | "processing" | "ready" | "error"; errors?: string[] };
 type ApiCustomerQualityResponse = CustomerQualityData;
@@ -1203,7 +1240,7 @@ async function loadApiV1(
       break;
     case "finance":
       [overview, finance, wbCosts] = await Promise.all([
-        fetchJson<ApiOverviewResponse>(`/api/overview${periodQuery(selectedPeriod)}`, signal),
+        fetchJson<ApiOverviewResponse>(`/api/overview${periodQuery(selectedPeriod)}&compare_previous=false`, signal, 60000),
         fetchJson<ApiFinanceResponse>(`/api/v1/dashboard/finance${periodQuery(selectedPeriod)}`, signal),
         fetchJson<ApiWbCostsResponse>(`/api/v1/dashboard/finance/wb-costs${periodQuery(selectedPeriod)}&background=true`, signal).catch((error) => ({ deductions: [], measurement_penalties: [], paid_storage: [], paid_storage_status: "error" as const, errors: [error instanceof Error ? error.message : "Аналитика WB недоступна"] })),
       ]);
@@ -1322,6 +1359,47 @@ function periodQuery(selectedPeriod: DashboardPeriod): string {
   return `?${query.toString()}`;
 }
 
+export async function updateManualExpenseInclusion(id: number, includeInManagementResult: boolean): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/manual-expenses/${id}/inclusion`, {
+    method: "PATCH",
+    headers: { ...apiHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ include_in_management_result: includeInManagementResult }),
+  });
+  if (!response.ok) throw new Error(`/api/v1/settings/manual-expenses/${id}/inclusion: HTTP ${response.status}`);
+}
+
+export async function getFinanceFifoReconciliationPage(
+  selectedPeriod: DashboardPeriod,
+  offset: number,
+  limit: number,
+  signal: AbortSignal,
+): Promise<FinanceFifoDetailPage> {
+  const query = `${periodQuery(selectedPeriod)}&offset=${Math.max(0, Math.trunc(offset))}&limit=${Math.min(100, Math.max(1, Math.trunc(limit)))}`;
+  const response = await fetchJson<ApiFinanceFifoDetailPage>(`/api/v1/dashboard/finance/fifo-reconciliation${query}`, signal);
+  const rows: FinanceFifoDetailRow[] = (response.rows ?? []).map((row) => ({
+    rrdId: Number(row.rrd_id ?? 0),
+    operationDate: String(row.operation_date ?? ""),
+    saleDate: String(row.sale_date ?? ""),
+    nmId: Number(row.nm_id ?? 0),
+    supplierArticle: String(row.supplier_article ?? ""),
+    srid: String(row.srid ?? ""),
+    eventType: row.event_type === "return" ? "return" : "sale",
+    units: Number(row.units ?? 0),
+    status: String(row.status ?? "unknown"),
+    reason: String(row.reason ?? ""),
+    eligibleCostRub: typeof row.eligible_fifo_cogs_rub === "number" ? row.eligible_fifo_cogs_rub : null,
+    observedCostRub: typeof row.observed_fifo_cost_rub === "number" ? row.observed_fifo_cost_rub : null,
+    layerSources: Array.isArray(row.layer_sources) ? row.layer_sources.map(String) : [],
+  }));
+  return {
+    period: { start: String(response.period?.start ?? ""), end: String(response.period?.end ?? "") },
+    total: Number(response.total ?? 0),
+    offset: Number(response.offset ?? offset),
+    limit: Number(response.limit ?? limit),
+    rows,
+  };
+}
+
 export function financeExportUrl(period: DashboardPeriod, format: "xlsx" | "csv" = "xlsx"): string {
   return `${API_BASE_URL}/api/v1/operations/finance/export${periodQuery(period)}&format=${format}`;
 }
@@ -1350,13 +1428,13 @@ async function loadLegacyToday(signal: AbortSignal): Promise<DashboardViewModel>
   };
 }
 
-async function fetchJson<T>(path: string, signal: AbortSignal): Promise<T> {
+async function fetchJson<T>(path: string, signal: AbortSignal, timeoutMs = 20000): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, 20000);
+  }, timeoutMs);
   const abort = () => controller.abort();
   signal.addEventListener("abort", abort, { once: true });
 
@@ -1804,6 +1882,12 @@ export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallba
       errorEvents: Number(row.error_events ?? 0),
     })) ?? fallback.fifoCosts,
     fifoPeriodBasis: input?.fifo_cogs_period_basis ?? fallback.fifoPeriodBasis,
+    fifoReconciliation: input?.fifo_reconciliation ? {
+      saleReturnRows: Number(input.fifo_reconciliation.sale_return_rows ?? 0),
+      exactRows: Number(input.fifo_reconciliation.exact_rows ?? 0),
+      exactFifoCogs: Number(input.fifo_reconciliation.exact_fifo_cogs_rub ?? 0),
+      statusCounts: input.fifo_reconciliation.status_counts ?? {},
+    } : fallback.fifoReconciliation,
     balance: Number(input?.balance?.current ?? fallback.balance ?? 0),
     forWithdraw: Number(input?.balance?.for_withdraw ?? fallback.forWithdraw ?? 0),
     wbCosts: wbCosts ? { deductions: sum(wbCosts.deductions), measurementPenalties: (wbCosts.measurement_penalties ?? []).reduce((total, row) => total + Number(row.penaltyAmount ?? 0) - Number(row.reversalAmount ?? 0), 0), paidStorage: (wbCosts.paid_storage ?? []).reduce((total, row) => total + Number(row.warehousePrice ?? row.paidStorage ?? row.storage ?? row.amount ?? row.sum ?? 0), 0), status: wbCosts.paid_storage_status, errors: wbCosts.errors ?? [] } : fallback.wbCosts,

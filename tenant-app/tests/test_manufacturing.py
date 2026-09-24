@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from db.core import connect, init_db
+from db.fifo_materials import apply_forecast_costs, save_auto_cost_settings
 from db.fifo_materials import _create_material_layer
 from db.inventory_movements import undo_inventory_movement
 from db import manufacturing as m
 from db.production import close_production_shift
+from db.wip import post_manual_wip_packaging, post_wip_blank_batch
 from .base import DbTestCase
 
 
@@ -153,15 +157,152 @@ class ManufacturingTests(DbTestCase):
         self.assertEqual(close_production_shift("2026-09-23")["posted"],0)
 
     def test_legacy_single_material_shift_unchanged(self):
-        self.seed()
-        with connect() as conn:
-            conn.execute("INSERT INTO production_settings(nm_id,material_name,material_per_unit) VALUES (321,'Ткань',2)")
-            conn.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,supplier_article,product_name,actual_units,status) VALUES ('old-shift','production','2026-09-23',321,'OLD','Товар',3,'Изготовлено')")
+        self.add_legacy_shift()
+        self.confirm_packaging(12)
         r = close_production_shift("2026-09-23")
         self.assertEqual(r["errors"],[])
         self.assertEqual(r["posted"],1)
-        self.assertEqual(r["cost_rub"],96)  # legacy packaging default remains compatible
+        self.assertEqual(r["cost_rub"],96)  # the same amount still applies when entered explicitly
         self.assertEqual(m.list_manufacturing_releases(),[])
+
+    def add_legacy_shift(self, key="old-shift"):
+        self.seed()
+        with connect() as conn:
+            conn.execute("INSERT INTO production_settings(nm_id,material_name,material_per_unit) VALUES (321,'Ткань',2)")
+            conn.execute(
+                "INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,supplier_article,product_name,actual_units,status) "
+                "VALUES (?,'production','2026-09-23',321,'OLD','Товар',3,'Изготовлено')", (key,)
+            )
+
+    def confirm_packaging(self, amount):
+        save_auto_cost_settings(pd.DataFrame([{
+            "nm_id":321,"supplier_article":"OLD","packaging_cost_rub":amount,
+            "packaging_cost_confirmed":True,"labor_cost_rub":0,"other_cost_rub":0,
+        }]))
+
+    def test_unknown_legacy_packaging_blocks_before_any_posting(self):
+        self.add_legacy_shift()
+        result = close_production_shift("2026-09-23")
+        self.assertEqual(result["posted"],0)
+        self.assertIn("Стоимость упаковки не подтверждена", result["errors"][0])
+        self.assertIn("0 ₽ тоже нужно подтвердить", result["errors"][0])
+        self.assertEqual(self.physical("Ткань"),20)
+        with connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM material_fifo_consumptions").fetchone()[0],0)
+
+    def test_explicit_zero_packaging_is_confirmed_and_used(self):
+        self.add_legacy_shift()
+        self.confirm_packaging(0)
+        result = close_production_shift("2026-09-23")
+        self.assertEqual(result["errors"],[])
+        self.assertEqual(result["posted"],1)
+        self.assertEqual(result["cost_rub"],60)
+        with connect() as conn:
+            row = conn.execute("SELECT packaging_cost_rub,packaging_cost_status,packaging_cost_source,packaging_cost_confirmed_at FROM costs WHERE nm_id=321").fetchone()
+            self.assertEqual(row["packaging_cost_rub"],0)
+            self.assertEqual(row["packaging_cost_status"],"confirmed")
+            self.assertEqual(row["packaging_cost_source"],"manual")
+            self.assertTrue(row["packaging_cost_confirmed_at"])
+            note = conn.execute("SELECT note FROM production_cost_batches").fetchone()[0]
+            self.assertIn("упаковка 0.00 ₽/ед. (manual)",note)
+
+    def test_positive_packaging_is_recorded_with_manual_provenance(self):
+        self.add_legacy_shift()
+        self.confirm_packaging(2.5)
+        result = close_production_shift("2026-09-23")
+        self.assertEqual(result["errors"],[])
+        self.assertEqual(result["cost_rub"],67.5)
+        with connect() as conn:
+            row = conn.execute("SELECT packaging_cost_rub,packaging_cost_status,packaging_cost_source FROM costs WHERE nm_id=321").fetchone()
+            self.assertEqual(tuple(row),(2.5,"confirmed","manual"))
+
+    def test_preexisting_cost_row_migrates_to_unknown_regardless_of_amount(self):
+        with connect() as conn:
+            conn.execute("DROP TABLE costs")
+            conn.execute("""CREATE TABLE costs (
+                nm_id INTEGER PRIMARY KEY,supplier_article TEXT,cost_per_wb_unit REAL DEFAULT 0,
+                auto_material_cost INTEGER DEFAULT 0,material_cost_rub REAL DEFAULT 0,
+                packaging_cost_rub REAL DEFAULT 0,labor_cost_rub REAL DEFAULT 0,
+                other_cost_rub REAL DEFAULT 0,note TEXT,updated_at TEXT)""")
+            conn.execute("INSERT INTO costs(nm_id,packaging_cost_rub) VALUES (321,7.25)")
+        init_db()
+        with connect() as conn:
+            row = conn.execute("SELECT packaging_cost_rub,packaging_cost_status,packaging_cost_source,packaging_cost_confirmed_at FROM costs WHERE nm_id=321").fetchone()
+            self.assertEqual(row["packaging_cost_rub"],7.25)
+            self.assertEqual(row["packaging_cost_status"],"unknown")
+            self.assertEqual(row["packaging_cost_source"],"unknown")
+            self.assertIsNone(row["packaging_cost_confirmed_at"])
+
+    def test_bom_release_keeps_its_explicit_packaging_path(self):
+        self.seed()
+        self.seed("Нить","кг",10,100)
+        self.bom(packaging_per_unit=3.25)
+        result = self.release()
+        self.assertEqual(result["errors"] if "errors" in result else [],[])
+        self.assertEqual(result["packaging_cost_rub"],9.75)
+        self.assertEqual(result["total_cost_rub"],99.75)
+
+    def test_unknown_packaging_also_blocks_wip_completion_before_movement(self):
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO production_settings(nm_id,supplier_article,enabled,material_name,blank_type,pack_size) "
+                "VALUES (321,'OLD',1,'Ткань','Заготовка',2)"
+            )
+        result = post_manual_wip_packaging(321,1,packaging_date="2026-09-23",source_key="wip-unknown")
+        self.assertEqual(result["posted"],0)
+        self.assertIn("Стоимость упаковки не подтверждена",result["errors"][0])
+        with connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0],0)
+
+    def test_unknown_packaging_blocks_applying_forecast_to_actual_cost(self):
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO costs(nm_id,cost_per_wb_unit,forecast_total_cost_rub,forecast_material_cost_rub) "
+                "VALUES (321,42,120,50)"
+            )
+        with self.assertRaisesRegex(ValueError, "подтвердите стоимость упаковки"):
+            apply_forecast_costs(pd.DataFrame([{"nm_id":321,"apply_forecast":True}]))
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT cost_per_wb_unit,material_cost_rub,packaging_cost_status FROM costs WHERE nm_id=321"
+            ).fetchone()
+            self.assertEqual(row["cost_per_wb_unit"],42)
+            self.assertEqual(row["material_cost_rub"],0)
+            self.assertEqual(row["packaging_cost_status"],"unknown")
+
+    def test_manual_wip_duplicate_source_skips_after_packaging_confirmation_revoked(self):
+        self.seed()
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO production_settings(nm_id,supplier_article,enabled,material_name,blank_type,pack_size) "
+                "VALUES (321,'OLD',1,'Ткань','Заготовка',2)"
+            )
+        self.confirm_packaging(12)
+        issued = post_wip_blank_batch(
+            "2026-09-23", "Ткань", "Заготовка", 2, 2, source_key="wip-retry-source"
+        )
+        self.assertEqual(issued["errors"], [])
+        first = post_manual_wip_packaging(
+            321, 1, packaging_date="2026-09-23", source_key="wip-retry-completion"
+        )
+        self.assertEqual(first["errors"], [])
+        self.assertEqual(first["posted"], 1)
+
+        save_auto_cost_settings(pd.DataFrame([{
+            "nm_id":321,"supplier_article":"OLD","packaging_cost_rub":12,
+            "packaging_cost_confirmed":False,"labor_cost_rub":0,"other_cost_rub":0,
+        }]))
+        retry = post_manual_wip_packaging(
+            321, 1, packaging_date="2026-09-23", source_key="wip-retry-completion"
+        )
+        self.assertEqual(retry["errors"], [])
+        self.assertEqual(retry["posted"], 0)
+        self.assertEqual(retry["skipped"], 1)
+        with connect() as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM inventory_movements WHERE source_task_key='wip-retry-completion' AND reversed_at IS NULL"
+            ).fetchone()[0], 1)
 
     def test_fifo_boundary_and_future_layers(self):
         self.seed(quantity=2)

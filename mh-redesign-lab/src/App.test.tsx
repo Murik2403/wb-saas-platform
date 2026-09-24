@@ -1,11 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { DashboardDataState } from "./data-source";
 import type { PageId } from "./contracts";
-import { getActionPlanItems, updateActionPlanItem, financeExportUrl, adaptFinanceReport, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution, createProcurementOperation, getProcurementOperations } from "./data-source";
+import { getActionPlanItems, updateActionPlanItem, createActionPlanItem, financeExportUrl, adaptFinanceReport, getFinanceFifoReconciliationPage, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution, createProcurementOperation, getProcurementOperations } from "./data-source";
 
 const mockedDashboard: DashboardDataState = {
   refreshing: false,
@@ -131,6 +131,7 @@ vi.mock("./data-source", async () => {
   return {
     ...(actual as object),
     useDashboardData: () => mockedDashboard,
+    getFinanceFifoReconciliationPage: vi.fn().mockResolvedValue({ period: { start: "2026-08-26", end: "2026-09-24" }, total: 0, offset: 0, limit: 25, rows: [] }),
     getActionPlanItems: vi.fn().mockResolvedValue([]),
     getDashboardSession: vi.fn().mockResolvedValue({
       user: { id: "u1", name: "demo", role: "owner" },
@@ -202,9 +203,11 @@ describe("operational detail drawer", () => {
     mockedDashboard.procurementOrders = [];
     mockedDashboard.refresh = vi.fn(async () => undefined);
     vi.mocked(getProcurementOperations).mockResolvedValue({ orders: [], items: [] });
+    vi.mocked(getFinanceFifoReconciliationPage).mockResolvedValue({ period: { start: "2026-08-26", end: "2026-09-24" }, total: 0, offset: 0, limit: 25, rows: [] });
     mockedDashboard.customerQuality = null;
     mockedDashboard.productCardErrors = [];
     mockedDashboard.productPriceErrors = [];
+    mockedDashboard.actions = [];
     if (!Element.prototype.scrollIntoView) {
       Element.prototype.scrollIntoView = vi.fn();
     }
@@ -291,6 +294,30 @@ describe("operational detail drawer", () => {
     expect(screen.getByRole("menuitem", { name: /Аккаунт/i })).toHaveAttribute("href", expect.stringMatching(/\/account$/));
     expect(screen.getByRole("menuitem", { name: /Документы/i })).toHaveAttribute("href", expect.stringMatching(/\/offer$/));
     expect(screen.getByRole("menuitem", { name: /Поддержка/i })).toHaveAttribute("href", expect.stringMatching(/\/contacts$/));
+  });
+
+  it("opens the recommendation surface instead of only creating a plan item", async () => {
+    mockedDashboard.actions = [{
+      id: "ads-action",
+      sku: "WB-118-07",
+      title: "Футболка oversize молочная",
+      issue: "CTR просел после смены главного фото",
+      impact: "+41 000 ₽",
+      owner: "Вернуть фото A",
+      due: "сегодня",
+      tone: "warn",
+      iconKey: "ads",
+    }];
+    window.history.replaceState({}, "", "/?view=today");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click((await screen.findAllByRole("button", { name: "Открыть действие" }))[0]);
+
+    expect(new URL(window.location.href).searchParams.get("view")).toBe("ads");
+    expect(document.getElementById("ads-campaigns")).toBeInTheDocument();
+    expect(vi.mocked(createActionPlanItem)).not.toHaveBeenCalled();
   });
 
   it("shows a Content API error instead of an empty cards state", async () => {
@@ -481,6 +508,46 @@ describe("operational detail drawer", () => {
     expect(screen.queryByText("отчёт неполный")).not.toBeInTheDocument();
   });
 
+  it("loads a separate FIFO detail page and supports next-page navigation", async () => {
+    vi.mocked(getFinanceFifoReconciliationPage)
+      .mockImplementationOnce(() => new Promise((resolve) => window.setTimeout(() => resolve({
+        period: { start: "2026-08-26", end: "2026-09-24" }, total: 26, offset: 0, limit: 25,
+        rows: [{ rrdId: 501, operationDate: "2026-09-20", saleDate: "2026-09-19", nmId: 123, supplierArticle: "SKU-123", srid: "srid-a", eventType: "sale", units: 1, status: "exact", reason: "", eligibleCostRub: 48, observedCostRub: 48, layerSources: ["production"] }],
+      }), 20)))
+      .mockResolvedValueOnce({
+        period: { start: "2026-08-26", end: "2026-09-24" }, total: 26, offset: 25, limit: 25,
+        rows: [{ rrdId: 526, operationDate: "2026-09-24", saleDate: "2026-09-23", nmId: 456, supplierArticle: "SKU-456", srid: "srid-z", eventType: "return", units: 1, status: "unmatched", reason: "fifo_event_missing", eligibleCostRub: null, observedCostRub: null, layerSources: [] }],
+      });
+    window.history.replaceState({}, "", "/?view=finance&period=30d");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Показать строки" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Загружаю FIFO-сверку");
+    expect(await screen.findByText("SKU-123")).toBeInTheDocument();
+    expect(screen.getAllByText("48 ₽")).toHaveLength(2);
+    expect(screen.getByText(/не меняют P&L/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Вперёд" }));
+    expect(await screen.findByText("SKU-456")).toBeInTheDocument();
+    expect(vi.mocked(getFinanceFifoReconciliationPage).mock.calls.map(([, offset]) => offset)).toEqual([0, 25]);
+  });
+
+  it("shows FIFO detail errors with retry and an explicit empty state", async () => {
+    vi.mocked(getFinanceFifoReconciliationPage)
+      .mockRejectedValueOnce(new Error("API недоступен"))
+      .mockResolvedValueOnce({ period: { start: "2026-08-26", end: "2026-09-24" }, total: 0, offset: 0, limit: 25, rows: [] });
+    window.history.replaceState({}, "", "/?view=finance&period=30d");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Показать строки" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("API недоступен");
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("За выбранный период нет строк продаж или возвратов для сверки.")).toBeInTheDocument();
+  });
+
   it("opens control-check card drawer on Enter key", async () => {
     window.history.replaceState({}, "", "/?view=control");
     const { default: App } = await import("./App");
@@ -542,5 +609,28 @@ describe("operational detail drawer", () => {
 
     expect(window.location.href).toContain("view=settings");
     expect(await screen.findByRole("heading", { name: /Себестоимость товаров/i })).toBeInTheDocument();
+  });
+});
+
+describe("custom dashboard date range", () => {
+  it("waits for Apply before changing the active date range", async () => {
+    window.history.replaceState({}, "", "/?view=finance&period=30d");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Свои даты" }));
+    const start = screen.getByLabelText("Дата начала");
+    const end = screen.getByLabelText("Дата окончания");
+    fireEvent.change(start, { target: { value: "2026-07-17" } });
+    fireEvent.change(end, { target: { value: "2026-09-24" } });
+
+    expect(new URL(window.location.href).searchParams.get("start")).not.toBe("2026-07-17");
+    expect(screen.getByRole("button", { name: "Применить" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Применить" }));
+    const applied = new URL(window.location.href);
+    expect(applied.searchParams.get("start")).toBe("2026-07-17");
+    expect(applied.searchParams.get("end")).toBe("2026-09-24");
   });
 });

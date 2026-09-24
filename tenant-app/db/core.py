@@ -123,6 +123,9 @@ def init_db() -> None:
                 auto_material_cost INTEGER DEFAULT 0,
                 material_cost_rub REAL DEFAULT 0,
                 packaging_cost_rub REAL DEFAULT 0,
+                packaging_cost_status TEXT NOT NULL DEFAULT 'unknown',
+                packaging_cost_source TEXT NOT NULL DEFAULT 'unknown',
+                packaging_cost_confirmed_at TEXT,
                 labor_cost_rub REAL DEFAULT 0,
                 other_cost_rub REAL DEFAULT 0,
                 forecast_material_cost_rub REAL DEFAULT 0,
@@ -705,6 +708,15 @@ def init_db() -> None:
             """
         )
 
+        # Manual expenses were originally all subtracted from management profit.
+        # Existing rows cannot be assumed to be additional to WB/ad/COGS data,
+        # so the new opt-in column intentionally defaults to excluded.
+        manual_expense_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(manual_expenses)").fetchall()}
+        if "include_in_management_result" not in manual_expense_columns:
+            conn.execute(
+                "ALTER TABLE manual_expenses ADD COLUMN include_in_management_result INTEGER NOT NULL DEFAULT 0 CHECK (include_in_management_result IN (0,1))"
+            )
+
         # v4.0: supplier directory and auditable partial payments.
         order_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(procurement_orders)").fetchall()}
         if "supplier_id" not in order_columns:
@@ -752,6 +764,9 @@ def init_db() -> None:
             "auto_material_cost": "INTEGER DEFAULT 0",
             "material_cost_rub": "REAL DEFAULT 0",
             "packaging_cost_rub": "REAL DEFAULT 0",
+            "packaging_cost_status": "TEXT NOT NULL DEFAULT 'unknown'",
+            "packaging_cost_source": "TEXT NOT NULL DEFAULT 'unknown'",
+            "packaging_cost_confirmed_at": "TEXT",
             "labor_cost_rub": "REAL DEFAULT 0",
             "other_cost_rub": "REAL DEFAULT 0",
             "updated_at": "TEXT",

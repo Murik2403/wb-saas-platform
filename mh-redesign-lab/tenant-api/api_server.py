@@ -84,6 +84,11 @@ from db.manual_expenses import (
     delete_manual_expense,
     read_manual_expenses,
     save_manual_expense,
+    set_manual_expense_inclusion,
+)
+from db.financial_fifo_reconciliation import (
+    read_financial_fifo_reconciliation,
+    summarize_financial_fifo_reconciliation,
 )
 from db.production import save_execution_tasks
 from db.wb_incidents import apply_wb_incident_loss, create_wb_incident_case, read_wb_incident_cases, record_wb_incident_compensation, wb_incident_financial_summary
@@ -209,6 +214,11 @@ class ManualExpenseInput(BaseModel):
     period_start: date
     period_end: date
     note: str = ""
+    include_in_management_result: bool = False
+
+
+class ManualExpenseInclusionInput(BaseModel):
+    include_in_management_result: bool
 
 
 class ProductionNormInput(BaseModel):
@@ -406,7 +416,7 @@ def _inspect_campaign_for_plan(campaign_id: str) -> dict | None:
         "period_label": PERIOD_LABELS[DEFAULT_PERIOD],
         "start": start,
         "end": end,
-        "data": build_dashboard(start, end),
+        "data": _build_dashboard_cached(start, end),
         "today_msk": today_msk,
     })
     for campaign in payload.get("campaigns", []):
@@ -477,7 +487,7 @@ def _revenue_trend_days(days: int = 7) -> list[dict]:
     """Expose the already-calculated daily revenue series for the Today chart."""
     end = datetime.now(ZoneInfo("Europe/Moscow")).date()
     start = end - timedelta(days=max(1, int(days)) - 1)
-    daily = build_dashboard(start, end).daily
+    daily = _build_dashboard_cached(start, end).daily
     if daily is None or daily.empty:
         return []
     rows: list[dict] = []
@@ -685,6 +695,7 @@ app.include_router(integration_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
 dashboard_response_cache = DashboardResponseCache()
 context_response_cache = DashboardResponseCache()
+dashboard_data_cache = DashboardResponseCache(ttl_seconds=30.0, max_entries=8)
 wb_cost_response_cache = DashboardResponseCache(ttl_seconds=10.0)
 _wb_paid_storage_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wb-paid-storage")
 _wb_paid_storage_lock = Lock()
@@ -692,6 +703,23 @@ _wb_paid_storage_jobs: dict[str, dict[str, object]] = {}
 _wb_cost_jobs: dict[str, dict[str, object]] = {}
 customer_quality_cache: tuple[float, dict] | None = None
 sync_runner = SyncRunner()
+
+
+def _build_dashboard_cached(start: date, end: date):
+    """Share expensive period calculations between dashboard API routes.
+
+    Finance loads overview, accounting details, and WB costs together. The first
+    two routes need the same DashboardData; re-reading all SQLite tables and
+    rebuilding it separately made their serialized cache misses exceed the
+    browser's request timeout on production-sized tenants.
+    """
+    key = f"{id(build_dashboard)}:{start.isoformat()}:{end.isoformat()}"
+    return dashboard_data_cache.get_or_build(key, lambda: build_dashboard(start, end))
+
+
+def _clear_dashboard_caches() -> None:
+    dashboard_response_cache.clear()
+    dashboard_data_cache.clear()
 
 
 @app.middleware("http")
@@ -712,7 +740,7 @@ async def invalidate_after_write(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "Демо доступно только для просмотра"})
     response = await call_next(request)
     if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400:
-        dashboard_response_cache.clear()
+        _clear_dashboard_caches()
         context_response_cache.clear()
     return response
 
@@ -800,7 +828,7 @@ def _build_ctx_uncached() -> dict:
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     sync_info = last_sync()
     backup_info = latest_backup()
-    data = build_dashboard(today_msk, today_msk)
+    data = _build_dashboard_cached(today_msk, today_msk)
     return {
         "settings": settings,
         "token_exists": bool(get_token()),
@@ -823,7 +851,7 @@ def _run_tenant_sync() -> None:
     try:
         sync_all()
     finally:
-        dashboard_response_cache.clear()
+        _clear_dashboard_caches()
         context_response_cache.clear()
 
 
@@ -854,7 +882,7 @@ def start_ads_sync():
         try:
             sync_ads_only()
         finally:
-            dashboard_response_cache.clear()
+            _clear_dashboard_caches()
             context_response_cache.clear()
     if not sync_runner.start(worker):
         raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
@@ -929,7 +957,7 @@ def start_finance_sync(payload: FinanceSyncInput = FinanceSyncInput()):
         try:
             sync_finances(days)
         finally:
-            dashboard_response_cache.clear()
+            _clear_dashboard_caches()
             context_response_cache.clear()
     if not sync_runner.start(worker):
         raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
@@ -1076,6 +1104,7 @@ def get_overview(
     period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
     start: date | None = None,
     end: date | None = None,
+    compare_previous: bool = True,
 ) -> dict:
     """The "Обзор" screen. `period` is the selector app.py shows above the page
     in Streamlit; `start`/`end` (ISO dates) are only read for period=custom."""
@@ -1101,21 +1130,22 @@ def get_overview(
             "period_label": PERIOD_LABELS.get(period, period),
             "start": window_start,
             "end": window_end,
-            "data": build_dashboard(window_start, window_end),
+            "data": _build_dashboard_cached(window_start, window_end),
             "today_msk": today_msk,
         }
         prev_ctx = None
-        prev = previous_window(window_start, window_end)
+        prev = previous_window(window_start, window_end) if compare_previous else None
         if prev is not None:
             prev_start, prev_end = prev
             prev_ctx = {
                 "start": prev_start,
                 "end": prev_end,
-                "data": build_dashboard(prev_start, prev_end),
+                "data": _build_dashboard_cached(prev_start, prev_end),
             }
         return json_safe(compute_overview(ctx, prev_ctx))
 
-    return _dashboard_response(f"overview:{period}:{window_start}:{window_end}", build)
+    comparison_mode = "compare" if compare_previous else "selected-only"
+    return _dashboard_response(f"overview:{period}:{window_start}:{window_end}:{comparison_mode}", build)
 
 
 @app.get("/api/products")
@@ -1149,7 +1179,7 @@ def get_products(
             "period_label": PERIOD_LABELS.get(period, period),
             "start": window_start,
             "end": window_end,
-            "data": build_dashboard(window_start, window_end),
+            "data": _build_dashboard_cached(window_start, window_end),
             "today_msk": today_msk,
         }
         return json_safe(compute_products(ctx))
@@ -1178,7 +1208,7 @@ def _build_first_report(nm_id: int) -> dict:
     start, end = (date.fromisoformat(summary["period"][key]) for key in ("start", "end"))
     # Use the same accounting-backed computation as Products. No network calls,
     # invented data or default zero profit are permitted in this first result.
-    data = build_dashboard(start, end)
+    data = _build_dashboard_cached(start, end)
     payload = compute_products({"data": data, "period": "custom", "start": start, "end": end})
     product = next((row for row in payload["products"] if str(row.get("nm_id")) == str(nm_id)), None)
     required = ("revenue", "sales", "unit_cost", "margin", "margin_pct")
@@ -1353,7 +1383,7 @@ def get_ads(
             "period_label": PERIOD_LABELS.get(period, period),
             "start": window_start,
             "end": window_end,
-            "data": build_dashboard(window_start, window_end),
+            "data": _build_dashboard_cached(window_start, window_end),
             "today_msk": today_msk,
         }
         return json_safe(compute_ads(ctx))
@@ -1394,9 +1424,12 @@ def get_dashboard_finance(
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
 
     def build() -> dict:
-        data = build_dashboard(window_start, window_end)
+        data = _build_dashboard_cached(window_start, window_end)
         f = data.financial or {}
         fifo_cogs = read_sales_fifo_cogs(window_start.isoformat(), window_end.isoformat())
+        fifo_reconciliation = summarize_financial_fifo_reconciliation(
+            read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat())
+        )
         articles = [
             ("Разница: выкупы − к перечислению (справочно)", -f.get("sales_to_pay_gap", 0)),
             ("Эквайринг (уже учтён WB, справочно)", -f.get("acquiring", 0)),
@@ -1427,10 +1460,53 @@ def get_dashboard_finance(
             # the accounting report above is grouped by WB realization date.
             "fifo_cogs": fifo_cogs.to_dict(orient="records") if not fifo_cogs.empty else [],
             "fifo_cogs_period_basis": "sale_date",
+            # Kept separate from reported profit: this is a conservative
+            # match-quality diagnostic on WB financial operation dates.
+            "fifo_reconciliation": fifo_reconciliation,
             "balance": balance,
         })
 
     return _dashboard_response(f"finance:{period}:{window_start}:{window_end}", build)
+
+
+@app.get("/api/v1/dashboard/finance/fifo-reconciliation")
+def get_finance_fifo_reconciliation_rows(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+) -> dict:
+    """Return a bounded, read-only page of operation-date FIFO diagnostics.
+
+    This endpoint is intentionally separate from the finance/P&L response: it
+    exposes evidence for reviewing matches and never changes reported amounts.
+    """
+    today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    try:
+        window_start, window_end = resolve_window(period, today_msk, start, end)
+    except ValueError as exc:
+        detail = "end_must_not_precede_start" if start and end and end < start else "custom_period_requires_start_and_end"
+        raise HTTPException(status_code=422, detail=detail) from exc
+
+    rows = read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat())
+    if not rows.empty:
+        rows = rows[rows["event_type"].isin(("sale", "return"))]
+    total = int(len(rows))
+    selected = rows.iloc[offset:offset + limit] if total else rows
+    columns = (
+        "rrd_id", "operation_date", "sale_date", "nm_id", "supplier_article",
+        "srid", "event_type", "units", "status", "reason",
+        "eligible_fifo_cogs_rub", "observed_fifo_cost_rub", "layer_sources",
+    )
+    payload_rows = selected.reindex(columns=columns).to_dict(orient="records") if total else []
+    return json_safe({
+        "period": {"start": window_start.isoformat(), "end": window_end.isoformat()},
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "rows": payload_rows,
+    })
 
 
 @app.get("/api/v1/operations/finance/export")
@@ -1446,7 +1522,7 @@ def export_finance_workbook(
         window_start, window_end = resolve_window(period, today_msk, start, end)
     except ValueError:
         raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
-    data = build_dashboard(window_start, window_end)
+    data = _build_dashboard_cached(window_start, window_end)
     f = data.financial or {}
     if format == "csv":
         from finance_csv import build_finance_csv
@@ -2185,7 +2261,7 @@ def get_dashboard_stock() -> dict:
         today, data = _today_dashboard()
         procurement = today.get("tabs", {}).get("procurement", {})
         forecast_end = datetime.now(ZoneInfo("Europe/Moscow")).date()
-        forecast_data = build_dashboard(forecast_end - timedelta(days=29), forecast_end)
+        forecast_data = _build_dashboard_cached(forecast_end - timedelta(days=29), forecast_end)
         products = forecast_data.products
         stock_total = int(round(float(data.kpi.get("stock", 0) or 0)))
         coverage = _stock_coverage(forecast_data)
@@ -2430,7 +2506,7 @@ def get_dashboard_ads(
             "period_label": PERIOD_LABELS.get(period, period),
             "start": window_start,
             "end": window_end,
-            "data": build_dashboard(window_start, window_end),
+            "data": _build_dashboard_cached(window_start, window_end),
             "today_msk": today_msk,
         }
         payload = compute_ads(ctx)
@@ -2822,7 +2898,10 @@ def get_manual_expenses(
 ) -> dict:
     if start and end and end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
-    return {"items": read_manual_expenses(nm_id=nm_id, start=start, end=end)}
+    items = read_manual_expenses(nm_id=nm_id, start=start, end=end)
+    for item in items:
+        item["include_in_management_result"] = bool(item.get("include_in_management_result", 0))
+    return {"items": items}
 
 
 @app.post("/api/v1/settings/manual-expenses")
@@ -2837,10 +2916,22 @@ def create_manual_expense(payload: ManualExpenseInput) -> dict:
             period_start=payload.period_start.isoformat(),
             period_end=payload.period_end.isoformat(),
             note=payload.note,
+            include_in_management_result=payload.include_in_management_result,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"id": expense_id, "message": "Расход сохранён"}
+
+
+@app.patch("/api/v1/settings/manual-expenses/{expense_id}/inclusion")
+def update_manual_expense_inclusion(expense_id: int, payload: ManualExpenseInclusionInput) -> dict:
+    try:
+        updated = set_manual_expense_inclusion(expense_id, payload.include_in_management_result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Расход не найден")
+    return {"id": expense_id, "include_in_management_result": payload.include_in_management_result}
 
 
 @app.delete("/api/v1/settings/manual-expenses/{expense_id}")
@@ -2859,47 +2950,85 @@ def get_management_economics(
     """Return a separate management view with explicit manual-expense coverage."""
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
-    data = build_dashboard(start, end)
-    products = getattr(data, "financial_products", pd.DataFrame())
-    product = pd.DataFrame()
-    if not products.empty and "Артикул WB" in products.columns:
-        product = products[pd.to_numeric(products["Артикул WB"], errors="coerce") == nm_id]
-    row = product.iloc[0].to_dict() if not product.empty else {}
+    data = _build_dashboard_cached(start, end)
 
-    def number(*keys: str) -> float:
-        for key in keys:
-            value = pd.to_numeric(row.get(key), errors="coerce")
-            if pd.notna(value):
-                return float(value)
-        return 0.0
+    def product_numbers(snapshot) -> tuple[dict, float, float]:
+        products = getattr(snapshot, "financial_products", pd.DataFrame())
+        product = pd.DataFrame()
+        if not products.empty and "Артикул WB" in products.columns:
+            product = products[pd.to_numeric(products["Артикул WB"], errors="coerce") == nm_id]
+        row = product.iloc[0].to_dict() if not product.empty else {}
 
-    revenue = number("Выкупы по цене покупателя", "Выручка")
-    units = number("Продано нетто", "Продажи, шт", "Продажи", "Количество")
-    base_profit = number("Чистая прибыль", "Прибыль", "Маржа")
+        def number(*keys: str) -> float:
+            for key in keys:
+                value = pd.to_numeric(row.get(key), errors="coerce")
+                if pd.notna(value):
+                    return float(value)
+            return 0.0
+
+        return row, number("Выкупы по цене покупателя", "Выручка"), number("Продано нетто", "Продажи, шт", "Продажи", "Количество")
+
+    row, revenue, units = product_numbers(data)
+    base_profit = next(
+        (float(value) for key in ("Чистая прибыль", "Прибыль", "Маржа")
+         if pd.notna(value := pd.to_numeric(row.get(key), errors="coerce"))),
+        0.0,
+    )
     if not row:
         status = "no_product_data"
     else:
         status = "ok"
-    expenses = read_manual_expenses(nm_id=nm_id, start=start, end=end)
-    rows = []
-    manual_total = 0.0
-    excluded_total = 0.0
-    for expense in expenses:
-        amount = float(expense["amount_rub"])
-        basis = expense["allocation_basis"]
+
+    def overlap_metrics(expense: dict) -> tuple[float, float, int]:
         expense_start = date.fromisoformat(str(expense["period_start"]))
         expense_end = date.fromisoformat(str(expense["period_end"]))
         overlap_start, overlap_end = max(start, expense_start), min(end, expense_end)
         overlap_days = max((overlap_end - overlap_start).days + 1, 0)
+        if not overlap_days:
+            return 0.0, 0.0, 0
+        # Per-unit and revenue-percentage expenses are rates applied only to
+        # operations inside the date intersection, so a partial overlap must
+        # use a snapshot for that intersection rather than the full window.
+        if overlap_start == start and overlap_end == end:
+            return revenue, units, overlap_days
+        _, overlap_revenue, overlap_units = product_numbers(
+            _build_dashboard_cached(overlap_start, overlap_end)
+        )
+        return overlap_revenue, overlap_units, overlap_days
+
+    expenses = read_manual_expenses(nm_id=nm_id, start=start, end=end)
+    rows = []
+    manual_total = 0.0
+    excluded_total = 0.0
+    excluded_manual_total = 0.0
+    for expense in expenses:
+        amount = float(expense["amount_rub"])
+        basis = expense["allocation_basis"]
+        overlap_revenue, overlap_units, overlap_days = overlap_metrics(expense)
+        expense_start = date.fromisoformat(str(expense["period_start"]))
+        expense_end = date.fromisoformat(str(expense["period_end"]))
         expense_days = max((expense_end - expense_start).days + 1, 1)
         period_share = min(overlap_days / expense_days, 1.0)
-        allocated = amount * units if basis == "per_unit" else revenue * amount / 100 if basis == "revenue_pct" else amount * period_share
-        excluded = expense["article"] == "wb_commission"
-        if excluded:
+        allocated = amount * overlap_units if basis == "per_unit" else overlap_revenue * amount / 100 if basis == "revenue_pct" else amount * period_share
+        commission = expense["article"] == "wb_commission"
+        opted_in = bool(expense.get("include_in_management_result", False))
+        excluded = commission or not opted_in
+        if commission:
             excluded_total += allocated
+            exclusion_reason = "Комиссия WB уже учтена в выплате продавцу"
+        elif not opted_in:
+            excluded_manual_total += allocated
+            exclusion_reason = "Не включено: подтвердите, что расход отсутствует в данных WB, рекламе и себестоимости"
         else:
             manual_total += allocated
-        rows.append({**expense, "allocated_rub": round(allocated, 2), "excluded_from_result": excluded})
+            exclusion_reason = None
+        rows.append({
+            **expense,
+            "include_in_management_result": opted_in and not commission,
+            "allocated_rub": round(allocated, 2),
+            "excluded_from_result": excluded,
+            "exclusion_reason": exclusion_reason,
+        })
     covered = {item["article"] for item in expenses}
     return json_safe({
         "nm_id": nm_id,
@@ -2911,6 +3040,7 @@ def get_management_economics(
         "manual_expenses_rub": round(manual_total, 2),
         "management_profit_rub": round(base_profit - manual_total, 2),
         "excluded_wb_commission_rub": round(excluded_total, 2),
+        "excluded_manual_expenses_rub": round(excluded_manual_total, 2),
         "coverage": {"covered": sorted(covered), "missing": sorted(set(EXPENSE_ARTICLES) - covered), "count": len(covered), "total": len(EXPENSE_ARTICLES), "percent": round(len(covered) / len(EXPENSE_ARTICLES) * 100, 2)},
         "items": rows,
     })

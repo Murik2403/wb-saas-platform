@@ -418,6 +418,11 @@ def _post_wip_packaging_conn(
     qty = max(0, int(qty_sets or 0))
     if qty <= 0:
         raise ValueError("Количество комплектов должно быть больше нуля.")
+    # Idempotency takes precedence over mutable configuration: a retry for an
+    # already-posted source must remain a harmless skip even if packaging was
+    # subsequently edited or its confirmation was revoked.
+    if _active_movement(conn, "production_receipt_wip", source_key) or _active_movement(conn, "production_receipt", source_key):
+        return {"posted": 0, "skipped": 1, "units": 0, "wip_units": 0, "cost_rub": 0.0}
     cfg = conn.execute("SELECT * FROM production_settings WHERE nm_id=? AND enabled=1", (int(nm_id),)).fetchone()
     if cfg is None:
         raise ValueError("Товар не включён в собственное производство.")
@@ -427,9 +432,10 @@ def _post_wip_packaging_conn(
     pack_size = max(1, int(cfg["pack_size"] or 1))
     if not material_name or not blank_type:
         raise ValueError("Для товара не заполнены материал/цвет или тип заготовки.")
+    cost_row = conn.execute("SELECT * FROM costs WHERE nm_id=?", (int(nm_id),)).fetchone()
+    from .fifo_materials import confirmed_packaging_cost
+    packaging_unit, packaging_source = confirmed_packaging_cost(cost_row)
     required_blanks = qty * pack_size
-    if _active_movement(conn, "production_receipt_wip", source_key) or _active_movement(conn, "production_receipt", source_key):
-        return {"posted": 0, "skipped": 1, "units": 0, "wip_units": 0, "cost_rub": 0.0}
     _apply_pipeline_delta(conn, int(nm_id), str(supplier_article or ""), qty, 0)
     event_key = _next_event_key(conn, "production_receipt_wip", source_key)
     now = datetime.now().isoformat(timespec="seconds")
@@ -454,10 +460,6 @@ def _post_wip_packaging_conn(
     wip_cost, allocations = _consume_wip_fifo(
         conn,movement_id,material_key,material_name,blank_type,required_blanks
     )
-    cost_row = conn.execute("SELECT * FROM costs WHERE nm_id=?", (int(nm_id),)).fetchone()
-    packaging_unit = max(0.0, float(cost_row["packaging_cost_rub"] or 0)) if cost_row else 0.0
-    if packaging_unit <= 0:
-        packaging_unit = 12.0
     labor_unit = max(0.0, float(cost_row["labor_cost_rub"] or 0)) if cost_row else 0.0
     other_unit = max(0.0, float(cost_row["other_cost_rub"] or 0)) if cost_row else 0.0
     packaging_total = round(packaging_unit * qty, 2)
@@ -473,7 +475,7 @@ def _post_wip_packaging_conn(
          WHERE id=?
         """,
         (wip_cost,unit_cost,total_cost,unit_cost,
-         f"Комплектация из НЗП: {required_blanks} заготовок, FIFO {wip_cost:.2f} ₽; партия {unit_cost:.2f} ₽/компл.; {allocation_note}; {note}",
+         f"Комплектация из НЗП: {required_blanks} заготовок, FIFO {wip_cost:.2f} ₽; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); партия {unit_cost:.2f} ₽/компл.; {allocation_note}; {note}",
          movement_id),
     )
     conn.execute(
@@ -487,7 +489,7 @@ def _post_wip_packaging_conn(
         """,
         (movement_id,int(nm_id),str(supplier_article or ""),str(product_name or ""),date_value,qty,
          material_key,material_name,0.0,wip_cost,packaging_total,labor_total,other_total,total_cost,unit_cost,
-         f"Комплектация из НЗП; {required_blanks} заготовок; {allocation_note}",now),
+         f"Комплектация из НЗП; {required_blanks} заготовок; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); {allocation_note}",now),
     )
     _create_finished_goods_layer(
         conn,int(nm_id),str(supplier_article or ""),str(product_name or ""),

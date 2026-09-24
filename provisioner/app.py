@@ -8,7 +8,12 @@ new endpoint is a security-sensitive change, not a convenience wrapper.
 from __future__ import annotations
 
 import os
+import json
 import re
+import sqlite3
+import tarfile
+import tempfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +22,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from backup_crypto import encrypt_file
+from backup_crypto import decrypt_file, encrypt_file
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -36,6 +41,7 @@ BACKUP_MOUNT = Path("/backups")
 BACKUP_HELPER_IMAGE = "alpine:3.20"
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
 CONTROL_PLANE_BACKUP_GROUP = "control-plane"
+_DEMO_RESEED_LOCK = threading.Lock()
 
 
 class TenantRequest(BaseModel):
@@ -378,6 +384,160 @@ def remove_tenant(slug: str, purge_volume: bool = False) -> dict[str, str]:
     return {"status": "purged" if purge_volume else "removed"}
 
 
+def _verify_demo_backup(archive_name: str, slug: str) -> str:
+    """Authenticate the encrypted archive and verify its tenant SQLite DB before use."""
+    if Path(archive_name).name != archive_name or not archive_name.endswith(".tar.gz.enc"):
+        raise ValueError("Invalid backup archive name")
+    backup_dir = BACKUP_MOUNT / slug
+    encrypted = backup_dir / archive_name
+    with tempfile.TemporaryDirectory(prefix="demo-backup-verify-", dir=backup_dir) as temp_dir:
+        plain = Path(temp_dir) / "verified.tar.gz"
+        database = Path(temp_dir) / "verified.sqlite3"
+        decrypt_file(encrypted, plain, BACKUP_ENCRYPTION_KEY)
+        with tarfile.open(plain, "r:gz") as archive:
+            db_member = None
+            members = archive.getmembers()
+            for member in members:
+                path = Path(member.name)
+                if path.is_absolute() or ".." in path.parts or not (member.isfile() or member.isdir()):
+                    raise ValueError("Backup archive contains an unsafe entry")
+                if path.name == "wb_dashboard.sqlite3" and member.isfile():
+                    db_member = member
+            if db_member is None:
+                raise ValueError("Backup does not contain the tenant database")
+            db_parent = Path(db_member.name).parent
+            for member in members:
+                path = Path(member.name)
+                if path.parent != db_parent or path.name not in {
+                    "wb_dashboard.sqlite3", "wb_dashboard.sqlite3-wal", "wb_dashboard.sqlite3-shm", "wb_dashboard.sqlite3-journal",
+                }:
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ValueError("Tenant database backup entry could not be read")
+                suffix = path.name.removeprefix("wb_dashboard.sqlite3")
+                (database.parent / f"verified.sqlite3{suffix}").write_bytes(source.read())
+        conn = sqlite3.connect(database)
+        try:
+            result = conn.execute("PRAGMA quick_check").fetchone()
+            if not result or result[0] != "ok":
+                raise ValueError("Tenant database backup failed SQLite integrity check")
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {"sales", "procurement_orders", "products_catalog"}.issubset(tables):
+                raise ValueError("Backup is not a complete tenant database")
+        finally:
+            conn.close()
+    # The Docker daemon resolves this same mounted backup directory at BACKUP_DIR.
+    verified_name = f".{Path(archive_name).stem}.verified.tar.gz"
+    verified_path = backup_dir / verified_name
+    try:
+        decrypt_file(encrypted, verified_path, BACKUP_ENCRYPTION_KEY)
+        os.chmod(verified_path, 0o600)
+    except Exception:
+        verified_path.unlink(missing_ok=True)
+        raise
+    return verified_name
+
+
+def _restore_demo_backup(volume_name: str, slug: str, verified_name: str, client: Any) -> None:
+    # A failed seed can leave a new SQLite WAL beside the old database. Remove
+    # only this tenant DB's sidecars before unpacking the verified snapshot.
+    client.containers.run(
+        BACKUP_HELPER_IMAGE,
+        command=["rm", "-f", "/data/wb_dashboard.sqlite3-wal", "/data/wb_dashboard.sqlite3-shm", "/data/wb_dashboard.sqlite3-journal"],
+        volumes={volume_name: {"bind": "/data", "mode": "rw"}},
+        remove=True,
+        network_disabled=True,
+        security_opt=["no-new-privileges:true"],
+        cap_drop=["ALL"],
+        read_only=True,
+        tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+    )
+    client.containers.run(
+        BACKUP_HELPER_IMAGE,
+        command=["tar", "xzf", f"/backup/{slug}/{verified_name}", "-C", "/data"],
+        volumes={
+            volume_name: {"bind": "/data", "mode": "rw"},
+            BACKUP_DIR: {"bind": "/backup", "mode": "ro"},
+        },
+        remove=True,
+        network_disabled=True,
+        security_opt=["no-new-privileges:true"],
+        cap_drop=["ALL"],
+        read_only=True,
+        tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+    )
+    check = client.containers.run(
+        TENANT_IMAGE,
+        command=["python3", "-c", "import sqlite3; c=sqlite3.connect('/app/data/wb_dashboard.sqlite3'); print(c.execute('PRAGMA quick_check').fetchone()[0]); c.close()"],
+        network_disabled=True,
+        volumes={volume_name: {"bind": "/app/data", "mode": "ro"}},
+        user="10001:10001",
+        security_opt=["no-new-privileges:true"],
+        cap_drop=["ALL"],
+        read_only=True,
+        tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+    )
+    if (check.decode("utf-8") if isinstance(check, bytes) else str(check)).strip() != "ok":
+        raise ValueError("Restored demo database failed SQLite integrity check")
+
+
+def _remove_partial_demo(client: Any, slug: str) -> None:
+    try:
+        partial = client.containers.get(_container_name(slug))
+    except Exception:
+        return
+    try:
+        partial.stop(timeout=10)
+    except Exception:
+        pass
+    partial.remove(force=True)
+
+
+def _validate_demo_seed(volume_name: str, client: Any) -> dict[str, Any]:
+    """Check the seed marker and essential joined business/FIFO invariants read-only."""
+    code = """import json,sqlite3
+c=sqlite3.connect('/app/data/wb_dashboard.sqlite3'); c.row_factory=sqlite3.Row
+meta=c.execute(\"SELECT value FROM app_meta WHERE key='demo_learning_scenario_v1'\").fetchone()
+order=c.execute(\"SELECT id,status FROM procurement_orders WHERE source_key='demo-fifo-learning-procurement-v1'\").fetchone()
+item=c.execute(\"SELECT posted_quantity FROM procurement_items WHERE order_id=?\",(order['id'],)).fetchone() if order else None
+release=c.execute(\"SELECT total_cost_rub,packaging_cost_rub,status FROM manufacturing_releases WHERE source_key='demo-fifo-learning-release-v1'\").fetchone()
+events=c.execute(\"SELECT event_type,status,fifo_cost_rub,matched_sale_event_id FROM sales_fifo_events WHERE srid='DEMO-FIFO-LEARNING-001' ORDER BY event_date,event_type\").fetchall()
+expense=c.execute(\"SELECT COUNT(*) FROM manual_expenses WHERE note LIKE 'DEMO-FIFO-CASE:%'\").fetchone()[0]
+errors=c.execute(\"SELECT COUNT(*) FROM sales_fifo_events WHERE srid='DEMO-FIFO-LEARNING-001' AND status='error'\").fetchone()[0]
+ok=bool(meta and meta['value']=='1' and order and order['status']=='Получено' and item and item['posted_quantity']>=100 and release and release['status']=='applied' and release['total_cost_rub']>0 and release['packaging_cost_rub']>0 and len(events)==2 and all(e['status']=='applied' and e['fifo_cost_rub']>0 for e in events) and events[1]['matched_sale_event_id'] is not None and expense==1 and errors==0)
+print(json.dumps({'ok':ok,'order':bool(order),'release':bool(release),'events':len(events),'expense':expense,'errors':errors}))
+raise SystemExit(0 if ok else 1)"""
+    output = client.containers.run(
+        TENANT_IMAGE,
+        command=["python3", "-c", code],
+        network_disabled=True,
+        volumes={volume_name: {"bind": "/app/data", "mode": "ro"}},
+        user="10001:10001",
+        security_opt=["no-new-privileges:true"],
+        cap_drop=["ALL"],
+        read_only=True,
+        tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+    )
+    result = json.loads(output.decode("utf-8") if isinstance(output, bytes) else str(output))
+    if result.get("ok") is not True:
+        raise ValueError("Demo seed invariant validation failed")
+    return result
+
+
+def _start_demo_container(client: Any, slug: str) -> None:
+    request = TenantRequest(
+        internal_api_secret="demo-disabled-internal-api",
+        billing_url="https://invalid.example/billing",
+        logout_url="https://invalid.example/logout",
+        internal_api_url="https://invalid.example",
+        require_auth=False,
+    )
+    network = _network(client, slug)
+    _attach_traefik(client, network)
+    client.containers.run(**tenant_container_spec(slug, request, demo=True))
+
+
 @app.post("/v1/tenants/{slug}/upgrade")
 def upgrade_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
@@ -397,43 +557,118 @@ def upgrade_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
 
 @app.post("/v1/demo/reseed")
 def reseed_demo() -> dict[str, str]:
-    """Refresh only the fixed public demo tenant; no caller controls Docker args."""
+    """Reseed the fixed public demo tenant with a verified rollback snapshot."""
+    if not BACKUP_ENCRYPTION_KEY:
+        raise HTTPException(status_code=503, detail="Demo reseed requires configured encrypted backups")
+    if not _DEMO_RESEED_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Demo reseed is already in progress")
     slug = "demo"
-    client = _client()
-    volume = _volume(client, slug)
+    verified_name = ""
+    old = None
+    stopped = False
+    replaced = False
     try:
-        client.containers.get("wb-tenant-demo-seed").remove(force=True)
+        client = _client()
+        volume = _volume(client, slug)
+        try:
+            old = client.containers.get(_container_name(slug))
+            old.reload()
+        except Exception:
+            raise HTTPException(status_code=409, detail="Demo tenant must be running before reseed") from None
+        if old.attrs.get("State", {}).get("Status") != "running":
+            raise HTTPException(status_code=409, detail="Demo tenant must be running before reseed")
+        try:
+            client.containers.get("wb-tenant-demo-seed")
+        except Exception:
+            pass
+        else:
+            raise HTTPException(status_code=409, detail="A demo seed container is already present")
+
+        old.stop(timeout=15)
+        stopped = True
+        try:
+            backup = _backup_volume(volume.name, slug, 14, client)
+            verified_name = _verify_demo_backup(str(backup["archive"]), slug)
+        except Exception:
+            old.start()
+            stopped = False
+            raise HTTPException(status_code=502, detail="Demo backup could not be verified; previous tenant restarted") from None
+
+        try:
+            client.containers.run(
+                TENANT_IMAGE,
+                name="wb-tenant-demo-seed",
+                remove=True,
+                entrypoint=["python3"],
+                command=["seed_demo_data.py"],
+                environment={"WB_SAAS_IS_DEMO": "1", "WB_SAAS_TENANT_SLUG": "demo"},
+                network_mode="none",
+                volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
+                user="10001:10001",
+                security_opt=["no-new-privileges:true"],
+                cap_drop=["ALL"],
+                read_only=True,
+                tmpfs={"/tmp": "rw,noexec,nosuid,size=64m"},
+            )
+            _validate_demo_seed(volume.name, client)
+        except Exception:
+            try:
+                _restore_demo_backup(volume.name, slug, verified_name, client)
+            except Exception:
+                stopped = False
+                raise HTTPException(status_code=502, detail="Demo seed failed; rollback verification failed and tenant remains stopped") from None
+            old.start()
+            stopped = False
+            raise HTTPException(status_code=502, detail="Demo seed failed validation; previous tenant restored") from None
+
+        # Keep the old process and its configuration until the mutated volume
+        # has passed all validation checks.
+        try:
+            old.remove(force=True)
+        except Exception:
+            try:
+                _restore_demo_backup(volume.name, slug, verified_name, client)
+                try:
+                    old.start()
+                except Exception:
+                    _start_demo_container(client, slug)
+            except Exception:
+                stopped = False
+                raise HTTPException(status_code=502, detail="Demo replacement failed; rollback could not be verified") from None
+            stopped = False
+            raise HTTPException(status_code=502, detail="Demo replacement failed; previous tenant restored") from None
+        stopped = False
+        replaced = True
+        try:
+            _start_demo_container(client, slug)
+        except Exception:
+            try:
+                _remove_partial_demo(client, slug)
+                _restore_demo_backup(volume.name, slug, verified_name, client)
+                _start_demo_container(client, slug)
+            except Exception:
+                raise HTTPException(status_code=502, detail="Demo recreate failed; rollback could not be verified") from None
+            replaced = False
+            raise HTTPException(status_code=502, detail="Demo recreate failed; previous tenant restored") from None
+        return {"container": _container_name(slug)}
+    except HTTPException:
+        raise
     except Exception:
-        pass
-    try:
-        client.containers.run(
-            TENANT_IMAGE,
-            name="wb-tenant-demo-seed",
-            remove=True,
-            entrypoint=["python3"],
-            command=["seed_demo_data.py"],
-            network_mode="none",
-            volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
-            user="10001:10001",
-            security_opt=["no-new-privileges:true"],
-            cap_drop=["ALL"],
-            read_only=True,
-            tmpfs={"/tmp": "rw,noexec,nosuid,size=64m"},
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Demo seed failed: {exc}") from exc
-    remove_tenant(slug)
-    request = TenantRequest(
-        internal_api_secret="demo-disabled-internal-api",
-        billing_url="https://invalid.example/billing",
-        logout_url="https://invalid.example/logout",
-        internal_api_url="https://invalid.example",
-        require_auth=False,
-    )
-    network = _network(client, slug)
-    _attach_traefik(client, network)
-    client.containers.run(**tenant_container_spec(slug, request, demo=True))
-    return {"container": _container_name(slug)}
+        if old is not None and stopped:
+            try:
+                old.start()
+            except Exception:
+                pass
+        if replaced:
+            raise HTTPException(status_code=502, detail="Demo reseed failed after replacement; check tenant recovery") from None
+        raise HTTPException(status_code=502, detail="Demo reseed failed; previous tenant preserved") from None
+    finally:
+        if verified_name:
+            try:
+                (BACKUP_MOUNT / slug / verified_name).unlink(missing_ok=True)
+            except OSError:
+                pass
+        _DEMO_RESEED_LOCK.release()
 
 
 @app.post("/v1/tenants/{slug}/verify-internal-secret")

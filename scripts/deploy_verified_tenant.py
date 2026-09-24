@@ -47,7 +47,18 @@ def main():
     # The tenant image has a 64 MiB /tmp tmpfs by default.  SQLite's verified
     # snapshot is larger than that for real tenants, so place temporary backup
     # files on the persistent data mount instead.
-    backup = subprocess.run(["docker", "exec", "-e", "TMPDIR=/app/data", args.container, "python", "-c", "from backup_tools import create_backup,inspect_backup; p=create_backup(keep=1000000); assert inspect_backup(p.read_bytes()); print(p.name)"], capture_output=True, text=True)
+    # Tenant archives contain the full database and possibly marketplace
+    # credentials. Never let a release silently create a plaintext copy on the
+    # persistent tenant volume when the encryption key is absent.
+    backup_code = (
+        "from config import DATA_ENCRYPTION_KEY; "
+        "from backup_tools import create_backup,inspect_backup; "
+        "assert DATA_ENCRYPTION_KEY, 'Tenant backup encryption key is not configured'; "
+        "p=create_backup(keep=1000000); payload=p.read_bytes(); "
+        "assert payload.startswith((b'mh-backup-enc:v1:', b'mh-backup-enc:v2:')), 'Backup is not encrypted'; "
+        "assert inspect_backup(payload); print(p.name)"
+    )
+    backup = subprocess.run(["docker", "exec", "-e", "TMPDIR=/app/data", args.container, "python", "-c", backup_code], capture_output=True, text=True)
     if backup.returncode:
         raise RuntimeError("Verified pre-release backup failed; original container untouched")
     print("Verified backup:", backup.stdout.strip(), flush=True)

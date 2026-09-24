@@ -196,8 +196,8 @@ def render(ctx: dict) -> None:
         )
 
         render_section_header(
-            "FIFO-себестоимость продаж и возвратов",
-            "Себестоимость каждой продажи и возврата, списанная со склада методом FIFO.",
+            "Диагностика FIFO по дате продажи",
+            "Сопоставляет события продаж с FIFO-слоями по sale_date. Не пересчитывает прибыль финансового отчёта WB, который строится по дате операции.",
         )
         fifo_sales = read_sales_fifo_cogs(start.isoformat(), end.isoformat())
         fifo_profit_target = float(f["profit"])
@@ -216,15 +216,13 @@ def render(ctx: dict) -> None:
             estimated_fifo_cogs = float(fifo_sales["estimated_fifo_cogs_rub"].sum())
             exact_fifo_part = float(fifo_sales["exact_fifo_cogs_rub"].sum())
             fifo_delta = estimated_fifo_cogs - baseline_fifo_cogs
-            fifo_profit = float(f["profit"]) - fifo_delta
-            fifo_profit_target = fifo_profit
             fifo_coverage = covered_events / total_events * 100 if total_events else 0.0
             fifo_cards = st.columns(5)
             with fifo_cards[0]: kpi_card("Оценка COGS FIFO", money(estimated_fifo_cogs), f"Базовая оценка {money(baseline_fifo_cogs)}")
             with fifo_cards[1]: kpi_card("Точная FIFO-часть", money(exact_fifo_part), "Только операции после включения учёта")
             with fifo_cards[2]: kpi_card("Покрытие событий", f"{fifo_coverage:.0f}%", f"{num(covered_events)} из {num(total_events)} продаж/возвратов")
             with fifo_cards[3]: kpi_card("Изменение COGS", money(fifo_delta), "Относительно базовых ставок")
-            with fifo_cards[4]: kpi_card("Прибыль по FIFO", money(fifo_profit), "Текущая прибыль с поправкой на FIFO")
+            with fifo_cards[4]: kpi_card("Прибыль", "Не пересчитана", "Нужна сверка FIFO с финансовыми строками по rrd_id")
             fifo_sales["Покрытие, %"] = fifo_sales.apply(
                 lambda r: float(r["covered_events"]) / float(r["total_events"]) * 100 if float(r["total_events"]) else 0.0, axis=1
             )
@@ -404,7 +402,7 @@ def render(ctx: dict) -> None:
             if abs(reconciliation_delta) < 0.02:
                 st.success(
                     f"Сверка прибыли выполнена: сумма по артикулам {money(total_article_profit)} "
-                    f"совпадает с общей прибылью по FIFO {money(float(fifo_profit_target))}."
+                    f"совпадает с прибылью финансового блока {money(float(fifo_profit_target))}."
                 )
             else:
                 st.warning(

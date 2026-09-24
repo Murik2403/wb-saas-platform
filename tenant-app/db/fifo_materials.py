@@ -21,6 +21,16 @@ from .core import connect
 # someone else's business numbers before they've entered their own.
 DEFAULT_OPENING_MATERIAL_RATE_RUB_M = 0.01
 
+
+def confirmed_packaging_cost(cost_row: sqlite3.Row | None) -> tuple[float, str]:
+    """Return an explicitly confirmed per-unit packaging cost and its source."""
+    if cost_row is None or str(cost_row["packaging_cost_status"] or "unknown") != "confirmed":
+        raise ValueError(
+            "Стоимость упаковки не подтверждена. Укажите фактическую сумму в настройках себестоимости "
+            "и подтвердите её вручную (0 ₽ тоже нужно подтвердить)."
+        )
+    return max(0.0, float(cost_row["packaging_cost_rub"] or 0)), str(cost_row["packaging_cost_source"] or "manual")
+
 def _fifo_opening_rate(conn: sqlite3.Connection) -> float:
     row = conn.execute("SELECT value FROM app_meta WHERE key='fifo_opening_rate_rub_m'").fetchone()
     try:
@@ -534,6 +544,8 @@ def save_auto_cost_settings(df: pd.DataFrame) -> None:
     if df is None or df.empty or not required.issubset(df.columns):
         raise ValueError("Не хватает данных прогноза себестоимости.")
     now = datetime.now().isoformat(timespec="seconds")
+    if "packaging_cost_confirmed" not in df.columns:
+        raise ValueError("Подтвердите стоимость упаковки отдельно для каждого товара. Ноль также нужно подтвердить вручную.")
     with connect() as conn:
         for _, row in df.iterrows():
             nm_id = _int(row.get("nm_id"))
@@ -543,16 +555,24 @@ def save_auto_cost_settings(df: pd.DataFrame) -> None:
             supplier_article = str(row.get("supplier_article", existing["supplier_article"] if existing else "") or "")
             current_total = float(existing["cost_per_wb_unit"] or 0) if existing else 0.0
             packaging = max(0.0, float(row.get("packaging_cost_rub", 0) or 0))
+            confirmation_value = row.get("packaging_cost_confirmed", False)
+            confirmed = False if pd.isna(confirmation_value) else bool(confirmation_value)
+            packaging_status = "confirmed" if confirmed else "unknown"
+            packaging_source = "manual" if confirmed else "unknown"
             conn.execute(
                 """
                 INSERT INTO costs(
                     nm_id,supplier_article,cost_per_wb_unit,auto_material_cost,material_cost_rub,
-                    packaging_cost_rub,labor_cost_rub,other_cost_rub,note,updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    packaging_cost_rub,packaging_cost_status,packaging_cost_source,packaging_cost_confirmed_at,
+                    labor_cost_rub,other_cost_rub,note,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(nm_id) DO UPDATE SET
                     supplier_article=excluded.supplier_article,
                     auto_material_cost=0,
                     packaging_cost_rub=excluded.packaging_cost_rub,
+                    packaging_cost_status=excluded.packaging_cost_status,
+                    packaging_cost_source=excluded.packaging_cost_source,
+                    packaging_cost_confirmed_at=excluded.packaging_cost_confirmed_at,
                     labor_cost_rub=excluded.labor_cost_rub,
                     other_cost_rub=excluded.other_cost_rub,
                     updated_at=excluded.updated_at
@@ -560,6 +580,9 @@ def save_auto_cost_settings(df: pd.DataFrame) -> None:
                 (nm_id, supplier_article, current_total, 0,
                  float(existing["material_cost_rub"] or 0) if existing else 0.0,
                  packaging,
+                 packaging_status,
+                 packaging_source,
+                 now if confirmed else None,
                  max(0.0, float(row.get("labor_cost_rub", 0) or 0)),
                  max(0.0, float(row.get("other_cost_rub", 0) or 0)),
                  str(row.get("note", existing["note"] if existing else "") or ""), now),
@@ -583,6 +606,11 @@ def apply_forecast_costs(df: pd.DataFrame) -> int:
             current = conn.execute("SELECT * FROM costs WHERE nm_id=?", (nm_id,)).fetchone()
             if current is None:
                 continue
+            if str(current["packaging_cost_status"] or "unknown") != "confirmed":
+                raise ValueError(
+                    f"WB {nm_id}: подтвердите стоимость упаковки перед применением прогноза. "
+                    "Ноль рублей также нужно подтвердить вручную."
+                )
             forecast_total = max(0.0, float(current["forecast_total_cost_rub"] or 0))
             forecast_material = max(0.0, float(current["forecast_material_cost_rub"] or 0))
             if forecast_total <= 0:

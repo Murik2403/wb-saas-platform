@@ -21,8 +21,52 @@ spec.loader.exec_module(api)
 def test_finance_endpoint_is_registered():
     paths = api.app.openapi()["paths"]
     assert "/api/v1/dashboard/finance" in paths
+    assert "/api/v1/dashboard/finance/fifo-reconciliation" in paths
     assert "/api/v1/operations/finance/export" in paths
     assert "/api/v1/sync/finance" in paths
+
+
+def test_fifo_reconciliation_details_are_read_only_and_paginated(monkeypatch):
+    source = pd.DataFrame([
+        {"rrd_id": 101, "operation_date": "2026-09-01", "sale_date": "2026-08-31", "nm_id": 77,
+         "supplier_article": "SKU-A", "srid": "srid-a", "event_type": "sale", "units": 2,
+         "status": "exact", "reason": "", "eligible_fifo_cogs_rub": 40.0,
+         "observed_fifo_cost_rub": 40.0, "layer_sources": ["production"], "matched_event_ids": [1]},
+        {"rrd_id": 102, "operation_date": "2026-09-02", "sale_date": "2026-09-01", "nm_id": 77,
+         "supplier_article": "SKU-A", "srid": "srid-b", "event_type": "return", "units": 1,
+         "status": "unmatched", "reason": "fifo_event_missing", "eligible_fifo_cogs_rub": None,
+         "observed_fifo_cost_rub": None, "layer_sources": [], "matched_event_ids": []},
+        {"rrd_id": 103, "operation_date": "2026-09-03", "sale_date": "", "nm_id": 88,
+         "supplier_article": "SKU-B", "srid": "", "event_type": "", "units": 0,
+         "status": "excluded", "reason": "not_sale_or_return_operation", "eligible_fifo_cogs_rub": None,
+         "observed_fifo_cost_rub": None, "layer_sources": [], "matched_event_ids": []},
+    ])
+    calls = []
+    monkeypatch.setattr(api, "read_financial_fifo_reconciliation", lambda start, end: calls.append((start, end)) or source)
+    monkeypatch.setattr(api, "build_dashboard", lambda *_: (_ for _ in ()).throw(AssertionError("P&L must not be rebuilt")))
+
+    result = api.get_finance_fifo_reconciliation_rows(
+        period="custom", start=date(2026, 9, 1), end=date(2026, 9, 3), offset=1, limit=1,
+    )
+
+    assert calls == [("2026-09-01", "2026-09-03")]
+    assert result["period"] == {"start": "2026-09-01", "end": "2026-09-03"}
+    assert (result["total"], result["offset"], result["limit"]) == (2, 1, 1)
+    assert result["rows"] == [{
+        "rrd_id": 102, "operation_date": "2026-09-02", "sale_date": "2026-09-01", "nm_id": 77,
+        "supplier_article": "SKU-A", "srid": "srid-b", "event_type": "return", "units": 1,
+        "status": "unmatched", "reason": "fifo_event_missing", "eligible_fifo_cogs_rub": None,
+        "observed_fifo_cost_rub": None, "layer_sources": [],
+    }]
+
+
+def test_fifo_reconciliation_details_use_shared_custom_period_normalization(monkeypatch):
+    monkeypatch.setattr(api, "read_financial_fifo_reconciliation", lambda *_: pd.DataFrame())
+    result = api.get_finance_fifo_reconciliation_rows(
+        period="custom", start=date(2026, 9, 2), end=date(2026, 9, 1), offset=0, limit=25,
+    )
+    assert result["period"] == {"start": "2026-09-01", "end": "2026-09-02"}
+    assert result["rows"] == []
 
 
 def test_finance_export_contains_legacy_reconciliation_sheets():

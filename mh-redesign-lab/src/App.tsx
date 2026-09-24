@@ -71,7 +71,7 @@ import type {
   StockRule,
   Tone,
 } from "./contracts";
-import { financeExportUrl, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, getManualExpenses, createManualExpense, deleteManualExpense, getManagementEconomics, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type IncidentOperations, type ManagementEconomics, type ManualExpense, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
+import { financeExportUrl, getFinanceFifoReconciliationPage, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, getManualExpenses, createManualExpense, deleteManualExpense, updateManualExpenseInclusion, getManagementEconomics, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type FinanceFifoDetailPage, type IncidentOperations, type ManagementEconomics, type ManualExpense, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
 import { navItems as fallbackNavItems } from "./mock-dashboard";
 
 const iconByKey: Record<IconKey, LucideIcon> = {
@@ -203,6 +203,20 @@ function gatewayUrlFor(path: string) {
   }
 
   return `${protocol}//${host}${path}`;
+}
+
+function recommendationDestination(action: ActionRecommendation): { page: PageId; target?: string } {
+  const context = `${action.title} ${action.issue} ${action.owner}`.toLocaleLowerCase("ru-RU");
+  if (action.iconKey === "ads" || action.iconKey === "arrowUpRight" || /реклам|ставк|ctr|фото|бид/.test(context)) {
+    return { page: "ads", target: "ads-campaigns" };
+  }
+  if (action.iconKey === "packageX" || /запас|закуп|пополн|постав/.test(context)) {
+    return { page: "supply", target: "supply-orders" };
+  }
+  if (/производ|смен|парт/.test(context)) {
+    return { page: "production", target: "production-shift" };
+  }
+  return { page: "products" };
 }
 
 function App() {
@@ -488,6 +502,12 @@ function App() {
 
   const handleAction = (label: string, itemLabel: string) => {
     const normalizedLabel = label.toLocaleLowerCase("ru-RU");
+    const recommendation = dashboard.actions.find((action) => action.title === label && action.sku === itemLabel);
+    if (recommendation) {
+      const destination = recommendationDestination(recommendation);
+      selectPage(destination.page, destination.target);
+      return;
+    }
     if (label === "Производственные нормы") {
       selectPage("settings", "production-norms");
       return;
@@ -1823,6 +1843,20 @@ function FinanceView({
               </>;
             })() : <p className="plan-empty">За период нет строк продаж или возвратов.</p>}
           </section> : null}
+          {financeReport.fifoReconciliation ? <section className="panel" aria-label="Сверка FIFO с финансовыми строками WB">
+            <SectionHeader compact kicker="Финансовые операции WB" title="Сводка качества FIFO-сопоставления">
+              <PackageCheck size={18} />
+            </SectionHeader>
+            <p className="form-hint">Строки сгруппированы по дате финансовой операции; точность оценивается по rrd_id, nm_id, srid и типу продажи/возврата. Стоимость включается в сводку только при полном совпадении количества и подтверждённых производственных или закупочных слоёв. Этот блок не меняет прибыль в отчёте WB.</p>
+            {financeReport.fifoReconciliation.saleReturnRows ? <>
+              <div className="cash-grid finance-fifo-summary">
+                <div className="stat"><span>Точно сопоставлено</span><strong>{financeReport.fifoReconciliation.exactRows.toLocaleString("ru-RU")} / {financeReport.fifoReconciliation.saleReturnRows.toLocaleString("ru-RU")}</strong><small>{Math.round(financeReport.fifoReconciliation.exactRows / financeReport.fifoReconciliation.saleReturnRows * 100)}% финансовых строк</small></div>
+                <div className="stat"><span>Подтверждённая FIFO-себестоимость</span><strong>{Math.round(financeReport.fifoReconciliation.exactFifoCogs).toLocaleString("ru-RU")} ₽</strong><small>Только точно сопоставленные строки, возвраты со знаком минус</small></div>
+              </div>
+              <p className="form-hint">Требуют проверки: {Object.entries(financeReport.fifoReconciliation.statusCounts).filter(([status]) => status !== "exact").map(([status, count]) => `${status} — ${count}`).join(" · ") || "нет"}</p>
+            </> : <p className="plan-empty">В выбранном периоде нет финансовых строк продаж или возвратов.</p>}
+          </section> : null}
+          <FinanceFifoDetailTable period={period} />
           <section className="panel finance-expenses-panel">
             <SectionHeader compact kicker="WB реализация" title="Статьи расходов">
               <span className={financeCoverage.className}>{financeCoverage.label}</span>
@@ -1853,6 +1887,93 @@ function FinanceView({
         </aside>
       </div>
     </div>
+  );
+}
+
+function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
+  const [open, setOpen] = useState(false);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [data, setData] = useState<FinanceFifoDetailPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pageSize = 25;
+  const offset = (pageNumber - 1) * pageSize;
+
+  useEffect(() => {
+    setPageNumber(1);
+    setData(null);
+  }, [period.id, period.start, period.end]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    getFinanceFifoReconciliationPage(period, offset, pageSize, controller.signal)
+      .then((result) => setData(result))
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Не удалось загрузить строки FIFO-сверки");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [open, period.id, period.start, period.end, offset, reloadVersion]);
+
+  const pageCount = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
+  const statusLabel: Record<string, string> = {
+    exact: "точно",
+    unmatched: "нет пары",
+    ambiguous: "неоднозначно",
+    synthetic: "временный слой",
+    baseline: "базовая оценка",
+  };
+
+  return (
+    <section className="panel finance-fifo-detail-panel" aria-label="Детальные строки FIFO-сверки">
+      <div className="finance-fifo-detail-heading">
+        <div>
+          <span className="eyebrow">Разбор финансовых строк</span>
+          <h3>Детальная FIFO-сверка</h3>
+        </div>
+        <button className="secondary-button" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+          {open ? "Свернуть" : "Показать строки"}
+        </button>
+      </div>
+      <p className="form-hint">Сверка по rrd_id, периоду, SKU и SRID. Данные показаны отдельно от прибыли и не меняют P&amp;L.</p>
+      {open ? <div>
+        {loading ? <p role="status" className="plan-empty">Загружаю FIFO-сверку…</p> : null}
+        {error ? <div className="operation-error" role="alert"><p>Не удалось загрузить строки: {error}</p><button className="secondary-button" type="button" onClick={() => setReloadVersion((version) => version + 1)}>Повторить</button></div> : null}
+        {!loading && !error && data && data.total === 0 ? <p className="plan-empty">За выбранный период нет строк продаж или возвратов для сверки.</p> : null}
+        {!loading && !error && data && data.rows.length > 0 ? <>
+          <div className="finance-fifo-table-scroll">
+            <table className="finance-fifo-detail-table">
+              <thead><tr><th>rrd_id</th><th>Дата операции</th><th>Артикул / nm_id</th><th>SRID</th><th>Тип</th><th>Шт.</th><th>Статус и причина</th><th>Подтверждённая стоимость</th><th>Наблюдаемая FIFO-сумма</th></tr></thead>
+              <tbody>{data.rows.map((row) => <tr key={`${row.rrdId}:${row.eventType}`}>
+                <td>{row.rrdId || "—"}</td>
+                <td>{row.operationDate || "—"}</td>
+                <td>{row.supplierArticle || "—"}<small>WB {row.nmId || "—"}</small></td>
+                <td className="finance-fifo-srid">{row.srid || "—"}</td>
+                <td>{row.eventType === "return" ? "Возврат" : "Продажа"}</td>
+                <td>{row.units.toLocaleString("ru-RU")}</td>
+                <td><strong>{statusLabel[row.status] ?? row.status}</strong>{row.reason ? <small>{row.reason.replaceAll("_", " ")}</small> : null}</td>
+                <td>{row.eligibleCostRub === null ? "—" : `${row.eligibleCostRub.toLocaleString("ru-RU")} ₽`}</td>
+                <td>{row.observedCostRub === null ? "—" : `${row.observedCostRub.toLocaleString("ru-RU")} ₽`}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="finance-fifo-pagination">
+            <span>Строки {offset + 1}–{Math.min(offset + data.rows.length, data.total)} из {data.total.toLocaleString("ru-RU")}</span>
+            <div>
+              <button className="secondary-button" type="button" onClick={() => setPageNumber((page) => Math.max(1, page - 1))} disabled={pageNumber <= 1 || loading}>Назад</button>
+              <span aria-live="polite">Страница {pageNumber} из {pageCount}</span>
+              <button className="secondary-button" type="button" onClick={() => setPageNumber((page) => Math.min(pageCount, page + 1))} disabled={pageNumber >= pageCount || loading}>Вперёд</button>
+            </div>
+          </div>
+        </> : null}
+      </div> : null}
+    </section>
   );
 }
 
@@ -2240,7 +2361,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     if (!nmId) { setMessage("Выберите товар"); return; }
     setBusy("expense");
     try {
-      await createManualExpense({ nm_id: nmId, article: String(data.get("article") || ""), amount_rub: Number(data.get("amount_rub") || 0), allocation_basis: String(data.get("allocation_basis") || "per_unit") as ManualExpense["allocation_basis"], source: "manual", period_start: String(data.get("period_start") || ""), period_end: String(data.get("period_end") || ""), note: String(data.get("note") || "") });
+      await createManualExpense({ nm_id: nmId, article: String(data.get("article") || ""), amount_rub: Number(data.get("amount_rub") || 0), allocation_basis: String(data.get("allocation_basis") || "per_unit") as ManualExpense["allocation_basis"], source: "manual", period_start: String(data.get("period_start") || ""), period_end: String(data.get("period_end") || ""), note: String(data.get("note") || ""), include_in_management_result: Boolean(data.get("include_in_management_result")) });
       setManualExpenses((await getManualExpenses()).items);
       form.reset();
       setMessage("Расход сохранён");
@@ -2252,6 +2373,21 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     setBusy("expense");
     try { await deleteManualExpense(id); setManualExpenses((rows) => rows.filter((row) => row.id !== id)); setMessage("Расход удалён"); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось удалить расход"); }
+    finally { setBusy(null); }
+  };
+
+  const toggleExpenseInclusion = async (item: ManualExpense) => {
+    const included = !item.include_in_management_result;
+    const confirmation = included
+      ? "Подтвердите: эта сумма отсутствует в данных WB, расходах WB-рекламы и себестоимости товара. Включить её в управленческий результат?"
+      : "Исключить этот ручной расход из управленческого результата?";
+    if (!window.confirm(confirmation)) return;
+    setBusy("expense");
+    try {
+      await updateManualExpenseInclusion(item.id, included);
+      setManualExpenses((rows) => rows.map((row) => row.id === item.id ? { ...row, include_in_management_result: included } : row));
+      setMessage(included ? "Расход включён в управленческий результат" : "Расход оставлен только в реестре");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось изменить учёт расхода"); }
     finally { setBusy(null); }
   };
 
@@ -2388,7 +2524,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
       </section>
       <section className="work-section" id="manual-expenses">
         <SectionHeader kicker="Экономика" title="Дополнительные расходы"><WalletCards size={18} /></SectionHeader>
-        <p className="plan-empty">Внесите расходы, которых нет в отчёте WB. Они хранятся отдельно и участвуют только в управленческом расчёте по выбранной базе.</p>
+        <p className="plan-empty">Ручные суммы сохраняются отдельно. По умолчанию они не уменьшают результат: база уже включает себестоимость, расходы WB и данные WB-рекламы. Включайте строку только после проверки, что её нет в этих источниках.</p>
         <form className="settings-form" onSubmit={(event) => { event.preventDefault(); void saveExpense(event.currentTarget); }}>
           <label className="operation-field"><span>Товар</span>{productCosts.length ? <select name="nm_id" required defaultValue=""><option value="" disabled>Выберите товар</option>{productCosts.map((item) => <option key={item.nm_id} value={item.nm_id}>{item.product_name || item.supplier_article || item.nm_id} · WB {item.nm_id}</option>)}</select> : <input name="nm_id" required min="1" type="number" placeholder="Артикул WB" />}</label>
           <label className="operation-field"><span>Статья</span><select name="article" defaultValue="packaging_labor"><option value="purchase_production">Закупка / производство</option><option value="logistics_returns">Логистика и возвраты</option><option value="storage">Хранение</option><option value="acceptance">Приёмка</option><option value="advertising">Реклама</option><option value="packaging_labor">Упаковка и труд</option><option value="defects_losses">Брак и потери</option><option value="taxes">Налоги</option><option value="wb_commission">Комиссия WB</option></select></label>
@@ -2397,10 +2533,11 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
           <label className="operation-field"><span>Период от</span><input name="period_start" required type="date" /></label>
           <label className="operation-field"><span>Период до</span><input name="period_end" required type="date" /></label>
           <label className="operation-field"><span>Примечание</span><input name="note" placeholder="Источник или комментарий" /></label>
+          <label className="checkbox-field"><input name="include_in_management_result" type="checkbox" /><span>Подтверждаю: сумма отсутствует в данных WB, WB-рекламе и себестоимости; включить её в управленческий результат</span></label>
           <button className="primary-button" disabled={busy !== null} type="submit">{busy === "expense" ? "Сохраняем" : "Добавить расход"}</button>
         </form>
-        {manualExpenses.length ? <div className="cost-settings-list">{manualExpenses.map((item) => <div className="cost-setting-row" key={item.id}><div className="cost-setting-product"><strong>{item.article}</strong><span>WB {item.nm_id} · {item.period_start} — {item.period_end} · источник: {item.source === "manual" ? "вручную" : "импорт"}</span></div><div className="cost-setting-amount"><span>{item.allocation_basis}</span><strong>{Number(item.amount_rub).toLocaleString("ru-RU")} ₽</strong></div><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void calculateManagement(item)}>Рассчитать</button><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeExpense(item.id)}>Удалить</button></div>)}</div> : <p className="plan-empty">Ручных расходов пока нет.</p>}
-        {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Покрытие статей: {managementEconomics.coverage.count}/{managementEconomics.coverage.total} ({managementEconomics.coverage.percent}%). Комиссия WB исключена из вычитания во избежание двойного учёта.</span></div> : null}
+        {manualExpenses.length ? <div className="cost-settings-list">{manualExpenses.map((item) => <div className="cost-setting-row" key={item.id}><div className="cost-setting-product"><strong>{item.article}</strong><span>WB {item.nm_id} · {item.period_start} — {item.period_end} · источник: {item.source === "manual" ? "вручную" : "импорт"} · {item.article === "wb_commission" ? "исключён: комиссия уже в выплате WB" : item.include_in_management_result ? "включён в результат после подтверждения" : "исключён: требуется проверить отсутствие в WB, рекламе и себестоимости"}</span></div><div className="cost-setting-amount"><span>{item.allocation_basis}</span><strong>{Number(item.amount_rub).toLocaleString("ru-RU")} ₽</strong></div>{item.article !== "wb_commission" ? <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void toggleExpenseInclusion(item)}>{item.include_in_management_result ? "Исключить из результата" : "Включить в результат"}</button> : <span className="muted-tag">Комиссия WB уже учтена</span>}<button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void calculateManagement(item)}>Рассчитать</button><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeExpense(item.id)}>Удалить</button></div>)}</div> : <p className="plan-empty">Ручных расходов пока нет.</p>}
+        {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
       {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item) => { void saveCost(item).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
       {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item) => { void saveNorm(item); }} /> : null}

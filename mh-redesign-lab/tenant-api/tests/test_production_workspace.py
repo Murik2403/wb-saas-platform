@@ -52,6 +52,12 @@ def issue(client, **changes):
 
 def test_issue_close_package_and_block_consumed_batch_reversal(client):
     seed()
+    # Packaging at 0 ₽ is allowed only after an explicit user confirmation.
+    with core.connect() as conn:
+        conn.execute(
+            "INSERT INTO costs(nm_id,packaging_cost_rub,packaging_cost_status,packaging_cost_source,packaging_cost_confirmed_at) "
+            "VALUES (101,0,'confirmed','manual','2026-09-23T12:00:00')"
+        )
     payload, response = issue(client)
     assert response.status_code == 200, response.text
     batch = response.json()["batch_id"]

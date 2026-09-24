@@ -31,12 +31,15 @@ def _iso(value: Any, field: str) -> str:
 def save_manual_expense(
     *, nm_id: int, article: str, amount_rub: float, allocation_basis: str,
     source: str, period_start: Any, period_end: Any, note: str = "",
+    include_in_management_result: bool = False,
 ) -> int:
     nm_id = int(nm_id)
     if nm_id <= 0:
         raise ValueError("nm_id must be positive")
     if article not in EXPENSE_ARTICLES:
         raise ValueError("unsupported expense article")
+    if article == "wb_commission" and include_in_management_result:
+        raise ValueError("Комиссия WB уже учтена в выплате и не может вычитаться повторно")
     amount = float(amount_rub)
     if not math.isfinite(amount) or amount < 0:
         raise ValueError("amount_rub must be finite and non-negative")
@@ -53,13 +56,28 @@ def save_manual_expense(
             """
             INSERT INTO manual_expenses(
                 nm_id,article,amount_rub,allocation_basis,source,
-                period_start,period_end,note,created_at,updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                period_start,period_end,note,created_at,updated_at,include_in_management_result
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
             (nm_id, article, amount, allocation_basis, source, start, end,
-             str(note or "").strip(), now, now),
+             str(note or "").strip(), now, now, int(bool(include_in_management_result))),
         )
         return int(cur.lastrowid)
+
+
+def set_manual_expense_inclusion(expense_id: int, included: bool) -> bool:
+    """Explicitly opt a manual row into/out of the management result."""
+    with connect() as conn:
+        row = conn.execute("SELECT article FROM manual_expenses WHERE id=?", (int(expense_id),)).fetchone()
+        if row is None:
+            return False
+        if included and str(row["article"]) == "wb_commission":
+            raise ValueError("Комиссия WB уже учтена в выплате и не может вычитаться повторно")
+        cur = conn.execute(
+            "UPDATE manual_expenses SET include_in_management_result=?, updated_at=? WHERE id=?",
+            (int(bool(included)), datetime.now().isoformat(timespec="seconds"), int(expense_id)),
+        )
+        return cur.rowcount == 1
 
 
 def read_manual_expenses(*, nm_id: int | None = None, start: Any = None, end: Any = None) -> list[dict[str, Any]]:

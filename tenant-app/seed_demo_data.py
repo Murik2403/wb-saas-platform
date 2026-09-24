@@ -9,17 +9,17 @@ so the anomaly-highlighting panel on the Overview page has something real to
 show a visitor who has never seen the product before.
 
 Usage (from tenant-app/, with its venv/deps active):
-    python3 seed_demo_data.py
+    WB_SAAS_IS_DEMO=1 WB_SAAS_TENANT_SLUG=demo python3 seed_demo_data.py
 """
 from __future__ import annotations
 
+import os
 import random
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from db.core import connect, ensure_financial_schema, init_db
 
-random.seed(42)  # deterministic output -- redeploying the demo shouldn't reshuffle it
 
 # The dashboard's "Сегодня" page buckets rows by Moscow-time date (see
 # app.py's today_msk); seeding with the container's own (usually UTC) date
@@ -73,11 +73,20 @@ def jitter(price: float, spread: float = 0.05) -> float:
 
 
 def main() -> None:
+    # This file deletes tenant data. Refuse to run unless the fixed demo
+    # provisioner explicitly identifies the isolated demo volume.
+    if os.environ.get("WB_SAAS_IS_DEMO") != "1" or os.environ.get("WB_SAAS_TENANT_SLUG") != "demo":
+        raise RuntimeError("Refusing to reseed: this script is restricted to the isolated demo tenant.")
+    random.seed(42)
     init_db()
     ensure_financial_schema()
 
     with connect() as conn:
         for table in (
+            "sales_fifo_events", "finished_goods_fifo_allocations", "material_fifo_consumptions",
+            "production_cost_batches", "manufacturing_defects", "manufacturing_piecework",
+            "manufacturing_releases", "manufacturing_boms", "manufacturing_equipment",
+            "inventory_movements", "material_cost_layers",
             "orders", "sales", "stocks", "ads_daily", "costs", "products_catalog",
             "financial_report", "finished_goods_cost_layers",
             "production_settings", "material_inventory_color", "production_capacity",
@@ -85,6 +94,8 @@ def main() -> None:
             "procurement_payments", "procurement_items", "procurement_orders", "suppliers",
         ):
             conn.execute(f"DELETE FROM {table}")
+        conn.execute("DELETE FROM manual_expenses WHERE note LIKE 'DEMO-FIFO-CASE:%'")
+        conn.execute("DELETE FROM app_meta WHERE key IN ('sales_fifo_tracking_initialized','demo_learning_scenario_v1')")
 
         now_iso = TODAY.isoformat()
         # Ready/in-transit units per product (ready_units, inbound_units, inbound
@@ -282,7 +293,114 @@ def main() -> None:
                          orders_n, sales_n * price * 0.4, "{}"),
                     )
 
-    print(f"Demo data seeded: {len(PRODUCTS)} products, {DAYS_OF_HISTORY + 1} days of history.")
+    _seed_fifo_learning_scenario()
+    print(f"Demo data seeded: {len(PRODUCTS)} products, {DAYS_OF_HISTORY + 1} days of history and one FIFO learning scenario.")
+
+
+def _seed_fifo_learning_scenario() -> None:
+    """Add one real, rolling-date procurement-to-return flow to the demo DB."""
+    import pandas as pd
+    from db.core import connect
+    from db.fifo_sales import initialize_sales_fifo_tracking, process_sales_fifo_events
+    from db.inventory_movements import post_dispatches, post_wb_receipts
+    from db.manufacturing import post_manufacturing_release, save_bom_version
+    from db.manual_expenses import save_manual_expense
+    from db.procurement import create_procurement_order, post_procurement_receipt
+    from db.production import save_execution_tasks
+
+    nm_id = 100001
+    article = "SPICE-ORG-01"
+    product = "Органайзер для специй настенный"
+    material = "ПВХ-кромка 2мм белая"
+    offsets = {"purchase": 32, "receipt": 28, "production": 24, "dispatch": 20, "arrival": 17, "sale": 12, "return": 5}
+    days = {key: (TODAY - timedelta(days=value)).isoformat() for key, value in offsets.items()}
+
+    initialize_sales_fifo_tracking()  # old generated rows are history; only this example is FIFO-applied
+    order_id = create_procurement_order(
+        procurement_type="Сырьё", supplier_name="ООО Кромка+", status="Заказано",
+        order_date=days["purchase"], payment_due_date=days["purchase"],
+        expected_date=days["receipt"], note="Учебная закупка для сценария FIFO",
+        source_key="demo-fifo-learning-procurement-v1",
+        items=[{"material_name": material, "quantity": 100, "unit": "м", "supplier_unit_price": 38}],
+    )
+    with connect() as conn:
+        item = conn.execute("SELECT id FROM procurement_items WHERE order_id=? ORDER BY id LIMIT 1", (order_id,)).fetchone()
+        payment = conn.execute("SELECT 1 FROM procurement_payments WHERE order_id=? AND status='applied' LIMIT 1", (order_id,)).fetchone()
+        if not payment:
+            conn.execute(
+                "INSERT INTO procurement_payments(order_id,payment_date,amount,method,note,status,created_at) VALUES (?,?,?,?,?,'applied',?)",
+                (order_id, days["purchase"], 3800, "Банк", "Учебный платёж демо-сценария", datetime.now().isoformat(timespec="seconds")),
+            )
+    receipt = post_procurement_receipt(order_id, pd.DataFrame([{"item_id": int(item["id"]), "receive_now": 100}]))
+    if receipt.get("errors") or receipt.get("items", 0) != 1:
+        raise RuntimeError(f"Demo learning material receipt failed: {receipt}")
+    with connect() as conn:
+        movement = conn.execute(
+            "SELECT id FROM inventory_movements WHERE source_task_key=? AND movement_type='procurement_material_receipt'",
+            (f"procurement_item:{int(item['id'])}",),
+        ).fetchone()
+        if movement:
+            conn.execute("UPDATE inventory_movements SET movement_date=? WHERE id=?", (days["receipt"], int(movement["id"])))
+            conn.execute("UPDATE material_cost_layers SET source_date=? WHERE source_ref=?", (days["receipt"], f"movement:{int(movement['id'])}"))
+        conn.execute("UPDATE procurement_orders SET received_date=? WHERE id=?", (days["receipt"], order_id))
+
+    bom = save_bom_version(
+        nm_id, materials=[{"material_name": material, "quantity_per_unit": 0.4, "unit": "м"}],
+        packaging_per_unit=12, other_per_unit=3,
+        note="Учебный BOM демо: упаковка и прочие расходы подтверждены явно.",
+    )
+    release = post_manufacturing_release(
+        nm_id, quantity=10, production_date=days["production"], source_key="demo-fifo-learning-release-v1",
+        bom_version_id=int(bom["id"]), supplier_article=article, product_name=product,
+    )
+    if not release.get("posted"):
+        raise RuntimeError(f"Demo learning production release failed: {release}")
+    with connect() as conn:
+        conn.execute("UPDATE inventory_movements SET movement_date=? WHERE id=?", (days["production"], int(release["movement_id"])))
+
+    save_execution_tasks(pd.DataFrame([{
+        "task_key": "demo-fifo-learning-dispatch-v1", "task_type": "dispatch", "task_date": days["dispatch"],
+        "stage": "Отгрузка", "nm_id": nm_id, "supplier_article": article, "product_name": product,
+        "planned_units": 10, "actual_units": 10, "status": "Отгружено", "route": "Стандартная FBO",
+        "dispatch_date": days["dispatch"], "expected_arrival_date": days["arrival"],
+        "note": "Учебный FIFO-сценарий демо",
+    }]))
+    dispatch = post_dispatches(["demo-fifo-learning-dispatch-v1"])
+    if dispatch.get("errors") or dispatch.get("posted") != 1:
+        raise RuntimeError(f"Demo learning dispatch failed: {dispatch}")
+    with connect() as conn:
+        conn.execute("UPDATE execution_tasks SET status='Принято WB' WHERE task_key=?", ("demo-fifo-learning-dispatch-v1",))
+    arrival = post_wb_receipts(["demo-fifo-learning-dispatch-v1"])
+    if arrival.get("errors") or arrival.get("posted") != 1:
+        raise RuntimeError(f"Demo learning WB receipt failed: {arrival}")
+    with connect() as conn:
+        conn.execute("UPDATE inventory_movements SET movement_date=? WHERE source_task_key=? AND movement_type='wb_receipt'", (days["arrival"], "demo-fifo-learning-dispatch-v1"))
+
+    save_manual_expense(
+        nm_id=nm_id, article="advertising", amount_rub=120, allocation_basis="total", source="manual",
+        period_start=days["sale"], period_end=days["sale"], note="DEMO-FIFO-CASE: учебный рекламный расход",
+    )
+    with connect() as conn:
+        for suffix, day, is_return, sign in (("sale", days["sale"], 0, 1), ("return", days["return"], 1, -1)):
+            sale_id = f"demo-fifo-learning-{suffix}-v1"
+            raw = '{"srid":"DEMO-FIFO-LEARNING-001","demo":true}'
+            price = 890.0
+            conn.execute(
+                "INSERT INTO sales(id,sale_date,nm_id,supplier_article,brand,subject,warehouse_name,sale_id,total_price,finished_price,price_with_disc,for_pay,is_return,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (sale_id, day, nm_id, article, BRAND, "Хранение", WAREHOUSE, sale_id, price, price, price, price*(1-COMMISSION_RATE)*sign, is_return, raw),
+            )
+            conn.execute(
+                "INSERT INTO financial_report(rrd_id,operation_date,nm_id,supplier_article,quantity,retail_amount,retail_price_withdisc_rub,ppvz_for_pay,commission,delivery_rub,storage_fee,operation_name,doc_type_name,ppvz_sales_commission,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (9000001 if is_return == 0 else 9000002, day, nm_id, article, sign, price*sign, price, price*(1-COMMISSION_RATE)*sign, price*COMMISSION_RATE*sign, LOGISTICS_FEE, 0, "Возврат" if is_return else "Продажа", "Продажа", price*COMMISSION_RATE*sign, raw),
+            )
+    fifo = process_sales_fifo_events()
+    if fifo.get("errors") or fifo.get("sales") != 1 or fifo.get("returns") != 1:
+        raise RuntimeError(f"Demo learning sale/return FIFO failed: {fifo}")
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO app_meta(key,value,updated_at) VALUES ('demo_learning_scenario_v1','1',?)",
+            (datetime.now().isoformat(timespec="seconds"),),
+        )
 
 
 if __name__ == "__main__":

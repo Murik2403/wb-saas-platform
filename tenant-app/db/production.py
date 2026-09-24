@@ -667,9 +667,8 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                     conn, movement_id, material_key, material_name, meters
                 )
                 cost_row = conn.execute("SELECT * FROM costs WHERE nm_id=?", (int(task["nm_id"] or 0),)).fetchone()
-                packaging_unit = max(0.0, float(cost_row["packaging_cost_rub"] or 0)) if cost_row else 0.0
-                if packaging_unit <= 0:
-                    packaging_unit = 12.0
+                from .fifo_materials import confirmed_packaging_cost
+                packaging_unit, packaging_source = confirmed_packaging_cost(cost_row)
                 labor_unit = max(0.0, float(cost_row["labor_cost_rub"] or 0)) if cost_row else 0.0
                 other_unit = max(0.0, float(cost_row["other_cost_rub"] or 0)) if cost_row else 0.0
                 packaging_total = round(packaging_unit * qty, 2)
@@ -687,7 +686,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                      WHERE id=?
                     """,
                     (material_cost, unit_cost,
-                     f"Закрытие смены; FIFO: {meters:.3f} м = {material_cost:.2f} ₽; себестоимость партии {unit_cost:.2f} ₽/компл.; {allocation_note}",
+                     f"Закрытие смены; FIFO: {meters:.3f} м = {material_cost:.2f} ₽; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); себестоимость партии {unit_cost:.2f} ₽/компл.; {allocation_note}",
                      movement_id),
                 )
                 conn.execute(
@@ -702,7 +701,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                     (movement_id, int(task["nm_id"] or 0), str(task["supplier_article"] or ""),
                      str(task["product_name"] or ""), date_value, qty, material_key, material_name,
                      meters, material_cost, packaging_total, labor_total, other_total, total_cost, unit_cost,
-                     f"Фактическая партия по FIFO; {allocation_note}", datetime.now().isoformat(timespec="seconds")),
+                     f"Фактическая партия по FIFO; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); {allocation_note}", datetime.now().isoformat(timespec="seconds")),
                 )
                 _create_finished_goods_layer(
                     conn, int(task["nm_id"] or 0), str(task["supplier_article"] or ""),

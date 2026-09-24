@@ -165,6 +165,12 @@ export type FinanceFifoCostRow = {
   totalEvents: number;
   errorEvents: number;
 };
+export type FinanceFifoReconciliation = {
+  saleReturnRows: number;
+  exactRows: number;
+  exactFifoCogs: number;
+  statusCounts: Record<string, number>;
+};
 export type FinanceReportState = {
   lastDate?: string;
   calculationEnd?: string;
@@ -173,6 +179,7 @@ export type FinanceReportState = {
   rows: FinanceExpenseRow[];
   fifoCosts?: FinanceFifoCostRow[];
   fifoPeriodBasis?: "sale_date";
+  fifoReconciliation?: FinanceFifoReconciliation;
   balance?: number;
   forWithdraw?: number;
   wbCosts?: { deductions: number; measurementPenalties: number; paidStorage: number; status?: "disabled" | "processing" | "ready" | "error"; errors: string[] };
