@@ -32,13 +32,30 @@ it("disables read-only writes but keeps refresh and calendar available", async (
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "GET")).toHaveLength(0);
 });
 
-it("uses catalogue units for issue quantities and historical batch display", async () => {
-  fetchMock.mockImplementation(async () => json({ ...data, materials: [...data.materials, { material_name: "Клей", unit: "кг", available_meters: 5 }], wip: { ...data.wip, batches: [{ id: 7, material_name: "Клей", blank_type: "Заготовка", unit: "кг", status: "open", issued_meters: 2.5, material_cost_rub: 250, reversed_at: null }] } }));
+it.each([["м", "Ткань"], ["кг", "Клей"], ["л", "Масло"], ["шт", "Фурнитура"]])("uses the catalogue unit %s for issue quantities without changing the API contract", async (unit, name) => {
+  const materials = [
+    { material_name: "Ткань", unit: "м", available_meters: 20 },
+    { material_name: "Клей", unit: "кг", available_meters: 5 },
+    { material_name: "Масло", unit: "л", available_meters: 3 },
+    { material_name: "Фурнитура", unit: "шт", available_meters: 12 },
+  ];
+  fetchMock.mockImplementation(async () => json({ ...data, materials }));
   render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
-  fireEvent.change(screen.getByLabelText("Материал"), { target: { value: "Клей" } });
-  expect(screen.getByLabelText("Расход сырья, кг")).toBeInTheDocument();
-  expect(screen.getByRole("option", { name: "Клей · 5 кг" })).toBeInTheDocument();
-  expect(screen.getByText(/Выдано 2.5 кг/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Материал"), { target: { value: name } });
+  expect(screen.getByLabelText(`Расход сырья, ${unit}`)).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: `${name} · ${materials.find((m) => m.material_name === name)!.available_meters} ${unit}` })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(`Расход сырья, ${unit}`), { target: { value: "2.5" } });
+  fireEvent.submit(screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
+  const payload = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1]?.body as string);
+  expect(payload).toMatchObject({ material_name: name, meters_used: 2.5 });
+});
+
+it("does not invent metres when the material unit is missing", async () => {
+  fetchMock.mockImplementation(async () => json({ ...data, materials: [{ material_name: "Сырьё без единицы", unit: "", available_meters: 5 }] }));
+  render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
+  expect(screen.getByLabelText("Расход сырья, ед.")).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Сырьё без единицы · 5 ед." })).toBeInTheDocument();
 });
 
 it("keeps request identity on network retry, blocks duplicate submits and refreshes real state", async () => {
