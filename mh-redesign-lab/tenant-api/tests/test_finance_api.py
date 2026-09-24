@@ -57,6 +57,7 @@ def test_fifo_reconciliation_details_are_read_only_and_paginated(monkeypatch):
         "supplier_article": "SKU-A", "srid": "srid-b", "event_type": "return", "units": 1,
         "status": "unmatched", "reason": "fifo_event_missing", "eligible_fifo_cogs_rub": None,
         "observed_fifo_cost_rub": None, "layer_sources": [],
+        "cogs_source": "insufficient", "cogs_rub": 0.0,
     }]
 
 
@@ -69,11 +70,16 @@ def test_fifo_reconciliation_details_use_shared_custom_period_normalization(monk
     assert result["rows"] == []
 
 
-def test_finance_response_exposes_fifo_absolute_unit_coverage_without_touching_profit(monkeypatch):
+def test_finance_response_exposes_fifo_absolute_unit_coverage_and_hybrid_pnl(monkeypatch):
     import types
 
     monkeypatch.setattr(api, "_build_dashboard_cached", lambda *_: types.SimpleNamespace(
-        financial={"profit": 123.45}, financial_products=pd.DataFrame(),
+        financial={
+            "profit": 123.45, "cost": 100.0, "exact_fifo_cogs_rub": 80.0,
+            "current_cost_estimate_rub": 20.0, "insufficient_cogs_units": 1,
+            "exact_unit_coverage_percent": 50.0, "cogs_quality": "insufficient",
+            "cogs_complete": False,
+        }, financial_products=pd.DataFrame(),
     ))
     monkeypatch.setattr(api, "read_sales_fifo_cogs", lambda *_: pd.DataFrame())
     monkeypatch.setattr(api, "read_financial_fifo_reconciliation", lambda *_: pd.DataFrame([
@@ -88,6 +94,11 @@ def test_finance_response_exposes_fifo_absolute_unit_coverage_without_touching_p
     assert result["fifo_reconciliation"]["sale_return_units"] == 3
     assert result["fifo_reconciliation"]["exact_units"] == 2
     assert result["fifo_reconciliation"]["exact_unit_coverage_percent"] == 66.67
+    assert result["financial"]["exact_fifo_cogs_rub"] == 80.0
+    assert result["financial"]["current_cost_estimate_rub"] == 20.0
+    assert result["financial"]["insufficient_cogs_units"] == 1
+    assert result["financial"]["cogs_quality"] == "insufficient"
+    assert result["financial"]["cogs_complete"] is False
 
 
 def test_finance_export_contains_legacy_reconciliation_sheets():

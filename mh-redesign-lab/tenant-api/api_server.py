@@ -1479,8 +1479,8 @@ def get_finance_fifo_reconciliation_rows(
 ) -> dict:
     """Return a bounded, read-only page of operation-date FIFO diagnostics.
 
-    This endpoint is intentionally separate from the finance/P&L response: it
-    exposes evidence for reviewing matches and never changes reported amounts.
+    This endpoint exposes both evidence and the exact/estimated/insufficient
+    COGS value already used by the finance P&L.
     """
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     try:
@@ -1489,7 +1489,11 @@ def get_finance_fifo_reconciliation_rows(
         detail = "end_must_not_precede_start" if start and end and end < start else "custom_period_requires_start_and_end"
         raise HTTPException(status_code=422, detail=detail) from exc
 
-    rows = read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat())
+    rows = read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat()).reset_index(drop=True)
+    if not rows.empty:
+        from db.historical_cogs import project_historical_cogs
+        projected, _, _ = project_historical_cogs(rows)
+        rows[["cogs_source", "cogs_rub"]] = projected[["cogs_source", "cogs_rub"]]
     if not rows.empty:
         rows = rows[rows["event_type"].isin(("sale", "return"))]
     total = int(len(rows))
@@ -1498,6 +1502,7 @@ def get_finance_fifo_reconciliation_rows(
         "rrd_id", "operation_date", "sale_date", "nm_id", "supplier_article",
         "srid", "event_type", "units", "status", "reason",
         "eligible_fifo_cogs_rub", "observed_fifo_cost_rub", "layer_sources",
+        "cogs_source", "cogs_rub",
     )
     payload_rows = selected.reindex(columns=columns).to_dict(orient="records") if total else []
     return json_safe({

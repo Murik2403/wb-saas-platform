@@ -159,6 +159,8 @@ export type FinanceFifoDetailRow = {
   reason: string;
   eligibleCostRub: number | null;
   observedCostRub: number | null;
+  cogsSource: "exact_fifo" | "current_cost_estimate" | "insufficient" | "excluded";
+  cogsRub: number;
   layerSources: string[];
 };
 
@@ -1392,6 +1394,8 @@ export async function getFinanceFifoReconciliationPage(
     reason: String(row.reason ?? ""),
     eligibleCostRub: typeof row.eligible_fifo_cogs_rub === "number" ? row.eligible_fifo_cogs_rub : null,
     observedCostRub: typeof row.observed_fifo_cost_rub === "number" ? row.observed_fifo_cost_rub : null,
+    cogsSource: row.cogs_source === "exact_fifo" || row.cogs_source === "current_cost_estimate" || row.cogs_source === "insufficient" ? row.cogs_source : "excluded",
+    cogsRub: Number(row.cogs_rub ?? 0),
     layerSources: Array.isArray(row.layer_sources) ? row.layer_sources.map(String) : [],
   }));
   return {
@@ -1894,6 +1898,17 @@ export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallba
       exactFifoCogs: Number(input.fifo_reconciliation.exact_fifo_cogs_rub ?? 0),
       statusCounts: input.fifo_reconciliation.status_counts ?? {},
     } : fallback.fifoReconciliation,
+    cogsEvidence: input?.financial ? {
+      exactFifoRub: Number(f.exact_fifo_cogs_rub ?? 0),
+      currentEstimateRub: Number(f.current_cost_estimate_rub ?? 0),
+      exactUnits: Number(f.exact_units ?? 0),
+      estimatedUnits: Number(f.estimated_units ?? 0),
+      insufficientUnits: Number(f.insufficient_cogs_units ?? 0),
+      totalUnits: Number(f.sale_return_units ?? 0),
+      exactUnitCoveragePercent: Number(f.exact_unit_coverage_percent ?? 0),
+      quality: (String(f.cogs_quality ?? "no_sales") as NonNullable<FinanceReportState["cogsEvidence"]>["quality"]),
+      complete: Boolean(f.cogs_complete),
+    } : fallback.cogsEvidence,
     balance: Number(input?.balance?.current ?? fallback.balance ?? 0),
     forWithdraw: Number(input?.balance?.for_withdraw ?? fallback.forWithdraw ?? 0),
     wbCosts: wbCosts ? { deductions: sum(wbCosts.deductions), measurementPenalties: (wbCosts.measurement_penalties ?? []).reduce((total, row) => total + Number(row.penaltyAmount ?? 0) - Number(row.reversalAmount ?? 0), 0), paidStorage: (wbCosts.paid_storage ?? []).reduce((total, row) => total + Number(row.warehousePrice ?? row.paidStorage ?? row.storage ?? row.amount ?? row.sum ?? 0), 0), status: wbCosts.paid_storage_status, errors: wbCosts.errors ?? [] } : fallback.wbCosts,

@@ -1794,8 +1794,8 @@ function FinanceView({
             <WalletCards size={16} />
             деньги
           </div>
-          <h2>{financeMetrics[0]?.value ?? "0 ₽"} расчетной прибыли</h2>
-          <p>Выручка, рекламные расходы и остаток сведены в один управленческий контур.</p>
+          <h2>{financeMetrics[0]?.value ?? "0 ₽"} {!financeReport.cogsEvidence || financeReport.cogsEvidence.quality === "exact" || financeReport.cogsEvidence.quality === "no_sales" ? "расчётной прибыли" : "предварительной прибыли"}</h2>
+          <p>Выручка, расходы WB, реклама и себестоимость сведены в один управленческий контур.</p>
         </div>
           <div className="hero-actions">
             <button className="secondary-button" type="button" onClick={() => onAction("Отчет", "финансы")}>
@@ -1811,6 +1811,17 @@ function FinanceView({
       </section>
 
       <MetricGrid metrics={financeMetrics} onMetricClick={(metric) => onAction("Отчет", metric.label)} />
+      {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <section className={`panel finance-cogs-evidence ${financeReport.cogsEvidence.complete ? "" : "finance-cogs-incomplete"}`} aria-label="Покрытие себестоимости в прибыли">
+        <SectionHeader compact kicker="Себестоимость в P&L" title={financeReport.cogsEvidence.complete ? "Себестоимость подтверждена или оценена полностью" : "В прибыли есть строки без себестоимости"}>
+          <PackageCheck size={18} />
+        </SectionHeader>
+        <div className="cash-grid finance-fifo-summary">
+          <div className="stat"><span>Точный исторический FIFO</span><strong>{Math.round(financeReport.cogsEvidence.exactFifoRub).toLocaleString("ru-RU")} ₽</strong><small>{financeReport.cogsEvidence.exactUnits.toLocaleString("ru-RU")} ед. · покрытие {financeReport.cogsEvidence.exactUnitCoveragePercent.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}%</small></div>
+          <div className="stat"><span>Оценка по текущей себестоимости</span><strong>{Math.round(financeReport.cogsEvidence.currentEstimateRub).toLocaleString("ru-RU")} ₽</strong><small>{financeReport.cogsEvidence.estimatedUnits.toLocaleString("ru-RU")} ед. · оценка не является историческим FIFO</small></div>
+          <div className="stat"><span>Без подтверждённой ставки</span><strong>{financeReport.cogsEvidence.insufficientUnits.toLocaleString("ru-RU")} ед.</strong><small>{financeReport.cogsEvidence.totalUnits.toLocaleString("ru-RU")} ед. продаж и возвратов в периоде</small></div>
+        </div>
+        {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
+      </section> : null}
       {financeReport.balance !== undefined && financeReport.balance > 0 ? <div className="cash-grid finance-balance-grid"><div className="stat"><span>Баланс WB</span><strong>{Math.round(financeReport.balance).toLocaleString("ru-RU")} ₽</strong><small>текущий баланс продавца</small></div><div className="stat"><span>К выводу</span><strong>{Math.round(financeReport.forWithdraw ?? 0).toLocaleString("ru-RU")} ₽</strong><small>по данным Finance API</small></div></div> : null}
 
       <div className="content-grid">
@@ -1847,7 +1858,7 @@ function FinanceView({
             <SectionHeader compact kicker="Финансовые операции WB" title="Сводка качества FIFO-сопоставления">
               <PackageCheck size={18} />
             </SectionHeader>
-            <p className="form-hint">Строки сгруппированы по дате финансовой операции; точность оценивается по rrd_id, nm_id, srid и типу продажи/возврата. Стоимость включается в сводку только при полном совпадении количества и подтверждённых производственных или закупочных слоёв. Этот блок не меняет прибыль в отчёте WB.</p>
+            <p className="form-hint">Строки сгруппированы по дате финансовой операции. Точная себестоимость сверяется по rrd_id, nm_id, srid, типу операции, количеству и подтверждённым производственным или закупочным слоям. Подтверждённые строки уже включены в P&L; остальные строки учтены по текущей себестоимости как оценка или отмечены как неполные.</p>
             {financeReport.fifoReconciliation.saleReturnRows ? <>
               <div className="cash-grid finance-fifo-summary">
                 <div className="stat"><span>Точно сопоставлено</span><strong>{financeReport.fifoReconciliation.exactRows.toLocaleString("ru-RU")} / {financeReport.fifoReconciliation.saleReturnRows.toLocaleString("ru-RU")}</strong><small>{Math.round(financeReport.fifoReconciliation.exactRows / financeReport.fifoReconciliation.saleReturnRows * 100)}% финансовых строк</small></div>
@@ -1942,7 +1953,7 @@ function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
           {open ? "Свернуть" : "Показать строки"}
         </button>
       </div>
-      <p className="form-hint">Сверка по rrd_id, периоду, SKU и SRID. Данные показаны отдельно от прибыли и не меняют P&amp;L.</p>
+      <p className="form-hint">Сверка по rrd_id, периоду, SKU и SRID. Столбец «Учтено в P&amp;L» показывает точный FIFO, оценку по текущей ставке или строки без подтверждённой себестоимости.</p>
       {open ? <div>
         {loading ? <p role="status" className="plan-empty">Загружаю FIFO-сверку…</p> : null}
         {error ? <div className="operation-error" role="alert"><p>Не удалось загрузить строки: {error}</p><button className="secondary-button" type="button" onClick={() => setReloadVersion((version) => version + 1)}>Повторить</button></div> : null}
@@ -1950,7 +1961,7 @@ function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
         {!loading && !error && data && data.rows.length > 0 ? <>
           <div className="finance-fifo-table-scroll">
             <table className="finance-fifo-detail-table">
-              <thead><tr><th>rrd_id</th><th>Дата операции</th><th>Артикул / nm_id</th><th>SRID</th><th>Тип</th><th>Шт.</th><th>Статус и причина</th><th>Подтверждённая стоимость</th><th>Наблюдаемая FIFO-сумма</th></tr></thead>
+              <thead><tr><th>rrd_id</th><th>Дата операции</th><th>Артикул / nm_id</th><th>SRID</th><th>Тип</th><th>Шт.</th><th>Статус и причина</th><th>Подтверждённая стоимость</th><th>Наблюдаемая FIFO-сумма</th><th>Учтено в P&amp;L</th></tr></thead>
               <tbody>{data.rows.map((row) => <tr key={`${row.rrdId}:${row.eventType}`}>
                 <td>{row.rrdId || "—"}</td>
                 <td>{row.operationDate || "—"}</td>
@@ -1961,6 +1972,7 @@ function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
                 <td><strong>{statusLabel[row.status] ?? row.status}</strong>{row.reason ? <small>{row.reason.replaceAll("_", " ")}</small> : null}</td>
                 <td>{row.eligibleCostRub === null ? "—" : `${row.eligibleCostRub.toLocaleString("ru-RU")} ₽`}</td>
                 <td>{row.observedCostRub === null ? "—" : `${row.observedCostRub.toLocaleString("ru-RU")} ₽`}</td>
+                <td>{row.cogsSource === "exact_fifo" ? "Точный FIFO" : row.cogsSource === "current_cost_estimate" ? "Оценка по текущей ставке" : row.cogsSource === "insufficient" ? "Нет себестоимости" : "Исключено"}<small>{row.cogsSource === "insufficient" ? "Прибыль предварительная" : `${Number(row.cogsRub ?? 0).toLocaleString("ru-RU")} ₽`}</small></td>
               </tr>)}</tbody>
             </table>
           </div>

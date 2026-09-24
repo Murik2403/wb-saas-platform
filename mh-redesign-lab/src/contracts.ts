@@ -183,6 +183,17 @@ export type FinanceReportState = {
   fifoCosts?: FinanceFifoCostRow[];
   fifoPeriodBasis?: "sale_date";
   fifoReconciliation?: FinanceFifoReconciliation;
+  cogsEvidence?: {
+    exactFifoRub: number;
+    currentEstimateRub: number;
+    exactUnits: number;
+    estimatedUnits: number;
+    insufficientUnits: number;
+    totalUnits: number;
+    exactUnitCoveragePercent: number;
+    quality: "exact" | "mixed" | "estimated" | "insufficient" | "no_sales";
+    complete: boolean;
+  };
   balance?: number;
   forWithdraw?: number;
   wbCosts?: { deductions: number; measurementPenalties: number; paidStorage: number; status?: "disabled" | "processing" | "ready" | "error"; errors: string[] };

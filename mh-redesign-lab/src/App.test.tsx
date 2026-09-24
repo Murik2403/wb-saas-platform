@@ -534,11 +534,11 @@ describe("operational detail drawer", () => {
     vi.mocked(getFinanceFifoReconciliationPage)
       .mockImplementationOnce(() => new Promise((resolve) => window.setTimeout(() => resolve({
         period: { start: "2026-08-26", end: "2026-09-24" }, total: 26, offset: 0, limit: 25,
-        rows: [{ rrdId: 501, operationDate: "2026-09-20", saleDate: "2026-09-19", nmId: 123, supplierArticle: "SKU-123", srid: "srid-a", eventType: "sale", units: 1, status: "exact", reason: "", eligibleCostRub: 48, observedCostRub: 48, layerSources: ["production"] }],
+        rows: [{ rrdId: 501, operationDate: "2026-09-20", saleDate: "2026-09-19", nmId: 123, supplierArticle: "SKU-123", srid: "srid-a", eventType: "sale", units: 1, status: "exact", reason: "", eligibleCostRub: 48, observedCostRub: 48, cogsSource: "exact_fifo", cogsRub: 48, layerSources: ["production"] }],
       }), 20)))
       .mockResolvedValueOnce({
         period: { start: "2026-08-26", end: "2026-09-24" }, total: 26, offset: 25, limit: 25,
-        rows: [{ rrdId: 526, operationDate: "2026-09-24", saleDate: "2026-09-23", nmId: 456, supplierArticle: "SKU-456", srid: "srid-z", eventType: "return", units: 1, status: "unmatched", reason: "fifo_event_missing", eligibleCostRub: null, observedCostRub: null, layerSources: [] }],
+        rows: [{ rrdId: 526, operationDate: "2026-09-24", saleDate: "2026-09-23", nmId: 456, supplierArticle: "SKU-456", srid: "srid-z", eventType: "return", units: 1, status: "unmatched", reason: "fifo_event_missing", eligibleCostRub: null, observedCostRub: null, cogsSource: "insufficient", cogsRub: 0, layerSources: [] }],
       });
     window.history.replaceState({}, "", "/?view=finance&period=30d");
     const { default: App } = await import("./App");
@@ -548,8 +548,8 @@ describe("operational detail drawer", () => {
     await user.click(await screen.findByRole("button", { name: "Показать строки" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Загружаю FIFO-сверку");
     expect(await screen.findByText("SKU-123")).toBeInTheDocument();
-    expect(screen.getAllByText("48 ₽")).toHaveLength(2);
-    expect(screen.getByText(/не меняют P&L/i)).toBeInTheDocument();
+    expect(screen.getAllByText("48 ₽")).toHaveLength(3);
+    expect(screen.getByRole("columnheader", { name: "Учтено в P&L" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Вперёд" }));
     expect(await screen.findByText("SKU-456")).toBeInTheDocument();
     expect(vi.mocked(getFinanceFifoReconciliationPage).mock.calls.map(([, offset]) => offset)).toEqual([0, 25]);

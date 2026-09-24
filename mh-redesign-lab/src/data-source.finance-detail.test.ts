@@ -19,6 +19,7 @@ describe("finance FIFO detail page adapter", () => {
           supplier_article: "SKU-A", srid: "srid-1", event_type: "return", units: 2,
           status: "exact", reason: "", eligible_fifo_cogs_rub: -84,
           observed_fifo_cost_rub: 84, layer_sources: ["production"],
+          cogs_source: "exact_fifo", cogs_rub: -84,
         }],
       }),
     });
@@ -42,6 +43,7 @@ describe("finance FIFO detail page adapter", () => {
         rrdId: 91, operationDate: "2026-09-10", saleDate: "2026-09-09", nmId: 123,
         supplierArticle: "SKU-A", srid: "srid-1", eventType: "return", units: 2,
         status: "exact", reason: "", eligibleCostRub: -84, observedCostRub: 84,
+        cogsSource: "exact_fifo", cogsRub: -84,
         layerSources: ["production"],
       }],
     });
