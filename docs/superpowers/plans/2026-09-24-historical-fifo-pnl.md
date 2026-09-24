@@ -40,7 +40,7 @@
 - [x] **Step 2: Run the focused tests** with `python -m pytest tenant-app/tests/test_historical_cogs.py -q`; the test-first run failed because `db.historical_cogs` did not yet exist.
 - [x] **Step 3: Implement the pure projection** without database I/O. Exact rows use finite `eligible_fifo_cogs_rub`; non-exact sale/return rows use finite `baseline_cogs_rub` only if its absolute value is positive; excluded rows contribute zero and no units. Missing/zero baseline rows receive `cogs_source='insufficient'`, zero numeric contribution, and positive missing unit/row counts. If `rrd_id` is null or duplicated, mark every affected event row insufficient and do not silently deduplicate. Aggregate once from the row projection so SKU totals and store totals share identical evidence.
 - [x] **Step 4: Run the projection tests** and assert every `rrd_id` occurs once and SKU/store COGS equals the sum of its source rows within 0.02 ₽. Nine pure-projection tests pass.
-- [ ] **Step 5: Commit** the projection and its tests as `feat: project verified historical FIFO COGS`.
+- [x] **Step 5: Commit** the projection and tests; included in `080812a` (`feat: use historical FIFO COGS in finance P&L`).
 
 ### Task 2: Replace legacy store and SKU COGS with the projection
 
@@ -58,7 +58,7 @@
 - [x] **Step 3: Build the projection from `read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())`**, which queries the same operation-date interval as `f`; assign `financial['cost']` from its store COGS and merge its per-SKU fields into `grouped` by integer `nm_id`. Fill missing SKU aggregation fields with zero but keep store-level `insufficient_units` from the full reconciliation, including `nm_id=0` and technical rows.
 - [x] **Step 4: Recompute product direct profit and margin** from the hybrid SKU COGS; keep existing ad/WB/common-pool allocation rules unchanged.
 - [x] **Step 5: Run tenant-app and FIFO suites**; all 331 tenant-app tests pass, including conservation and signed returns.
-- [ ] **Step 6: Commit** as `feat: use historical FIFO COGS in finance calculations`.
+- [x] **Step 6: Commit** as `080812a` (`feat: use historical FIFO COGS in finance P&L`).
 
 ### Task 3: Expose the source and coverage in API and Finance UI
 
@@ -79,7 +79,7 @@
 - [x] **Step 3: Map the projection contract through API serialization and TypeScript adaptation** without dropping current response fields.
 - [x] **Step 4: Render source totals, coverage, missing-cost warning, and per-row COGS source** beside the existing finance result; the hero labels estimates/incomplete coverage as preliminary.
 - [x] **Step 5: Run full finance API and frontend suites plus `npm run build`**; 225 API tests and 62 frontend tests pass; the build succeeds.
-- [ ] **Step 6: Commit** as `feat: show hybrid COGS evidence in finance UI`.
+- [x] **Step 6: Commit** as `4d5b6c9` (`feat: expose FIFO evidence across finance UI and exports`).
 
 ### Task 4: Validate source completeness and stage the release
 
@@ -92,9 +92,9 @@
 - Production deployment is allowed only after a verified encrypted tenant backup; `WB_SAAS_DATA_ENCRYPTION_KEY` must be configured and the backup archive must carry the encrypted format prefix.
 
 - [x] **Step 1: Run complete suites**: tenant-app 331 passed; tenant-api 225 passed; frontend 62 passed and build succeeds; provisioner 25 passed.
-- [ ] **Step 2: Run release gates**: `python scripts/check_clean_clone.py`, `git diff --check`, and verify the release worktree is clean.
-- [ ] **Step 3: Build the tenant image** in PowerShell with `$env:REDESIGN_BUILD_ID = (git rev-parse HEAD).Trim(); docker build --build-arg "REDESIGN_BUILD_ID=$env:REDESIGN_BUILD_ID" -f mh-redesign-lab/Dockerfile.tenant-staging -t "marketshelper-tenant:$env:REDESIGN_BUILD_ID" .`; verify `docker image inspect` reports the exact same revision label and record the image ID.
-- [ ] **Step 4: Run network-isolated staging** with a new temporary volume; verify `/healthz`, React root, finance API, and FIFO page API; remove only the named staging container and volume after successful checks.
+- [x] **Step 2: Run release gates**: `scripts/check_clean_clone.py` reports clean, 18/18 required paths, zero tracked sensitive paths; `git diff --check` clean.
+- [x] **Step 3: Build the tenant image** in PowerShell with `$env:REDESIGN_BUILD_ID = (git rev-parse HEAD).Trim(); docker build --build-arg "REDESIGN_BUILD_ID=$env:REDESIGN_BUILD_ID" -f mh-redesign-lab/Dockerfile.tenant-staging -t "marketshelper-tenant:$env:REDESIGN_BUILD_ID" .`; `docker image inspect` confirmed matching OCI revision and image ID `sha256:eef7ceda29f42dbed45b04b9026f91de6ba11db713639bb4a047865ae443e6a7` for `4d5b6c98b958d358c5d866b52b466b20aef446f9`.
+- [x] **Step 4: Run network-isolated staging** with a new temporary volume; `/healthz`, React root, today API, custom-period finance API, and FIFO detail API all returned 200. Removed only the specifically named staging container and volume.
 - [ ] **Step 5: Read-only production validation** outputs only aggregate exact/estimated/insufficient counts and sums; do not print SKUs, SRIDs, rows, environment values, or tokens.
 - [ ] **Step 6: Deploy with `scripts/deploy_verified_tenant.py` only after encrypted-backup validation succeeds; verify the existing health and four business probes, then confirm rollback container remains available.
 
@@ -103,3 +103,4 @@
 - Spec coverage: historical operation-date FIFO, estimate fallback, missing-cost completeness, return reversals, SKU/store conservation, UI/API/export disclosure, and deployment guardrails are all covered by the tasks above.
 - Evidence limits: finance line `rrd_id` is the reconciliation grain; absent/duplicate IDs fail closed. Zero baseline is insufficient, while a signed zero cost can be exact only if the reconciliation itself marks the row exact.
 - No unresolved placeholders remain in implementation commands. Staging and live release remain gated by image identity and an encrypted tenant backup; the local machine currently has no `WB_SAAS_DATA_ENCRYPTION_KEY`.
+- Production-only gates: this machine exposes only local Docker contexts and has no production tenant container/connection, so live aggregate coverage was not inspected. The encrypted-backup precondition is unavailable because no encryption-key variable is configured locally; the deployment script fails closed before replacing a tenant when it cannot make and verify an encrypted backup.
