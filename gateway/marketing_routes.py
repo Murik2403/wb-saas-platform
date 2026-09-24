@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import config
 
 
 MARKETING_PAGES = (
-    ("/calculator", "marketing_calculator_page.html", "Калькулятор маржи WB по девяти статьям расходов — MARKETSHELPER", "Рассчитайте результат на единицу по закупке или производству, комиссии, логистике, хранению, рекламе, упаковке, браку и налогам. Браузерный калькулятор, CSV и ссылка без регистрации."),
+    ("/calculator", "marketing_calculator_page.html", "Калькулятор маржи WB по девяти статьям расходов", "Рассчитайте результат на единицу по закупке или производству, комиссии, логистике, хранению, рекламе, упаковке, браку и налогам. Браузерный калькулятор, CSV и ссылка без регистрации."),
     ("/dlya-proizvoditeley-wb", "marketing_producers.html", "Учёт производства для продавцов Wildberries", "Сырьё, выпуск партии и себестоимость: рабочий сценарий для собственного и контрактного производства на Wildberries."),
     ("/sebestoimost-wb", "marketing_cost.html", "Себестоимость товара на WB: расчёт и учёт партий", "Как рассчитать себестоимость товара на Wildberries: материалы, выпуск и партии FIFO. Пример затрат, проверка расходов WB и калькулятор предварительной маржи."),
     ("/fifo-uchet", "marketing_fifo.html", "FIFO-учёт сырья и товаров по партиям", "Понятный пример FIFO: списание партий в порядке поступления, стоимость выпуска и оценка оставшихся запасов."),
@@ -81,6 +81,14 @@ def llms_txt(base_url: str) -> str:
 def create_marketing_router(templates: Jinja2Templates) -> APIRouter:
     """Reuse the gateway's configured template environment and privacy policy."""
     router = APIRouter()
+
+    @router.get("/vs-1c", include_in_schema=False, name="retired_accounting_comparison")
+    async def retired_accounting_comparison(request: Request):
+        """Keep stale campaign links useful without restoring the retired comparison page."""
+        target = "/sebestoimost-wb"
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=302)
 
     def endpoint_for(path: str, template_name: str, title: str, description: str):
         published, modified = GUIDE_DATES.get(path, (None, None))
