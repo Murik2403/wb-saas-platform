@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 from db import read_table, read_financial
+from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation
+from db.historical_cogs import project_historical_cogs
 
 
 @dataclass
@@ -365,6 +367,16 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         "return_units": 0.0,
         "net_units": 0.0,
         "cost_coverage": 0.0,
+        "exact_fifo_cogs_rub": 0.0,
+        "current_cost_estimate_rub": 0.0,
+        "insufficient_cogs_units": 0.0,
+        "sale_return_units": 0.0,
+        "exact_units": 0.0,
+        "estimated_units": 0.0,
+        "exact_unit_coverage_percent": 0.0,
+        "known_unit_coverage_percent": 0.0,
+        "cogs_quality": "no_sales",
+        "cogs_complete": False,
         "report_rows": 0.0,
         "unallocated_distributable": 0.0,
         "unallocated_ad_spend": 0.0,
@@ -481,24 +493,23 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         financial["net_units"] = financial["sale_units"] - financial["return_units"]
         financial["report_rows"] = float(len(f))
 
-        if not costs.empty:
-            cost_map = costs.set_index("nm_id")["cost_per_wb_unit"].to_dict()
-            units_by_nm = f.groupby("nm_id", as_index=False)["signed_units"].sum()
-            cost_total = 0.0
-            units_with_cost = 0.0
-            positive_units = 0.0
-            for _, row in units_by_nm.iterrows():
-                nm_id = int(row["nm_id"] or 0)
-                units = max(float(row["signed_units"]), 0.0)
-                if units <= 0:
-                    continue
-                positive_units += units
-                unit_cost = float(cost_map.get(nm_id, 0) or 0)
-                if unit_cost > 0:
-                    units_with_cost += units
-                    cost_total += units * unit_cost
-            financial["cost"] = cost_total
-            financial["cost_coverage"] = units_with_cost / positive_units * 100 if positive_units else 100.0
+        # Project each operation-date financial row exactly once. This replaces
+        # the former positive-net-units x current-cost formula, which lost FIFO
+        # history and did not reverse COGS in the return's operation period.
+        reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())
+        _cogs_rows, cogs_by_nm, cogs_store = project_historical_cogs(reconciliation)
+        financial["cost"] = float(cogs_store["cogs_rub"])
+        for field in (
+            "exact_fifo_cogs_rub", "current_cost_estimate_rub", "insufficient_units",
+            "sale_return_units", "exact_units", "estimated_units",
+            "exact_unit_coverage_percent", "known_unit_coverage_percent",
+            "cogs_quality", "cogs_complete",
+        ):
+            output_field = "insufficient_cogs_units" if field == "insufficient_units" else field
+            financial[output_field] = cogs_store[field]
+        # Preserve the legacy field name, but define it honestly as the share of
+        # sale/return units whose exact FIFO cost was verified.
+        financial["cost_coverage"] = float(cogs_store["exact_unit_coverage_percent"])
 
         # ppvz_for_pay is already "К перечислению продавцу за реализованный товар",
         # therefore WB commission must not be subtracted a second time.
@@ -593,7 +604,18 @@ def build_dashboard(start: date, end: date) -> DashboardData:
 
         cost_map = costs.set_index("nm_id")["cost_per_wb_unit"].to_dict() if not costs.empty else {}
         grouped["unit_cost"] = grouped["nm_id"].map(cost_map).fillna(0)
-        grouped["cost"] = grouped["units"].clip(lower=0) * grouped["unit_cost"]
+        if not cogs_by_nm.empty:
+            grouped = grouped.merge(cogs_by_nm, on="nm_id", how="left", validate="one_to_one")
+        else:
+            for column in ("cogs_rub", "exact_fifo_cogs_rub", "current_cost_estimate_rub", "exact_units", "estimated_units", "insufficient_units", "sale_return_units", "exact_rows", "estimated_rows", "insufficient_rows", "exact_unit_coverage_percent", "known_unit_coverage_percent"):
+                grouped[column] = 0.0
+            grouped["cogs_quality"] = "no_sales"
+            grouped["cogs_complete"] = False
+        for column in ("cogs_rub", "exact_fifo_cogs_rub", "current_cost_estimate_rub", "exact_units", "estimated_units", "insufficient_units", "sale_return_units", "exact_rows", "estimated_rows", "insufficient_rows", "exact_unit_coverage_percent", "known_unit_coverage_percent"):
+            grouped[column] = pd.to_numeric(grouped[column], errors="coerce").fillna(0.0)
+        grouped["cogs_quality"] = grouped["cogs_quality"].fillna("no_sales")
+        grouped["cogs_complete"] = grouped["cogs_complete"].fillna(False).astype(bool)
+        grouped["cost"] = grouped["cogs_rub"]
         grouped["wb_expenses"] = grouped[["logistics", "rebill_logistics", "storage", "penalties", "deductions", "acceptance"]].sum(axis=1)
         grouped["after_wb"] = grouped["to_pay"] + grouped["additional_payment"] - grouped["wb_expenses"]
         grouped["direct_profit"] = grouped["after_wb"] - grouped["ad_spend"] - grouped["cost"]
@@ -780,6 +802,12 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "wb_share_pct": "Доля расходов WB, %",
             "unit_cost": "Себестоимость ед.",
             "cost": "Себестоимость",
+            "exact_fifo_cogs_rub": "Точная FIFO-себестоимость",
+            "current_cost_estimate_rub": "Оценка по текущей себестоимости",
+            "insufficient_units": "Без себестоимости, шт.",
+            "exact_unit_coverage_percent": "Точное FIFO-покрытие, %",
+            "cogs_quality": "Источник себестоимости",
+            "cogs_complete": "Покрытие себестоимости полное",
             "cost_share_pct": "Доля себестоимости, %",
             "direct_profit": "Маржинальная прибыль",
             "direct_profit_per_unit": "Маржинальная прибыль на ед.",
@@ -804,7 +832,10 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "Продажи, шт", "Возвраты, шт", "Продано нетто", "Возвраты, %",
             "Выкупы по цене покупателя", "Продажи по отчёту", "К перечислению за товар",
             "Прямые расходы WB", "Реклама", "Доля рекламы, %", "Доля расходов WB, %",
-            "Себестоимость ед.", "Себестоимость", "Доля себестоимости, %",
+            "Себестоимость ед.", "Себестоимость", "Точная FIFO-себестоимость",
+            "Оценка по текущей себестоимости", "Без себестоимости, шт.",
+            "Точное FIFO-покрытие, %", "Источник себестоимости", "Покрытие себестоимости полное",
+            "Доля себестоимости, %",
             "Маржинальная прибыль", "Маржинальная прибыль на ед.", "Маржинальность, %",
             "Доля общих расходов, %", "Распределено общих расходов",
             "Расчётная прибыль", "Расчётная прибыль на ед.", "Расчётная маржа, %",

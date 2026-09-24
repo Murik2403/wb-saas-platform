@@ -1,0 +1,141 @@
+"""Project audited operation-date FIFO rows into a hybrid COGS view."""
+from __future__ import annotations
+
+import math
+from typing import Any
+
+import pandas as pd
+
+
+_DETAIL_COLUMNS = [
+    "rrd_id", "nm_id", "event_type", "units", "cogs_rub", "cogs_source", "reason",
+]
+_GROUP_COLUMNS = [
+    "nm_id", "cogs_rub", "exact_fifo_cogs_rub", "current_cost_estimate_rub",
+    "exact_units", "estimated_units", "insufficient_units", "sale_return_units",
+    "exact_rows", "estimated_rows", "insufficient_rows", "exact_unit_coverage_percent",
+    "known_unit_coverage_percent", "cogs_quality", "cogs_complete",
+]
+
+
+def _number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _totals(rows: pd.DataFrame, *, include_nm_id: bool) -> dict[str, Any]:
+    events = rows[rows["cogs_source"].isin(("exact_fifo", "current_cost_estimate", "insufficient"))]
+    exact = events[events["cogs_source"] == "exact_fifo"]
+    estimated = events[events["cogs_source"] == "current_cost_estimate"]
+    insufficient = events[events["cogs_source"] == "insufficient"]
+    total_units = int(events["units"].sum())
+    exact_units = int(exact["units"].sum())
+    estimated_units = int(estimated["units"].sum())
+    insufficient_units = int(insufficient["units"].sum())
+    if total_units == 0:
+        quality = "no_sales"
+    elif insufficient_units:
+        quality = "insufficient"
+    elif exact_units == total_units:
+        quality = "exact"
+    elif exact_units and estimated_units:
+        quality = "mixed"
+    else:
+        quality = "estimated"
+    result: dict[str, Any] = {
+        "cogs_rub": round(float(events["cogs_rub"].sum()), 2),
+        "exact_fifo_cogs_rub": round(float(exact["cogs_rub"].sum()), 2),
+        "current_cost_estimate_rub": round(float(estimated["cogs_rub"].sum()), 2),
+        "exact_units": exact_units,
+        "estimated_units": estimated_units,
+        "insufficient_units": insufficient_units,
+        "sale_return_units": total_units,
+        "exact_rows": int(len(exact)),
+        "estimated_rows": int(len(estimated)),
+        "insufficient_rows": int(len(insufficient)),
+        "exact_unit_coverage_percent": round(exact_units / total_units * 100, 2) if total_units else 0.0,
+        "known_unit_coverage_percent": round((exact_units + estimated_units) / total_units * 100, 2) if total_units else 0.0,
+        "cogs_quality": quality,
+        "cogs_complete": bool(total_units > 0 and insufficient_units == 0),
+    }
+    return result
+
+
+def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Return per-financial-row COGS, per-SKU totals, and store totals.
+
+    ``eligible_fifo_cogs_rub`` and ``baseline_cogs_rub`` are already signed by
+    the reconciliation layer. Never apply an event sign a second time. A bad or
+    duplicated source id fails closed for every affected sale/return row.
+    """
+    if reconciliation is None or reconciliation.empty:
+        return pd.DataFrame(columns=_DETAIL_COLUMNS), pd.DataFrame(columns=_GROUP_COLUMNS), {
+            **_totals(pd.DataFrame(columns=_DETAIL_COLUMNS), include_nm_id=False),
+        }
+
+    source = reconciliation.copy().reset_index(drop=True)
+    ids = pd.to_numeric(source.get("rrd_id", pd.Series(index=source.index, dtype=float)), errors="coerce")
+    id_counts = ids.value_counts(dropna=False)
+    details: list[dict[str, Any]] = []
+    for index, row in source.iterrows():
+        event_type = str(row.get("event_type") or "").strip().casefold()
+        try:
+            nm_id = int(float(row.get("nm_id") or 0))
+        except (TypeError, ValueError, OverflowError):
+            nm_id = 0
+        raw_units = _number(row.get("units"))
+        units = max(0, int(abs(raw_units or 0))) if event_type in ("sale", "return") else 0
+        source_id = ids.iloc[index]
+        valid_id = pd.notna(source_id) and int(source_id) > 0 and int(id_counts.get(source_id, 0)) == 1
+        status = str(row.get("status") or "").strip().casefold()
+        reason = str(row.get("reason") or "")
+        cogs = 0.0
+        if event_type not in ("sale", "return") or status == "excluded":
+            cogs_source = "excluded"
+        elif not valid_id:
+            cogs_source = "insufficient"
+            reason = "financial_rrd_id_missing_or_duplicate"
+        elif units <= 0:
+            cogs_source = "insufficient"
+            reason = reason or "financial_quantity_zero"
+        elif status == "exact":
+            exact_value = _number(row.get("eligible_fifo_cogs_rub"))
+            expected_sign = 1 if event_type == "sale" else -1
+            sign_is_valid = exact_value is not None and (exact_value >= 0 if event_type == "sale" else exact_value <= 0)
+            if sign_is_valid:
+                cogs, cogs_source = exact_value, "exact_fifo"
+            else:
+                cogs_source = "insufficient"
+                reason = "exact_fifo_cost_missing_or_wrong_sign"
+        else:
+            baseline = _number(row.get("baseline_cogs_rub"))
+            expected_sign = 1 if event_type == "sale" else -1
+            if baseline is not None and baseline * expected_sign > 0:
+                cogs, cogs_source = baseline, "current_cost_estimate"
+            else:
+                cogs_source = "insufficient"
+                reason = reason or "current_cost_baseline_missing_or_zero"
+        details.append({
+            "rrd_id": int(source_id) if pd.notna(source_id) else None,
+            "nm_id": nm_id,
+            "event_type": event_type,
+            "units": units,
+            "cogs_rub": float(cogs),
+            "cogs_source": cogs_source,
+            "reason": reason,
+        })
+
+    detail = pd.DataFrame(details, columns=_DETAIL_COLUMNS)
+    if detail.empty:
+        return detail, pd.DataFrame(columns=_GROUP_COLUMNS), _totals(detail, include_nm_id=False)
+
+    by_sku_rows: list[dict[str, Any]] = []
+    for nm_id, group in detail.groupby("nm_id", sort=True, dropna=False):
+        totals = _totals(group, include_nm_id=True)
+        by_sku_rows.append({"nm_id": int(nm_id), **totals})
+    by_sku = pd.DataFrame(by_sku_rows, columns=_GROUP_COLUMNS)
+    store = _totals(detail, include_nm_id=False)
+    return detail, by_sku, store
