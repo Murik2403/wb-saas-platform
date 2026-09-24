@@ -1851,6 +1851,7 @@ function FinanceView({
             {financeReport.fifoReconciliation.saleReturnRows ? <>
               <div className="cash-grid finance-fifo-summary">
                 <div className="stat"><span>Точно сопоставлено</span><strong>{financeReport.fifoReconciliation.exactRows.toLocaleString("ru-RU")} / {financeReport.fifoReconciliation.saleReturnRows.toLocaleString("ru-RU")}</strong><small>{Math.round(financeReport.fifoReconciliation.exactRows / financeReport.fifoReconciliation.saleReturnRows * 100)}% финансовых строк</small></div>
+                <div className="stat"><span>Покрытие по количеству</span><strong>{financeReport.fifoReconciliation.exactUnits.toLocaleString("ru-RU")} / {financeReport.fifoReconciliation.saleReturnUnits.toLocaleString("ru-RU")} ед.</strong><small>{financeReport.fifoReconciliation.exactUnitCoveragePercent.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}% единиц продаж и возвратов</small></div>
                 <div className="stat"><span>Подтверждённая FIFO-себестоимость</span><strong>{Math.round(financeReport.fifoReconciliation.exactFifoCogs).toLocaleString("ru-RU")} ₽</strong><small>Только точно сопоставленные строки, возвраты со знаком минус</small></div>
               </div>
               <p className="form-hint">Требуют проверки: {Object.entries(financeReport.fifoReconciliation.statusCounts).filter(([status]) => status !== "exact").map(([status, count]) => `${status} — ${count}`).join(" · ") || "нет"}</p>

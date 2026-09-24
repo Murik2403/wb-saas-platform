@@ -323,16 +323,24 @@ def summarize_financial_fifo_reconciliation(rows: pd.DataFrame) -> dict[str, Any
         return {
             "sale_return_rows": 0,
             "exact_rows": 0,
+            "sale_return_units": 0,
+            "exact_units": 0,
+            "exact_unit_coverage_percent": 0.0,
             "exact_fifo_cogs_rub": 0.0,
             "status_counts": {},
         }
     eligible = rows[rows["event_type"].isin(("sale", "return"))]
     counts = {str(key): int(value) for key, value in eligible["status"].value_counts().items()}
     exact = eligible[eligible["status"] == "exact"]
+    sale_return_units = int(pd.to_numeric(eligible["units"], errors="coerce").fillna(0).abs().sum())
+    exact_units = int(pd.to_numeric(exact["units"], errors="coerce").fillna(0).abs().sum())
     exact_cost = pd.to_numeric(exact["eligible_fifo_cogs_rub"], errors="coerce").sum()
     return {
         "sale_return_rows": int(len(eligible)),
         "exact_rows": int(len(exact)),
+        "sale_return_units": sale_return_units,
+        "exact_units": exact_units,
+        "exact_unit_coverage_percent": round(exact_units / sale_return_units * 100, 2) if sale_return_units else 0.0,
         "exact_fifo_cogs_rub": round(float(exact_cost or 0), 2),
         "status_counts": counts,
     }

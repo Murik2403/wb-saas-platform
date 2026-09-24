@@ -69,6 +69,27 @@ def test_fifo_reconciliation_details_use_shared_custom_period_normalization(monk
     assert result["rows"] == []
 
 
+def test_finance_response_exposes_fifo_absolute_unit_coverage_without_touching_profit(monkeypatch):
+    import types
+
+    monkeypatch.setattr(api, "_build_dashboard_cached", lambda *_: types.SimpleNamespace(
+        financial={"profit": 123.45}, financial_products=pd.DataFrame(),
+    ))
+    monkeypatch.setattr(api, "read_sales_fifo_cogs", lambda *_: pd.DataFrame())
+    monkeypatch.setattr(api, "read_financial_fifo_reconciliation", lambda *_: pd.DataFrame([
+        {"event_type": "sale", "status": "exact", "units": 2, "eligible_fifo_cogs_rub": 40},
+        {"event_type": "return", "status": "unmatched", "units": 1, "eligible_fifo_cogs_rub": None},
+    ]))
+    monkeypatch.setattr(api, "get_token", lambda: None)
+
+    result = api.get_dashboard_finance(period="custom", start=date(2026, 9, 1), end=date(2026, 9, 2))
+
+    assert result["financial"]["profit"] == 123.45
+    assert result["fifo_reconciliation"]["sale_return_units"] == 3
+    assert result["fifo_reconciliation"]["exact_units"] == 2
+    assert result["fifo_reconciliation"]["exact_unit_coverage_percent"] == 66.67
+
+
 def test_finance_export_contains_legacy_reconciliation_sheets():
     from report_tools import build_finance_excel, build_reconciliation
 

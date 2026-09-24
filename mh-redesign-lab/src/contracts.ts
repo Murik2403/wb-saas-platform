@@ -168,6 +168,9 @@ export type FinanceFifoCostRow = {
 export type FinanceFifoReconciliation = {
   saleReturnRows: number;
   exactRows: number;
+  saleReturnUnits: number;
+  exactUnits: number;
+  exactUnitCoveragePercent: number;
   exactFifoCogs: number;
   statusCounts: Record<string, number>;
 };

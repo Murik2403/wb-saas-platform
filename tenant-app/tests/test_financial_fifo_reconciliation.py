@@ -190,14 +190,39 @@ class FinancialFifoReconciliationTests(DbTestCase):
 
         self.assertEqual(summary["sale_return_rows"], 2)
         self.assertEqual(summary["exact_rows"], 1)
+        self.assertEqual(summary["sale_return_units"], 2)
+        self.assertEqual(summary["exact_units"], 1)
+        self.assertEqual(summary["exact_unit_coverage_percent"], 50.0)
         self.assertEqual(summary["status_counts"], {"exact": 1, "synthetic": 1})
         self.assertAlmostEqual(summary["exact_fifo_cogs_rub"], 80.0)
+
+    def test_unit_coverage_counts_exact_sales_and_returns_as_absolute_units(self) -> None:
+        self._finance(1, operation_date="2026-06-02", sale_date="2026-06-01", quantity=2, srid="SR-1")
+        self._finance(2, operation_date="2026-06-03", sale_date="2026-06-01", quantity=-1,
+                      srid="SR-1", operation="Возврат")
+        sale_event_id = self._event("S1", srid="SR-1", units=2, cost=80.0)
+        self._event("R1", srid="SR-1", kind="return", units=1, cost=15.0,
+                    matched_sale_event_id=sale_event_id)
+
+        summary = summarize_financial_fifo_reconciliation(
+            read_financial_fifo_reconciliation("2026-06-01", "2026-06-03")
+        )
+
+        self.assertEqual(summary["sale_return_rows"], 2)
+        self.assertEqual(summary["exact_rows"], 2)
+        self.assertEqual(summary["sale_return_units"], 3)
+        self.assertEqual(summary["exact_units"], 3)
+        self.assertEqual(summary["exact_unit_coverage_percent"], 100.0)
+        self.assertAlmostEqual(summary["exact_fifo_cogs_rub"], 65.0)
 
     def test_empty_summary_is_zeroed(self) -> None:
         summary = summarize_financial_fifo_reconciliation(read_financial_fifo_reconciliation("2026-01-01", "2026-01-31"))
         self.assertEqual(summary, {
             "sale_return_rows": 0,
             "exact_rows": 0,
+            "sale_return_units": 0,
+            "exact_units": 0,
+            "exact_unit_coverage_percent": 0.0,
             "exact_fifo_cogs_rub": 0.0,
             "status_counts": {},
         })

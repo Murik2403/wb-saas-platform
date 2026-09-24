@@ -248,6 +248,9 @@ type ApiFinanceResponse = {
   fifo_reconciliation?: {
     sale_return_rows?: number;
     exact_rows?: number;
+    sale_return_units?: number;
+    exact_units?: number;
+    exact_unit_coverage_percent?: number;
     exact_fifo_cogs_rub?: number;
     status_counts?: Record<string, number>;
   };
@@ -1885,6 +1888,9 @@ export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallba
     fifoReconciliation: input?.fifo_reconciliation ? {
       saleReturnRows: Number(input.fifo_reconciliation.sale_return_rows ?? 0),
       exactRows: Number(input.fifo_reconciliation.exact_rows ?? 0),
+      saleReturnUnits: Number(input.fifo_reconciliation.sale_return_units ?? 0),
+      exactUnits: Number(input.fifo_reconciliation.exact_units ?? 0),
+      exactUnitCoveragePercent: Number(input.fifo_reconciliation.exact_unit_coverage_percent ?? 0),
       exactFifoCogs: Number(input.fifo_reconciliation.exact_fifo_cogs_rub ?? 0),
       statusCounts: input.fifo_reconciliation.status_counts ?? {},
     } : fallback.fifoReconciliation,

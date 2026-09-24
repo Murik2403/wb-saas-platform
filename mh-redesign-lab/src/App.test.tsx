@@ -508,6 +508,28 @@ describe("operational detail drawer", () => {
     expect(screen.queryByText("отчёт неполный")).not.toBeInTheDocument();
   });
 
+  it("shows FIFO coverage by absolute units alongside row coverage", async () => {
+    mockedDashboard.financeReport = {
+      rows: [],
+      fifoReconciliation: {
+        saleReturnRows: 4,
+        exactRows: 2,
+        saleReturnUnits: 9,
+        exactUnits: 3,
+        exactUnitCoveragePercent: 33.33,
+        exactFifoCogs: 120,
+        statusCounts: { exact: 2, unmatched: 2 },
+      },
+    };
+    window.history.replaceState({}, "", "/?view=finance");
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    expect(await screen.findByText("3 / 9 ед.")).toBeInTheDocument();
+    expect(screen.getByText("33,33% единиц продаж и возвратов")).toBeInTheDocument();
+    expect(screen.getByText("50% финансовых строк")).toBeInTheDocument();
+  });
+
   it("loads a separate FIFO detail page and supports next-page navigation", async () => {
     vi.mocked(getFinanceFifoReconciliationPage)
       .mockImplementationOnce(() => new Promise((resolve) => window.setTimeout(() => resolve({
