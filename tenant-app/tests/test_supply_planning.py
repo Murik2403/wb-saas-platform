@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import sys
+import sqlite3
 from pathlib import Path
 
+import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -52,6 +54,27 @@ def test_task_multiplies_exact_bom_and_aggregates_materials_with_traceability():
     assert lines["fabric-a"]["source_refs"][0]["bom_version"] == 2
 
 
+def test_multiple_skus_aggregate_same_material_and_keep_all_variant_provenance():
+    result = build_supply_preview(snapshot(
+        tasks=[
+            {"task_key": "task-a", "task_date": "2026-09-12", "nm_id": 10, "chrt_id": 0, "planned_units": 3, "status": "Не начато"},
+            {"task_key": "task-b", "task_date": "2026-09-13", "nm_id": 20, "chrt_id": 0, "planned_units": 2, "status": "Не начато"},
+        ],
+        variants=[{"nm_id": 10, "chrt_id": 101}, {"nm_id": 10, "chrt_id": 102}],
+        boms=[
+            {"id": 1, "nm_id": 10, "chrt_id": 101, "version": 2, "materials": [{"material_key": "fabric-a", "material_name": "Ткань A", "quantity_per_unit": 2, "unit": "м"}]},
+            {"id": 2, "nm_id": 10, "chrt_id": 102, "version": 1, "materials": [{"material_key": "fabric-a", "material_name": "Ткань A", "quantity_per_unit": 2, "unit": "м"}]},
+            {"id": 3, "nm_id": 20, "chrt_id": 0, "version": 4, "materials": [{"material_key": "fabric-a", "material_name": "Ткань A", "quantity_per_unit": 1, "unit": "М"}]},
+        ],
+    ))
+    assert len(result["lines"]) == 1
+    line = result["lines"][0]
+    assert line["required_base_qty"] == 8
+    refs = {(ref["task_key"], ref["nm_id"], ref["chrt_id"], ref["bom_version_id"]) for ref in line["source_refs"]}
+    assert refs == {("task-a", 10, 101, 1), ("task-a", 10, 102, 2), ("task-b", 20, 0, 3)}
+    assert set(line["bom_version_ids"]) == {1, 2, 3}
+
+
 def test_ambiguous_variant_demand_blocks_until_complete_explicit_allocation():
     source = snapshot(
         tasks=[{"task_key": "task-variant", "task_date": "2026-09-12", "nm_id": 20, "chrt_id": 0, "planned_units": 5, "status": "Не начато"}],
@@ -66,6 +89,39 @@ def test_ambiguous_variant_demand_blocks_until_complete_explicit_allocation():
     assert {line["material_key"]: line["required_base_qty"] for line in allocated["lines"]}["a"] == 8
     short = build_supply_preview(source, [{"task_key": "task-variant", "chrt_id": 201, "units": 2}])
     assert any(b["code"] == "incomplete_variant_allocation" for b in short["blockers"])
+    over = build_supply_preview(source, [{"task_key": "task-variant", "chrt_id": 201, "units": 3}, {"task_key": "task-variant", "chrt_id": 202, "units": 3}])
+    assert any(b["code"] == "incomplete_variant_allocation" for b in over["blockers"])
+    assert over["lines"] == []
+
+
+def test_variant_bom_uses_latest_exact_version_or_explicit_base_fallback():
+    task = {"task_key": "variant", "task_date": "2026-09-12", "nm_id": 30, "chrt_id": 301, "planned_units": 2, "status": "Не начато"}
+    common = [{"material_key": "fabric-a", "material_name": "Ткань A", "quantity_per_unit": 1, "unit": "м"}]
+    exact = build_supply_preview(snapshot(tasks=[task], boms=[
+        {"id": 1, "nm_id": 30, "chrt_id": 301, "version": 1, "materials": [{**common[0], "quantity_per_unit": 3}]},
+        {"id": 2, "nm_id": 30, "chrt_id": 301, "version": 2, "materials": common},
+    ]))
+    assert exact["lines"][0]["required_base_qty"] == 2
+    assert exact["lines"][0]["source_refs"][0]["bom_version_id"] == 2
+    fallback = build_supply_preview(snapshot(tasks=[task], boms=[{"id": 3, "nm_id": 30, "chrt_id": 0, "version": 1, "materials": common}]))
+    assert fallback["lines"][0]["fallback_to_base_bom"] is True
+    assert any(w["code"] == "fallback_to_base_bom" for w in fallback["warnings"])
+    missing = build_supply_preview(snapshot(tasks=[task]))
+    assert any(b["code"] == "missing_bom" for b in missing["blockers"])
+    assert missing["lines"] == []
+    changed_version = build_supply_preview(snapshot(tasks=[task], boms=[{"id": 2, "nm_id": 30, "chrt_id": 301, "version": 3, "materials": common}]))
+    assert changed_version["preview_fingerprint"] != exact["preview_fingerprint"]
+
+
+def test_same_material_key_in_distinct_units_never_merges():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 2, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [
+            {"material_key": "shared", "material_name": "Материал", "quantity_per_unit": 2, "unit": "м"},
+            {"material_key": "shared", "material_name": "Материал", "quantity_per_unit": 3, "unit": "кг"},
+        ]}],
+    ))
+    assert {(line["material_key"], line["unit"], line["required_base_qty"]) for line in result["lines"]} == {("shared", "м", 4), ("shared", "кг", 6)}
 
 
 def test_unknown_inventory_does_not_reduce_shortage_and_packaged_quantity_rounds_up():
@@ -91,6 +147,16 @@ def test_fifo_physical_balance_mismatch_is_a_blocker_and_not_available_coverage(
     ))
     assert result["lines"][0]["physical_available_base_qty"] == 0
     assert any(b["code"] == "fifo_stock_mismatch" for b in result["blockers"])
+
+
+def test_packaged_inventory_without_a_valid_pack_size_blocks_order_rounding():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 3, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 0, "unit": "м", "tracking_mode": "packaged"}],
+    ))
+    assert any(blocker["code"] == "invalid_pack_size" for blocker in result["blockers"])
+    assert result["lines"][0]["pack_size_base_qty"] is None
 
 
 def test_open_partial_po_only_covers_unreceived_amount_arriving_before_need_date():
@@ -142,6 +208,50 @@ def test_open_order_with_unmapped_unit_blocks_instead_of_silent_omission():
     ))
     assert result["lines"][0]["open_order_covered_base_qty"] == 0
     assert any(b["code"] == "open_order_unit_mismatch" for b in result["blockers"])
+
+
+@pytest.mark.parametrize(("status", "posted", "expected_coverage", "expected_blocker"), [
+    ("Заказано", 0, 5, None),
+    ("Получено", 5, 0, None),
+    ("Отменено", 5, 0, None),
+    ("Отменено", 0, 0, "closed_order_residual"),
+    ("Статус миграции", 0, 0, "unknown_open_order_status"),
+])
+def test_open_order_status_matrix(status, posted, expected_coverage, expected_blocker):
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 5, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 1, "unit": "м", "tracking_mode": "quantity"}],
+        open_orders=[{"order_id": 17, "status": status, "expected_date": "2026-09-10", "material_key": "a", "quantity": 5, "posted_quantity": posted, "unit": "м"}],
+    ))
+    assert result["lines"][0]["open_order_covered_base_qty"] == expected_coverage
+    if expected_blocker:
+        assert any(blocker["code"] == expected_blocker for blocker in result["blockers"])
+    else:
+        assert not result["blockers"]
+
+
+def test_unknown_eta_does_not_cover_demand_and_raises_timing_warning():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 5, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 1, "unit": "м", "tracking_mode": "quantity"}],
+        open_orders=[{"order_id": 18, "status": "В пути", "expected_date": "", "material_key": "a", "quantity": 5, "posted_quantity": 1, "unit": "м"}],
+    ))
+    assert result["lines"][0]["open_order_covered_base_qty"] == 0
+    warning = next(w for w in result["warnings"] if w["code"] == "open_order_eta_risk")
+    assert warning["expected_date"] is None
+
+
+def test_closed_order_with_legacy_incompatible_unit_does_not_block_preview_when_fully_received():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 1, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 1, "unit": "м", "tracking_mode": "quantity"}],
+        open_orders=[{"order_id": 19, "status": "Получено", "expected_date": "2026-09-10", "material_key": "a", "quantity": 5, "posted_quantity": 5, "unit": "упаковка"}],
+    ))
+    assert result["blockers"] == []
+    assert result["lines"][0]["open_order_covered_base_qty"] == 0
 
 
 def test_partial_production_task_consumes_only_remaining_planned_units():
@@ -210,3 +320,22 @@ class SupplyPlanningDatabaseTests(DbTestCase):
             with self.assertRaisesRegex(ValueError, "stale_preview"):
                 confirm_supply_plan(conn, "00000000-0000-4000-8000-000000000002", "hash", "stale", preview, [{"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-10"}])
             assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+
+    def test_second_supplier_failure_rolls_back_all_orders_items_and_idempotency(self):
+        from db.core import connect
+        with connect() as conn:
+            self._seed_plan(conn)
+            conn.execute("INSERT INTO manufacturing_boms(nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (10,0,2,?, '[]',0,0,'','2026-09-02')", ('[{"material_key":"fabric-a","material_name":"Ткань A","quantity_per_unit":2,"unit":"м"},{"material_key":"dye-b","material_name":"Краситель B","quantity_per_unit":1,"unit":"кг"}]',))
+            conn.execute("INSERT INTO material_inventory_color(material_key,material_name,balance_known,full_rolls,partial_meters,roll_length,unit,tracking_mode,updated_at) VALUES ('dye-b','Краситель B',1,0,0,1,'кг','quantity','2026-09-01')")
+            conn.execute("INSERT INTO suppliers(name,default_currency,lead_time_days,active,created_at,updated_at) VALUES ('Поставщик 2','RUB',3,1,'2026-09-01','2026-09-01')")
+            preview = build_supply_preview(load_supply_plan_snapshot(conn, "2026-09-01", "2026-09-30"))
+            edits = [
+                {"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-10"},
+                {"material_key": "dye-b", "unit": "кг", "quantity": 3, "supplier_id": 2, "expected_date": "2026-09-10"},
+            ]
+            conn.execute("CREATE TRIGGER fail_second_supplier BEFORE INSERT ON procurement_orders WHEN NEW.supplier_id=2 BEGIN SELECT RAISE(ABORT,'injected second supplier failure'); END")
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "injected second supplier failure"):
+                confirm_supply_plan(conn, "00000000-0000-4000-8000-000000000103", "multi-supplier-request", preview["preview_fingerprint"], preview, edits)
+            assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM procurement_items").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM supply_plan_confirmations").fetchone()[0] == 0

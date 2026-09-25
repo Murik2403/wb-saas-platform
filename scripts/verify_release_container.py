@@ -5,6 +5,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from db.core import connect
+
 assert os.environ.get("WB_SAAS_TENANT_SLUG") == "release-fixture", "Run only in the isolated release fixture"
 
 BASE = "http://127.0.0.1:8501"
@@ -24,6 +26,26 @@ assert done["started_at"] and done["completed_at"]
 reloaded = call("/api/v1/action-plan/items")
 assert any(row["id"] == item_id and row["result"] == "Verified fixture operation" for row in reloaded["items"])
 print("ACTION_PLAN_RELOAD_OK", flush=True)
+
+with connect() as conn:
+    before_preview = tuple(
+        conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("procurement_orders", "procurement_items", "inventory_movements", "execution_tasks")
+    )
+preview = call("/api/v1/supply-planning/preview", {
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-30",
+    "variant_allocations": [],
+})
+assert len(preview.get("preview_fingerprint", "")) == 64
+int(preview["preview_fingerprint"], 16)
+with connect() as conn:
+    after_preview = tuple(
+        conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("procurement_orders", "procurement_items", "inventory_movements", "execution_tasks")
+    )
+assert before_preview == after_preview, (before_preview, after_preview)
+print("SUPPLY_PREVIEW_READ_ONLY_OK", flush=True)
 
 reports = call("/api/v1/operations/reports")
 codes = list(reports["metric_labels"])

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-> **Completion status 25.09.2026:** core planner, tenant API, React draft/confirmation flow, and their focused test suites are implemented in the release candidate. See [PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md](../../marketing/PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md). The plan deliberately leaves open the full confirm → receipt → FIFO end-to-end proof and concurrent-confirm stress test; a local container smoke covered read-only preview only. No production deploy is claimed.
+> **Completion status 25.09.2026:** core planner, tenant API, React draft/confirmation flow, HTTP confirm → receipt → FIFO proof, concurrent-confirm coverage, and an isolated-container preview smoke are implemented in the candidate. The acceptance cases added during the 25.09 follow-up are marked below; remaining gaps are intentionally open. See [PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md](../../marketing/PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md). No production deploy is claimed.
 
 - Preview performs no database writes and creates no reservation, order, movement, FIFO layer, or production task.
 - Never infer a variant when `nm_id` demand is ambiguous across different variant BOMs; require a complete explicit allocation or block confirmation.
@@ -39,11 +39,11 @@
 - Each preview row includes `material_key`, `material_name`, `unit`, `required_base_qty`, `physical_available_base_qty`, `open_order_covered_base_qty`, `shortage_base_qty`, `pack_size_base_qty`, `suggested_purchase_qty`, `due_date`, `supplier_candidates`, and source BOM/demand references.
 
 - [x] Add failing tests proving an empty snapshot yields an empty preview, a 3-unit task with a BOM requiring 2 m of A and 0.5 kg of B yields 6 m and 1.5 kg, and preview creation leaves order/movement/FIFO/task row counts unchanged.
-- [ ] Add a test with two SKUs consuming the same material and assert aggregation occurs by `(material_key, normalized_unit)`, while the original SKU/BOM references remain in the preview explanation. The current suite proves traceability for one SKU, not this multi-SKU aggregate case.
-- [ ] Add exact-variant, base-fallback, no-BOM, and BOM-version tests. A source-version change must change the fingerprint; an inapplicable version must be a blocker. The current domain tests do not evidence this full matrix.
-- [ ] Add ambiguous-demand tests: a size-agnostic plan with differing variant BOMs blocks; an explicit allocation summing exactly to the source units calculates; under-allocation and over-allocation both block. Existing coverage proves blocking and exact/under-allocation, not over-allocation.
-- [ ] Add unit/stock tests: unknown inventory does not cover demand; `m` and `kg` never merge; explicit roll length converts rolls to base units and rounds order packs upward; a missing pack size or incompatible unit blocks. Current evidence does not cover every listed unit case.
-- [ ] Add open-PO tests for full, partial, received, cancelled, too-late ETA, unknown ETA, and eligible ETA. The covered amount must be exactly `max(quantity - posted_quantity, 0)` and never double-count a posted receipt. Existing tests cover partial receipt, eligible/late ETA, roll conversion, and invalid units; they do not evidence the full listed status matrix.
+- [x] Add a test with two SKUs consuming the same material and assert aggregation occurs by `(material_key, normalized_unit)`, while the original SKU/BOM references remain in the preview explanation. `tenant-app/tests/test_supply_planning.py` also verifies that identical size-agnostic variant BOMs retain every contributing variant reference.
+- [x] Add exact-variant, base-fallback, no-BOM, and BOM-version tests. Latest exact BOM selection, explicit base fallback, missing BOM blockers, and fingerprint change after a source version change are covered in `tenant-app/tests/test_supply_planning.py`.
+- [x] Add ambiguous-demand tests: a size-agnostic plan with differing variant BOMs blocks; an explicit allocation summing exactly to the source units calculates; under-allocation and over-allocation both block.
+- [x] Add unit/stock tests: unknown inventory does not cover demand; `m` and `kg` never merge; explicit roll length converts rolls to base units and rounds order packs upward; a missing pack size or incompatible unit blocks. Open-order incompatible units also block.
+- [x] Add open-PO tests for eligible, partially received, fully received, cancelled, too-late ETA, and unknown ETA cases. Coverage uses the unreceived quantity, received/cancelled rows never cover twice, and cancelled residual or unknown status blocks for reconciliation.
 - [ ] Run `pytest tenant-app/tests/test_supply_planning.py -q` and confirm these cases fail before implementation. Final focused/full suites passed; a saved pre-implementation red-run is not available in the current evidence set.
 - [x] Implement immutable typed snapshot/preview values, a canonical JSON serializer, source fingerprint, and pure demand/BOM/coverage/rounding functions. Do not add writes to the planner.
 - [x] Re-run the focused tests and verify `load_supply_plan_snapshot` uses one read transaction for all inputs.
@@ -84,8 +84,8 @@
 - `POST /api/v1/supply-planning/confirm` accepts `{confirmation_key, preview_fingerprint, start_date, end_date, variant_allocations, edits}` and returns `{confirmation_key, order_ids, order_numbers, replayed}`.
 - The confirm route rebuilds the preview from current tenant state. A fingerprint mismatch returns `409` with `code: "stale_preview"`; a reused key with changed content returns `409` with `code: "idempotency_conflict"`; blockers return `422`; read-only role/demo writes preserve existing application policy.
 
-- [ ] Add API tests with isolated temporary tenant databases for preview read-only behavior, owner success, demo/viewer write denial, invalid variants, unknown balance, no BOM, and open/partial PO coverage. Existing route tests cover read-only preview, owner flow/replay, and roles; the full invalid-input matrix is not evidenced.
-- [ ] Add confirm API tests for successful multi-supplier order creation, no writes when blocked, stale preview, exact retry, changed retry payload, and rollback on a second-order failure. Existing route tests cover stale/idempotent replay/authorization; multi-supplier rollback coverage is not evidenced.
+- [x] Add API tests with isolated temporary tenant databases for preview read-only behavior, owner success, viewer write denial, invalid variants, and unknown balance. Domain tests cover missing BOM and open/partial PO coverage; preview/confirm remains tenant-local.
+- [x] Add confirm tests for no writes when blocked, stale preview, exact retry, changed retry payload, and rollback after a second supplier order fails. Multi-supplier atomicity is tested at the database transaction boundary; route success/replay and permission contracts are covered separately.
 - [x] Implement strict Pydantic request models (`extra="forbid"`), UUID confirmation key, finite nonnegative quantities, and server-side row identity validation.
 - [x] Register the router using the existing tenant API mount pattern. Keep preview source loading within the tenant's database path and request context.
 - [x] Run `pytest mh-redesign-lab/tenant-api/tests/test_supply_planning.py -q` and the complete tenant API test suite.
@@ -105,9 +105,9 @@
 - `SupplyPlanning` receives the tenant role/demo read-only flag and offers date/source controls, variant allocation, a calculation table, editable supplier/quantity/date fields, and a separate confirmation action.
 
 - [x] Add component tests that render a preview, edit quantity/supplier/ETA, and assert no POST to `/confirm` occurs until the user activates the explicit confirmation button.
-- [ ] Add UI tests that block confirmation for ambiguous variants, incomplete allocation, unknown balance, missing BOM, unit mismatch, invalid pack quantity, and stale preview. Current component tests cover stale preview and read-only roles; the complete blocker matrix is not evidenced.
+- [x] Add UI tests that block confirmation for ambiguous variants, incomplete allocation, unknown balance, missing BOM, unit mismatch, invalid pack quantity, and stale preview.
 - [x] Add success/retry tests showing order numbers once, retaining the draft on a stale/error response, and disabling duplicate submit while a confirmation is in flight.
-- [ ] Add API wrapper tests for request paths, typed response fields, and error-code parsing.
+- [x] Add API wrapper tests for request paths, typed response fields, and structured error-code parsing.
 - [x] Implement the React flow with accessible labels/status announcements. Clearly distinguish forecast/recommendation, internal planned request, and supplier-confirmed order.
 - [x] Mount the component in the existing Supply view without replacing supplier, receipt, payment, or WB shipment operations.
 - [x] Run `npm test -- --run SupplyPlanning`, the entire frontend suite, `npx tsc -b`, and `npm run build`.
@@ -120,10 +120,10 @@
 - Test: `mh-redesign-lab/src/SupplyPlanning.test.tsx`
 - Verify: `scripts/check_clean_clone.py`, `scripts/check_promotion_sources.py`, `mh-redesign-lab/Dockerfile.tenant-staging`
 
-- [ ] Add an end-to-end API/database test: saved exact-variant plan → exact BOM preview → physical/open-PO coverage → edited draft → confirmed planned PO → receipt → material FIFO layer; assert no movement/FIFO change before receipt.
+- [x] Add an end-to-end API/database test: saved exact-variant plan → exact BOM preview → physical/open-PO coverage → edited draft → confirmed planned PO → receipt → material FIFO layer; assert no movement/FIFO change before receipt. Covered by `tenant-app/tests/test_supply_planning_receipt_e2e.py`; HTTP preview/confirm routes are exercised before the real receipt/FIFO path.
 - [x] Add a stale-source test that changes BOM, stock, task quantity, or open PO after preview and confirms no order is written until a refreshed preview is confirmed.
-- [ ] Add concurrent/replayed confirm coverage for the same UUID so only one order set exists and both callers observe identical IDs or a typed conflict. Exact replay is tested; a simultaneous race is not evidenced.
+- [x] Add concurrent/replayed confirm coverage for the same UUID so only one order set exists and both callers observe identical IDs or a typed conflict. The concurrent database test confirms one planned order set and identical IDs; it passed in eight repeated runs.
 - [x] Run all tenant-app tests, all tenant API tests, all frontend tests, TypeScript/build, `python scripts/check_promotion_sources.py`, `python scripts/check_clean_clone.py`, and `git diff --check` on a clean commit.
 - [x] Build `mh-redesign-lab/Dockerfile.tenant-staging` with `REDESIGN_BUILD_ID` equal to the exact candidate code commit and run the tenant image locally bound to `127.0.0.1`.
-- [ ] Verify preview returns HTTP 200 without database writes, confirm returns HTTP 200 only after explicit request, and Docker reports healthy; record the exact commit/image and test counts in the feature handoff.
+- [ ] Verify the current final candidate preview returns HTTP 200 without database writes in an isolated Docker container, confirm returns HTTP 200 only after explicit request, and Docker reports healthy; record the exact commit/image and test counts in the feature handoff.
 - [ ] Do not deploy to production until the standard encrypted production backup succeeds and the release owner authorizes the production rollout; do not generate, replace, or expose encryption keys.

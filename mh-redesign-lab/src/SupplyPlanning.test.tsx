@@ -113,4 +113,29 @@ describe("SupplyPlanning", () => {
     expect(screen.getByRole("button", { name: "Создать внутреннюю заявку" })).toBeDisabled();
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["ambiguous_variant_demand", "Распределите варианты"],
+    ["incomplete_variant_allocation", "Укажите весь объём"],
+    ["unknown_inventory_balance", "Подтвердите остаток"],
+    ["missing_bom", "Нет спецификации"],
+    ["unit_mismatch", "Сверьте единицы"],
+    ["invalid_pack_size", "Исправьте размер рулона"],
+  ])("blocks confirmation while preview contains %s", async (code, message) => {
+    mocks.preview.mockResolvedValue({ ...preview, blockers: [{ code, message }] });
+    await calculate();
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("button", { name: "Создать внутреннюю заявку" })).toBeDisabled();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+  });
+
+  it("blocks fractional quantities for packaged material even when the suggested amount is fractional", async () => {
+    mocks.preview.mockResolvedValue({ ...preview, lines: [{ ...line, suggested_purchase_qty: 0.5 }] });
+    await calculate();
+    const quantity = screen.getByLabelText("Количество заказа Ткань A");
+    fireEvent.change(quantity, { target: { value: "1.5" } });
+    await userEvent.selectOptions(screen.getByLabelText("Поставщик Ткань A"), "7");
+    expect(screen.getByRole("button", { name: "Создать внутреннюю заявку" })).toBeDisabled();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+  });
 });

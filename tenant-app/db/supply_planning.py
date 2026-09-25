@@ -118,7 +118,9 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
             selected.append((variant, bom, fallback))
         if not selected:
             continue
-        # Identical multi-variant recipe is represented once using one variant's version.
+        # Identical multi-variant recipes need one quantity calculation but retain
+        # provenance for every variant that contributed to the size-agnostic task.
+        provenance_variants = selected
         if demand.get("variant_aggregate"):
             selected = selected[:1]
         for variant, bom, fallback in selected:
@@ -140,8 +142,9 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                 row = grouped.setdefault(group_key, {"material_key": material_key, "material_name": name, "unit": unit, "required_base_qty": 0.0, "source_refs": [], "bom_version_ids": [], "fallback_to_base_bom": False, "due_date": demand["task_date"]})
                 row["required_base_qty"] += required
                 row["due_date"] = min(row["due_date"], demand["task_date"])
-                row["source_refs"].append({"task_key": demand["task_key"], "nm_id": nm_id, "chrt_id": variant, "units": demand["units"], "bom_version": bom.get("version"), "bom_version_id": bom.get("id")})
-                row["bom_version_ids"].append(int(bom.get("id") or 0))
+                for source_variant, source_bom, _source_fallback in (provenance_variants if demand.get("variant_aggregate") else [(variant, bom, fallback)]):
+                    row["source_refs"].append({"task_key": demand["task_key"], "nm_id": nm_id, "chrt_id": source_variant, "units": demand["units"], "bom_version": source_bom.get("version"), "bom_version_id": source_bom.get("id")})
+                    row["bom_version_ids"].append(int(source_bom.get("id") or 0))
                 row["fallback_to_base_bom"] = bool(row["fallback_to_base_bom"] or fallback)
     lines: list[dict[str, Any]] = []
     for row in grouped.values():
@@ -178,6 +181,14 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                 continue
             remaining = max(0.0, float(order.get("quantity") or 0) - float(order.get("posted_quantity") or 0))
             status = str(order.get("status") or "")
+            if status in CLOSED_STATUSES:
+                if remaining > 0:
+                    blockers.append({"code": "closed_order_residual", "material_key": key, "order_id": order.get("order_id"), "message": "У закрытой заявки остался неполученный остаток; сверьте её."})
+                continue
+            if status not in OPEN_STATUSES:
+                if remaining > 0:
+                    blockers.append({"code": "unknown_open_order_status", "material_key": key, "order_id": order.get("order_id"), "status": status, "message": "Статус незакрытой заявки не распознан; сверьте закупку перед расчётом."})
+                continue
             eta = str(order.get("expected_date") or "")
             order_unit = str(order.get("unit") or "").strip().casefold()
             if order_unit == "рулон" and tracking == "packaged":
@@ -192,11 +203,9 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
             elif order_unit != unit.casefold():
                 blockers.append({"code": "open_order_unit_mismatch", "material_key": key, "order_id": order.get("order_id"), "order_unit": order.get("unit"), "material_unit": unit, "message": "Единица открытой закупки не совместима с единицей материала."})
                 continue
-            if status in CLOSED_STATUSES and remaining > 0:
-                blockers.append({"code": "closed_order_residual", "material_key": key, "order_id": order.get("order_id"), "message": "У закрытой заявки остался неполученный остаток; сверьте её."})
-            if status in OPEN_STATUSES and eta and eta <= row["due_date"]:
+            if eta and eta <= row["due_date"]:
                 po_covered += remaining
-            elif status in OPEN_STATUSES:
+            else:
                 warnings.append({"code": "open_order_eta_risk", "material_key": key, "order_id": order.get("order_id"), "expected_date": eta or None, "due_date": row["due_date"]})
         row["physical_available_base_qty"] = round(available, 6) if available is not None else None
         row["open_order_covered_base_qty"] = round(po_covered, 6)

@@ -48,6 +48,28 @@ def test_preview_is_read_only_and_uses_remaining_task_units(env):
     assert before == after
 
 
+def test_blocked_preview_cannot_be_confirmed_and_invalid_variant_is_rejected(env):
+    with core.connect() as conn:
+        conn.execute("UPDATE material_inventory_color SET balance_known=0 WHERE material_key='fabric-a'")
+    preview = env.post("/api/v1/supply-planning/preview", json=preview_body())
+    assert preview.status_code == 200
+    assert any(blocker["code"] == "unknown_inventory_balance" for blocker in preview.json()["blockers"])
+    confirm_body = {
+        **preview_body(),
+        "confirmation_key": "00000000-0000-4000-8000-000000000201",
+        "preview_fingerprint": preview.json()["preview_fingerprint"],
+        "edits": [{"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-11"}],
+    }
+    blocked = env.post("/api/v1/supply-planning/confirm", json=confirm_body)
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"]["code"] == "preview_blocked"
+    invalid_variant = env.post("/api/v1/supply-planning/preview", json={**preview_body(), "variant_allocations": [{"task_key": "task:one", "chrt_id": 0, "units": 2}]})
+    assert invalid_variant.status_code == 422
+    with core.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM procurement_items").fetchone()[0] == 0
+
+
 def test_confirm_requires_preview_fingerprint_and_replays_idempotently(env):
     preview = env.post("/api/v1/supply-planning/preview", json=preview_body()).json()
     body = {**preview_body(), "confirmation_key": "00000000-0000-4000-8000-000000000001", "preview_fingerprint": preview["preview_fingerprint"],

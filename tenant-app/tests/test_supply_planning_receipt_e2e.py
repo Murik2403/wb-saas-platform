@@ -8,8 +8,11 @@ from pathlib import Path
 from threading import Barrier
 
 import pandas as pd
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parent
 TESTS_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -17,8 +20,12 @@ if str(TESTS_ROOT) not in sys.path:
     sys.path.insert(0, str(TESTS_ROOT))
 
 from db import procurement
-from db.core import connect
 from db.supply_planning import build_supply_preview, confirm_supply_plan, load_supply_plan_snapshot
+from db.core import connect
+API_DIR = REPO_ROOT / "mh-redesign-lab" / "tenant-api"
+if str(API_DIR) not in sys.path:
+    sys.path.insert(0, str(API_DIR))
+from supply_planning_api import router as supply_planning_router
 from base import DbTestCase
 
 
@@ -35,22 +42,38 @@ class SupplyPlanReceiptFifoE2ETests(DbTestCase):
 
     def test_exact_variant_confirm_stays_internal_until_receipt_then_creates_fifo_layer(self):
         key = "00000000-0000-4000-8000-000000000101"
-        with connect() as conn:
-            self._seed_exact_variant_plan(conn)
-            preview = build_supply_preview(load_supply_plan_snapshot(conn, "2026-09-01", "2026-09-30"))
+        app = FastAPI()
+        app.include_router(supply_planning_router)
+        request = {"start_date": "2026-09-01", "end_date": "2026-09-30", "variant_allocations": []}
+        with TestClient(app) as client:
+            with connect() as conn:
+                self._seed_exact_variant_plan(conn)
+                before = tuple(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("procurement_orders", "procurement_items", "inventory_movements", "material_cost_layers"))
+            preview_response = client.post("/api/v1/supply-planning/preview", json=request)
+            self.assertEqual(preview_response.status_code, 200, preview_response.text)
+            preview = preview_response.json()
             self.assertEqual(preview["blockers"], [])
             self.assertEqual(preview["lines"][0]["required_base_qty"], 6)
             self.assertEqual(preview["lines"][0]["source_refs"][0]["chrt_id"], 110)
-            before = tuple(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("procurement_orders", "procurement_items", "inventory_movements", "material_cost_layers"))
-            result = confirm_supply_plan(conn, key, "request-101", preview["preview_fingerprint"], preview, [{"material_key": "fabric-a", "unit": "м", "quantity": 6, "supplier_id": 1, "expected_date": "2026-09-10"}])
+            with connect() as conn:
+                after_preview = tuple(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("procurement_orders", "procurement_items", "inventory_movements", "material_cost_layers"))
+            self.assertEqual(before, after_preview)
+            confirm_response = client.post("/api/v1/supply-planning/confirm", json={
+                **request,
+                "confirmation_key": key,
+                "preview_fingerprint": preview["preview_fingerprint"],
+                "edits": [{"material_key": "fabric-a", "unit": "м", "quantity": 6, "supplier_id": 1, "expected_date": "2026-09-10"}],
+            })
+            self.assertEqual(confirm_response.status_code, 200, confirm_response.text)
+            result = confirm_response.json()
             self.assertFalse(result["replayed"])
+        with connect() as conn:
             order_id = result["order_ids"][0]
             order = conn.execute("SELECT status,note FROM procurement_orders WHERE id=?", (order_id,)).fetchone()
             item = conn.execute("SELECT id,quantity,unit,material_key FROM procurement_items WHERE order_id=?", (order_id,)).fetchone()
             self.assertEqual(order["status"], "Запланировано")
             self.assertIn("не отправлена", order["note"])
             self.assertEqual((item["quantity"], item["unit"], item["material_key"]), (6.0, "м", "fabric-a"))
-            self.assertEqual(before, (0, 0, 0, 0))
             after_confirm = tuple(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("procurement_orders", "procurement_items", "inventory_movements", "material_cost_layers"))
             self.assertEqual(after_confirm, (1, 1, 0, 0))
             # A supplier quote and delivery cost are entered on the internal PO before receipt.

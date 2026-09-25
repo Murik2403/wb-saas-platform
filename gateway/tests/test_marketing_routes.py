@@ -78,6 +78,18 @@ class MarketingRouteTests(unittest.TestCase):
         self.assertIn("хранению, рекламе, упаковке, браку и налогам", html)
         self.assertIn("id=\"calcStorage\"", html)
         self.assertIn("id=\"calcTax\"", html)
+        self.assertIn("нужно ввести вручную", html)
+        self.assertNotIn("или импортировать", html)
+
+    def test_public_analytics_guide_does_not_overstate_api_access(self):
+        html = self.client.get("/guides/zamena-servisov-analitiki").text
+        self.assertIn("Некоторые отчёты и периоды требуют подписку", html)
+        self.assertNotIn("вы можете получить те же данные сами", html)
+
+    def test_calculator_does_not_claim_to_import_expenses(self):
+        html = self.client.get("/calculator").text
+        self.assertIn("внешние статьи в калькуляторе нужно ввести вручную", html)
+        self.assertNotIn("или импортировать", html)
 
     def test_cost_page_has_safe_seo_content_and_internal_links(self):
         html = self.client.get("/sebestoimost-wb?utm_source=test").text
