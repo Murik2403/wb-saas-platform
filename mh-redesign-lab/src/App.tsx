@@ -1157,7 +1157,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? <SettingsViewV2 onSynced={dashboard.refresh} /> : null}
+        {activeNav === "settings" ? <SettingsViewV2 onSynced={dashboard.refresh} canManageMarketplaceCredentials={session?.user.role.toLowerCase() === "owner"} /> : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">
@@ -2201,7 +2201,7 @@ function ControlView({
   return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:String(data.fifo_guard.guard_mode ?? ""),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><section className="work-section"><SectionHeader kicker="Настройки расчётов" title="Нормы и себестоимость"><SlidersHorizontal size={18} /></SectionHeader><div className="operation-actions"><p className="plan-empty">Нормы материала и себестоимость ведутся отдельно в настройках и участвуют в производственном плане и марже.</p><button className="secondary-button" type="button" onClick={() => onNavigate("settings")}>Открыть настройки</button></div></section><section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{checks.length ? <div className="data-quality-list">{checks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{String(row.Модуль ?? "Контроль")}</span><strong>{String(row.Проверка ?? "")}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">Проверок пока нет</p>}</section></div>;
 }
 
-function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
+function SettingsViewV2({ onSynced, canManageMarketplaceCredentials }: { onSynced: () => Promise<void>; canManageMarketplaceCredentials: boolean }) {
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [backups, setBackups] = useState<Array<Record<string, unknown>>>([]);
   const [syncRuns, setSyncRuns] = useState<TenantSyncRun[]>([]);
@@ -2228,7 +2228,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
 
   const load = async () => {
     try {
-      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus, expenseData] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), getWBTokenStatus(), getManualExpenses().catch(() => ({ items: [] as ManualExpense[] }))]);
+      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus, expenseData] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), canManageMarketplaceCredentials ? getWBTokenStatus() : Promise.resolve(null), getManualExpenses().catch(() => ({ items: [] as ManualExpense[] }))]);
       setSettings(nextSettings);
       setBackups(backupData.backups);
       setSyncRuns(syncData.runs);
@@ -2238,17 +2238,19 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
       setMaterialInventory(materialData.items);
       setMaterialFifo(materialData.fifo);
       setOpeningRate(materialData.opening_rate_rub_m);
-      setWbScopes(wbStatus.scopes);
-      setWbMissingScopes(wbStatus.missing_scopes);
-      setWbScopeMetadataAvailable(Boolean(wbStatus.scope_metadata_available));
-      setWbReadOnly(Boolean(wbStatus.read_only));
-      setWbExpiresAt(wbStatus.expires_at ?? null);
+      if (wbStatus) {
+        setWbScopes(wbStatus.scopes);
+        setWbMissingScopes(wbStatus.missing_scopes);
+        setWbScopeMetadataAvailable(Boolean(wbStatus.scope_metadata_available));
+        setWbReadOnly(Boolean(wbStatus.read_only));
+        setWbExpiresAt(wbStatus.expires_at ?? null);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось загрузить параметры tenant");
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [canManageMarketplaceCredentials]);
 
   const saveSettings = async () => {
     if (!settings) return;
@@ -2483,6 +2485,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <aside className="insight-column">
           <section className="panel">
             <SectionHeader compact kicker="Подключения" title="Статус API"><ShieldCheck size={20} /></SectionHeader>
+            {!canManageMarketplaceCredentials ? <p className="form-hint" role="status">Подключение и управление ключами Wildberries и Ozon доступно владельцу кабинета.</p> : <>
             {!settings.wb_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Wildberries"><p className="form-hint">Подключите WB-токен, чтобы загрузить продажи, остатки, финансы и отчёты.</p><label className="operation-field"><span>WB API-токен</span><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="Вставьте токен WB" /></label><button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : null}
             <div className="automation-list">
               <AutomationRow item={{ title: "Wildberries API", detail: "Данные и операции tenant", status: settings.wb_connected ? "подключён" : "не подключён", tone: settings.wb_connected ? "good" : "warn" }} />
@@ -2494,6 +2497,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
             {wbReadOnly ? <p className="form-hint warning-text">Токен WB доступен только для чтения: операции изменения и печати в кабинете могут быть недоступны.</p> : null}
             {wbScopeMetadataAvailable && wbExpiresAt ? <p className="form-hint">Срок действия токена: {new Date(wbExpiresAt * 1000).toLocaleString("ru-RU")}</p> : null}
             {settings.wb_connected && !wbScopeMetadataAvailable ? <p className="form-hint">WB не передал карту категорий для сохранённого токена. Проверена категория «Статистика»; права остальных разделов уточняются при обращении к ним.</p> : null}
+            </>}
           </section>
         </aside>
       </div>

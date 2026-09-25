@@ -322,6 +322,57 @@ def test_ozon_credentials_routes_never_return_secret(monkeypatch):
     assert "/api/v1/settings/ozon" in api.app.openapi()["paths"]
 
 
+def test_manager_cannot_read_or_change_marketplace_credentials(monkeypatch):
+    reads = []
+    writes = []
+    monkeypatch.setattr(api, "get_token", lambda: reads.append("wb") or "must-not-be-read")
+    monkeypatch.setattr(api, "save_ozon_credentials", lambda *_: writes.append("save"))
+    monkeypatch.setattr(api, "delete_ozon_credentials", lambda: writes.append("delete"))
+    client = TestClient(api.app, base_url="http://127.0.0.1", headers={"x-tenant-role": "manager"})
+
+    status = client.get("/api/v1/settings/wb-token")
+    connect = client.post("/api/v1/settings/ozon", json={"client_id": "123", "api_key": "k" * 16})
+    disconnect = client.delete("/api/v1/settings/ozon")
+
+    assert (status.status_code, connect.status_code, disconnect.status_code) == (403, 403, 403)
+    assert reads == []
+    assert writes == []
+
+
+def test_owner_can_manage_credentials_and_wb_status_never_returns_token(monkeypatch):
+    secret = "wb-secret-that-must-never-leave-storage"
+    saved = []
+    deleted = []
+
+    class FakeWBAPI:
+        TOKEN_SCOPES = {"statistics": "Статистика"}
+
+        def __init__(self, token):
+            assert token == secret
+
+        def token_scope_info(self):
+            return {"known": True, "scopes": ["Статистика"], "missing_scopes": [], "read_only": True, "expires_at": None}
+
+    monkeypatch.setattr(api, "get_token", lambda: secret)
+    monkeypatch.setattr(api, "WBAPI", FakeWBAPI)
+    monkeypatch.setattr(api, "save_ozon_credentials", lambda client_id, api_key: saved.append((client_id, api_key)))
+    monkeypatch.setattr(api, "delete_ozon_credentials", lambda: deleted.append(True))
+    client = TestClient(api.app, base_url="http://127.0.0.1", headers={"x-tenant-role": "owner"})
+
+    status = client.get("/api/v1/settings/wb-token")
+    connect = client.post("/api/v1/settings/ozon", json={"client_id": "123", "api_key": "ozon-secret"})
+    disconnect = client.delete("/api/v1/settings/ozon")
+
+    assert status.status_code == 200
+    assert status.json()["connected"] is True
+    assert secret not in status.text
+    assert status.json()["scopes"] == ["Статистика"]
+    assert connect.status_code == 200 and connect.json() == {"connected": True}
+    assert disconnect.status_code == 200 and disconnect.json() == {"connected": False}
+    assert saved == [("123", "ozon-secret")]
+    assert deleted == [True]
+
+
 def test_balance_client_uses_finance_endpoint(monkeypatch):
     from wb_api import WBAPI
 

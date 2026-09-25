@@ -4,10 +4,19 @@ These roles share read access with the team, as explicitly stated in the UI.
 """
 ROLES = {"owner", "manager", "viewer", "technologist", "cutter", "seamstress", "warehouse", "integration_reader"}
 
+# Marketplace credentials grant access to the tenant's external seller accounts.
+# Only the account owner may inspect credential metadata or change these links.
+OWNER_ONLY_CREDENTIAL_PATHS = {
+    "/api/v1/settings/wb-token",
+    "/api/v1/settings/ozon",
+}
+
 
 def write_allowed(role: str, method: str, path: str) -> bool:
     if role not in ROLES:
         return False
+    if path in OWNER_ONLY_CREDENTIAL_PATHS:
+        return role == "owner"
     if method == "POST" and path == "/api/v1/supply-planning/preview":
         return role != "integration_reader"
     if method == "POST" and path == "/api/v1/supply-planning/confirm":

@@ -29,6 +29,13 @@ def test_production_roles_cannot_change_credentials_or_prices(role):
     assert write_allowed(role, "GET", "/api/v1/manufacturing-costs")
 
 
+@pytest.mark.parametrize("path", ["/api/v1/settings/wb-token", "/api/v1/settings/ozon"])
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_marketplace_credentials_are_owner_only(path, method):
+    assert not write_allowed("manager", method, path)
+    assert write_allowed("owner", method, path)
+
+
 def test_role_permissions_are_specific_to_operation():
     assert write_allowed("technologist", "POST", "/api/v1/manufacturing-costs/boms")
     assert not write_allowed("seamstress", "POST", "/api/v1/manufacturing-costs/boms")

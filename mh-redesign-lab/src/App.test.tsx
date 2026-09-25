@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 
 import type { DashboardDataState } from "./data-source";
 import type { PageId } from "./contracts";
-import { getActionPlanItems, updateActionPlanItem, createActionPlanItem, financeExportUrl, adaptFinanceReport, getFinanceFifoReconciliationPage, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution, createProcurementOperation, getProcurementOperations } from "./data-source";
+import { getActionPlanItems, updateActionPlanItem, createActionPlanItem, financeExportUrl, adaptFinanceReport, getFinanceFifoReconciliationPage, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution, createProcurementOperation, getProcurementOperations, getDashboardSession, getWBTokenStatus } from "./data-source";
 
 const mockedDashboard: DashboardDataState = {
   refreshing: false,
@@ -632,6 +632,36 @@ describe("operational detail drawer", () => {
 
     expect(window.location.href).toContain("view=settings");
     expect(await screen.findByRole("heading", { name: /Себестоимость товаров/i })).toBeInTheDocument();
+  });
+});
+
+describe("marketplace credential settings policy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.replaceState({}, "", "/?view=settings");
+  });
+
+  it("shows credential management to the owner", async () => {
+    vi.mocked(getDashboardSession).mockResolvedValue({ user: { id: "u-owner", name: "Owner", role: "owner" }, tenant: { id: "t1", name: "Tenant" }, mode: "live" });
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Отключить WB" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Подключение Ozon")).toBeInTheDocument();
+    expect(getWBTokenStatus).toHaveBeenCalled();
+  });
+
+  it("hides credential metadata and controls from a manager", async () => {
+    vi.mocked(getDashboardSession).mockResolvedValue({ user: { id: "u-manager", name: "Manager", role: "manager" }, tenant: { id: "t1", name: "Tenant" }, mode: "live" });
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    expect(await screen.findByText("Подключение и управление ключами Wildberries и Ozon доступно владельцу кабинета.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отключить WB" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отключить Ozon" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Подключение Wildberries")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Подключение Ozon")).not.toBeInTheDocument();
+    expect(getWBTokenStatus).not.toHaveBeenCalled();
   });
 });
 
