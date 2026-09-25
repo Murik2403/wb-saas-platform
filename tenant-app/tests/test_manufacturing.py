@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import pandas as pd
 
 from db.core import connect, init_db
@@ -84,6 +85,39 @@ class ManufacturingTests(DbTestCase):
             migrated = conn.execute("SELECT chrt_id,version,note FROM manufacturing_boms WHERE id=1").fetchone()
             self.assertEqual(tuple(migrated), (0, 1, "legacy"))
             conn.execute("INSERT INTO manufacturing_boms(nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (123,501,1,'[]','[]',0,0,'S','2026-09-02')")
+
+    def test_finished_goods_layers_migrate_producer_link_and_keep_opening_provenance_unknown(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("CREATE TABLE finished_goods_cost_layers(id INTEGER PRIMARY KEY, source_type TEXT, source_ref TEXT)")
+            conn.execute("CREATE TABLE manufacturing_releases(id INTEGER PRIMARY KEY, finished_layer_id INTEGER, bom_version_id INTEGER, source_key TEXT)")
+            conn.execute("INSERT INTO finished_goods_cost_layers VALUES (1,'production','movement:44')")
+            conn.execute("INSERT INTO finished_goods_cost_layers VALUES (2,'opening','seed:opening')")
+            conn.execute("INSERT INTO finished_goods_cost_layers VALUES (3,'production','movement:45')")
+            conn.execute("INSERT INTO manufacturing_releases VALUES (9,1,17,'release-9')")
+            conn.execute("INSERT INTO manufacturing_releases VALUES (10,3,18,'release-10')")
+            conn.execute("INSERT INTO manufacturing_releases VALUES (11,3,19,'release-11')")
+            m.init_manufacturing_schema(conn)
+            m.init_manufacturing_schema(conn)  # repeat initialization is safe
+            migrated = conn.execute("SELECT producer_release_id FROM finished_goods_cost_layers WHERE id=1").fetchone()
+            legacy = conn.execute("SELECT producer_release_id FROM finished_goods_cost_layers WHERE id=2").fetchone()
+            ambiguous = conn.execute("SELECT producer_release_id FROM finished_goods_cost_layers WHERE id=3").fetchone()
+            producer = conn.execute("SELECT bom_version_id FROM manufacturing_releases WHERE id=?",(migrated["producer_release_id"],)).fetchone()
+            self.assertEqual(migrated["producer_release_id"],9)
+            self.assertEqual(producer["bom_version_id"],17)
+            self.assertIsNone(legacy["producer_release_id"])
+            self.assertIsNone(ambiguous["producer_release_id"])
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_manufacturing_releases_finished_layer'").fetchone())
+            hydrated = m._hydrate_semi_finished_provenance(conn, {"materials":[{
+                "component_type":"semi_finished","component_bom_version_id":17,
+                "allocations":[{"layer_id":2,"units":1,"amount_rub":7}],
+            }]})
+            legacy_allocation = hydrated["materials"][0]["allocations"][0]
+            self.assertEqual(legacy_allocation["source_provenance"], "unknown_legacy_or_external")
+            self.assertIsNone(legacy_allocation["source_bom_version_mismatch"])
+        finally:
+            conn.close()
     def test_variant_uses_legacy_bom_only_when_exact_bom_absent(self):
         self.seed()
         legacy = m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
@@ -149,6 +183,11 @@ class ManufacturingTests(DbTestCase):
             self.assertEqual(middle["materials"][0]["component_bom_version_id"], revised_bom["id"])
             source_versions = [conn.execute("SELECT bom_version_id FROM manufacturing_releases WHERE finished_layer_id=?", (int(row["layer_id"]),)).fetchone()[0] for row in middle_allocations]
             self.assertEqual(source_versions, [original_bom["id"], revised_bom["id"]])
+            provenance = middle["materials"][0]["allocations"]
+            self.assertEqual([row["source_release_id"] for row in provenance], [first["id"],second["id"]])
+            self.assertEqual([row["source_bom_version_id"] for row in provenance], [original_bom["id"],revised_bom["id"]])
+            self.assertEqual([row["source_bom_version_mismatch"] for row in provenance], [True,False])
+            self.assertTrue(all(row["source_provenance"] == "manufacturing" for row in provenance))
             self.assertAlmostEqual(sum(float(row["amount_rub"]) for row in middle_allocations),middle["material_cost_rub"],places=2)
             self.assertAlmostEqual(float(allocations[0]["amount_rub"]),middle["unit_cost_rub"],places=2)
             self.assertTrue(all((row["from_location"], row["to_location"]) == ("ready", "out") for row in allocations))
@@ -171,6 +210,7 @@ class ManufacturingTests(DbTestCase):
                 "SELECT COUNT(*) FROM finished_goods_fifo_allocations WHERE movement_id=? AND status='applied'",
                 (middle["movement_id"],),
             ).fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT producer_release_id FROM finished_goods_cost_layers WHERE id=?",(first["finished_layer_id"],)).fetchone()[0],first["id"])
         undone_second = undo_inventory_movement(second["movement_id"])
         undone_first = undo_inventory_movement(first["movement_id"])
         self.assertTrue(undone_second["ok"], undone_second)

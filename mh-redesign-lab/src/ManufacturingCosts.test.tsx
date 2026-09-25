@@ -238,6 +238,24 @@ describe("manufacturing cost input", () => {
     expect(writes()[0][0]).toBe("/api/v1/manufacturing-costs/movements/22/reverse");
     expect(screen.queryByText(/Выпуск отменён\./)).not.toBeInTheDocument();
   });
+  it("shows legacy source and pinned-BOM mismatch on exact semi-finished FIFO allocations", async () => {
+    const withProvenance: ManufacturingCostsData = {
+      ...data,
+      releases: [{
+        id: 7, movement_id: 77, source_key: "job-provenance", status: "applied", quantity: 1, total_cost_rub: 100,
+        materials: [{ component_type: "semi_finished", nm_id: 222, chrt_id: 501, component_bom_version_id: 4, quantity_per_unit: 2, unit: "шт", allocations: [
+          { layer_id: 10, units: 1, amount_rub: 7, source_release_id: null, source_release_key: null, source_bom_version_id: null, source_bom_version_mismatch: null, source_provenance: "unknown_legacy_or_external" },
+          { layer_id: 11, units: 1, amount_rub: 93, source_release_id: 6, source_release_key: "child-v5", source_bom_version_id: 5, source_bom_version_mismatch: true, source_provenance: "manufacturing" },
+        ] }],
+      }],
+    };
+    fetchMock.mockImplementation(async () => json(withProvenance));
+    await open();
+    await userEvent.click(screen.getByText(/job-provenance · WB/));
+    expect(screen.getByText(/версия источника неизвестна \(начальный или внешний остаток\)/)).toBeVisible();
+    expect(screen.getByText(/версия источника BOM v5 отличается от закреплённой v4/)).toBeVisible();
+    expect(screen.getByText(/FIFO учёл фактическую стоимость партии/)).toBeVisible();
+  });
   it("refreshes a reversed defect and prevents reversing it again", async () => {
     const defect = { id: 3, movement_id: 25, material_name: "Ткань", quantity: 1.5, unit: "м²", cost_rub: 15.75, reason: "Повреждение", status: "applied" };
     fetchMock.mockImplementation(async () => json({ ...data, allowed_actions: ["reverse"], defects: [defect] })); await open();
