@@ -728,9 +728,11 @@ app = FastAPI(title="MARKETSHELPER tenant API", lifespan=lifespan)
 from production_workspace_api import router as production_workspace_router
 from manufacturing_costs_api import router as manufacturing_costs_router
 from integration_api import router as integration_router
+from supply_planning_api import router as supply_planning_router
 app.include_router(production_workspace_router)
 app.include_router(manufacturing_costs_router)
 app.include_router(integration_router)
+app.include_router(supply_planning_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
 dashboard_response_cache = DashboardResponseCache()
 context_response_cache = DashboardResponseCache()
@@ -768,14 +770,15 @@ async def invalidate_after_write(request, call_next):
     tenant_role = headers.get("x-tenant-role", "owner").lower()
     if tenant_role not in ROLES:
         return JSONResponse(status_code=403, content={"detail": "Роль пользователя не распознана"})
-    if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"}:
+    safe_supply_preview = request.method == "POST" and request.url.path == "/api/v1/supply-planning/preview"
+    if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"} and not safe_supply_preview:
         return JSONResponse(status_code=403, content={"detail": "Роль наблюдателя доступна только для просмотра"})
     if not write_allowed(tenant_role, request.method, request.url.path):
         return JSONResponse(status_code=403, content={"detail": "Эта операция недоступна для вашей производственной роли"})
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         if not write_origin_allowed(headers, headers.get("host", ""), getattr(getattr(request, "url", None), "scheme", "http")):
             return JSONResponse(status_code=403, content={"detail": "Запрос с постороннего сайта запрещён"})
-    if IS_DEMO and request.method not in {"GET", "HEAD", "OPTIONS"}:
+    if IS_DEMO and request.method not in {"GET", "HEAD", "OPTIONS"} and not safe_supply_preview:
         return JSONResponse(status_code=403, content={"detail": "Демо доступно только для просмотра"})
     response = await call_next(request)
     if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400:

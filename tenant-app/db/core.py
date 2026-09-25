@@ -1277,6 +1277,15 @@ def init_db() -> None:
         _initialize_sales_fifo_baseline_if_needed(conn)
         from .manufacturing import init_manufacturing_schema
         init_manufacturing_schema(conn)
+        # Idempotent audit ledger for the explicit supply-plan confirmation flow.
+        # This is additive and preserves all legacy procurement records.
+        conn.execute("""CREATE TABLE IF NOT EXISTS supply_plan_confirmations (
+            confirmation_key TEXT PRIMARY KEY,
+            request_hash TEXT NOT NULL,
+            preview_fingerprint TEXT NOT NULL,
+            order_ids_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
 
 def _num(value: Any, default: float = 0.0) -> float:
     try:
