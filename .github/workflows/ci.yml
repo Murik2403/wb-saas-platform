@@ -87,7 +87,7 @@ jobs:
         run: python -m pytest tests -q
 
   test-frontends:
-    name: Build Frontends
+    name: Frontend Tests and Builds
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -107,6 +107,9 @@ jobs:
         if: hashFiles('${{ matrix.project }}/package.json') != ''
       - run: npm audit --audit-level=high
         if: hashFiles('${{ matrix.project }}/package.json') != ''
+      - name: Run Frontend Unit Tests
+        if: matrix.project == 'mh-redesign-lab'
+        run: npm test
       - run: npm run build
         if: hashFiles('${{ matrix.project }}/package.json') != ''
       - name: Check history formatting
