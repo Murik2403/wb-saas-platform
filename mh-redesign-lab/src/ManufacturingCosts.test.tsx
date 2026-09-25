@@ -245,6 +245,7 @@ describe("manufacturing cost input", () => {
         id: 7, movement_id: 77, source_key: "job-provenance", status: "applied", quantity: 1, total_cost_rub: 100,
         materials: [{ component_type: "semi_finished", nm_id: 222, chrt_id: 501, component_bom_version_id: 4, quantity_per_unit: 2, unit: "шт", allocations: [
           { layer_id: 10, units: 1, amount_rub: 7, source_release_id: null, source_release_key: null, source_bom_version_id: null, source_bom_version_mismatch: null, source_provenance: "unknown_legacy_or_external" },
+          { layer_id: 12, units: 1, amount_rub: 8, source_release_id: null, source_release_key: null, source_bom_version_id: null, source_bom_version_mismatch: null, source_provenance: "legacy_manufacturing_unknown" },
           { layer_id: 11, units: 1, amount_rub: 93, source_release_id: 6, source_release_key: "child-v5", source_bom_version_id: 5, source_bom_version_mismatch: true, source_provenance: "manufacturing" },
         ] }],
       }],
@@ -253,6 +254,7 @@ describe("manufacturing cost input", () => {
     await open();
     await userEvent.click(screen.getByText(/job-provenance · WB/));
     expect(screen.getByText(/версия источника неизвестна \(начальный или внешний остаток\)/)).toBeVisible();
+    expect(screen.getByText(/старый производственный выпуск; связь не восстановлена однозначно/)).toBeVisible();
     expect(screen.getByText(/версия источника BOM v5 отличается от закреплённой v4/)).toBeVisible();
     expect(screen.getByText(/FIFO учёл фактическую стоимость партии/)).toBeVisible();
   });

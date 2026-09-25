@@ -105,6 +105,9 @@ def test_nested_release_api_exposes_pinned_and_actual_bom_provenance(client):
     parent_details = next(entry for entry in stored if entry["id"] == parent_release["id"])
     assert parent_details["materials"][0]["allocations"] == allocation_provenance
     assert parent_details["material_cost_rub"] == sum(entry["amount_rub"] for entry in allocation_provenance)
+    retry = post(client, "/releases", {"nm_id":123,"quantity":1,"production_date":"2026-09-12","source_key":"parent","bom_version_id":parent_bom["id"]})
+    assert retry["skipped"] == 1
+    assert retry["materials"][0]["allocations"] == allocation_provenance
 
 
 def test_defect_exact_layer_idempotency_and_overdraft_rollback(client):

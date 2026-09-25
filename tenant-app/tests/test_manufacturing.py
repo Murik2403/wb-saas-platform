@@ -111,11 +111,14 @@ class ManufacturingTests(DbTestCase):
             self.assertIsNotNone(conn.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_manufacturing_releases_finished_layer'").fetchone())
             hydrated = m._hydrate_semi_finished_provenance(conn, {"materials":[{
                 "component_type":"semi_finished","component_bom_version_id":17,
-                "allocations":[{"layer_id":2,"units":1,"amount_rub":7}],
+                "allocations":[{"layer_id":2,"units":1,"amount_rub":7},{"layer_id":3,"units":1,"amount_rub":8}],
             }]})
             legacy_allocation = hydrated["materials"][0]["allocations"][0]
             self.assertEqual(legacy_allocation["source_provenance"], "unknown_legacy_or_external")
             self.assertIsNone(legacy_allocation["source_bom_version_mismatch"])
+            ambiguous_production = hydrated["materials"][0]["allocations"][1]
+            self.assertEqual(ambiguous_production["source_provenance"], "legacy_manufacturing_unknown")
+            self.assertIsNone(ambiguous_production["source_release_id"])
         finally:
             conn.close()
     def test_variant_uses_legacy_bom_only_when_exact_bom_absent(self):

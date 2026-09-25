@@ -176,7 +176,7 @@ def _hydrate_semi_finished_provenance(conn: sqlite3.Connection, release: dict) -
         pinned_version = component.get("component_bom_version_id")
         for allocation in component.get("allocations", []):
             source = conn.execute(
-                """SELECT l.producer_release_id,r.bom_version_id,r.source_key
+                """SELECT l.producer_release_id,l.source_type,r.bom_version_id,r.source_key
                    FROM finished_goods_cost_layers l
                    LEFT JOIN manufacturing_releases r ON r.id=l.producer_release_id
                    WHERE l.id=?""",
@@ -189,7 +189,11 @@ def _hydrate_semi_finished_provenance(conn: sqlite3.Connection, release: dict) -
                 source_release_key=str(source["source_key"]) if source and producer_id is not None else None,
                 source_bom_version_id=source_bom_version,
                 source_bom_version_mismatch=(source_bom_version != int(pinned_version)) if source_bom_version is not None and pinned_version is not None else None,
-                source_provenance="manufacturing" if producer_id is not None else "unknown_legacy_or_external",
+                source_provenance=(
+                    "manufacturing" if producer_id is not None
+                    else "legacy_manufacturing_unknown" if str(source["source_type"] or "").casefold() == "production"
+                    else "unknown_legacy_or_external"
+                ),
             )
     return release
 
@@ -438,7 +442,9 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
     if old:
         if old["request_hash"] != digest or old["status"] != "applied":
             raise ValueError("Ключ выпуска уже использован; для нового выпуска нужен новый ключ")
-        return {**_decode(old),"posted":0,"skipped":1,"units":0,"cost_rub":0}
+        # Idempotent retries must return the same typed FIFO provenance as the
+        # first response and the journal readback.
+        return {**_hydrate_semi_finished_provenance(conn,_decode(old)),"posted":0,"skipped":1,"units":0,"cost_rub":0}
     variant_prefix = f"{key}|chrt:"
     existing_keys = conn.execute(
         "SELECT source_key FROM manufacturing_releases WHERE source_key=? OR substr(source_key,1,?)=?",
