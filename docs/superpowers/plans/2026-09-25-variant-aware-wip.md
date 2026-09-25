@@ -15,6 +15,8 @@
 - Keep `chrt_id=0` as the legacy/base identity; never infer a variant for old WIP batches. Existing legacy WIP may remain consumable only in base/non-variant FIFO.
 - Never consume WIP across different `(nm_id, chrt_id)` identities.
 - Validate catalog variants from `products_catalog.raw_json` before issuing or packaging variant stock.
+- Permit base `chrt_id=0` only when the catalog card has valid JSON and an explicit empty `sizes` list; omit malformed or unverified cards from selector options.
+- When closing production tasks, route to an exact-variant BOM or permitted base BOM; unrelated variant BOMs must not shadow the WIP route.
 - Keep issue/completion/package idempotency and reversal guards inside database transactions.
 - Do not change production tenant state or expose credentials.
 
@@ -33,12 +35,12 @@
 - `issue_wip_material(..., nm_id: int = 0, chrt_id: int = 0)` stores the identity on the batch and issue movement.
 - `_wip_available_units(conn, material_key, blank_type, nm_id, chrt_id)` and `_consume_wip_fifo(..., nm_id, chrt_id)` operate on an exact identity.
 
-- [ ] Add a populated-database migration test: create an old-format WIP batch and allocations/movements, run `init_db`, then assert old values/links are unchanged and new fields are `0`.
-- [ ] Add tests for two otherwise identical WIP batches with distinct variants; consuming variant A must allocate only A, and insufficient A must fail without changing B or A. Also assert an unassigned legacy batch can be used only for `chrt_id=0`, never for a positive variant.
-- [ ] Run those tests and confirm they fail before implementation.
-- [ ] Add columns to new table creation and idempotent `PRAGMA table_info` migrations; add a FIFO index ending in `(nm_id,chrt_id,batch_date,id)`.
-- [ ] Store exact identity in issue movement and WIP batch; filter availability and FIFO rows by identity; retain legacy 0/0 rows without auto-assignment.
-- [ ] Re-run migration and WIP tests; verify transaction rollback leaves quantities and allocations unchanged on shortage.
+- [x] Add a populated-database migration test: create an old-format WIP batch and allocations/movements, run `init_db`, then assert old values/links are unchanged and new fields are `0`.
+- [x] Add tests for two otherwise identical WIP batches with distinct variants; consuming variant A must allocate only A, and insufficient A must fail without changing B or A. Also assert an unassigned legacy batch can be used only for `chrt_id=0`, never for a positive variant.
+- [ ] Run those tests and confirm they fail before implementation. (Not run before source changes; the required red-phase evidence is unavailable.)
+- [x] Add columns to new table creation and idempotent `PRAGMA table_info` migrations; add a FIFO index ending in `(nm_id,chrt_id,batch_date,id)`.
+- [x] Store exact identity in issue movement and WIP batch; filter availability and FIFO rows by identity; retain legacy 0/0 rows without auto-assignment.
+- [x] Re-run migration and WIP tests; verify transaction rollback leaves quantities and allocations unchanged on shortage.
 
 ### Task 2: Carry identity through completion and reversal
 
@@ -52,11 +54,11 @@
 - `_post_wip_packaging_conn(..., chrt_id: int = 0)` consumes exact identity and writes it to movement, cost batch, and finished-goods layer.
 - `post_manual_wip_packaging(..., chrt_id: int = 0)` validates the exact production settings/product identity.
 
-- [ ] Test completion movement/cost batch identity and exact finished-goods layer after packaging.
-- [ ] Test completion reversal is refused after any active downstream WIP allocation; test package reversal restores units to the same batch only.
-- [ ] Preserve current Streamlit callers and legacy/base path with `chrt_id=0`; ensure an unassigned legacy batch never satisfies a positive variant package.
-- [ ] Implement minimal identity propagation and add exact-variant predicates to consume queries.
-- [ ] Run all WIP, manufacturing release, FIFO finished-goods, and inventory movement tests.
+- [x] Test completion movement/cost batch identity and exact finished-goods layer after packaging.
+- [x] Test completion reversal is refused after any active downstream WIP allocation; test package reversal restores units to the same batch only.
+- [x] Preserve current Streamlit callers and legacy/base path with `chrt_id=0`; ensure an unassigned legacy batch never satisfies a positive variant package.
+- [x] Implement minimal identity propagation and add exact-variant predicates to consume queries.
+- [x] Run all WIP, manufacturing release, FIFO finished-goods, and inventory movement tests.
 
 ### Task 3: Validate WIP API inputs and production tasks
 
@@ -72,10 +74,10 @@
 - Product/variant validator checks `nm_id/chrt_id` against the matching product card in `products_catalog.raw_json`.
 - Production shift close may process `chrt_id>0` WIP only after exact availability validation; otherwise return an error before any movement/cost write.
 
-- [ ] Add API tests for valid catalog variant, unknown variant, mismatched task identity, exact retry, and same UUID with changed variant returning 409.
-- [ ] Add a production shift test proving cross-variant shortage creates no movement, no cost batch, and no WIP allocation.
-- [ ] Implement catalog validation and wire identity through issue/package/task close.
-- [ ] Run the full tenant-app and tenant API suites.
+- [x] Add API tests for valid catalog variant, unknown variant, mismatched task identity, exact retry, and same UUID with changed variant returning 409.
+- [x] Add a production shift test proving cross-variant shortage creates no movement, no cost batch, and no WIP allocation; unrelated-variant BOM regression confirms WIP routing.
+- [x] Implement catalog validation and wire identity through issue/package/task close; fail closed on missing or malformed catalog `sizes` data.
+- [x] Run the full tenant-app and tenant API suites.
 
 ### Task 4: Add explicit variant selection in the React workspace
 
@@ -88,10 +90,10 @@
 - Workspace response returns product options as `{nm_id, chrt_id, variant_label, product_name, supplier_article}`.
 - Issue and packaging forms submit the selected pair; batch history displays product and variant and labels legacy unassigned stock as such.
 
-- [ ] Add component tests selecting two variants of one nmID and asserting distinct issue/package payloads.
-- [ ] Add a legacy batch test asserting the UI labels it unassigned and does not offer it as a variant batch.
-- [ ] Implement variant option parsing from `products_catalog.raw_json`; reuse the same size/barcode labels as the manufacturing-costs selector.
-- [ ] Run the entire frontend suite, `npx tsc -b`, and `npm run build`.
+- [x] Add component tests selecting two variants of one nmID and asserting distinct issue/package payloads.
+- [x] Add a legacy batch test asserting the UI labels it unassigned and does not offer it as a variant batch.
+- [x] Implement variant option parsing from `products_catalog.raw_json`; reuse the same size/barcode labels as the manufacturing-costs selector.
+- [x] Run the entire frontend suite, `npx tsc -b`, and `npm run build`.
 
 ### Task 5: Validate candidate image and release evidence
 

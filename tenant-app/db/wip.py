@@ -20,6 +20,42 @@ def _wip_module_enabled(conn: sqlite3.Connection) -> bool:
     row = conn.execute("SELECT value FROM app_meta WHERE key='wip_module_enabled'").fetchone()
     return bool(row and str(row["value"] or "0").strip() == "1")
 
+def validate_catalog_identity(conn: sqlite3.Connection, nm_id: int, chrt_id: int, require_catalog: bool = False) -> dict[str, Any]:
+    """Require a catalog-backed exact variant; chrt 0 is valid only for base cards."""
+    item_nm_id, item_chrt_id = int(nm_id or 0), int(chrt_id or 0)
+    if item_nm_id <= 0 or item_chrt_id < 0:
+        raise ValueError("Выберите товар и вариант из каталога.")
+    row = conn.execute("SELECT * FROM products_catalog WHERE nm_id=?", (item_nm_id,)).fetchone()
+    if row is None:
+        raise ValueError("Товар отсутствует в каталоге; вариант нельзя проверить.")
+    try:
+        raw = json.loads(str(row["raw_json"] or ""))
+    except (TypeError, ValueError):
+        raise ValueError("Карточка товара повреждена; вариант нельзя безопасно проверить.")
+    sizes = raw.get("sizes") if isinstance(raw, dict) else None
+    if not isinstance(sizes, list):
+        raise ValueError("В карточке товара отсутствует проверенный список вариантов.")
+    variants: dict[int, str] = {}
+    for size in sizes:
+        if not isinstance(size, dict):
+            raise ValueError("Список вариантов в карточке товара повреждён.")
+        try:
+            size_chrt = int(size.get("chrtID", size.get("chrtId", size.get("chrt_id", 0))) or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Список вариантов в карточке товара повреждён.") from exc
+        if size_chrt <= 0:
+            raise ValueError("Список вариантов в карточке товара повреждён.")
+        variants[size_chrt] = str(size.get("techSize") or size.get("wbSize") or "").strip()
+    if item_chrt_id:
+        if item_chrt_id not in variants:
+            raise ValueError("Выбранный вариант не найден в карточке товара.")
+    elif sizes:
+        raise ValueError("У товара есть варианты размеров; выберите конкретный вариант.")
+    return {"nm_id": item_nm_id, "chrt_id": item_chrt_id,
+            "product_name": str(row["product_name"] or ""),
+            "supplier_article": str(row["supplier_article"] or ""),
+            "variant_label": variants.get(item_chrt_id, "")}
+
 def wip_module_status() -> dict[str, Any]:
     from .core import connect
     with connect() as conn:
@@ -60,7 +96,7 @@ def read_wip_blank_summary() -> pd.DataFrame:
     with connect() as conn:
         return pd.read_sql_query(
             """
-            SELECT material_key,material_name,blank_type,
+            SELECT nm_id,chrt_id,material_key,material_name,blank_type,
                    SUM(CASE WHEN status='open' AND reversed_at IS NULL THEN issued_meters ELSE 0 END) AS open_meters,
                    SUM(CASE WHEN status='open' AND reversed_at IS NULL THEN material_cost_rub ELSE 0 END) AS open_cost_rub,
                    SUM(CASE WHEN status IN ('active','depleted') AND reversed_at IS NULL THEN remaining_units ELSE 0 END) AS remaining_units,
@@ -73,8 +109,8 @@ def read_wip_blank_summary() -> pd.DataFrame:
                    COUNT(CASE WHEN status IN ('active','depleted') AND reversed_at IS NULL THEN 1 END) AS completed_batches
               FROM wip_blank_batches
              WHERE reversed_at IS NULL
-             GROUP BY material_key,material_name,blank_type
-             ORDER BY material_name,blank_type
+             GROUP BY nm_id,chrt_id,material_key,material_name,blank_type
+             ORDER BY nm_id,chrt_id,material_name,blank_type
             """,
             conn,
         )
@@ -102,6 +138,8 @@ def issue_wip_material(
     meters_used: float,
     note: str = "",
     source_key: str | None = None,
+    nm_id: int = 0,
+    chrt_id: int = 0,
 ) -> dict[str, Any]:
     from .core import connect
     from .fifo_materials import _consume_material_fifo
@@ -122,9 +160,16 @@ def issue_wip_material(
         return result
     key = _material_key(material_name)
     batch_key = str(source_key or "").strip() or f"wip:{date_value}:{key}:{blank_type.casefold()}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    item_nm_id, item_chrt_id = max(0, int(nm_id or 0)), max(0, int(chrt_id or 0))
     with connect() as conn:
-        existing = conn.execute("SELECT id FROM wip_blank_batches WHERE batch_key=?", (batch_key,)).fetchone()
+        existing = conn.execute("SELECT * FROM wip_blank_batches WHERE batch_key=?", (batch_key,)).fetchone()
         if existing:
+            if (str(existing["material_name"]) != material_name or str(existing["blank_type"]) != blank_type
+                    or str(existing["batch_date"]) != date_value
+                    or abs(float(existing["issued_meters"] or 0) - meters) > 0.0001
+                    or int(existing["nm_id"] or 0) != item_nm_id or int(existing["chrt_id"] or 0) != item_chrt_id):
+                result["errors"].append("Этот идентификатор уже использован для другой выдачи НЗП.")
+                return result
             result["skipped"] = 1
             result["batch_id"] = int(existing["id"])
             return result
@@ -137,15 +182,15 @@ def issue_wip_material(
             movement_cur = conn.execute(
                 """
                 INSERT INTO inventory_movements(
-                    event_key,movement_type,nm_id,supplier_article,product_name,quantity,
+                    event_key,movement_type,nm_id,chrt_id,supplier_article,product_name,quantity,
                     ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
                     source_task_key,reference_movement_id,status,note,created_at,reversed_at,
                     material_key,material_name,material_delta,material_cost_rub,unit_cost_rub,
                     goods_cost_rub,goods_unit_cost_rub
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    event_key,"wip_material_issue",0,"",f"НЗП: {blank_type}",0,0,0,"",date_value,None,
+                    event_key,"wip_material_issue",item_nm_id,item_chrt_id,"",f"НЗП: {blank_type}",0,0,0,"",date_value,None,
                     batch_key,None,"applied",f"Выдано в НЗП {meters:.3f} {unit} материала «{material_name}»; {note}",
                     datetime.now().isoformat(timespec="seconds"),None,key,material_name,-meters,0.0,0.0,0.0,0.0,
                 ),
@@ -161,12 +206,12 @@ def issue_wip_material(
             cur = conn.execute(
                 """
                 INSERT INTO wip_blank_batches(
-                    batch_key,issue_movement_id,completion_movement_id,batch_date,material_key,material_name,
+                    batch_key,issue_movement_id,completion_movement_id,batch_date,nm_id,chrt_id,material_key,material_name,
                     blank_type,issued_meters,material_cost_rub,produced_units,scrap_units,remaining_units,
                     unit_cost_rub,status,note,created_at,updated_at,reversed_at
-                ) VALUES (?,?,NULL,?,?,?,?,?,?,0,0,0,0,'open',?,?,?,NULL)
+                ) VALUES (?,?,NULL,?,?,?,?,?,?,?,?,0,0,0,0,'open',?,?,?,NULL)
                 """,
-                (batch_key,movement_id,date_value,key,material_name,blank_type,meters,material_cost,str(note or ""),now,now),
+                (batch_key,movement_id,date_value,item_nm_id,item_chrt_id,key,material_name,blank_type,meters,material_cost,str(note or ""),now,now),
             )
             batch_id = int(cur.lastrowid)
             conn.execute(
@@ -207,8 +252,11 @@ def complete_wip_blank_batch(
             result["errors"].append("Партия НЗП отменена.")
             return result
         if int(batch["completion_movement_id"] or 0) > 0 or str(batch["status"] or "") != "open":
-            result["skipped"] = 1
-            result["units"] = int(batch["produced_units"] or 0)
+            if (int(batch["produced_units"] or 0) != qty or int(batch["scrap_units"] or 0) != scrap):
+                result["errors"].append("Партия уже закрыта с другим количеством; сначала отмените закрытие.")
+            else:
+                result["skipped"] = 1
+                result["units"] = int(batch["produced_units"] or 0)
             return result
         conn.execute("SAVEPOINT complete_wip_batch")
         try:
@@ -219,15 +267,15 @@ def complete_wip_blank_batch(
             cur = conn.execute(
                 """
                 INSERT INTO inventory_movements(
-                    event_key,movement_type,nm_id,supplier_article,product_name,quantity,
+                    event_key,movement_type,nm_id,chrt_id,supplier_article,product_name,quantity,
                     ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
                     source_task_key,reference_movement_id,status,note,created_at,reversed_at,
                     material_key,material_name,material_delta,material_cost_rub,unit_cost_rub,
                     goods_cost_rub,goods_unit_cost_rub
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    event_key,"wip_blank_receipt",0,"",f"НЗП: {batch['blank_type']}",qty,0,0,"",
+                    event_key,"wip_blank_receipt",int(batch["nm_id"] or 0),int(batch["chrt_id"] or 0),"",f"НЗП: {batch['blank_type']}",qty,0,0,"",
                     str(batch["batch_date"] or datetime.now().date().isoformat()),None,source_key,
                     int(batch["issue_movement_id"] or 0) or None,"applied",
                     f"Закрыта партия НЗП #{int(batch_id)}: годных {qty}, брак {scrap}; {note}",now,None,
@@ -276,15 +324,21 @@ def post_wip_blank_batch(
     result["errors"] = list(issued.get("errors", []) or []) + list(completed.get("errors", []) or [])
     return result
 
-def _wip_available_units(conn: sqlite3.Connection, material_key: str, blank_type: str) -> int:
+def _wip_available_units(conn: sqlite3.Connection, material_key: str, blank_type: str, nm_id: int = 0, chrt_id: int = 0) -> int:
     from .production import _material_key
+    item_nm_id, item_chrt_id = max(0, int(nm_id or 0)), max(0, int(chrt_id or 0))
+    # Old Streamlit batches have no product identity (0/0). They are a
+    # deliberately narrow fallback for base/no-size SKUs only; positive
+    # variants can never see or consume them.
+    legacy_base = item_nm_id > 0 and item_chrt_id == 0
     row = conn.execute(
         """
         SELECT COALESCE(SUM(remaining_units),0) AS units
           FROM wip_blank_batches
          WHERE material_key=? AND blank_type=? AND status='active' AND reversed_at IS NULL AND remaining_units>0
+           AND ((nm_id=? AND chrt_id=?) OR (?=1 AND nm_id=0 AND chrt_id=0))
         """,
-        (_material_key(material_key), str(blank_type or "").strip()),
+        (_material_key(material_key), str(blank_type or "").strip(), item_nm_id, item_chrt_id, int(legacy_base)),
     ).fetchone()
     return max(0, int(row["units"] or 0) if row else 0)
 
@@ -295,6 +349,8 @@ def _consume_wip_fifo(
     material_name: str,
     blank_type: str,
     units: int,
+    nm_id: int = 0,
+    chrt_id: int = 0,
 ) -> tuple[float, list[dict[str, Any]]]:
     from .production import _material_key
     required = max(0, int(units or 0))
@@ -302,7 +358,8 @@ def _consume_wip_fifo(
         return 0.0, []
     key = _material_key(material_key or material_name)
     blank = str(blank_type or "").strip()
-    available = _wip_available_units(conn, key, blank)
+    item_nm_id, item_chrt_id = max(0, int(nm_id or 0)), max(0, int(chrt_id or 0))
+    available = _wip_available_units(conn, key, blank, item_nm_id, item_chrt_id)
     if available < required:
         raise ValueError(
             f"Недостаточно заготовок «{material_name} / {blank}»: доступно {available} шт., требуется {required} шт."
@@ -311,9 +368,10 @@ def _consume_wip_fifo(
         """
         SELECT * FROM wip_blank_batches
          WHERE material_key=? AND blank_type=? AND status='active' AND reversed_at IS NULL AND remaining_units>0
-         ORDER BY COALESCE(batch_date,'1900-01-01'),id
+           AND ((nm_id=? AND chrt_id=?) OR (?=1 AND nm_id=0 AND chrt_id=0))
+         ORDER BY CASE WHEN nm_id=? THEN 0 ELSE 1 END,COALESCE(batch_date,'1900-01-01'),id
         """,
-        (key, blank),
+        (key, blank, item_nm_id, item_chrt_id, int(item_nm_id > 0 and item_chrt_id == 0), item_nm_id),
     ).fetchall()
     remaining = required
     total = 0.0
@@ -412,6 +470,7 @@ def _post_wip_packaging_conn(
     date_value: str,
     source_key: str,
     note: str = "",
+    chrt_id: int = 0,
 ) -> dict[str, Any]:
     from .fifo_finished_goods import _create_finished_goods_layer
     from .production import _active_movement, _apply_pipeline_delta, _material_key, _next_event_key
@@ -421,8 +480,13 @@ def _post_wip_packaging_conn(
     # Idempotency takes precedence over mutable configuration: a retry for an
     # already-posted source must remain a harmless skip even if packaging was
     # subsequently edited or its confirmation was revoked.
-    if _active_movement(conn, "production_receipt_wip", source_key) or _active_movement(conn, "production_receipt", source_key):
+    prior = _active_movement(conn, "production_receipt_wip", source_key) or _active_movement(conn, "production_receipt", source_key)
+    if prior:
+        if (int(prior["nm_id"] or 0) != int(nm_id) or int(prior["chrt_id"] or 0) != max(0, int(chrt_id or 0)
+                ) or int(prior["quantity"] or 0) != qty or str(prior["movement_date"] or "") != date_value):
+            raise ValueError("Этот идентификатор уже использован для другой комплектации.")
         return {"posted": 0, "skipped": 1, "units": 0, "wip_units": 0, "cost_rub": 0.0}
+    validate_catalog_identity(conn, int(nm_id), int(chrt_id or 0))
     cfg = conn.execute("SELECT * FROM production_settings WHERE nm_id=? AND enabled=1", (int(nm_id),)).fetchone()
     if cfg is None:
         raise ValueError("Товар не включён в собственное производство.")
@@ -442,15 +506,15 @@ def _post_wip_packaging_conn(
     cur = conn.execute(
         """
         INSERT INTO inventory_movements(
-            event_key,movement_type,nm_id,supplier_article,product_name,quantity,
+            event_key,movement_type,nm_id,chrt_id,supplier_article,product_name,quantity,
             ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
             source_task_key,reference_movement_id,status,note,created_at,reversed_at,
             material_key,material_name,material_delta,material_cost_rub,unit_cost_rub,
             goods_cost_rub,goods_unit_cost_rub
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            event_key,"production_receipt_wip",int(nm_id),str(supplier_article or ""),str(product_name or ""),
+            event_key,"production_receipt_wip",int(nm_id),max(0, int(chrt_id or 0)),str(supplier_article or ""),str(product_name or ""),
             qty,qty,0,"",date_value,None,source_key,None,"applied",
             f"Комплектация из НЗП: {required_blanks} заготовок «{material_name} / {blank_type}»; {note}",
             now,None,material_key,material_name,0.0,0.0,0.0,0.0,0.0,
@@ -458,7 +522,7 @@ def _post_wip_packaging_conn(
     )
     movement_id = int(cur.lastrowid)
     wip_cost, allocations = _consume_wip_fifo(
-        conn,movement_id,material_key,material_name,blank_type,required_blanks
+        conn,movement_id,material_key,material_name,blank_type,required_blanks,int(nm_id),int(chrt_id or 0)
     )
     labor_unit = max(0.0, float(cost_row["labor_cost_rub"] or 0)) if cost_row else 0.0
     other_unit = max(0.0, float(cost_row["other_cost_rub"] or 0)) if cost_row else 0.0
@@ -484,17 +548,18 @@ def _post_wip_packaging_conn(
             movement_id,nm_id,supplier_article,product_name,batch_date,produced_units,
             material_key,material_name,material_meters,material_cost_rub,
             packaging_cost_rub,labor_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,
-            status,note,created_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+            status,note,created_at,chrt_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?)
         """,
         (movement_id,int(nm_id),str(supplier_article or ""),str(product_name or ""),date_value,qty,
          material_key,material_name,0.0,wip_cost,packaging_total,labor_total,other_total,total_cost,unit_cost,
-         f"Комплектация из НЗП; {required_blanks} заготовок; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); {allocation_note}",now),
+         f"Комплектация из НЗП; {required_blanks} заготовок; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); {allocation_note}",now,max(0, int(chrt_id or 0))),
     )
     _create_finished_goods_layer(
         conn,int(nm_id),str(supplier_article or ""),str(product_name or ""),
         "production_wip",f"movement:{movement_id}",date_value,qty,unit_cost,"ready",
         f"Оприходовано из НЗП; {required_blanks} заготовок списано по FIFO.",
+        chrt_id=max(0, int(chrt_id or 0)),
     )
     return {"posted": 1, "skipped": 0, "units": qty, "wip_units": required_blanks, "cost_rub": total_cost, "movement_id": movement_id}
 
@@ -504,12 +569,25 @@ def post_manual_wip_packaging(
     packaging_date: Any = None,
     note: str = "",
     source_key: str | None = None,
+    chrt_id: int = 0,
 ) -> dict[str, Any]:
     from .core import connect
     from .production import _movement_date_text
     date_value = _movement_date_text(packaging_date) or datetime.now().date().isoformat()
     result: dict[str, Any] = {"posted": 0, "skipped": 0, "errors": [], "units": 0, "wip_units": 0, "cost_rub": 0.0}
+    key = str(source_key or "").strip() or f"manual_wip_packaging:{int(nm_id)}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
     with connect() as conn:
+        prior = conn.execute(
+            "SELECT * FROM inventory_movements WHERE source_task_key=? AND movement_type='production_receipt_wip' AND reversed_at IS NULL ORDER BY id DESC LIMIT 1",
+            (key,),
+        ).fetchone()
+        if prior:
+            if (int(prior["nm_id"] or 0) != int(nm_id) or int(prior["chrt_id"] or 0) != max(0, int(chrt_id or 0))
+                    or int(prior["quantity"] or 0) != max(0, int(qty_sets or 0)) or str(prior["movement_date"] or "") != date_value):
+                result["errors"].append("Этот идентификатор уже использован для другой комплектации.")
+            else:
+                result["skipped"] = 1
+            return result
         cfg = conn.execute(
             """
             SELECT p.*,COALESCE(c.product_name,'') AS product_name_catalog
@@ -521,12 +599,12 @@ def post_manual_wip_packaging(
         if cfg is None:
             result["errors"].append("Товар не найден среди производимых.")
             return result
-        key = str(source_key or "").strip() or f"manual_wip_packaging:{int(nm_id)}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         conn.execute("SAVEPOINT manual_wip_packaging")
         try:
             posted = _post_wip_packaging_conn(
                 conn,int(nm_id),str(cfg["supplier_article"] or ""),str(cfg["product_name_catalog"] or ""),
                 int(qty_sets),date_value,key,str(note or ""),
+                int(chrt_id or 0),
             )
             conn.execute("RELEASE SAVEPOINT manual_wip_packaging")
             result.update(posted)

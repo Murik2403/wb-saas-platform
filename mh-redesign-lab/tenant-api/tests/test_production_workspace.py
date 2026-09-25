@@ -39,12 +39,13 @@ def seed():
     from db.fifo_materials import _create_material_layer
     with core.connect() as conn:
         conn.execute("INSERT INTO material_inventory_color(material_key,material_name,balance_known,partial_meters,roll_length,opening_rate_rub) VALUES ('ткань','Ткань',1,20,25,100)")
+        conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (101,'QA','QA','{\"sizes\":[]}')")
         conn.execute("INSERT INTO production_settings(nm_id,supplier_article,enabled,material_name,blank_type,pack_size) VALUES (101,'QA',1,'Ткань','Круг',2)")
         _create_material_layer(conn, "ткань", "Ткань", "opening", "qa-opening", "2026-09-01", 20, 100)
 
 
 def issue(client, **changes):
-    payload = dict(request_id=str(uuid4()), batch_date="2026-09-23", material_name="Ткань", blank_type="Круг", meters_used=5, note="test")
+    payload = dict(request_id=str(uuid4()), nm_id=101, chrt_id=0, batch_date="2026-09-23", material_name="Ткань", blank_type="Круг", meters_used=5, note="test")
     payload.update(changes)
     response = client.post("/api/v1/production-workspace/wip/issue", json=payload)
     return payload, response
@@ -65,7 +66,7 @@ def test_issue_close_package_and_block_consumed_batch_reversal(client):
     assert client.post("/api/v1/production-workspace/wip/issue", json={**payload, "meters_used": 6}).status_code == 409
     closed = client.post(f"/api/v1/production-workspace/wip/{batch}/complete", json={"produced_units": 10, "scrap_units": 2})
     assert closed.status_code == 200, closed.text
-    package = dict(request_id=str(uuid4()), nm_id=101, qty_sets=3, packaging_date="2026-09-23")
+    package = dict(request_id=str(uuid4()), nm_id=101, chrt_id=0, qty_sets=3, packaging_date="2026-09-23")
     receipt = client.post("/api/v1/production-workspace/wip/package", json=package)
     assert receipt.status_code == 200, receipt.text
     assert receipt.json()["wip_units"] == 6
@@ -110,6 +111,77 @@ def test_insufficient_stock_and_unknown_material_are_rejected(client):
     assert issue(client, material_name="Нет в справочнике")[1].status_code == 422
     with core.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0] == 0
+
+
+def test_variant_issue_and_package_keep_exact_identity_and_reject_cross_variant(client):
+    seed()
+    with core.connect() as conn:
+        conn.execute("UPDATE products_catalog SET raw_json=? WHERE nm_id=101", ('{"sizes":[{"chrtID":501,"techSize":"S"},{"chrtID":502,"techSize":"M"}]}',))
+        conn.execute("INSERT INTO costs(nm_id,packaging_cost_rub,packaging_cost_status,packaging_cost_source,packaging_cost_confirmed_at) VALUES (101,0,'confirmed','manual','2026-09-23T12:00:00')")
+    _, bad = issue(client, chrt_id=0)
+    assert bad.status_code == 422
+    _, response = issue(client, chrt_id=501)
+    assert response.status_code == 200, response.text
+    batch_id = response.json()["batch_id"]
+    assert client.post(f"/api/v1/production-workspace/wip/{batch_id}/complete", json={"produced_units": 10}).status_code == 200
+    mismatched = client.post("/api/v1/production-workspace/wip/package", json={"request_id": str(uuid4()), "nm_id": 101, "chrt_id": 502, "qty_sets": 1, "packaging_date": "2026-09-23"})
+    assert mismatched.status_code == 422
+    with core.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM inventory_movements WHERE movement_type='production_receipt_wip'").fetchone()[0] == 0
+        assert conn.execute("SELECT remaining_units FROM wip_blank_batches WHERE id=?", (batch_id,)).fetchone()[0] == 10
+    package_request = str(uuid4())
+    package_payload = {"request_id": package_request, "nm_id": 101, "chrt_id": 501, "qty_sets": 1, "packaging_date": "2026-09-23"}
+    correct = client.post("/api/v1/production-workspace/wip/package", json=package_payload)
+    assert correct.status_code == 200, correct.text
+    with core.connect() as conn:
+        conn.execute("UPDATE products_catalog SET raw_json=? WHERE nm_id=101", ('{"sizes":[{"chrtID":502,"techSize":"M"}]}',))
+    assert client.post("/api/v1/production-workspace/wip/package", json=package_payload).json()["skipped"] == 1
+    assert client.post("/api/v1/production-workspace/wip/package", json={**package_payload, "chrt_id": 502}).status_code == 409
+    with core.connect() as conn:
+        movement = conn.execute("SELECT nm_id,chrt_id FROM inventory_movements WHERE movement_type='production_receipt_wip'").fetchone()
+        batch = conn.execute("SELECT nm_id,chrt_id FROM production_cost_batches").fetchone()
+        layer = conn.execute("SELECT nm_id,chrt_id FROM finished_goods_cost_layers WHERE source_type='production_wip'").fetchone()
+    assert tuple(movement) == tuple(batch) == tuple(layer) == (101, 501)
+
+
+def test_issue_request_key_conflicts_when_variant_changes(client):
+    seed()
+    with core.connect() as conn:
+        conn.execute("UPDATE products_catalog SET raw_json=? WHERE nm_id=101", ('{"sizes":[{"chrtID":501,"techSize":"S"},{"chrtID":502,"techSize":"M"}]}',))
+    payload, response = issue(client, chrt_id=501)
+    assert response.status_code == 200
+    assert client.post("/api/v1/production-workspace/wip/issue", json={**payload, "chrt_id": 502}).status_code == 409
+    options = client.get("/api/v1/production-workspace").json()["products"]
+    assert {(item["nm_id"], item["chrt_id"]) for item in options} == {(101, 501), (101, 502)}
+
+
+@pytest.mark.parametrize("raw_json", ["{}", "not-json", '{"sizes":[{}]}', '{"sizes":"unknown"}'])
+def test_base_product_requires_an_explicit_valid_empty_size_list(client, raw_json):
+    seed()
+    with core.connect() as conn:
+        conn.execute("UPDATE products_catalog SET raw_json=? WHERE nm_id=101", (raw_json,))
+    _, response = issue(client, chrt_id=0)
+    assert response.status_code == 422
+    assert client.get("/api/v1/production-workspace").json()["products"] == []
+
+
+def test_base_product_with_explicit_empty_sizes_remains_selectable(client):
+    seed()
+    assert client.get("/api/v1/production-workspace").json()["products"][0]["chrt_id"] == 0
+
+
+def test_issue_rejects_variant_that_differs_from_saved_production_task(client):
+    seed()
+    with core.connect() as conn:
+        conn.execute("UPDATE products_catalog SET raw_json=? WHERE nm_id=101", ('{"sizes":[{"chrtID":501,"techSize":"S"},{"chrtID":502,"techSize":"M"}]}',))
+        conn.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,chrt_id,planned_units,status) VALUES ('task-s','production','2026-09-23',101,501,2,'Не начато')")
+    payload, _ = issue(client, chrt_id=502, task_key="task-s")
+    response = client.post("/api/v1/production-workspace/wip/issue", json=payload)
+    assert response.status_code == 409
+    assert "не совпадает" in response.json()["detail"]
+    with core.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM wip_blank_batches").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("unit", ["кг", "шт", "м²", "л"])

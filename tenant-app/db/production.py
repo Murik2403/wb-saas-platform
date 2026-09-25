@@ -545,7 +545,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
     from .core import connect
     from .fifo_finished_goods import _create_finished_goods_layer
     from .fifo_materials import _consume_material_fifo
-    from .wip import _post_wip_packaging_conn, _wip_module_enabled
+    from .wip import _post_wip_packaging_conn, _wip_module_enabled, validate_catalog_identity
     from .manufacturing import _post_release_conn
     date_value = _movement_date_text(task_date)
     result: dict[str, Any] = {
@@ -573,14 +573,35 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
         ).fetchall()
         for task in tasks:
             source_key = str(task["task_key"])
-            if _active_movement(conn, "production_receipt", source_key) or _active_movement(conn, "production_receipt_wip", source_key):
-                result["skipped"] += 1
-                continue
             qty = max(0, int(task["actual_units"] or 0))
             if qty <= 0:
                 result["skipped"] += 1
                 continue
-            bom = conn.execute("SELECT id FROM manufacturing_boms WHERE nm_id=? ORDER BY version DESC LIMIT 1", (int(task["nm_id"] or 0),)).fetchone()
+            prior = _active_movement(conn, "production_receipt", source_key) or _active_movement(conn, "production_receipt_wip", source_key)
+            if prior:
+                if (int(prior["nm_id"] or 0) != int(task["nm_id"] or 0)
+                        or int(prior["chrt_id"] or 0) != int(task["chrt_id"] or 0)
+                        or int(prior["quantity"] or 0) != qty
+                        or str(prior["movement_date"] or "") != date_value):
+                    result["errors"].append(f"{task['supplier_article']}: ключ задания уже использован с другими товаром, вариантом или количеством.")
+                else:
+                    result["skipped"] += 1
+                continue
+            task_nm_id, task_chrt_id = int(task["nm_id"] or 0), int(task["chrt_id"] or 0)
+            try:
+                # Validate before route selection so a stale variant cannot
+                # silently fall back to a base BOM.
+                validate_catalog_identity(conn, task_nm_id, task_chrt_id, require_catalog=True)
+            except ValueError as exc:
+                result["errors"].append(f"{task['supplier_article']}: {exc}")
+                continue
+            # A BOM for a different size must not shadow this task's WIP path.
+            # Variant tasks may use their exact BOM, then the explicit base BOM fallback.
+            bom = conn.execute(
+                "SELECT id FROM manufacturing_boms WHERE nm_id=? AND chrt_id IN (?,0) "
+                "ORDER BY CASE WHEN chrt_id=? THEN 0 ELSE 1 END,version DESC LIMIT 1",
+                (task_nm_id, task_chrt_id, task_chrt_id),
+            ).fetchone()
             if bom is not None:
                 conn.execute("SAVEPOINT post_bom_task")
                 try:
@@ -606,13 +627,9 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                 continue
 
             if use_wip:
-                if int(task["chrt_id"] or 0) > 0:
-                    result["errors"].append(
-                        f"{task['supplier_article']}: незавершённое производство пока не различает chrt_id; выпуск остановлен, чтобы не смешать варианты."
-                    )
-                    continue
                 conn.execute("SAVEPOINT post_production_wip_task")
                 try:
+                    validate_catalog_identity(conn, int(task["nm_id"] or 0), int(task["chrt_id"] or 0), require_catalog=True)
                     posted = _post_wip_packaging_conn(
                         conn,
                         int(task["nm_id"] or 0),
@@ -622,6 +639,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                         date_value,
                         source_key,
                         str(task["note"] or ""),
+                        int(task["chrt_id"] or 0),
                     )
                     conn.execute("RELEASE SAVEPOINT post_production_wip_task")
                     result["posted"] += int(posted.get("posted", 0) or 0)

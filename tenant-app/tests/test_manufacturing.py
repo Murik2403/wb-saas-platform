@@ -200,6 +200,7 @@ class ManufacturingTests(DbTestCase):
         self.bom()
         init_db()
         with connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (123,'SKU','Товар','{\"sizes\":[]}')")
             conn.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,supplier_article,product_name,actual_units,status) VALUES ('shift-1','production','2026-09-23',123,'SKU','Товар',3,'Изготовлено')")
         r = close_production_shift("2026-09-23")
         self.assertEqual(r["errors"],[])
@@ -219,6 +220,7 @@ class ManufacturingTests(DbTestCase):
     def add_legacy_shift(self, key="old-shift"):
         self.seed()
         with connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (321,'OLD','Товар','{\"sizes\":[]}')")
             conn.execute("INSERT INTO production_settings(nm_id,material_name,material_per_unit) VALUES (321,'Ткань',2)")
             conn.execute(
                 "INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,supplier_article,product_name,actual_units,status) "
@@ -296,6 +298,7 @@ class ManufacturingTests(DbTestCase):
 
     def test_unknown_packaging_also_blocks_wip_completion_before_movement(self):
         with connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (321,'OLD','Товар','{\"sizes\":[]}')")
             conn.execute(
                 "INSERT INTO production_settings(nm_id,supplier_article,enabled,material_name,blank_type,pack_size) "
                 "VALUES (321,'OLD',1,'Ткань','Заготовка',2)"
@@ -322,9 +325,26 @@ class ManufacturingTests(DbTestCase):
             self.assertEqual(row["material_cost_rub"],0)
             self.assertEqual(row["packaging_cost_status"],"unknown")
 
+    def test_unknown_variant_cannot_fall_back_to_base_bom(self):
+        with connect() as conn:
+            self.set_material_physical_stock(conn,"canvas","Canvas",full_rolls=1,roll_length=25)
+            _create_material_layer(conn,"canvas","Canvas","opening","unknown-chrt-layer","2026-09-01",25,10)
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (100,'A','A','{\"sizes\":[{\"chrtID\":501}]}')")
+            conn.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,chrt_id,supplier_article,product_name,actual_units,status) VALUES('unknown-chrt','production','2026-09-23',100,999,'A','A',1,'Изготовлено')")
+        m.save_bom_version(100,[{"material_name":"Canvas","quantity_per_unit":1,"unit":"м"}])
+        result = close_production_shift("2026-09-23")
+        self.assertEqual(result["posted"],0)
+        self.assertTrue(result["errors"])
+        with connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM production_cost_batches").fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM finished_goods_cost_layers").fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM material_fifo_consumptions").fetchone()[0],0)
+
     def test_manual_wip_duplicate_source_skips_after_packaging_confirmation_revoked(self):
         self.seed()
         with connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (321,'OLD','Товар','{\"sizes\":[]}')")
             conn.execute(
                 "INSERT INTO production_settings(nm_id,supplier_article,enabled,material_name,blank_type,pack_size) "
                 "VALUES (321,'OLD',1,'Ткань','Заготовка',2)"
