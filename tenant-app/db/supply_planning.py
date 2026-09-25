@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 OPEN_STATUSES = {"Запланировано", "Заказано", "Частично оплачено", "Оплачено", "В пути", "Частично получено"}
 CLOSED_STATUSES = {"Отменено", "Получено"}
-TASK_OPEN_STATUSES = {"", "Не начато", "Запланировано", "В работе", "Частично выполнено", "Ожидает", "На паузе"}
+TASK_CLOSED_STATUSES = {"отменено", "отменена", "закрыто", "закрыта", "закрыт", "завершено", "завершена", "выполнено", "изготовлено", "упаковано", "передано на отгрузку", "отгружено", "принято wb"}
 
 
 def _canonical(value: Any) -> str:
@@ -70,7 +70,7 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
         task_date = str(task.get("task_date") or "")
         if not key or not (int(snapshot.get("start_date", "0000-00-00") <= task_date <= snapshot.get("end_date", "9999-99-99"))):
             continue
-        if status not in TASK_OPEN_STATUSES or units <= 0:
+        if status.casefold() in TASK_CLOSED_STATUSES or units <= 0:
             continue
         base_ref = {"task_key": key, "nm_id": nm_id, "chrt_id": chrt_id, "units": units, "task_date": task_date}
         if nm_id <= 0 or not task_date:
@@ -174,15 +174,30 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                 pack_size = None
         po_covered = 0.0
         for order in orders:
-            if order.get("material_key") != key or str(order.get("unit") or "").casefold() != unit.casefold():
+            if order.get("material_key") != key:
                 continue
             remaining = max(0.0, float(order.get("quantity") or 0) - float(order.get("posted_quantity") or 0))
             status = str(order.get("status") or "")
             eta = str(order.get("expected_date") or "")
+            order_unit = str(order.get("unit") or "").strip().casefold()
+            if order_unit == "рулон" and tracking == "packaged":
+                try:
+                    roll_length = float(order.get("roll_length") or 0)
+                except (TypeError, ValueError):
+                    roll_length = 0
+                if not math.isfinite(roll_length) or roll_length <= 0:
+                    blockers.append({"code": "invalid_open_order_pack", "material_key": key, "order_id": order.get("order_id"), "message": "В открытой заявке не задан корректный метраж рулона."})
+                    continue
+                remaining *= roll_length
+            elif order_unit != unit.casefold():
+                blockers.append({"code": "open_order_unit_mismatch", "material_key": key, "order_id": order.get("order_id"), "order_unit": order.get("unit"), "material_unit": unit, "message": "Единица открытой закупки не совместима с единицей материала."})
+                continue
             if status in CLOSED_STATUSES and remaining > 0:
                 blockers.append({"code": "closed_order_residual", "material_key": key, "order_id": order.get("order_id"), "message": "У закрытой заявки остался неполученный остаток; сверьте её."})
             if status in OPEN_STATUSES and eta and eta <= row["due_date"]:
                 po_covered += remaining
+            elif status in OPEN_STATUSES:
+                warnings.append({"code": "open_order_eta_risk", "material_key": key, "order_id": order.get("order_id"), "expected_date": eta or None, "due_date": row["due_date"]})
         row["physical_available_base_qty"] = round(available, 6) if available is not None else None
         row["open_order_covered_base_qty"] = round(po_covered, 6)
         row["shortage_base_qty"] = round(max(0.0, row["required_base_qty"] - (available or 0.0) - po_covered), 6)
@@ -305,6 +320,8 @@ def confirm_supply_plan(conn: sqlite3.Connection, confirmation_key: str, request
                 raise ValueError("Проверьте количество и поставщика в строке заказа.")
             if not math.isfinite(qty) or qty <= 0 or qty + 1e-8 < min_qty:
                 raise ValueError("Количество заказа меньше рассчитанной потребности или неверно.")
+            if supplier_id is None:
+                raise ValueError("Для каждой позиции выберите активного поставщика.")
             if line.get("tracking_mode") == "packaged":
                 if not line.get("pack_size_base_qty") or abs(qty-round(qty)) > 1e-8:
                     raise ValueError("Количество рулонов должно быть целым.")

@@ -103,6 +103,16 @@ def test_confirm_does_not_allow_client_to_change_material_or_currency(env):
         assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
 
 
+def test_confirm_requires_explicit_active_supplier_per_material_line(env):
+    preview = env.post("/api/v1/supply-planning/preview", json=preview_body()).json()
+    body = {**preview_body(), "confirmation_key": "00000000-0000-4000-8000-000000000005", "preview_fingerprint": preview["preview_fingerprint"],
+            "edits": [{"material_key": "fabric-a", "unit": "м", "quantity": 1, "expected_date": "2026-09-11"}]}
+    response = env.post("/api/v1/supply-planning/confirm", json=body)
+    assert response.status_code == 422
+    with core.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("role,confirm", [("owner", True), ("manager", True), ("viewer", False), ("warehouse", False), ("integration_reader", False)])
 def test_planning_permissions_allow_read_preview_but_owner_manager_only_confirm(role, confirm):
     assert write_allowed(role, "POST", "/api/v1/supply-planning/preview") is (role != "integration_reader")
