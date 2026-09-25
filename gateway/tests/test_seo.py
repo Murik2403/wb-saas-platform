@@ -69,6 +69,23 @@ class RobotsAndSitemapTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
 
+    def test_favicon_assets_are_public_and_have_expected_mime_types(self) -> None:
+        svg = self.client.get("/favicon.svg")
+        self.assertEqual(svg.status_code, 200)
+        self.assertTrue(svg.headers["content-type"].startswith("image/svg+xml"))
+        self.assertIn("<svg", svg.text)
+        png = self.client.get("/favicon-192.png")
+        self.assertEqual(png.status_code, 200)
+        self.assertTrue(png.headers["content-type"].startswith("image/png"))
+        self.assertEqual(png.content[:8], b"\x89PNG\r\n\x1a\n")
+
+    def test_shared_template_declares_favicon_for_public_pages(self) -> None:
+        for path in PUBLIC_PAGES:
+            with self.subTest(path=path):
+                html = self.client.get(path).text
+                self.assertIn('<link rel="icon" type="image/svg+xml" href="/favicon.svg">', html)
+                self.assertIn('<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">', html)
+
 
 class PageMetadataTests(unittest.TestCase):
     def setUp(self) -> None:
