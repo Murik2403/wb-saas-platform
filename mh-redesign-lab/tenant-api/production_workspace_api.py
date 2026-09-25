@@ -10,7 +10,7 @@ import json
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from db.core import connect
@@ -99,14 +99,17 @@ def _record_first_production_result() -> None:
             event_name="first_production_result",
             occurred_at=datetime.now(timezone.utc).isoformat(),
         )
-        try:
-            deliver_pending_growth_events(config.DB_PATH)
-        except Exception:
-            # The durable outbox is retried on later delivery attempts.
-            pass
     except Exception:
         # Growth tracking must never fail an already committed stock receipt.
         return
+
+
+def _deliver_pending_growth_events() -> None:
+    try:
+        deliver_pending_growth_events(config.DB_PATH)
+    except Exception:
+        # The durable outbox is retried on later delivery attempts.
+        pass
 
 
 def _batch(batch_id: int) -> dict:
@@ -259,7 +262,7 @@ def reverse(batch_id: int, payload: ReverseInput) -> dict:
 
 
 @router.post("/wip/package")
-def package(payload: PackageInput) -> dict:
+def package(payload: PackageInput, background_tasks: BackgroundTasks) -> dict:
     key = f"react-wip-package:{payload.request_id}"
     with connect() as conn:
         previous = conn.execute("SELECT * FROM inventory_movements WHERE source_task_key=? AND movement_type='production_receipt_wip' AND reversed_at IS NULL", (key,)).fetchone()
@@ -276,6 +279,7 @@ def package(payload: PackageInput) -> dict:
     ))
     if result.get("posted") or result.get("skipped"):
         _record_first_production_result()
+        background_tasks.add_task(_deliver_pending_growth_events)
     return result
 
 
