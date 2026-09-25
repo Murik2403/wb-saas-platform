@@ -1,6 +1,6 @@
 # Статус продуктового аудита — 25.09.2026
 
-Этот статус относится к изолированному интеграционному кандидату ветки `codex/audit-release-integration-20260925`, код ревизии `67ef560cbaea92aee9e65827a5eb40fd21fdcec7`. Это не production-развёртывание.
+Этот статус относится к изолированному интеграционному кандидату ветки `codex/audit-release-integration-20260925`, код ревизии `6bc86e5265557d789d900411f83d781641193d34`. Это не production-развёртывание.
 
 ## Реализовано в кандидате
 
@@ -13,22 +13,24 @@
 - Календарь производственной мощности подключён к React, единицы материалов отображаются из справочника (`м`, `кг`, `л`, `шт`).
 - Планирование потребности в сырье работает как явный read-only предпросмотр по открытым производственным заданиям, версионному BOM, физическому и FIFO-остатку, открытым закупкам, единицам/рулонам и срокам поставщика. Подтверждение требует активного поставщика и создаёт только внутреннюю заявку со статусом `Запланировано`; поставщику ничего не отправляется. Повтор с тем же ключом идемпотентен, а изменение исходных данных делает предпросмотр устаревшим.
 - Ложное описание детерминированных правил как «AI-агентов ChatGPT и Claude» было заменено на «Агенты цены и рекламы» в исходном изменении, описанном аудитом.
+- Для живого SEO-дефекта `www.marketshelper.ru` добавлен отдельный HTTPS-router Traefik с постоянным перенаправлением на apex и сохранением полного пути/query. Правило закреплено в promotion source gate. В production www пока отдаёт Traefik 404 до выпуска gateway-конфигурации.
 
 ## Последние проверки кода-кандидата
 
 - Полный tenant-app: `261 passed`, 6 warnings, 8 subtests.
 - Полный tenant API: `269 passed`, 2 warnings.
-- Frontend: `82 passed`; `npx tsc -b` и production build прошли. Vite предупреждает о JS chunk больше 500 KB (последний production build: `552.33 KB`).
-- `scripts/check_promotion_sources.py`: `PROMOTION_SOURCE_OK`.
-- `scripts/check_clean_clone.py`: полный gate требуется повторить после коммита этого статусного документа.
+- Gateway backend: `375 passed`, 2 warnings, 146 subtests.
+- Frontend: `82 passed`; `npx tsc -b` и production build прошли. Vite предупреждает о JS chunk больше 500 KB (последний production build: `552.69 KB`).
+- Promotion source gate tests: `9 passed`; `scripts/check_promotion_sources.py`: `PROMOTION_SOURCE_OK`.
+- Публичный apex SEO audit (`https://marketshelper.ru`): `396 pass`, `0 warn`, `0 fail`; www-хост не входит в sitemap crawl и проверен отдельно, где он дал 404.
+- Compose labels www-router отрендерены с `WB_SAAS_PARENT_DOMAIN=marketshelper.ru`; RedirectRegex сохраняет путь и query.
 - `git diff --check` прошёл.
-- Образ `mh-tenant-audit:67ef560` собран из кода `67ef560cbaea92aee9e65827a5eb40fd21fdcec7`; OCI revision label и `/tmp/redesign-build-id` совпали. Изолированный loopback smoke: контейнер `healthy`, `/healthz` — `200`, главная — `200`, read-only supply-planning preview — `200`. Временные контейнер и volume удалены.
+- Образ `mh-tenant-audit:6bc86e5` собран из кода `6bc86e5265557d789d900411f83d781641193d34`; OCI revision label и `/tmp/redesign-build-id` совпали. Изолированный loopback smoke: контейнер `healthy`, `/healthz` — `200`, главная — `200`, read-only supply-planning preview — `200`. Временные контейнер и volume удалены.
 - Живая публичная проверка: главная — `200`; `/vs-1c` — `302` на `/sebestoimost-wb`; конечная страница — `200` без сравнения или ссылки на старый маршрут; sitemap — `200`, URL `/vs-1c` отсутствует. Старые упоминания в внутренних исторических документах не отображаются публично.
 
-## Следующий этап разработки
+## Следующий roadmap после закрытия текущего релизного кандидата
 
-- Планировщик потребности внедрён; спецификация и implementation plan: `docs/superpowers/specs/2026-09-25-supply-needs-planning.md` и `docs/superpowers/plans/2026-09-25-supply-needs-planning.md`.
-- CSV-экспорт финансового отчёта есть в React и API рядом с XLSX: строки экономики по товарам, BOM для Excel, `;` и защита полей от formula injection; API-контракт покрыт тестами.
+- Спецификация и implementation plan уже выполненного планировщика сырья: `docs/superpowers/specs/2026-09-25-supply-needs-planning.md` и `docs/superpowers/plans/2026-09-25-supply-needs-planning.md`. CSV-экспорт финансового отчёта в React/API также реализован и покрыт контрактными тестами.
 - Следующим отдельным продуктовым этапом остаются денежный поток компании, полноценный Ozon и multi-shop; см. список ограничений ниже. Они не являются условием корректности реализованного контура WB/FIFO.
 
 ## Остальные ограничения и открытые пункты
@@ -36,9 +38,9 @@
 - Полный Ozon, multi-shop, денежный поток компании и журнал истории стоимости/норм остаются отдельными roadmap-пунктами.
 - Внешняя аналитика ниш/конкурентов, контроль РРЦ, антиконтрафакт и browser-плагин осознанно не входят в нишу продукта.
 - Доступ к кабинету Директа/аналитики в текущей сессии не подтверждён. Фактическая модерация, конечные URL, активность кампаний и конверсии требуют проверки в авторизованном кабинете.
-- `www.marketshelper.ru` не проверен как перенаправляющий на apex в этой работе.
-- Локальный provisioner не имеет `WB_SAAS_BACKUP_ENCRYPTION_KEY`; production значение не проверено, и у текущего окружения нет подключённого production Docker context или подтверждённого удалённого deploy-доступа. Не генерировать и не заменять ключ. Перед выпуском нужны проверенное зашифрованное control-plane backup и подтверждение возможности восстановить целостную SQLite-копию; обычный архив тома сам по себе не доказывает согласованность базы.
+- `www.marketshelper.ru` проверен: production сейчас возвращает Traefik 404, хотя A-запись совпадает с apex и TLS валиден. Кандидат содержит отдельный HTTPS-router с постоянным редиректом на apex и сохранением path/query; правило заработает после безопасного выпуска gateway-конфигурации.
+- SSH alias `marketshelper-staging` фактически ведёт на production-хост. Read-only инвентаризация подтвердила здоровые gateway, tenant, provisioner и Traefik. На production provisioner отсутствует `WB_SAAS_BACKUP_ENCRYPTION_KEY`; локальный provisioner также без этого ключа. Deploy helper не имеет dry-run: он создаёт проверенный backup, затем останавливает и заменяет tenant. Не запускать его без ключа. Не генерировать и не менять ключ. Перед выкладкой нужны ключ в серверном secret store, зашифрованный control-plane backup и доказательство восстановления согласованной SQLite-копии.
 
 ## Граница результата
 
-Кандидат собран и проверен локально, но production не менялся. Для выкладки требуются существующий host-level backup key на сервере, зашифрованный и проверенный backup/restore, staging-проверка на реальном tenant, rollback и production health/business probes. Локальные тесты и smoke не заменяют эти проверки.
+Кандидат собран и проверен локально, но production tenant/gateway не менялись. Для выкладки требуются host-level backup key в серверном secret store, зашифрованный и проверенный backup/restore, проверка целостности базы, rollback и production health/business probes. A-запись www уже указывает на тот же хост и TLS-сертификат действителен, но редирект заработает только после безопасного обновления gateway. Локальные тесты и smoke не заменяют эти проверки.
