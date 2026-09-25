@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { ProductionWorkspace } from "./ProductionWorkspace";
 
 vi.mock("./data-source", () => ({ API_BASE_URL: "/tenant-api", apiHeaders: (json: boolean) => ({ "x-tenant-id": "test-tenant", ...(json ? { "content-type": "application/json" } : {}) }) }));
-const data = { wip: { status: { open_batches: 0, open_cost_rub: 0, remaining_units: 0, remaining_cost_rub: 0 }, batches: [] }, materials: [{ material_name: "Ткань", unit: "м", available_meters: 20 }], products: [], capacity: { capacity_known: false, pieces_per_day: 0, workdays: [0, 1], horizon_days: 14, fulfillment_lead_days: 4, emergency_cover_days: 7, expedited_fbo_lead_days: 3, fbs_lead_days: 0, note: "" }, calendar: [], undated_tasks: [] };
+const data = { wip: { status: { open_batches: 0, open_cost_rub: 0, remaining_units: 0, remaining_cost_rub: 0 }, batches: [] }, materials: [{ material_name: "Ткань", unit: "м", available_meters: 20 }], products: [{ nm_id: 101, chrt_id: 0, variant_label: "Базовый товар", supplier_article: "QA", product_name: "QA", pack_size: 2 }], capacity: { capacity_known: false, pieces_per_day: 0, workdays: [0, 1], horizon_days: 14, fulfillment_lead_days: 4, emergency_cover_days: 7, expedited_fbo_lead_days: 3, fbs_lead_days: 0, note: "" }, calendar: [], undated_tasks: [] };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => { fetchMock.mockReset(); fetchMock.mockImplementation(async () => json(data)); vi.stubGlobal("fetch", fetchMock); });
@@ -56,6 +56,44 @@ it("does not invent metres when the material unit is missing", async () => {
   render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
   expect(screen.getByLabelText("Расход сырья, ед.")).toBeInTheDocument();
   expect(screen.getByRole("option", { name: "Сырьё без единицы · 5 ед." })).toBeInTheDocument();
+});
+
+it("submits the selected product and exact variant for WIP issue and packaging", async () => {
+  const products = [
+    { nm_id: 101, chrt_id: 501, variant_label: "S", supplier_article: "QA", product_name: "QA", pack_size: 2 },
+    { nm_id: 101, chrt_id: 502, variant_label: "M", supplier_article: "QA", product_name: "QA", pack_size: 2 },
+  ];
+  fetchMock.mockImplementation(async () => json({ ...data, products }));
+  render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
+  const issueForm = screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!;
+  fireEvent.change(screen.getAllByLabelText("Товар и вариант")[0], { target: { value: "101:501" } });
+  fireEvent.change(screen.getByLabelText("Тип заготовки"), { target: { value: "Круг" } });
+  fireEvent.change(screen.getByLabelText("Расход сырья, м"), { target: { value: "2" } });
+  fireEvent.submit(issueForm);
+  await screen.findByText("Сырьё выдано в НЗП. Остаток и стоимость обновлены.");
+  const issueBody = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1]?.body as string);
+  expect(issueBody).toMatchObject({ nm_id: 101, chrt_id: 501 });
+  const packageSelect = screen.getAllByLabelText("Товар и вариант")[1] as HTMLSelectElement;
+  fireEvent.change(packageSelect, { target: { value: "101:502" } });
+  fireEvent.change(screen.getByLabelText("Количество комплектов"), { target: { value: "1" } });
+  fireEvent.submit(screen.getByRole("button", { name: "Собрать из заготовок" }).closest("form")!);
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2));
+  const packageBody = JSON.parse(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")[1][1]?.body as string);
+  expect(packageBody).toMatchObject({ nm_id: 101, chrt_id: 502 });
+});
+
+it("labels legacy WIP batches as unassigned and only offers catalog product variants", async () => {
+  const legacyBatch = { id: 7, nm_id: 0, chrt_id: 0, product_label: "", unit: "м", material_name: "Ткань", blank_type: "Круг", status: "completed", issued_meters: 2, material_cost_rub: 20, produced_units: 3, scrap_units: 0, remaining_units: 3, unit_cost_rub: 6.67, completion_movement_id: 2, reversed_at: null };
+  const products = [
+    { nm_id: 101, chrt_id: 501, variant_label: "S", supplier_article: "QA", product_name: "QA", pack_size: 2 },
+    { nm_id: 101, chrt_id: 502, variant_label: "M", supplier_article: "QA", product_name: "QA", pack_size: 2 },
+  ];
+  fetchMock.mockImplementation(async () => json({ ...data, products, wip: { ...data.wip, batches: [legacyBatch] } }));
+  render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
+  expect(screen.getByText("Старые данные без привязки к товару и варианту")).toBeInTheDocument();
+  const options = Array.from((screen.getAllByLabelText("Товар и вариант")[0] as HTMLSelectElement).options).map((option) => option.value);
+  expect(options).toEqual(["101:501", "101:502"]);
+  expect(options).not.toContain("0:0");
 });
 
 it("keeps request identity on network retry, blocks duplicate submits and refreshes real state", async () => {
