@@ -151,6 +151,25 @@ def check_sources(root: Path) -> dict:
         if "${WB_SAAS_INTERNAL_API_SECRET:-}" in compose_text:
             failures.append("Standalone redesign Compose must not pass the gateway master secret")
         checks.append("Standalone tenant credential scope examined")
+    gateway_compose = root / "docker-compose.yml"
+    if not gateway_compose.is_file():
+        failures.append("Missing gateway Compose source: docker-compose.yml")
+    else:
+        gateway_text = gateway_compose.read_text(encoding="utf-8")
+        www_labels = (
+            "traefik.http.routers.gateway-www.rule=Host(`www.${WB_SAAS_PARENT_DOMAIN}`)",
+            "traefik.http.routers.gateway-www.entrypoints=websecure",
+            "traefik.http.routers.gateway-www.tls.certresolver=http-resolver",
+            "traefik.http.routers.gateway-www.middlewares=gateway-www-canonical",
+            "traefik.http.routers.gateway-www.service=gateway",
+            r"traefik.http.middlewares.gateway-www-canonical.redirectregex.regex=^https?://www\.(.*)",
+            "traefik.http.middlewares.gateway-www-canonical.redirectregex.replacement=https://$${1}",
+            "traefik.http.middlewares.gateway-www-canonical.redirectregex.permanent=true",
+        )
+        for label in www_labels:
+            if label not in gateway_text:
+                failures.append(f"Gateway www canonical redirect is missing/misconfigured: {label}")
+        checks.append("Gateway www-to-apex TLS redirect and URI preservation examined")
     warnings.append("Source checks do not replace clean-checkout, Docker build, authenticated staging flow or visual acceptance")
     return {"checks": checks, "failures": failures, "warnings": warnings}
 

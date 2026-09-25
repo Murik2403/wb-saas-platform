@@ -259,6 +259,18 @@ services:
       - traefik.http.routers.gateway.entrypoints=websecure
       - traefik.http.routers.gateway.tls.certresolver=http-resolver
       - traefik.http.services.gateway.loadbalancer.server.port=8000
+      # Serve www on a dedicated TLS router and preserve the full request URI
+      # while canonicalizing to the apex host. Compose's $$ escapes the
+      # replacement capture from Compose interpolation, leaving ${1} for
+      # Traefik's RedirectRegex middleware.
+      - traefik.http.routers.gateway-www.rule=Host(`www.${WB_SAAS_PARENT_DOMAIN}`)
+      - traefik.http.routers.gateway-www.entrypoints=websecure
+      - traefik.http.routers.gateway-www.tls.certresolver=http-resolver
+      - traefik.http.routers.gateway-www.middlewares=gateway-www-canonical
+      - traefik.http.routers.gateway-www.service=gateway
+      - traefik.http.middlewares.gateway-www-canonical.redirectregex.regex=^https?://www\.(.*)
+      - traefik.http.middlewares.gateway-www-canonical.redirectregex.replacement=https://$${1}
+      - traefik.http.middlewares.gateway-www-canonical.redirectregex.permanent=true
       # wb-saas-auth (referenced by every tenant container's own labels, see
       # gateway/provisioning.py container_labels()) is defined in
       # traefik/dynamic.yml, NOT here -- a middleware tied to this

@@ -95,6 +95,7 @@ class ManufacturingTests(DbTestCase):
             conn.execute("INSERT INTO finished_goods_cost_layers VALUES (1,'production','movement:44')")
             conn.execute("INSERT INTO finished_goods_cost_layers VALUES (2,'opening','seed:opening')")
             conn.execute("INSERT INTO finished_goods_cost_layers VALUES (3,'production','movement:45')")
+            conn.execute("INSERT INTO finished_goods_cost_layers VALUES (4,'wb_snapshot_reconciliation','snapshot:1')")
             conn.execute("INSERT INTO manufacturing_releases VALUES (9,1,17,'release-9')")
             conn.execute("INSERT INTO manufacturing_releases VALUES (10,3,18,'release-10')")
             conn.execute("INSERT INTO manufacturing_releases VALUES (11,3,19,'release-11')")
@@ -111,14 +112,16 @@ class ManufacturingTests(DbTestCase):
             self.assertIsNotNone(conn.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_manufacturing_releases_finished_layer'").fetchone())
             hydrated = m._hydrate_semi_finished_provenance(conn, {"materials":[{
                 "component_type":"semi_finished","component_bom_version_id":17,
-                "allocations":[{"layer_id":2,"units":1,"amount_rub":7},{"layer_id":3,"units":1,"amount_rub":8}],
+                "allocations":[{"layer_id":2,"units":1,"amount_rub":7},{"layer_id":3,"units":1,"amount_rub":8},{"layer_id":4,"units":1,"amount_rub":9}],
             }]})
             legacy_allocation = hydrated["materials"][0]["allocations"][0]
-            self.assertEqual(legacy_allocation["source_provenance"], "unknown_legacy_or_external")
+            self.assertEqual(legacy_allocation["source_provenance"], "opening_stock_unknown")
             self.assertIsNone(legacy_allocation["source_bom_version_mismatch"])
             ambiguous_production = hydrated["materials"][0]["allocations"][1]
             self.assertEqual(ambiguous_production["source_provenance"], "legacy_manufacturing_unknown")
             self.assertIsNone(ambiguous_production["source_release_id"])
+            external_allocation = hydrated["materials"][0]["allocations"][2]
+            self.assertEqual(external_allocation["source_provenance"], "other_source_unknown")
         finally:
             conn.close()
     def test_variant_uses_legacy_bom_only_when_exact_bom_absent(self):

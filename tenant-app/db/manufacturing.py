@@ -192,7 +192,8 @@ def _hydrate_semi_finished_provenance(conn: sqlite3.Connection, release: dict) -
                 source_provenance=(
                     "manufacturing" if producer_id is not None
                     else "legacy_manufacturing_unknown" if str(source["source_type"] or "").casefold() == "production"
-                    else "unknown_legacy_or_external"
+                    else "opening_stock_unknown" if str(source["source_type"] or "").casefold().startswith("opening")
+                    else "other_source_unknown"
                 ),
             )
     return release

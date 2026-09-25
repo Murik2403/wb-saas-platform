@@ -29,6 +29,16 @@ def fixture_tree(root):
     write(root, "mh-redesign-lab/Dockerfile.tenant-staging", "\n".join(copies) + "\nLABEL org.opencontainers.image.revision=$REDESIGN_BUILD_ID\nRUN npm run build\nCOPY --from=frontend-build /frontend/dist /usr/share/nginx/html\n")
     write(root, "mh-redesign-lab/src/data-source.ts", "\n".join(route for _, route in gate.GROWTH_ROUTES))
     write(root, "mh-redesign-lab/deploy/nginx.tenant-staging.conf", "location /api/ { proxy_pass http://127.0.0.1:8001; proxy_set_header X-Tenant-Account $http_x_tenant_account; proxy_set_header X-Tenant-Role $http_x_tenant_role; }\nlocation = /healthz { proxy_pass http://127.0.0.1:8001/healthz; }")
+    write(root, "docker-compose.yml", "\n".join((
+        "traefik.http.routers.gateway-www.rule=Host(`www.${WB_SAAS_PARENT_DOMAIN}`)",
+        "traefik.http.routers.gateway-www.entrypoints=websecure",
+        "traefik.http.routers.gateway-www.tls.certresolver=http-resolver",
+        "traefik.http.routers.gateway-www.middlewares=gateway-www-canonical",
+        "traefik.http.routers.gateway-www.service=gateway",
+        r"traefik.http.middlewares.gateway-www-canonical.redirectregex.regex=^https?://www\.(.*)",
+        "traefik.http.middlewares.gateway-www-canonical.redirectregex.replacement=https://$${1}",
+        "traefik.http.middlewares.gateway-www-canonical.redirectregex.permanent=true",
+    )))
     return root
 
 
@@ -83,3 +93,10 @@ def test_missing_frontend_build_input_is_detected(tmp_path):
     fixture_tree(tmp_path)
     (tmp_path / "mh-redesign-lab/package-lock.json").unlink()
     assert any("package-lock.json" in message for message in gate.check_sources(tmp_path)["failures"])
+
+
+def test_www_canonical_redirect_is_required(tmp_path):
+    fixture_tree(tmp_path)
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text(compose.read_text().replace("gateway-www.rule=Host", "gateway.rule=Host"))
+    assert any("gateway-www.rule" in message for message in gate.check_sources(tmp_path)["failures"])
