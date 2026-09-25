@@ -6,7 +6,7 @@ type Material = { material_name: string; unit: string };
 type Layer = Material & { id: number; remaining_quantity: number; unit_cost_rub: number };
 type Product = { nm_id: number; chrt_id?: number; variant_label?: string; barcodes?: string; product_name: string; supplier_article?: string };
 type Equipment = { id: number; name: string; resource_unit: "units" | "hours"; resource_quantity: number; consumed_resource: number; rate_per_resource_unit: number };
-type BomComponent = { component_type?: "raw_material" | "semi_finished"; material_name?: string; nm_id?: number; chrt_id?: number; component_bom_version_id?: number; quantity_per_unit: number; unit: string };
+type BomComponent = { component_type?: "raw_material" | "semi_finished"; material_name?: string; nm_id?: number; chrt_id?: number; component_bom_version_id?: number; quantity_per_unit: number; unit: string; allocations?: Array<{ layer_id: number; units: number; amount_rub: number; source_release_id?: number | null; source_release_key?: string | null; source_bom_version_id?: number | null; source_bom_version_mismatch?: boolean | null; source_provenance?: string }> };
 type Bom = { id: number; nm_id: number; chrt_id?: number; version: number; note?: string; materials?: BomComponent[]; operations?: Array<{ name: string; rate_per_unit: number }>; packaging_per_unit?: number; other_per_unit?: number };
 type RecordRow = Record<string, unknown>;
 export type ManufacturingCostsData = {
@@ -89,6 +89,21 @@ function routeBlocker(boms: Bom[], products: Product[], target: Product, candida
 function ProductSelect({ products, value, onChange, label, variantAware = false }: { products: Product[]; value: string; onChange: (value: string) => void; label: string; variantAware?: boolean }) {
   const options = variantAware ? products : [...new Map(products.map((item) => [item.nm_id, item])).values()];
   return <Field label={label}><select required value={value} onChange={(event) => onChange(event.target.value)}><option value="">Выберите товар</option>{options.map((item) => <option key={`${item.nm_id}:${item.chrt_id ?? 0}`} value={productValue(item, variantAware)}>{item.product_name || `WB ${item.nm_id}`} · {item.nm_id}{variantAware && Number(item.chrt_id ?? 0) > 0 ? ` · ${item.variant_label || `вариант ${item.chrt_id}`}` : ""}</option>)}</select></Field>;
+}
+function SemiFinishedProvenance({ materials }: { materials: unknown }) {
+  if (!Array.isArray(materials)) return null;
+  const components = (materials as BomComponent[]).filter((item) => item.component_type === "semi_finished");
+  if (!components.length) return null;
+  return <ul className="mfg-component-provenance">{components.map((component, index) => <li key={`${component.nm_id}:${component.chrt_id ?? 0}:${index}`}>
+    Полуфабрикат WB {component.nm_id}{component.chrt_id ? ` · вариант ${component.chrt_id}` : ""}; закреплённая спецификация v{component.component_bom_version_id ?? "не указана"}.
+    <ul>{(component.allocations ?? []).map((allocation) => <li key={allocation.layer_id}>
+      {allocation.units} шт из партии #{allocation.layer_id}{allocation.source_release_key ? ` (${allocation.source_release_key})` : ""}: {allocation.source_bom_version_id == null
+        ? `версия источника неизвестна (${allocation.source_provenance === "unknown_legacy_or_external" ? "начальный или внешний остаток" : "старый выпуск без связи с рецептом"}); использована стоимость партии ${rub(allocation.amount_rub)}.`
+        : allocation.source_bom_version_mismatch
+          ? `версия источника BOM v${allocation.source_bom_version_id} отличается от закреплённой v${component.component_bom_version_id}; FIFO учёл фактическую стоимость партии ${rub(allocation.amount_rub)}.`
+          : `версия источника BOM v${allocation.source_bom_version_id} совпадает с закреплённой; FIFO учёл стоимость партии ${rub(allocation.amount_rub)}.`}
+    </li>)}</ul>
+  </li>)}</ul>;
 }
 
 export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: () => void; canEdit?: boolean } = {}) {
@@ -292,7 +307,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
       </form>
       <div className="mfg-journal"><h3>Журнал производственного учёта</h3><p>Сдельных записей: {data.piecework.length}. Списаний брака: {data.defects.length}. Выпусков: {data.releases.length}.</p><p>Отмена восстанавливает учётные остатки. Уже использованную партию отменить нельзя; сервер проверяет это перед действием.</p>
         <h4>Выпуски — последние 10</h4>{!data.releases.length && <p>Выпусков пока нет.</p>}
-        {data.releases.slice(0, 10).map((item, index) => <details key={String(item.id ?? index)}><summary>{String(item.production_date ?? "")} · {String(item.source_key ?? "")} · WB {String(item.nm_id ?? "")}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · {String(item.quantity ?? "")} ед. · {rub(item.total_cost_rub)}{item.status === "reversed" ? " · Отменён" : ""}</summary><p>На единицу: {rub(item.unit_cost_rub)}. Материалы: {rub(item.material_cost_rub)}. Работа: {rub(item.labor_cost_rub)}. Износ: {rub(item.depreciation_cost_rub)}. Упаковка: {rub(item.packaging_cost_rub)}. Прочие: {rub(item.other_cost_rub)}.</p>{item.movement_id != null && <button type="button" disabled={disabled || !permitted("reverse") || item.status === "reversed"} onClick={(event) => void save(event, `/movements/${Number(item.movement_id)}/reverse`, () => ({}), "Выпуск отменён. Для исправленного выпуска используйте новый код задания.", () => {})}>Отменить выпуск {String(item.source_key ?? item.id)}</button>}</details>)}
+        {data.releases.slice(0, 10).map((item, index) => <details key={String(item.id ?? index)}><summary>{String(item.production_date ?? "")} · {String(item.source_key ?? "")} · WB {String(item.nm_id ?? "")}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · {String(item.quantity ?? "")} ед. · {rub(item.total_cost_rub)}{item.status === "reversed" ? " · Отменён" : ""}</summary><p>На единицу: {rub(item.unit_cost_rub)}. Материалы: {rub(item.material_cost_rub)}. Работа: {rub(item.labor_cost_rub)}. Износ: {rub(item.depreciation_cost_rub)}. Упаковка: {rub(item.packaging_cost_rub)}. Прочие: {rub(item.other_cost_rub)}.</p><SemiFinishedProvenance materials={item.materials} />{item.movement_id != null && <button type="button" disabled={disabled || !permitted("reverse") || item.status === "reversed"} onClick={(event) => void save(event, `/movements/${Number(item.movement_id)}/reverse`, () => ({}), "Выпуск отменён. Для исправленного выпуска используйте новый код задания.", () => {})}>Отменить выпуск {String(item.source_key ?? item.id)}</button>}</details>)}
         <h4>Сдельная работа — последние 10</h4>{!data.piecework.length && <p>Сдельных записей пока нет.</p>}
         {data.piecework.slice(0, 10).map((item, index) => <p key={String(item.id ?? index)}>{String(item.work_date ?? "")} · {String(item.source_key ?? "")} · {String(item.worker ?? "")} · {String(item.operation_name ?? "")} · {String(item.quantity ?? "")} × {rub(item.rate_per_unit)} = {rub(Number(item.quantity) * Number(item.rate_per_unit))} · {item.release_movement_id ? "Включено в выпуск" : "Ожидает выпуска"}</p>)}
         <h4>Брак — последние 10</h4>{!data.defects.length && <p>Списаний брака пока нет.</p>}

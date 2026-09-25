@@ -80,6 +80,20 @@ def init_manufacturing_schema(conn: sqlite3.Connection) -> None:
     piecework_columns = {row["name"] for row in conn.execute("PRAGMA table_info(manufacturing_piecework)")}
     if "chrt_id" not in piecework_columns:
         conn.execute("ALTER TABLE manufacturing_piecework ADD COLUMN chrt_id INTEGER NOT NULL DEFAULT 0")
+    layer_columns = {row["name"] for row in conn.execute("PRAGMA table_info(finished_goods_cost_layers)")}
+    if "producer_release_id" not in layer_columns:
+        conn.execute("ALTER TABLE finished_goods_cost_layers ADD COLUMN producer_release_id INTEGER REFERENCES manufacturing_releases(id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_manufacturing_releases_finished_layer ON manufacturing_releases(finished_layer_id)")
+    # Recover typed provenance for historical manufacturing layers where the
+    # release row still exists. Opening/marketplace/other layers intentionally
+    # remain NULL: their recipe provenance cannot be inferred safely.
+    conn.execute("""
+        UPDATE finished_goods_cost_layers
+        SET producer_release_id=(SELECT id FROM manufacturing_releases WHERE finished_layer_id=finished_goods_cost_layers.id LIMIT 1)
+        WHERE producer_release_id IS NULL AND (
+            SELECT COUNT(*) FROM manufacturing_releases WHERE finished_layer_id=finished_goods_cost_layers.id
+        ) = 1
+    """)
 
 
 def _number(value: Any, name: str, *, positive: bool = False) -> float:
@@ -147,6 +161,37 @@ def _decode(row: sqlite3.Row) -> dict:
             result[field] = json.loads(result.pop(key))
     result.pop("request_hash", None)
     return result
+
+
+def _hydrate_semi_finished_provenance(conn: sqlite3.Connection, release: dict) -> dict:
+    """Attach typed producer/BOM provenance to exact FIFO layer allocations.
+
+    Layers created before the producer link migration (and opening/external
+    layers) remain explicitly unknown; their costs still come from the exact
+    consumed layer and are never filtered by BOM version.
+    """
+    for component in release.get("materials", []):
+        if component.get("component_type") != "semi_finished":
+            continue
+        pinned_version = component.get("component_bom_version_id")
+        for allocation in component.get("allocations", []):
+            source = conn.execute(
+                """SELECT l.producer_release_id,r.bom_version_id,r.source_key
+                   FROM finished_goods_cost_layers l
+                   LEFT JOIN manufacturing_releases r ON r.id=l.producer_release_id
+                   WHERE l.id=?""",
+                (int(allocation["layer_id"]),),
+            ).fetchone()
+            producer_id = int(source["producer_release_id"]) if source and source["producer_release_id"] is not None else None
+            source_bom_version = int(source["bom_version_id"]) if source and source["bom_version_id"] is not None else None
+            allocation.update(
+                source_release_id=producer_id,
+                source_release_key=str(source["source_key"]) if source and producer_id is not None else None,
+                source_bom_version_id=source_bom_version,
+                source_bom_version_mismatch=(source_bom_version != int(pinned_version)) if source_bom_version is not None and pinned_version is not None else None,
+                source_provenance="manufacturing" if producer_id is not None else "unknown_legacy_or_external",
+            )
+    return release
 
 
 def _equipment(row: sqlite3.Row) -> dict:
@@ -506,8 +551,11 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
             f"UPDATE manufacturing_piecework SET release_movement_id=? WHERE id IN ({','.join('?' for _ in actuals)})",
             (movement_id, *(int(row["id"]) for row in actuals)),
         )
-    conn.execute("INSERT INTO manufacturing_releases(movement_id,source_key,request_hash,nm_id,chrt_id,quantity,production_date,bom_version_id,materials_json,labor_json,equipment_json,material_cost_rub,labor_cost_rub,depreciation_cost_rub,packaging_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,finished_layer_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(movement_id,release_key,digest,nm_id,chrt_id,quantity,day,bom["id"],_json(components),_json(labor),_json(equipment),material_total,labor_total,depreciation,packaging,other,total,unit_cost,layer_id,_now()))
-    return {**_decode(conn.execute("SELECT * FROM manufacturing_releases WHERE movement_id=?",(movement_id,)).fetchone()),"posted":1,"skipped":0,"units":quantity,"cost_rub":total}
+    release_cursor = conn.execute("INSERT INTO manufacturing_releases(movement_id,source_key,request_hash,nm_id,chrt_id,quantity,production_date,bom_version_id,materials_json,labor_json,equipment_json,material_cost_rub,labor_cost_rub,depreciation_cost_rub,packaging_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,finished_layer_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(movement_id,release_key,digest,nm_id,chrt_id,quantity,day,bom["id"],_json(components),_json(labor),_json(equipment),material_total,labor_total,depreciation,packaging,other,total,unit_cost,layer_id,_now()))
+    release_id = int(release_cursor.lastrowid)
+    conn.execute("UPDATE finished_goods_cost_layers SET producer_release_id=? WHERE id=?", (release_id,layer_id))
+    release = _decode(conn.execute("SELECT * FROM manufacturing_releases WHERE id=?",(release_id,)).fetchone())
+    return {**_hydrate_semi_finished_provenance(conn,release),"posted":1,"skipped":0,"units":quantity,"cost_rub":total}
 
 
 def post_manufacturing_release(nm_id: int, quantity: int, production_date: str, source_key: str,
@@ -520,7 +568,7 @@ def post_manufacturing_release(nm_id: int, quantity: int, production_date: str, 
 
 def list_manufacturing_releases(nm_id: int | None = None) -> list[dict]:
     with connect() as conn:
-        return [_decode(r) for r in conn.execute("SELECT * FROM manufacturing_releases" + (" WHERE nm_id=?" if nm_id is not None else "") + " ORDER BY id DESC",(() if nm_id is None else (_integer(nm_id,"Артикул"),)))]
+        return [_hydrate_semi_finished_provenance(conn,_decode(r)) for r in conn.execute("SELECT * FROM manufacturing_releases" + (" WHERE nm_id=?" if nm_id is not None else "") + " ORDER BY id DESC",(() if nm_id is None else (_integer(nm_id,"Артикул"),)))]
 
 
 def write_off_material_defect(layer_id: int, quantity: float, event_key: str, reason: str, movement_date: str) -> dict:

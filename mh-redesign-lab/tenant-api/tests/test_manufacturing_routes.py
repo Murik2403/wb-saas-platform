@@ -78,6 +78,35 @@ def test_complete_http_cost_flow_and_readback(client):
     assert "Выпуск уже проведён" in late.json()["detail"]
 
 
+def test_nested_release_api_exposes_pinned_and_actual_bom_provenance(client):
+    with core.connect() as conn:
+        conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (222,'BLANK','Полуфабрикат','{\"sizes\":[]}')")
+
+    child_v1 = post(client, "/boms", {"nm_id":222,"materials":[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м²"}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
+    child_release_v1 = post(client, "/releases", {"nm_id":222,"quantity":1,"production_date":"2026-09-10","source_key":"child-v1","bom_version_id":child_v1["id"]})
+    parent_bom = post(client, "/boms", {"nm_id":123,"materials":[{"component_type":"semi_finished","nm_id":222,"chrt_id":0,"quantity_per_unit":2,"unit":"шт"}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
+    assert parent_bom["materials"][0]["nm_id"] == 222 and parent_bom["materials"][0]["chrt_id"] == 0, parent_bom
+    child_v2 = post(client, "/boms", {"nm_id":222,"materials":[{"material_name":"Ткань","quantity_per_unit":2,"unit":"м²"}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
+    child_release_v2 = post(client, "/releases", {"nm_id":222,"quantity":1,"production_date":"2026-09-11","source_key":"child-v2","bom_version_id":child_v2["id"]})
+    with core.connect() as conn:
+        available = conn.execute("SELECT id,source_type,ready_units,chrt_id,source_date,producer_release_id,status FROM finished_goods_cost_layers WHERE nm_id=222 ORDER BY id").fetchall()
+    assert sum(row["ready_units"] for row in available) == 2, [dict(row) for row in available]
+    assert sum(row["ready_units"] for row in available if row["source_date"] is None or row["source_date"] <= "2026-09-12") == 2, [dict(row) for row in available]
+    parent_release = post(client, "/releases", {"nm_id":123,"quantity":1,"production_date":"2026-09-12","source_key":"parent","bom_version_id":parent_bom["id"]})
+
+    assert parent_release["materials"][0]["component_bom_version_id"] == child_v1["id"]
+    allocation_provenance = parent_release["materials"][0]["allocations"]
+    assert [entry["source_provenance"] for entry in allocation_provenance] == ["manufacturing", "manufacturing"]
+    assert [entry["source_release_id"] for entry in allocation_provenance] == [child_release_v1["id"], child_release_v2["id"]]
+    assert [entry["source_bom_version_id"] for entry in allocation_provenance] == [child_v1["id"], child_v2["id"]]
+    assert [entry["source_bom_version_mismatch"] for entry in allocation_provenance] == [False, True]
+    # Provenance survives readback and the exact FIFO economics remain those of the layers consumed.
+    stored = client.get(PREFIX).json()["releases"]
+    parent_details = next(entry for entry in stored if entry["id"] == parent_release["id"])
+    assert parent_details["materials"][0]["allocations"] == allocation_provenance
+    assert parent_details["material_cost_rub"] == sum(entry["amount_rub"] for entry in allocation_provenance)
+
+
 def test_defect_exact_layer_idempotency_and_overdraft_rollback(client):
     layer = client.get(PREFIX).json()["material_layers"][0]
     body = {"layer_id": layer["id"], "quantity": 1.5, "event_key": "scrap-1", "reason": "Повреждение ткани", "movement_date": "2026-09-23"}

@@ -414,11 +414,13 @@ def init_db() -> None:
                 unit_cost_rub REAL NOT NULL DEFAULT 0,
                 original_amount_rub REAL NOT NULL DEFAULT 0,
                 chrt_id INTEGER NOT NULL DEFAULT 0,
+                producer_release_id INTEGER,
                 status TEXT NOT NULL DEFAULT 'active',
                 note TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                UNIQUE(source_type,source_ref)
+                UNIQUE(source_type,source_ref),
+                FOREIGN KEY(producer_release_id) REFERENCES manufacturing_releases(id)
             );
             CREATE INDEX IF NOT EXISTS idx_finished_goods_layers_fifo
                 ON finished_goods_cost_layers(nm_id,status,source_date,id);

@@ -21,5 +21,8 @@
 .manufacturing-costs .mfg-error { color: #ffd8d8; background: #421f25; border: 1px solid #d97984; }
 .manufacturing-costs .mfg-success { color: #c3ffec; background: #153e33; border: 1px solid #46b992; }
 .manufacturing-costs li, .manufacturing-costs .mfg-journal p { overflow-wrap: anywhere; }
+.manufacturing-costs .mfg-component-provenance { padding-left: 20px; margin: 8px 0 16px; }
+.manufacturing-costs .mfg-component-provenance > li { margin-bottom: 10px; }
+.manufacturing-costs .mfg-component-provenance ul { padding-left: 20px; margin: 6px 0; color: #b8c6d8; }
 @media (max-width: 900px) { .manufacturing-costs .mfg-panels { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .manufacturing-costs form, .manufacturing-costs .mfg-journal { padding: 14px; } .manufacturing-costs .mfg-row { display: block; } }
