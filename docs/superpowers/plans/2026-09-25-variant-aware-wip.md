@@ -101,8 +101,8 @@
 - Modify: `docs/marketing/PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md`
 - Verify: `scripts/check_clean_clone.py`, `scripts/check_promotion_sources.py`, `mh-redesign-lab/Dockerfile.tenant-staging`
 
-- [ ] Run full tenant-app/API/frontend tests and `git diff --check`.
-- [ ] Commit the verified code in the isolated release branch; run the clean-release gate against the clean commit.
+- [x] Run full tenant-app/API/frontend tests and `git diff --check`.
+- [x] Commit the verified code in the isolated release branch; run the clean-release gate against the clean commit.
 - [ ] Build tenant image with `REDESIGN_BUILD_ID` equal to the full code commit SHA.
 - [ ] Run the image locally on `127.0.0.1`, wait on tenant API readiness and Docker `healthy`, verify WIP and expense APIs, then remove the smoke container.
 - [ ] Update the candidate status with exact tests, commit, image revision, and remaining backup/staging/production gates.
