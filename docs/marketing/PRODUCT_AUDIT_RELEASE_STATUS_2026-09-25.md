@@ -28,3 +28,11 @@
 ## Граница релиза
 
 Этот кандидат собран и проверен локально, но не развёрнут на production. Локальные тесты, Docker smoke и чистый source gate не заменяют backup, staging с реальным tenant, rollback-проверку и production health/business probes.
+
+## Дополнение: вариантный цикл НЗП в изолированной ветке
+
+Коммит `4360f55b7839a453507b49558ff81da63d5f4b85` в ветке `codex/variant-wip-port-20260925` реализует точную пару `nm_id/chrt_id` на пути выдача сырья → выпуск заготовок → FIFO-упаковка → себестоимость и готовый слой. Старые партии остаются `0/0`; они доступны только базовому товару с проверенной карточкой `sizes: []`, неразмеченные остатки не предлагаются для вариантов. Закрытие смены проверяет вариант до выбора BOM; BOM другого варианта не перехватывает WIP-маршрут.
+
+Для этого коммита подтверждены: tenant-app `242 passed, 8 subtests passed` (`PYTHONPATH=<checkout>\tenant-app; python -m pytest tenant-app/tests -q`); API `252 passed` (`mh-redesign-lab; python -m pytest tenant-api/tests -q`); frontend `71 passed` (`npm test -- --run`), `npx tsc -b`, `npm run build`, `scripts/check_promotion_sources.py`, `git diff --check` и чистый release gate `18/18 required, 0 tracked-sensitive`. Build сообщает прежнее предупреждение Vite о JS chunk около 534.53 KB.
+
+Это пока отдельный изолированный feature commit: он ещё не cherry-picked в интегрированный релизный кандидат. Проверка сборки tenant Docker image с revision label этого коммита и localhost smoke остаются следующими воротами интеграции; после них нужно повторить проверки на результирующем кандидате. Production не деплоился. Статус nested semi-finished assemblies, их отдельного FIFO и reversal остаётся открытым; текущий vertical slice не закрывает их.
