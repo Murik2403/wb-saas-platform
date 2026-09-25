@@ -4129,3 +4129,28 @@ td {
 .finance-fifo-pagination { margin-top: 12px; color: var(--text-secondary, #aeb8c8); font-size: 13px; }
 @media (max-width: 700px) { .finance-fifo-detail-heading { align-items: flex-start; flex-direction: column; } .finance-fifo-pagination { align-items: flex-start; flex-direction: column; } .finance-fifo-pagination > div { width: 100%; justify-content: space-between; } }
 @media (max-width: 700px) { .onboarding-step { grid-template-columns: auto minmax(0, 1fr); } .onboarding-step > svg, .onboarding-step > .ghost-button, .onboarding-step > span:last-child { grid-column: 2; justify-self: start; } .onboarding-inline-form { grid-column: 1 / -1; flex-wrap: wrap; } }
+
+.supply-planning { display: grid; gap: 14px; }
+.supply-planning .section-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.supply-planning .section-header h2 { margin: 4px 0 0; }
+.section-kicker, .supply-plan-table small { display: block; color: var(--text-secondary, #aeb8c8); font-size: 12px; }
+.supply-plan-note, .supply-plan-variant p, .supply-plan-footer > span { color: var(--text-secondary, #aeb8c8); font-size: 13px; }
+.supply-plan-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.supply-plan-controls label, .supply-plan-inline-field { display: grid; gap: 5px; color: var(--text-secondary, #aeb8c8); font-size: 12px; }
+.supply-plan-controls input, .supply-plan-table input, .supply-plan-table select { min-height: 38px; min-width: 130px; }
+.supply-variant-allocation, .supply-plan-blockers { border: 1px solid var(--border, #29303c); border-radius: 12px; padding: 14px; }
+.supply-variant-allocation fieldset { margin: 12px 0; border: 1px solid var(--border, #29303c); border-radius: 10px; }
+.supply-plan-blockers { border-color: #8a414d; color: #ffb9c2; }
+.supply-plan-blockers strong, .supply-plan-success { display: flex; align-items: center; gap: 8px; }
+.supply-plan-blockers p { margin: 8px 0 0; }
+.supply-plan-warnings { color: #e9c983; }
+.supply-plan-table-wrap { overflow-x: auto; }
+.supply-plan-table { width: 100%; min-width: 940px; border-collapse: collapse; }
+.supply-plan-table th, .supply-plan-table td { padding: 10px; border-bottom: 1px solid var(--border, #29303c); text-align: left; vertical-align: top; }
+.supply-plan-table td small { margin-top: 5px; }
+.supply-plan-table td input, .supply-plan-table td select { width: 100%; }
+.supply-plan-inline-field { display: flex; align-items: center; }
+.supply-plan-inline-field input { max-width: 110px; }
+.supply-plan-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.supply-plan-success { color: #79d9ad; }
+@media (max-width: 700px) { .supply-plan-footer { align-items: stretch; flex-direction: column; } .supply-plan-footer button { width: 100%; } }
