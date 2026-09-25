@@ -3,6 +3,7 @@ import { ManufacturingCosts } from "./ManufacturingCosts";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
+import { SupplyPlanning } from "./SupplyPlanning";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { RuntimeStatus } from "./RuntimeStatus";
@@ -1099,6 +1100,7 @@ function App() {
           <SupplyView
             onAction={handleAction}
             onRefresh={dashboard.refresh}
+            session={session}
             procurementOrders={dashboard.procurementOrders}
             supplierPulse={dashboard.supplierPulse}
             supplyMetrics={dashboard.supplyMetrics}
@@ -2839,6 +2841,7 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
 function SupplyView({
   onAction,
   onRefresh,
+  session,
   procurementOrders,
   supplierPulse,
   supplyMetrics,
@@ -2851,6 +2854,7 @@ function SupplyView({
 }: {
   onAction: (label: string, itemLabel: string) => void;
   onRefresh: () => Promise<void>;
+  session: DashboardSession | null;
   procurementOrders: Array<Record<string, unknown>>;
   supplierPulse: SupplierPulse[];
   supplyMetrics: DashboardMetric[];
@@ -2986,6 +2990,11 @@ function SupplyView({
       </section>
 
       <MetricGrid metrics={supplyMetrics} onMetricClick={(metric) => onAction("Поставка", metric.label)} />
+
+      <SupplyPlanning
+        readOnly={!session || session.mode === "demo" || !["owner", "manager"].includes(session.user.role.toLowerCase())}
+        onRefresh={onRefresh}
+      />
 
       <section className="work-section supplier-directory-section">
         <SectionHeader kicker="Справочник" title="Поставщик">

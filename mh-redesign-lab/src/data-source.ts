@@ -695,6 +695,47 @@ async function postOperation<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type SupplyPlanBlocker = { code: string; message?: string; task_key?: string; nm_id?: number; units?: number; chrt_ids?: number[]; material_key?: string; [key: string]: unknown };
+export type SupplyPlanLine = {
+  material_key: string; material_name: string; unit: string; required_base_qty: number;
+  physical_available_base_qty: number | null; open_order_covered_base_qty: number;
+  shortage_base_qty: number; pack_size_base_qty: number | null; suggested_purchase_qty: number;
+  fallback_to_base_bom: boolean;
+  due_date: string; tracking_mode: "packaged" | "quantity";
+  supplier_candidates: Array<{ id: number; name: string; currency: string; lead_time_days: number }>;
+  source_refs: Array<{ task_key: string; nm_id: number; chrt_id: number; units: number; bom_version: number; bom_version_id: number }>;
+};
+export type SupplyPlanPreview = {
+  start_date: string; end_date: string; preview_fingerprint: string;
+  lines: SupplyPlanLine[]; blockers: SupplyPlanBlocker[]; warnings: Array<Record<string, unknown>>;
+  variant_demands: Array<{ task_key: string; nm_id: number; units: number; chrt_ids: number[]; task_date: string }>;
+};
+export type SupplyPlanAllocation = { task_key: string; chrt_id: number; units: number };
+export type SupplyPlanEdit = { material_key: string; unit: string; quantity: number; supplier_id: number | null; expected_date: string };
+export class SupplyPlanHttpError extends Error {
+  constructor(readonly status: number, readonly code: string | null, message: string) { super(message); this.name = "SupplyPlanHttpError"; }
+}
+
+async function supplyPlanPost<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: "POST", headers: apiHeaders(true), body: JSON.stringify(body) });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: string | { code?: string; message?: string } } | null;
+    const detail = payload?.detail;
+    const message = typeof detail === "string" ? detail : detail?.message ?? `Запрос отклонён (HTTP ${response.status})`;
+    const code = typeof detail === "object" && detail ? detail.code ?? null : null;
+    throw new SupplyPlanHttpError(response.status, code, message);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function previewSupplyPlan(input: { start_date: string; end_date: string; variant_allocations: SupplyPlanAllocation[] }): Promise<SupplyPlanPreview> {
+  return supplyPlanPost("/api/v1/supply-planning/preview", input);
+}
+
+export function confirmSupplyPlan(input: { confirmation_key: string; preview_fingerprint: string; start_date: string; end_date: string; variant_allocations: SupplyPlanAllocation[]; edits: SupplyPlanEdit[] }): Promise<{ confirmation_key: string; order_ids: number[]; order_numbers: string[]; replayed: boolean }> {
+  return supplyPlanPost("/api/v1/supply-planning/confirm", input);
+}
+
 async function patchOperation<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { method: "PATCH", headers: apiHeaders(true), body: JSON.stringify(body) });
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
