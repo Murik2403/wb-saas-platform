@@ -37,7 +37,7 @@ LABEL org.opencontainers.image.revision=$REDESIGN_BUILD_ID
 RUN printf '%s' "$REDESIGN_BUILD_ID" > /tmp/redesign-build-id
 COPY mh-redesign-lab/tenant-api/api_server.py ./api_server.py
 COPY mh-redesign-lab/tenant-api/integration_api.py ./integration_api.py
-COPY mh-redesign-lab/tenant-api/production_workspace_api.py mh-redesign-lab/tenant-api/manufacturing_costs_api.py mh-redesign-lab/tenant-api/production_permissions.py mh-redesign-lab/tenant-api/finance_csv.py ./
+COPY mh-redesign-lab/tenant-api/production_workspace_api.py mh-redesign-lab/tenant-api/manufacturing_costs_api.py mh-redesign-lab/tenant-api/production_permissions.py mh-redesign-lab/tenant-api/finance_csv.py mh-redesign-lab/tenant-api/supply_planning_api.py ./
 COPY mh-redesign-lab/tenant-api/dashboard_cache.py ./dashboard_cache.py
 COPY mh-redesign-lab/tenant-api/sync_runner.py ./sync_runner.py
 COPY mh-redesign-lab/tenant-api/request_security.py ./request_security.py
