@@ -36,7 +36,7 @@ class Edit(Input):
     material_key: str = Field(min_length=1, max_length=200)
     unit: str = Field(min_length=1, max_length=32)
     quantity: FiniteFloat = Field(gt=0, le=10_000_000)
-    supplier_id: Annotated[StrictInt, Field(gt=0)] | None = None
+    supplier_id: Annotated[StrictInt, Field(gt=0)]
     expected_date: date
 
 

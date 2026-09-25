@@ -108,6 +108,42 @@ def test_open_partial_po_only_covers_unreceived_amount_arriving_before_need_date
     assert line["shortage_base_qty"] == 11
 
 
+def test_open_partially_received_roll_order_converts_remaining_rolls_to_base_unit():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 15, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 10, "unit": "м", "tracking_mode": "packaged"}],
+        open_orders=[{"order_id": 1, "procurement_type": "Сырьё", "status": "Частично получено", "expected_date": "2026-09-10", "item_type": "Сырьё", "material_key": "a", "quantity": 3, "posted_quantity": 1, "unit": "рулон", "roll_length": 10}],
+        fifo_inventory=[{"material_key": "a", "remaining_qty": 0}],
+    ))
+    line = result["lines"][0]
+    assert line["required_base_qty"] == 30
+    assert line["open_order_covered_base_qty"] == 20
+    assert line["shortage_base_qty"] == 10
+
+
+def test_invalid_open_roll_conversion_blocks_instead_of_assuming_coverage():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 5, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 10, "unit": "м", "tracking_mode": "packaged"}],
+        open_orders=[{"order_id": 1, "procurement_type": "Сырьё", "status": "В пути", "expected_date": "2026-09-10", "item_type": "Сырьё", "material_key": "a", "quantity": 5, "posted_quantity": 0, "unit": "рулон", "roll_length": 0}],
+    ))
+    assert result["lines"][0]["open_order_covered_base_qty"] == 0
+    assert any(b["code"] == "invalid_open_order_pack" for b in result["blockers"])
+
+
+def test_open_order_with_unmapped_unit_blocks_instead_of_silent_omission():
+    result = build_supply_preview(snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 5, "status": "Не начато"}],
+        boms=[{"id": 1, "nm_id": 1, "chrt_id": 0, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "quantity_per_unit": 2, "unit": "м"}]}],
+        inventory=[{"material_key": "a", "material_name": "A", "balance_known": 1, "full_rolls": 0, "partial_meters": 0, "roll_length": 10, "unit": "м", "tracking_mode": "packaged"}],
+        open_orders=[{"order_id": 2, "procurement_type": "Сырьё", "status": "В пути", "expected_date": "2026-09-10", "item_type": "Сырьё", "material_key": "a", "quantity": 5, "posted_quantity": 0, "unit": "упаковка", "roll_length": 10}],
+    ))
+    assert result["lines"][0]["open_order_covered_base_qty"] == 0
+    assert any(b["code"] == "open_order_unit_mismatch" for b in result["blockers"])
+
+
 def test_partial_production_task_consumes_only_remaining_planned_units():
     result = build_supply_preview(snapshot(
         tasks=[{"task_key": "partial", "task_date": "2026-09-12", "nm_id": 1, "chrt_id": 0, "planned_units": 10, "actual_units": 4, "status": "В работе"}],
