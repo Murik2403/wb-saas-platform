@@ -12,6 +12,8 @@
 
 ## Global Constraints
 
+> **Completion status 25.09.2026:** implementation and normal test suites for Tasks 1–6 are complete in the release candidate; see [PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md](../../marketing/PRODUCT_AUDIT_RELEASE_STATUS_2026-09-25.md) for exact revisions, counts, and limitations. Task 7's full image-level multi-stage business probe and production release gate remain open. Checkboxes are updated only for work confirmed by the candidate and its tests.
+
 - Keep tenant data isolated in the tenant SQLite database; never use production data in tests.
 - Preserve the current BOM version and exact WB-variant (`nm_id`, `chrt_id`) rules; `chrt_id=0` is valid only for a product explicitly verified to have no variants.
 - Every release uses an immutable source key and idempotent request hash; a replay with changed inputs must fail without postings.
@@ -39,7 +41,7 @@
 - [ ] Add failing route tests: raw-only existing BOM still saves/posts exactly as before; a semi-finished component consumes 2 pieces per final unit from two different dated intermediate layers and records both exact layer IDs and costs; wrong `chrt_id` and insufficient ready units fail with no movement, stock, FIFO, release, or equipment change.
 - [ ] Add failing graph tests: `A -> B -> C` is valid; `A -> B -> A` and a self-edge fail; edges are variant-specific; a dangling/inactive product identity fails closed.
 - [ ] Add failing reversal tests: reverse the final consumer restores each exact intermediate layer; producer reversal is blocked while any active downstream allocation exists; after reversing consumers, producer reversal restores its raw-material layers and deletes/reverses its output layer; replayed undo changes nothing.
-- [ ] Run focused tests and confirm they fail on the current implementation because `save_bom` accepts only raw materials and `_post_release_conn` consumes only material FIFO.
+- [ ] Run focused tests and confirm they fail on the current implementation because `save_bom` accepts only raw materials and `_post_release_conn` consumes only material FIFO. The final implementation and passing regressions are verified; a saved pre-implementation red-run is not available in the current evidence set.
 
 ### Task 2: Normalize and validate typed, versioned BOM components
 
@@ -54,10 +56,10 @@
 - Add a private `validate_bom_dependency_graph(conn, target_nm_id, target_chrt_id, components) -> None` that resolves each exact component variant's latest saved BOM and rejects cycles, missing recipes, invalid catalog identities, and depth greater than 8 with a Russian `ValueError`.
 - Keep the external BOM endpoint paths and version IDs unchanged; both kinds of component use the existing `materials` JSON field in the API contract.
 
-- [ ] Implement the test-first raw/semi-finished parsing, normalization, and unit checks; raw components resolve their unit through `material_inventory_color`; semi-finished components require a known no-size product or a catalog-listed exact `chrt_id` and use units `шт`.
-- [ ] Implement a depth-first route validator using a visited recursion stack and memoized resolved BOM IDs; reject cycles and missing descendant BOMs without writing a new BOM version.
-- [ ] Preserve `chrt_id=0` base-BOM fallback only under the existing catalog rule and serialize which exact BOM version each nested component resolves to.
-- [ ] Run the focused manufacturing route tests; verify duplicate source keys with identical payload skip and changed payload conflicts before any write.
+- [x] Implement the test-first raw/semi-finished parsing, normalization, and unit checks; raw components resolve their unit through `material_inventory_color`; semi-finished components require a known no-size product or a catalog-listed exact `chrt_id` and use units `шт`.
+- [x] Implement a depth-first route validator using a visited recursion stack and memoized resolved BOM IDs; reject cycles and missing descendant BOMs without writing a new BOM version.
+- [x] Preserve `chrt_id=0` base-BOM fallback only under the existing catalog rule and serialize which exact BOM version each nested component resolves to.
+- [x] Run the focused manufacturing route tests; verify duplicate source keys with identical payload skip and changed payload conflicts before any write.
 
 ### Task 3: Consume intermediate product layers into a downstream release
 
@@ -71,11 +73,11 @@
 - Add internal `consume_finished_goods_component(conn, movement_id, component) -> dict` that calls `_move_finished_goods_fifo` from `ready` to `out`, for the exact component variant, and returns `{cost_rub, allocations}`.
 - The release snapshot records each component's kind, identity, BOM version, required units, exact allocations, and amount; historical release cost reads this snapshot and is not recalculated from current BOMs.
 
-- [ ] For each semi-finished component calculate `ceil-free required units = release quantity × quantity_per_unit`; reject fractional piece counts rather than silently rounding.
-- [ ] Consume exact ready FIFO layers ordered by existing source date then layer ID; if any component is short, roll back the enclosing `BEGIN IMMEDIATE` transaction so no partial BOM material or intermediate component consumption survives.
-- [ ] Combine raw and semi-finished costs into the release material cost without double-counting; preserve labor, depreciation, packaging, other cost, and output layer creation.
-- [ ] Assert the intermediate item's `nm_id`/`chrt_id`, layer variant, allocation units, and amount sum exactly match the immutable release snapshot within 0.02 ₽.
-- [ ] Run tenant manufacturing and finished-goods FIFO suites.
+- [x] For each semi-finished component calculate `ceil-free required units = release quantity × quantity_per_unit`; reject fractional piece counts rather than silently rounding.
+- [x] Consume exact ready FIFO layers ordered by existing source date then layer ID; if any component is short, roll back the enclosing `BEGIN IMMEDIATE` transaction so no partial BOM material or intermediate component consumption survives.
+- [x] Combine raw and semi-finished costs into the release material cost without double-counting; preserve labor, depreciation, packaging, other cost, and output layer creation.
+- [x] Assert the intermediate item's `nm_id`/`chrt_id`, layer variant, allocation units, and amount sum exactly match the immutable release snapshot within 0.02 ₽.
+- [x] Run tenant manufacturing and finished-goods FIFO suites.
 
 ### Task 4: Make nested route reversal dependency-safe and atomic
 
@@ -88,11 +90,11 @@
 - Add `reverse_release_components(conn, movement_id, release_snapshot) -> None`, reversing each recorded finished-goods component allocation and raw-material allocation inside the existing savepoint.
 - Preserve the generic inventory undo route; a producer reversal reports the first dependent downstream movement date/key only if safe to show that operational detail, otherwise returns a generic “reverse later stages first” message.
 
-- [ ] Reverse consumer component allocations before its own produced output layer, so the output layer reversal remains guarded by downstream allocations.
-- [ ] Retain existing equipment chronology guard; additionally block producer reversal if any non-reversed allocations reference its finished layer.
-- [ ] Verify one reversal restores raw physical stock, exact raw FIFO, exact intermediate ready FIFO, finished output FIFO, equipment lifetime, pipeline quantity, and release status atomically.
-- [ ] Verify injected failure during any reversal step rolls the entire savepoint back and replaying an already reversed movement remains a no-op.
-- [ ] Run all production, inventory movement, WIP, raw FIFO, and finished FIFO tests.
+- [x] Reverse consumer component allocations before its own produced output layer, so the output layer reversal remains guarded by downstream allocations.
+- [x] Retain existing equipment chronology guard; additionally block producer reversal if any non-reversed allocations reference its finished layer.
+- [x] Verify one reversal restores raw physical stock, exact raw FIFO, exact intermediate ready FIFO, finished output FIFO, equipment lifetime, pipeline quantity, and release status atomically.
+- [x] Verify injected failure during any reversal step rolls the entire savepoint back and replaying an already reversed movement remains a no-op.
+- [x] Run all production, inventory movement, WIP, raw FIFO, and finished FIFO tests.
 
 ### Task 5: Expose typed routes safely in the React manufacturing interface
 
@@ -107,10 +109,10 @@
 - BOM editor component rows discriminate `raw_material` from `semi_finished`; raw rows select a material and unit, semi-finished rows select a catalog product + exact variant and units/piece.
 - API response includes the canonical nested BOM snapshot, resolved BOM-version chain, and block reason; UI does not offer a save/release action for invalid or cyclic routes.
 
-- [ ] Add component-type selection and variant-aware semi-finished picker without changing default raw-material row behavior.
-- [ ] Render the nested route/version chain and FIFO consumption summary at release confirmation, including exact layer count, units, cost, and missing-stock blockers.
-- [ ] Add tests for variant selection, cycle/missing recipe API errors, raw-only regression, insufficient intermediate stock, and disabled submit on blockers.
-- [ ] Run focused Vitest, TypeScript build, API route tests, and frontend production build.
+- [x] Add component-type selection and variant-aware semi-finished picker without changing default raw-material row behavior.
+- [x] Render the nested route/version chain and FIFO consumption summary at release confirmation, including exact layer count, units, cost, and missing-stock blockers.
+- [x] Add tests for variant selection, cycle/missing recipe API errors, raw-only regression, insufficient intermediate stock, and disabled submit on blockers.
+- [x] Run focused Vitest, TypeScript build, API route tests, and frontend production build.
 
 ### Task 6: Prove end-to-end FIFO conservation and stage reversal
 
@@ -119,12 +121,12 @@
 - Test: `mh-redesign-lab/tenant-api/tests/test_manufacturing_routes.py`
 - Verify: `scripts/check_promotion_sources.py`, `scripts/check_clean_clone.py`
 
-- [ ] Seed a temporary tenant SQLite database with two raw-material FIFO lots; post stage A to create two semi-finished lots at different costs; post stage B using both lots; assert stage-B unit cost equals summed exact allocations plus direct stage-B costs.
-- [ ] Post a second consumer against only the oldest lot; assert depletion ordering and per-stage layer balances.
-- [ ] Attempt reversing stage A first; assert rejection and byte-for-byte unchanged relevant rows. Then reverse stage B and its later consumer in reverse chronology, reverse stage A, and assert restored source balances plus reversed status/history rows.
-- [ ] Exercise duplicate source-key retry for each stage and idempotent undo; assert there are no duplicate movements, layers, or allocations.
-- [ ] Assert aggregate raw-material cost + semi-finished FIFO cost equals final output source cost with no double count and no uncosted free component.
-- [ ] Run the complete tenant-app, API, and frontend suites; run promotion-source and clean-clone gates; run `git diff --check` and `graphify update .`.
+- [x] Seed a temporary tenant SQLite database with two raw-material FIFO lots; post stage A to create two semi-finished lots at different costs; post stage B using both lots; assert stage-B unit cost equals summed exact allocations plus direct stage-B costs.
+- [x] Post a second consumer against only the oldest lot; assert depletion ordering and per-stage layer balances.
+- [x] Attempt reversing stage A first; assert rejection and byte-for-byte unchanged relevant rows. Then reverse stage B and its later consumer in reverse chronology, reverse stage A, and assert restored source balances plus reversed status/history rows.
+- [x] Exercise duplicate source-key retry for each stage and idempotent undo; assert there are no duplicate movements, layers, or allocations.
+- [x] Assert aggregate raw-material cost + semi-finished FIFO cost equals final output source cost with no double count and no uncosted free component.
+- [x] Run the complete tenant-app, API, and frontend suites; run promotion-source and clean-clone gates; run `git diff --check` and `graphify update .`.
 
 ### Task 7: Stage a release without bypassing deployment safeguards
 
@@ -134,7 +136,7 @@
 
 - [ ] Build an image labeled with the exact final Git SHA in a fresh local staging database; verify health, manufacturing API, production workspace, and read-only FIFO reconciliation return 200.
 - [ ] Re-run a complete temporary-database multi-stage route and reverse-order business probe against the built image.
-- [ ] Record exact test totals, image SHA, and remaining limitation in the status doc; explicitly state production is unchanged.
+- [x] Record exact test totals, image SHA, and remaining limitation in the status doc; explicitly state production is unchanged.
 - [ ] Do not deploy unless the existing tenant encryption and host backup keys are configured in the server secret store, an encrypted backup is restored and verified, and rollback plus business probes are available.
 
 ## Acceptance tests
