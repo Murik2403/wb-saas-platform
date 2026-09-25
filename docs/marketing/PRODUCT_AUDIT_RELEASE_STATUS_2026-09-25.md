@@ -1,6 +1,6 @@
 # Статус продуктового аудита — 25.09.2026
 
-Этот статус относится к изолированному интеграционному кандидату ветки `codex/audit-release-integration-20260925`, проверенная кодовая ревизия `02340b08a8b72c8ff06a6505d0d1f186d7baeca9`. Образы собраны с этой же OCI revision. Это не production-развёртывание.
+Этот статус относится к изолированному интеграционному кандидату ветки `codex/audit-release-integration-20260925`, проверенная кодовая ревизия `8d18575cda6a16a8924708e6726ac8b31b430696`. Tenant и gateway образы собраны с этой же OCI revision. Это не production-развёртывание.
 
 ## Реализовано в кандидате
 
@@ -23,13 +23,13 @@
 - Полный tenant API: `279 passed`, 2 deprecation warnings.
 - Gateway backend: `377 passed`, 2 deprecation warnings, 146 subtests.
 - Provisioner: `25 passed`.
-- Frontend: `93 passed`; `npx tsc -b` и production build прошли. Vite предупреждает о JS chunk больше 500 KB (`553.08 KB`, gzip `150.51 KB`).
+- Frontend: `93 passed`; `npx tsc -b` и production build прошли. Тяжёлые производственные, закупочные, финансовые и settings-панели загружаются по запросу. Начальный JS chunk — `463.87 KB` raw (`128.38 KB` gzip), ниже порога Vite 500 KB; отдельные чанки для экранов проверены контейнерной сборкой.
 - Promotion source gate tests: `9 passed`; `scripts/check_promotion_sources.py`: `PROMOTION_SOURCE_OK`.
 - Публичный apex SEO audit (`https://marketshelper.ru`): `396 pass`, `0 warn`, `0 fail`; www-хост не входит в sitemap crawl и проверен отдельно, где он дал 404.
 - Compose labels www-router отрендерены с `WB_SAAS_PARENT_DOMAIN=marketshelper.ru`; RedirectRegex сохраняет путь и query.
 - `git diff --check` прошёл.
-- Tenant image `mh-tenant-audit:02340b0`, local image ID `sha256:007795355216e69f8f3923f48b870748771f9864dfc4c323b9f1e59885dbe5fc`; gateway image `mh-gateway:02340b08a8b72c8ff06a6505d0d1f186d7baeca9`, local image ID `sha256:2a62eabad6e3cf9903bc623fdab23c3b1e638028e08378b171b1b1ecc1907084`. Оба OCI revision label совпадают с ревизией `02340b08…`. В отдельном loopback tenant fixture контейнер имел `healthy`, `/healthz` и главная вернули 200; smoke подтвердил отсутствие записей на preview, явный confirm, API receipt → FIFO слой `127 ₽/м` и PDF-отчёт с 21 разделом. Fixture удалён после проверки.
-- `git diff --check`, `scripts/check_promotion_sources.py` и clean clone gate запускаются/фиксируются после обновления этого статус-документа; локальные команды не означают production deploy.
+- Tenant image `mh-tenant-audit:8d18575`, local image ID `sha256:22a03eb670c867bad135e0978536b08a1e0e1ad6a582064b81199af1955e104e`; gateway image `mh-gateway:8d18575cda6a16a8924708e6726ac8b31b430696`, local image ID `sha256:e1343f453282b8dac9bb091a1475df12ae17d0280fdff675d1978efb591af5b6`. Оба OCI revision label совпадают с кодовой ревизией `8d18575…`. В отдельном loopback tenant fixture контейнер имел `healthy`, `/healthz` и главная вернули 200; smoke подтвердил отсутствие записей на preview, явный confirm, API receipt → FIFO слой `127 ₽/м` и PDF-отчёт с 21 разделом (`238869` байт). Fixture удалён после проверки.
+- На HEAD `8d18575…` прошли `git diff --check`, `scripts/check_promotion_sources.py` (`PROMOTION_SOURCE_OK`), 9 promotion source-gate tests и clean clone gate (`18/18`, `0` tracked sensitive paths). Локальные проверки не означают production deploy.
 - Живая публичная проверка: главная — `200`; текущий production `/vs-1c` перенаправляет `302` на `/sebestoimost-wb`, конечная страница — `200` без сравнения или ссылки на старый маршрут; sitemap — `200`, URL `/vs-1c` отсутствует. В кандидате старый URL отдаёт `404`, поскольку страница и маршрут удалены по решению владельца; публичного текста о сравнении с 1С в кандидате нет. Это различие поведения зафиксировано, старую страницу не возвращать.
 
 ## Следующий roadmap после закрытия текущего релизного кандидата
@@ -43,8 +43,8 @@
 - Внешняя аналитика ниш/конкурентов, контроль РРЦ, антиконтрафакт и browser-плагин осознанно не входят в нишу продукта.
 - Доступ к кабинету Директа/аналитики в текущей сессии не подтверждён. Фактическая модерация, конечные URL, активность кампаний и конверсии требуют проверки в авторизованном кабинете.
 - Повторная read-only проверка 25.09: `https://marketshelper.ru/` — 200, `https://marketshelper.ru/sitemap.xml` — 200, `https://www.marketshelper.ru/` — 404. Кандидат содержит отдельный HTTPS-router с постоянным редиректом на apex и сохранением path/query; правило заработает после безопасного выпуска gateway-конфигурации.
-- SSH alias `marketshelper-staging` фактически ведёт на production-хост. Read-only инвентаризация подтвердила здоровые gateway, tenant, provisioner и Traefik. На production provisioner отсутствует `WB_SAAS_BACKUP_ENCRYPTION_KEY`; локальный provisioner также без этого ключа. Deploy helper не имеет dry-run: он создаёт проверенный backup, затем останавливает и заменяет tenant. Не запускать его без ключа. Не генерировать и не менять ключ. Перед выкладкой нужны ключ в серверном secret store, зашифрованный control-plane backup и доказательство восстановления согласованной SQLite-копии.
+- SSH alias `marketshelper-staging` фактически ведёт на production-хост. Read-only инвентаризация подтвердила здоровые gateway, tenant, provisioner и Traefik. На production provisioner отсутствует `WB_SAAS_BACKUP_ENCRYPTION_KEY`; локальный provisioner также без этого ключа. Это отдельный ключ для архивов backup, не tenant-ключ `WB_SAAS_DATA_ENCRYPTION_KEY`: deploy helper получает tenant encryption env из gateway, но backup fail-closed без собственного ключа. Deploy helper не имеет dry-run: он создаёт проверенный backup, затем останавливает и заменяет tenant. Не запускать его без ключа. Не генерировать и не менять ключ. Перед выкладкой нужны существующий секрет в серверном secret store, зашифрованный control-plane backup и доказательство восстановления согласованной SQLite-копии.
 
 ## Граница результата
 
-Кандидат собран и проверен локально, но production tenant/gateway не менялись. Для выкладки требуется настроенный владельцем существующий `WB_SAAS_BACKUP_ENCRYPTION_KEY` на provisioner, зашифрованный и проверенный backup/restore, проверка целостности базы, rollback и production health/business probes. Секрет не запрашивать в чате, не генерировать и не заменять. A-запись www уже указывает на тот же хост и TLS-сертификат действителен, но редирект заработает только после безопасного обновления gateway. Локальные тесты и smoke не заменяют эти проверки.
+Кандидат собран и проверен локально, но production tenant/gateway не менялись. Для выкладки требуется настроенный владельцем существующий `WB_SAAS_BACKUP_ENCRYPTION_KEY` на provisioner (не `WB_SAAS_DATA_ENCRYPTION_KEY` tenant), зашифрованный и проверенный backup/restore, проверка целостности базы, rollback и production health/business probes. Секрет не запрашивать в чате, не генерировать и не заменять. A-запись www уже указывает на тот же хост и TLS-сертификат действителен, но редирект заработает только после безопасного обновления gateway. Локальные тесты и smoke не заменяют эти проверки.
