@@ -71,6 +71,89 @@ describe("manufacturing cost input", () => {
     await screen.findByText("Выпуск проведён: материалы и производственные затраты учтены.");
     expect(JSON.parse(writes()[1][1]?.body as string)).toMatchObject({ nm_id: 123, chrt_id: 502, bom_version_id: 12 });
   });
+  it("selects a catalog SKU variant as a semi-finished BOM component and pins its BOM version", async () => {
+    const nested: ManufacturingCostsData = {
+      ...data,
+      products: [
+        { nm_id: 123, product_name: "Набор" },
+        { nm_id: 222, chrt_id: 501, variant_label: "S", product_name: "Заготовка" },
+      ],
+      boms: [
+        { id: 1, nm_id: 123, version: 1 },
+        { id: 9, nm_id: 222, chrt_id: 501, version: 3, materials: [{ material_name: "Ткань", quantity_per_unit: 0.5, unit: "м²" }] },
+      ],
+    };
+    fetchMock.mockImplementation(async () => json(nested));
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Тип компонента 1"), "semi_finished");
+    await userEvent.selectOptions(screen.getByLabelText("Полуфабрикат 1"), "222:501");
+    await userEvent.clear(screen.getByLabelText("Расход полуфабриката 1, шт/изделие"));
+    await userEvent.type(screen.getByLabelText("Расход полуфабриката 1, шт/изделие"), "2");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить новую версию" }));
+    await screen.findByText("Новая версия состава изделия сохранена.");
+    expect(JSON.parse(writes()[0][1]?.body as string)).toMatchObject({ materials: [{ component_type: "semi_finished", nm_id: 222, chrt_id: 501, component_bom_version_id: 9, unit: "шт", quantity_per_unit: 2 }] });
+  });
+  it("explains missing child recipe and prevents self-cycle selection", async () => {
+    const incomplete: ManufacturingCostsData = {
+      ...data,
+      products: [...data.products, { nm_id: 222, chrt_id: 502, variant_label: "M", product_name: "Полуфабрикат без BOM" }],
+    };
+    fetchMock.mockImplementation(async () => json(incomplete));
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Тип компонента 1"), "semi_finished");
+    const select = screen.getByLabelText("Полуфабрикат 1");
+    expect(select.querySelector('option[value="123"]')).toBeDisabled();
+    expect(select.querySelector('option[value="222:502"]')).toBeDisabled();
+    expect(select).toHaveTextContent("создаст цикл");
+    expect(select).toHaveTextContent("сначала сохраните состав изделия");
+    expect(writes()).toHaveLength(0);
+  });
+  it("validates the newest child BOM version when versions arrive newest-first", async () => {
+    const latestCycle: ManufacturingCostsData = {
+      ...data,
+      products: [...data.products, { nm_id: 222, product_name: "Полуфабрикат" }],
+      // API contract orders BOMs by version DESC. Version 2 creates a cycle;
+      // version 1 is safe and must not hide the active route blocker.
+      boms: [
+        { id: 2, nm_id: 222, version: 2, materials: [{ component_type: "semi_finished", nm_id: 123, chrt_id: 0, quantity_per_unit: 1, unit: "шт" }] },
+        { id: 1, nm_id: 222, version: 1, materials: [{ material_name: "Ткань", quantity_per_unit: 1, unit: "м²" }] },
+        { id: 3, nm_id: 123, version: 1 },
+      ],
+    };
+    fetchMock.mockImplementation(async () => json(latestCycle));
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Тип компонента 1"), "semi_finished");
+    const select = screen.getByLabelText("Полуфабрикат 1");
+    expect(select.querySelector('option[value="222"]')).toBeDisabled();
+    expect(select).toHaveTextContent("создаст цикл");
+    expect(writes()).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Сохранить новую версию" })).toBeDisabled();
+    expect(writes()).toHaveLength(0);
+  });
+  it("disables saving when changing the parent creates a nested cycle", async () => {
+    const route: ManufacturingCostsData = {
+      ...data,
+      products: [...data.products, { nm_id: 222, product_name: "Полуфабрикат" }, { nm_id: 333, product_name: "Узел" }],
+      boms: [
+        { id: 1, nm_id: 123, version: 1 },
+        { id: 2, nm_id: 333, version: 1 },
+        { id: 3, nm_id: 222, version: 1, materials: [{ component_type: "semi_finished", nm_id: 333, chrt_id: 0, quantity_per_unit: 1, unit: "шт" }] },
+      ],
+    };
+    fetchMock.mockImplementation(async () => json(route));
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Тип компонента 1"), "semi_finished");
+    await userEvent.selectOptions(screen.getByLabelText("Полуфабрикат 1"), "222");
+    expect(screen.getByRole("button", { name: "Сохранить новую версию" })).toBeEnabled();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "333");
+    expect(await screen.findByRole("status")).toHaveTextContent("создаст цикл");
+    expect(screen.getByRole("button", { name: "Сохранить новую версию" })).toBeDisabled();
+    expect(writes()).toHaveLength(0);
+  });
   it("keeps failed labor input and idempotency key for retry and prevents concurrent submits", async () => {
     await open(); await fillLabor();
     let rejectWrite!: (reason: Error) => void;

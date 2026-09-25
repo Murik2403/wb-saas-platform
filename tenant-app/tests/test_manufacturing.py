@@ -116,11 +116,15 @@ class ManufacturingTests(DbTestCase):
     def test_nested_semifinished_bom_consumes_exact_fifo_and_reverses_dependency_order(self):
         self.seed("Ткань", "м", 10, 10)
         self._catalog_base(222, "BLANK")
-        m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        original_bom = m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
         first = m.post_manufacturing_release(222, 1, "2026-09-23", "blank-1")
         # Force the next source layer to carry a distinct historical cost.
         self.seed("Ткань", "м", 10, 20, source_suffix=":second")
-        second = m.post_manufacturing_release(222, 1, "2026-09-24", "blank-2")
+        revised_bom = m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}], note="Обновлённая спецификация")
+        second = m.post_manufacturing_release(222, 1, "2026-09-24", "blank-2",bom_version_id=revised_bom["id"])
+        self.assertNotEqual(original_bom["id"], revised_bom["id"])
+        self.assertEqual(first["bom_version_id"], original_bom["id"])
+        self.assertEqual(second["bom_version_id"], revised_bom["id"])
         self._catalog_base(333, "SUBASSEMBLY")
         m.save_bom_version(333, [{"component_type":"semi_finished","nm_id":222,"chrt_id":0,
                                   "quantity_per_unit":2,"unit":"шт"}])
@@ -142,6 +146,9 @@ class ManufacturingTests(DbTestCase):
             self.assertEqual([int(row["layer_id"]) for row in allocations], [middle["finished_layer_id"]])
             self.assertEqual([int(row["layer_id"]) for row in middle_allocations], [first["finished_layer_id"], second["finished_layer_id"]])
             self.assertEqual([int(row["units"]) for row in middle_allocations], [1, 1])
+            self.assertEqual(middle["materials"][0]["component_bom_version_id"], revised_bom["id"])
+            source_versions = [conn.execute("SELECT bom_version_id FROM manufacturing_releases WHERE finished_layer_id=?", (int(row["layer_id"]),)).fetchone()[0] for row in middle_allocations]
+            self.assertEqual(source_versions, [original_bom["id"], revised_bom["id"]])
             self.assertAlmostEqual(sum(float(row["amount_rub"]) for row in middle_allocations),middle["material_cost_rub"],places=2)
             self.assertAlmostEqual(float(allocations[0]["amount_rub"]),middle["unit_cost_rub"],places=2)
             self.assertTrue(all((row["from_location"], row["to_location"]) == ("ready", "out") for row in allocations))
