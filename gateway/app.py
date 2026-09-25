@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -69,6 +69,16 @@ app.mount(
 )
 templates = create_templates()
 app.include_router(create_marketing_router(templates))
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon_svg() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parent / "static" / "favicon.svg", media_type="image/svg+xml")
+
+
+@app.get("/favicon-192.png", include_in_schema=False)
+def favicon_png() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parent / "static" / "favicon-192.png", media_type="image/png")
 
 
 def _render_auth_form_error(request: Request, template_name: str, context: dict, status_code: int):

@@ -21,6 +21,7 @@ def fixture_page(canonical: str = f"{BASE}/", link: str = "/pricing") -> str:
     <meta name="description" content="Описание публичной страницы для проверки поискового аудита">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="{canonical}">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script type="application/ld+json">{{"@type":"FAQPage","mainEntity":[]}}</script>
     </head><body><h1>Публичная страница</h1><a href="{link}">Тариф</a></body></html>'''
 
@@ -29,11 +30,12 @@ class PublicSeoAuditTests(unittest.TestCase):
     def _run(self, pages: dict[str, str], statuses: dict[str, int] | None = None):
         statuses = statuses or {}
         sitemap = "<urlset>" + "".join(f"<url><loc>{BASE}{path}</loc></url>" for path in pages) + "</urlset>"
-        bodies = {"/robots.txt": f"User-agent: *\nSitemap: {BASE}/sitemap.xml\n", "/sitemap.xml": sitemap, **pages}
+        bodies = {"/robots.txt": f"User-agent: *\nSitemap: {BASE}/sitemap.xml\n", "/sitemap.xml": sitemap, "/favicon.svg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>", **pages}
 
         def fetch(url: str) -> FetchResult:
             path = url.removeprefix(BASE) or "/"
-            return FetchResult(statuses.get(path, 200 if path in bodies else 404), url, bodies.get(path, ""), "text/html")
+            content_type = "image/svg+xml" if path == "/favicon.svg" else "text/html"
+            return FetchResult(statuses.get(path, 200 if path in bodies else 404), url, bodies.get(path, ""), content_type)
 
         return audit_public_site(BASE, fetch)
 
@@ -52,6 +54,15 @@ class PublicSeoAuditTests(unittest.TestCase):
         result = self._run({"/": fixture_page(link="/missing")})
         failures = [item for item in result["checks"] if item["status"] == "fail"]
         self.assertTrue(any(item["check"] == "internal link" and "/missing" in item["detail"] for item in failures))
+
+    def test_missing_favicon_declaration_is_reported(self):
+        html = fixture_page().replace('<link rel="icon" type="image/svg+xml" href="/favicon.svg">', "")
+        result = self._run({"/": html})
+        self.assertTrue(any(item["check"] == "favicon declaration" and item["status"] == "fail" for item in result["checks"]))
+
+    def test_inaccessible_favicon_is_reported(self):
+        result = self._run({"/": fixture_page()}, {"/favicon.svg": 404})
+        self.assertTrue(any(item["check"] == "favicon asset" and item["status"] == "fail" for item in result["checks"]))
 
 
 if __name__ == "__main__":

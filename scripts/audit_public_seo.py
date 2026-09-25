@@ -72,6 +72,7 @@ class _PageParser(HTMLParser):
         self.description: str | None = None
         self.robots: str | None = None
         self.canonicals: list[str] = []
+        self.icons: list[dict[str, str]] = []
         self.h1_parts: list[list[str]] = []
         self.links: list[str] = []
         self.jsonld: list[str] = []
@@ -95,6 +96,8 @@ class _PageParser(HTMLParser):
             self.robots = values.get("content", "").strip()
         elif name == "link" and "canonical" in values.get("rel", "").lower().split():
             self.canonicals.append(values.get("href", "").strip())
+        elif name == "link" and "icon" in values.get("rel", "").lower().split():
+            self.icons.append({"href": values.get("href", "").strip(), "type": values.get("type", "").strip().lower(), "sizes": values.get("sizes", "").strip().lower()})
         elif name == "script" and values.get("type", "").lower() == "application/ld+json":
             self._jsonld = []
 
@@ -151,6 +154,7 @@ def parse_html(body: str) -> dict[str, object]:
         "robots": parser.robots or "",
         "canonical": parser.canonicals[0] if parser.canonicals else "",
         "canonical_count": len(parser.canonicals),
+        "icons": parser.icons,
         "h1": [" ".join("".join(parts).split()) for parts in parser.h1_parts],
         "links": parser.links,
         "faq_jsonld": faq_count,
@@ -253,6 +257,24 @@ def audit_public_site(base_url: str, fetcher: Fetcher = fetch_url) -> dict[str, 
             if parsed.scheme in {"http", "https"} and parsed.netloc.lower() == urlsplit(base).netloc.lower():
                 targets.add(parsed.path or "/")
         internal_targets[path] = targets
+
+    homepage = pages.get("/") or next(iter(pages.values()), {})
+    icons = homepage.get("icons", []) if isinstance(homepage, dict) else []
+    accepted_icons = [icon for icon in icons if isinstance(icon, dict) and (icon.get("type") == "image/svg+xml" or (icon.get("type") == "image/png" and icon.get("sizes")))]
+    if not accepted_icons:
+        _check(checks, "fail", "/", "favicon declaration", "missing SVG or sized PNG rel=icon")
+    for icon in accepted_icons:
+        href = str(icon.get("href", ""))
+        icon_url = urljoin(base + "/", href)
+        parsed_icon = urlsplit(icon_url)
+        if parsed_icon.scheme not in {"http", "https"} or parsed_icon.netloc.lower() != urlsplit(base).netloc.lower():
+            _check(checks, "fail", "/", "favicon URL", f"icon must use this site's origin: {href or 'missing href'}")
+            continue
+        result = fetcher(icon_url)
+        expected_type = str(icon.get("type", ""))
+        valid_type = result.content_type.lower().split(";", 1)[0].strip() == expected_type
+        valid_svg = expected_type != "image/svg+xml" or "<svg" in result.body.lower()
+        _check(checks, "pass" if 200 <= result.status < 300 and valid_type and valid_svg else "fail", "/", "favicon asset", f"{href}: HTTP {result.status}, {result.content_type or 'missing content type'}")
 
     checked_links: set[str] = set()
     for source, targets in internal_targets.items():
