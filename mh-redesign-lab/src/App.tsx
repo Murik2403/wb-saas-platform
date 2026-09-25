@@ -1,13 +1,19 @@
-import { ProductionWorkspace } from "./ProductionWorkspace";
-import { ManufacturingCosts } from "./ManufacturingCosts";
-import { ManagementPnlSummary } from "./ManagementPnlSummary";
-import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
-import { SupplyPlanning } from "./SupplyPlanning";
-import { SyncHistory, BackupHistory } from "./SyncHistory";
-import { OnboardingPanel } from "./OnboardingPanel";
-import { RuntimeStatus } from "./RuntimeStatus";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+
+const ProductionWorkspace = lazy(() => import("./ProductionWorkspace").then((module) => ({ default: module.ProductionWorkspace })));
+const ManufacturingCosts = lazy(() => import("./ManufacturingCosts").then((module) => ({ default: module.ManufacturingCosts })));
+const ManagementPnlSummary = lazy(() => import("./ManagementPnlSummary").then((module) => ({ default: module.ManagementPnlSummary })));
+const ManualStoreExpenseManager = lazy(() => import("./ManualStoreExpenseManager").then((module) => ({ default: module.ManualStoreExpenseManager })));
+const SupplyPlanning = lazy(() => import("./SupplyPlanning").then((module) => ({ default: module.SupplyPlanning })));
+const SyncHistory = lazy(() => import("./SyncHistory").then((module) => ({ default: module.SyncHistory })));
+const BackupHistory = lazy(() => import("./SyncHistory").then((module) => ({ default: module.BackupHistory })));
+const OnboardingPanel = lazy(() => import("./OnboardingPanel").then((module) => ({ default: module.OnboardingPanel })));
+const RuntimeStatus = lazy(() => import("./RuntimeStatus").then((module) => ({ default: module.RuntimeStatus })));
+
+function LazySectionFallback() {
+  return <p className="plan-empty" role="status">Загружаем раздел…</p>;
+}
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -1815,7 +1821,7 @@ function FinanceView({
       </section>
 
       <MetricGrid metrics={financeMetrics} onMetricClick={(metric) => onAction("Отчет", metric.label)} />
-      <ManagementPnlSummary period={period} />
+      <Suspense fallback={<LazySectionFallback />}><ManagementPnlSummary period={period} /></Suspense>
       {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <section className={`panel finance-cogs-evidence ${financeReport.cogsEvidence.complete ? "" : "finance-cogs-incomplete"}`} aria-label="Покрытие себестоимости в прибыли">
         <SectionHeader compact kicker="Себестоимость в P&L" title={financeReport.cogsEvidence.complete ? "Себестоимость подтверждена или оценена полностью" : "В прибыли есть строки без себестоимости"}>
           <PackageCheck size={18} />
@@ -2466,12 +2472,12 @@ function SettingsViewV2({ onSynced, canManageMarketplaceCredentials }: { onSynce
           <p>Токены остаются в защищённом tenant-хранилище. Резервные копии не содержат ключей доступа.</p>
         </div>
       </section>
-      <OnboardingPanel connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
+      <Suspense fallback={<LazySectionFallback />}><OnboardingPanel connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
         days={settings.initial_history_days} busy={busy !== null} token={wbToken}
         onTokenChange={setWbToken} onConnect={() => void saveWBToken()}
         onDaysChange={(days) => setSettings({ ...settings, initial_history_days: days })}
         onSync={() => void startSync("all", settings.initial_history_days)}
-        onEditCost={(item) => setEditingCost({ ...item })} />
+        onEditCost={(item) => setEditingCost({ ...item })} /></Suspense>
       <div className="content-grid">
         <section className="work-section">
           <SectionHeader kicker="Обновление" title="Интервалы работы"><SlidersHorizontal size={18} /></SectionHeader>
@@ -2508,7 +2514,7 @@ function SettingsViewV2({ onSynced, canManageMarketplaceCredentials }: { onSynce
           <button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void createBackup()}><Download size={17} />{busy === "backup" ? "Создаём копию" : "Создать резервную копию"}</button>
         </div>
         {message ? <p className="operation-error" role="status">{message}</p> : null}
-        <BackupHistory backups={backups} />
+        <Suspense fallback={<LazySectionFallback />}><BackupHistory backups={backups} /></Suspense>
       </section>
       <section className="work-section">
         <SectionHeader kicker="WB API" title="Синхронизация и журнал"><RefreshCw size={18} /></SectionHeader>
@@ -2517,9 +2523,9 @@ function SettingsViewV2({ onSynced, canManageMarketplaceCredentials }: { onSynce
           <button className="secondary-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync()}><RefreshCw size={17} />{busy === "sync" ? "Синхронизируем" : "Синхронизировать сейчас"}</button>
           <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("finance", 90)}>Обновить финансовый отчёт WB (90 дней)</button>
         </div>
-        <SyncHistory runs={syncRuns} />
+        <Suspense fallback={<LazySectionFallback />}><SyncHistory runs={syncRuns} /></Suspense>
         <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("ads")}>Повторить только рекламу</button>
-        <RuntimeStatus />
+        <Suspense fallback={<LazySectionFallback />}><RuntimeStatus /></Suspense>
       </section>
       <section className="work-section" id="material-inventory">
         <SectionHeader kicker="Производство" title="Остатки сырья и сверка FIFO"><ClipboardCheck size={18} /></SectionHeader>
@@ -2559,7 +2565,7 @@ function SettingsViewV2({ onSynced, canManageMarketplaceCredentials }: { onSynce
           <button className="primary-button" disabled={busy !== null} type="submit">{busy === "expense" ? "Сохраняем" : "Добавить расход"}</button>
         </form>
         {manualExpenses.length ? <div className="cost-settings-list">{manualExpenses.map((item) => <div className="cost-setting-row" key={item.id}><div className="cost-setting-product"><strong>{item.article}</strong><span>WB {item.nm_id} · {item.period_start} — {item.period_end} · источник: {item.source === "manual" ? "вручную" : "импорт"} · {item.article === "wb_commission" ? "исключён: комиссия уже в выплате WB" : item.include_in_management_result ? "включён в результат после подтверждения" : "исключён: требуется проверить отсутствие в WB, рекламе и себестоимости"}</span></div><div className="cost-setting-amount"><span>{item.allocation_basis}</span><strong>{Number(item.amount_rub).toLocaleString("ru-RU")} ₽</strong></div>{item.article !== "wb_commission" ? <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void toggleExpenseInclusion(item)}>{item.include_in_management_result ? "Исключить из результата" : "Включить в результат"}</button> : <span className="muted-tag">Комиссия WB уже учтена</span>}<button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void calculateManagement(item)}>Рассчитать</button><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeExpense(item.id)}>Удалить</button></div>)}</div> : <p className="plan-empty">Ручных расходов пока нет.</p>}
-        <ManualStoreExpenseManager />
+        <Suspense fallback={<LazySectionFallback />}><ManualStoreExpenseManager /></Suspense>
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
       {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item) => { void saveCost(item).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
@@ -2695,8 +2701,8 @@ function ProductionView({
       </section>
 
       <div id="production-shift"><ProductionExecutionPanel onRefresh={onRefresh} /></div>
-      <ProductionWorkspace onChanged={() => void onRefresh()} />
-      <ManufacturingCosts onChanged={() => void onRefresh()} />
+      <Suspense fallback={<LazySectionFallback />}><ProductionWorkspace onChanged={() => void onRefresh()} /></Suspense>
+      <Suspense fallback={<LazySectionFallback />}><ManufacturingCosts onChanged={() => void onRefresh()} /></Suspense>
 
       <MetricGrid metrics={productionMetrics} onMetricClick={(metric) => onAction("Партия", metric.label)} />
 
@@ -2990,10 +2996,10 @@ function SupplyView({
 
       <MetricGrid metrics={supplyMetrics} onMetricClick={(metric) => onAction("Поставка", metric.label)} />
 
-      <SupplyPlanning
+      <Suspense fallback={<LazySectionFallback />}><SupplyPlanning
         readOnly={!session || session.mode === "demo" || !["owner", "manager"].includes(session.user.role.toLowerCase())}
         onRefresh={onRefresh}
-      />
+      /></Suspense>
 
       <section className="work-section supplier-directory-section">
         <SectionHeader kicker="Справочник" title="Поставщик">
