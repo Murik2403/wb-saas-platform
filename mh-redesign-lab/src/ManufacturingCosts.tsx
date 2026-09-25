@@ -6,14 +6,15 @@ type Material = { material_name: string; unit: string };
 type Layer = Material & { id: number; remaining_quantity: number; unit_cost_rub: number };
 type Product = { nm_id: number; chrt_id?: number; variant_label?: string; barcodes?: string; product_name: string; supplier_article?: string };
 type Equipment = { id: number; name: string; resource_unit: "units" | "hours"; resource_quantity: number; consumed_resource: number; rate_per_resource_unit: number };
-type Bom = { id: number; nm_id: number; chrt_id?: number; version: number; note?: string; materials?: Array<{ material_name: string; quantity_per_unit: number; unit: string }>; operations?: Array<{ name: string; rate_per_unit: number }>; packaging_per_unit?: number; other_per_unit?: number };
+type BomComponent = { component_type?: "raw_material" | "semi_finished"; material_name?: string; nm_id?: number; chrt_id?: number; component_bom_version_id?: number; quantity_per_unit: number; unit: string };
+type Bom = { id: number; nm_id: number; chrt_id?: number; version: number; note?: string; materials?: BomComponent[]; operations?: Array<{ name: string; rate_per_unit: number }>; packaging_per_unit?: number; other_per_unit?: number };
 type RecordRow = Record<string, unknown>;
 export type ManufacturingCostsData = {
   materials: Material[]; material_layers: Layer[]; products: Product[];
   boms: Bom[]; equipment: Equipment[]; piecework: RecordRow[]; defects: RecordRow[]; releases: RecordRow[];
   allowed_actions?: string[];
 };
-type MaterialInput = { material_name: string; quantity: string };
+type MaterialInput = { component_type: "raw_material" | "semi_finished"; material_name: string; product: string; quantity: string };
 type OperationInput = { name: string; rate: string; equipment_id: string; usage: string };
 const endpoint = "/api/v1/manufacturing-costs";
 const rub = (value: unknown) => Number(value ?? 0).toLocaleString("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 2 });
@@ -64,6 +65,27 @@ function applicableBoms(boms: Bom[], product?: Product) {
   if (exact.length || !Number(product.chrt_id ?? 0)) return exact;
   return boms.filter((item) => item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === 0);
 }
+function latestApplicableBom(boms: Bom[], product?: Product) {
+  return applicableBoms(boms, product).sort((left, right) => right.version - left.version)[0];
+}
+function routeBlocker(boms: Bom[], products: Product[], target: Product, candidate: Product, depth = 1, seen = new Set<string>()): string | null {
+  const targetKey = `${target.nm_id}:${Number(target.chrt_id ?? 0)}`;
+  const candidateKey = `${candidate.nm_id}:${Number(candidate.chrt_id ?? 0)}`;
+  if (candidateKey === targetKey) return "Нельзя включить товар в его собственный состав: это создаст цикл.";
+  if (seen.has(candidateKey)) return "В цепочке составов уже найден цикл. Проверьте спецификации полуфабрикатов.";
+  if (depth > 8) return "Цепочка полуфабрикатов длиннее 8 уровней и не может быть сохранена.";
+  const childBom = latestApplicableBom(boms, candidate);
+  if (!childBom) return "Для этого SKU и варианта сначала сохраните состав изделия.";
+  const nextSeen = new Set(seen); nextSeen.add(candidateKey);
+  for (const component of childBom.materials ?? []) {
+    if (component.component_type !== "semi_finished" || component.nm_id == null) continue;
+    const child = products.find((item) => item.nm_id === component.nm_id && Number(item.chrt_id ?? 0) === Number(component.chrt_id ?? 0));
+    if (!child) return `В составе полуфабриката WB ${component.nm_id} отсутствует SKU/вариант в каталоге.`;
+    const blocker = routeBlocker(boms, products, target, child, depth + 1, nextSeen);
+    if (blocker) return blocker;
+  }
+  return null;
+}
 function ProductSelect({ products, value, onChange, label, variantAware = false }: { products: Product[]; value: string; onChange: (value: string) => void; label: string; variantAware?: boolean }) {
   const options = variantAware ? products : [...new Map(products.map((item) => [item.nm_id, item])).values()];
   return <Field label={label}><select required value={value} onChange={(event) => onChange(event.target.value)}><option value="">Выберите товар</option>{options.map((item) => <option key={`${item.nm_id}:${item.chrt_id ?? 0}`} value={productValue(item, variantAware)}>{item.product_name || `WB ${item.nm_id}`} · {item.nm_id}{variantAware && Number(item.chrt_id ?? 0) > 0 ? ` · ${item.variant_label || `вариант ${item.chrt_id}`}` : ""}</option>)}</select></Field>;
@@ -78,7 +100,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
   const writeLock = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [bomProduct, setBomProduct] = useState("");
-  const [components, setComponents] = useState<MaterialInput[]>([{ material_name: "", quantity: "1" }]);
+  const [components, setComponents] = useState<MaterialInput[]>([{ component_type: "raw_material", material_name: "", product: "", quantity: "1" }]);
   const [operations, setOperations] = useState<OperationInput[]>([]);
   const [packaging, setPackaging] = useState("0");
   const [other, setOther] = useState("0");
@@ -122,6 +144,12 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
   const updateOperation = (index: number, values: Partial<OperationInput>) => setOperations((items) => items.map((item, i) => i === index ? { ...item, ...values } : item));
   const activeLayer = data?.material_layers.find((item) => String(item.id) === scrap.layer);
   const disabled = busy || loading || !canEdit;
+  const bomRouteBlocked = Boolean(data && components.some((item) => {
+    if (item.component_type !== "semi_finished") return false;
+    const target = selectedProduct(data.products, bomProduct, true);
+    const child = selectedProduct(data.products, item.product, true);
+    return !target || !child || Boolean(routeBlocker(data.boms, data.products, target, child));
+  }));
   return <section className="manufacturing-costs" aria-labelledby="mfg-title" aria-busy={busy || loading}>
     <div className="mfg-heading"><div><h2 id="mfg-title">Состав изделия и затраты производства</h2><p>Материалы, работа и износ оборудования входят в стоимость выпуска. Списанный брак учитывается отдельно.</p><p>Это стоимость выпуска и запасов. Финансовый отчёт пока использует себестоимость из настроек товара; выпуск сам по себе не является расходом от продаж.</p></div><button type="button" className="ghost-button" disabled={busy || loading} onClick={() => setReloadKey((value) => value + 1)}>Обновить данные</button></div>
     {(!canEdit || data?.allowed_actions?.length === 0) && <p>У вашей роли нет прав на изменение производственного учёта. Данные доступны для просмотра.</p>}
@@ -133,26 +161,49 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
       <form onSubmit={(event) => void save(event, "/boms", () => {
         const product = selectedProduct(data.products, bomProduct, true);
         if (!product) throw new Error("Выберите товар и вариант.");
-        const names = components.map((item) => item.material_name);
-        if (new Set(names).size !== names.length) throw new Error("Каждый материал добавьте в состав один раз.");
+        const identities = components.map((item) => item.component_type === "raw_material" ? `raw:${item.material_name}` : `semi:${item.product}`);
+        if (new Set(identities).size !== identities.length) throw new Error("Каждый материал или полуфабрикат добавьте в состав один раз.");
+        const target = product;
         return {
           nm_id: product.nm_id,
           chrt_id: Number(product.chrt_id ?? 0),
-          materials: components.map((item) => { const material = data.materials.find((row) => row.material_name === item.material_name); if (!material) throw new Error("Выберите материал из справочника."); return { material_name: material.material_name, unit: material.unit, quantity_per_unit: number(item.quantity, `Расход ${material.material_name}`, { positive: true }) }; }),
+          materials: components.map((item) => {
+            const quantity = number(item.quantity, "Расход компонента", { positive: true });
+            if (item.component_type === "semi_finished") {
+              const child = selectedProduct(data.products, item.product, true);
+              if (!child) throw new Error("Выберите SKU и вариант полуфабриката из каталога.");
+              const blocker = routeBlocker(data.boms, data.products, target, child);
+              if (blocker) throw new Error(blocker);
+              const childBom = latestApplicableBom(data.boms, child)!;
+              return { component_type: "semi_finished" as const, nm_id: child.nm_id, chrt_id: Number(child.chrt_id ?? 0), component_bom_version_id: childBom.id, unit: "шт", quantity_per_unit: quantity };
+            }
+            const material = data.materials.find((row) => row.material_name === item.material_name);
+            if (!material) throw new Error("Выберите материал из справочника.");
+            return { material_name: material.material_name, unit: material.unit, quantity_per_unit: quantity };
+          }),
           operations: operations.map((item) => { if (!item.name.trim()) throw new Error("Укажите название операции."); return { name: item.name.trim(), rate_per_unit: number(item.rate, "Расценка", { money: true }), ...(item.equipment_id ? { equipment_id: number(item.equipment_id, "Оборудование", { integer: true, positive: true }), equipment_usage_per_unit: number(item.usage, "Расход ресурса", { positive: true }) } : {}) }; }),
           packaging_per_unit: number(packaging, "Упаковка", { money: true }), other_per_unit: number(other, "Прочие затраты", { money: true }), note: bomNote.trim(),
         };
       }, "Новая версия состава изделия сохранена.", () => setBomNote(""))}>
-        <fieldset disabled={disabled || !permitted("boms") || !data.products.length || !data.materials.length}><legend>Состав изделия — новая версия</legend>
+        <fieldset disabled={disabled || !permitted("boms") || !data.products.length}><legend>Состав изделия — новая версия</legend>
           <p>Расход указывается на одну продаваемую единицу. Сохранение создаёт новую версию; прежние выпуски сохраняют свою себестоимость.</p>
-          {!data.products.length || !data.materials.length ? <p>Сначала добавьте товары и материалы в справочники.</p> : null}
+          {!data.products.length ? <p>Сначала добавьте товары в справочник.</p> : null}
           <ProductSelect label="Товар и вариант для состава изделия" products={data.products} value={bomProduct} onChange={setBomProduct} variantAware />
-          {components.map((item, index) => { const material = data.materials.find((row) => row.material_name === item.material_name); return <div className="mfg-row" key={index}>
-            <Field label={`Материал ${index + 1}`}><select required value={item.material_name} onChange={(event) => updateComponent(index, { material_name: event.target.value })}><option value="">Выберите материал</option>{data.materials.map((row) => <option key={row.material_name} value={row.material_name}>{row.material_name} ({row.unit})</option>)}</select></Field>
-            <Decimal label={`Расход материала ${index + 1}${material ? `, ${material.unit}` : ""}`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
-            <button type="button" disabled={components.length === 1} onClick={() => setComponents((items) => items.filter((_, i) => i !== index))} aria-label={`Удалить материал ${index + 1}`}>Удалить</button>
+          {components.map((item, index) => { const material = data.materials.find((row) => row.material_name === item.material_name); const target = selectedProduct(data.products, bomProduct, true); const child = selectedProduct(data.products, item.product, true); const blocker = target && child ? routeBlocker(data.boms, data.products, target, child) : null; return <div className="mfg-row" key={index}>
+            <Field label={`Тип компонента ${index + 1}`}><select value={item.component_type} onChange={(event) => updateComponent(index, { component_type: event.target.value as MaterialInput["component_type"], material_name: "", product: "" })}><option value="raw_material">Сырьё / материал</option><option value="semi_finished">Полуфабрикат</option></select></Field>
+            {item.component_type === "semi_finished" ? <>
+              <Field label={`Полуфабрикат ${index + 1}`}><select required value={item.product} onChange={(event) => updateComponent(index, { product: event.target.value })}><option value="">Выберите SKU и вариант</option>{data.products.map((candidate) => { const reason = target ? routeBlocker(data.boms, data.products, target, candidate) : !applicableBoms(data.boms, candidate).length ? "Сначала сохраните состав" : null; return <option key={`${candidate.nm_id}:${candidate.chrt_id ?? 0}`} value={productValue(candidate, true)} disabled={Boolean(reason)}>{candidate.product_name || `WB ${candidate.nm_id}`} · WB {candidate.nm_id}{Number(candidate.chrt_id ?? 0) > 0 ? ` · ${candidate.variant_label || `вариант ${candidate.chrt_id}`}` : ""}{reason ? ` — ${reason}` : ""}</option>; })}</select></Field>
+              <Decimal label={`Расход полуфабриката ${index + 1}, шт/изделие`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
+              {blocker && <p className="mfg-error" role="status">{blocker}</p>}
+              {!target && <p role="status">Сначала выберите товар, для которого сохраняется состав.</p>}
+            </> : <>
+              <Field label={`Материал ${index + 1}`}><select required value={item.material_name} onChange={(event) => updateComponent(index, { material_name: event.target.value })}><option value="">Выберите материал</option>{data.materials.map((row) => <option key={row.material_name} value={row.material_name}>{row.material_name} ({row.unit})</option>)}</select></Field>
+              {!data.materials.length && <p role="status">Сырьё недоступно: добавьте материал в справочник или переключите тип компонента на полуфабрикат.</p>}
+              <Decimal label={`Расход материала ${index + 1}${material ? `, ${material.unit}` : ""}`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
+            </>}
+            <button type="button" disabled={components.length === 1} onClick={() => setComponents((items) => items.filter((_, i) => i !== index))} aria-label={`Удалить компонент ${index + 1}`}>Удалить</button>
           </div>; })}
-          <button type="button" onClick={() => setComponents((items) => [...items, { material_name: "", quantity: "1" }])}>Добавить материал</button>
+          <button type="button" onClick={() => setComponents((items) => [...items, { component_type: "raw_material", material_name: "", product: "", quantity: "1" }])}>Добавить компонент</button>
           <h4>Операции и оборудование</h4><p>Плановая расценка применяется, если по заданию не внесена фактическая сдельная работа. Износ рассчитывается по использованному ресурсу.</p>
           {operations.map((item, index) => { const asset = data.equipment.find((row) => String(row.id) === item.equipment_id); return <div className="mfg-operation" key={index}>
             <Field label={`Операция ${index + 1}`}><input required value={item.name} onChange={(event) => updateOperation(index, { name: event.target.value })} /></Field>
@@ -164,8 +215,8 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
           <button type="button" onClick={() => setOperations((items) => [...items, { name: "", rate: "0", equipment_id: "", usage: "1" }])}>Добавить операцию</button>
           <div className="mfg-row"><Decimal label="Упаковка, ₽/ед." value={packaging} onChange={setPackaging} /><Decimal label="Прочие затраты, ₽/ед." value={other} onChange={setOther} /></div>
           <Field label="Примечание к версии"><input value={bomNote} onChange={(event) => setBomNote(event.target.value)} /></Field>
-          <button className="primary-button" type="submit">Сохранить новую версию</button>
-          {data.boms.filter((item) => { const product = selectedProduct(data.products, bomProduct, true); return !product || (item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === Number(product.chrt_id ?? 0)); }).map((item) => <details key={item.id}><summary>WB {item.nm_id}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · версия {item.version}{item.note ? ` · ${item.note}` : ""}</summary><ul>{item.materials?.map((material) => <li key={material.material_name}>{material.material_name}: {material.quantity_per_unit} {material.unit}/изделие</li>)}{item.operations?.map((operation, index) => <li key={index}>{operation.name}: {rub(operation.rate_per_unit)}/изделие</li>)}</ul><p>Упаковка: {rub(item.packaging_per_unit)}/изделие. Прочие: {rub(item.other_per_unit)}/изделие.</p></details>)}
+          <button className="primary-button" type="submit" disabled={disabled || !permitted("boms") || bomRouteBlocked}>Сохранить новую версию</button>
+          {data.boms.filter((item) => { const product = selectedProduct(data.products, bomProduct, true); return !product || (item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === Number(product.chrt_id ?? 0)); }).map((item) => <details key={item.id}><summary>WB {item.nm_id}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · версия {item.version}{item.note ? ` · ${item.note}` : ""}</summary><ul>{item.materials?.map((component, index) => <li key={`${component.component_type ?? "raw"}:${component.material_name ?? component.nm_id}:${index}`}>{component.component_type === "semi_finished" ? `Полуфабрикат WB ${component.nm_id}${component.chrt_id ? ` · вариант ${component.chrt_id}` : ""} · состав v${component.component_bom_version_id}` : `${component.material_name}: ${component.quantity_per_unit} ${component.unit}/изделие`}</li>)}{item.operations?.map((operation, index) => <li key={index}>{operation.name}: {rub(operation.rate_per_unit)}/изделие</li>)}</ul><p>Упаковка: {rub(item.packaging_per_unit)}/изделие. Прочие: {rub(item.other_per_unit)}/изделие.</p></details>)}
         </fieldset>
       </form>
 
