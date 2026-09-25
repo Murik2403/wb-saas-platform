@@ -25,7 +25,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -85,7 +85,20 @@ from db.manual_expenses import (
     read_manual_expenses,
     save_manual_expense,
     set_manual_expense_inclusion,
+    delete_manual_store_expense,
+    read_manual_store_expenses,
+    save_manual_store_expense,
+    set_manual_store_expense_inclusion,
 )
+from db.store_expense_workflows import (
+    confirm_store_expense_import,
+    create_recurring_store_expense_template,
+    generate_recurring_store_expenses,
+    list_recurring_store_expense_templates,
+    save_store_expense_import_preview,
+    set_recurring_store_expense_template_active,
+)
+from store_expense_import import ExpenseCsvError, MAX_IMPORT_BYTES, parse_store_expense_csv
 from db.financial_fifo_reconciliation import (
     read_financial_fifo_reconciliation,
     summarize_financial_fifo_reconciliation,
@@ -219,6 +232,32 @@ class ManualExpenseInput(BaseModel):
 
 class ManualExpenseInclusionInput(BaseModel):
     include_in_management_result: bool
+
+
+class ManualStoreExpenseInput(BaseModel):
+    article: str
+    amount_rub: FiniteFloat = Field(ge=0)
+    source: str = "manual"
+    period_start: date
+    period_end: date
+    note: str = ""
+    include_in_management_result: bool = False
+
+
+class RecurringStoreExpenseTemplateInput(BaseModel):
+    article: str
+    amount_rub: FiniteFloat = Field(ge=0)
+    note: str = ""
+    active: bool = True
+
+
+class RecurringStoreExpenseGenerateInput(BaseModel):
+    year: int = Field(ge=1, le=9999)
+    month: int = Field(ge=1, le=12)
+
+
+class RecurringStoreExpenseActiveInput(BaseModel):
+    active: bool
 
 
 class ProductionNormInput(BaseModel):
@@ -2946,6 +2985,116 @@ def remove_manual_expense(expense_id: int) -> dict:
     return {"message": "Расход удалён"}
 
 
+@app.get("/api/v1/settings/store-expenses")
+def get_manual_store_expenses(start: date | None = None, end: date | None = None) -> dict:
+    if start and end and end < start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+    items = read_manual_store_expenses(start=start, end=end)
+    for item in items:
+        item["include_in_management_result"] = bool(item.get("include_in_management_result", 0))
+    return {"items": items}
+
+
+@app.post("/api/v1/settings/store-expenses")
+def create_manual_store_expense(payload: ManualStoreExpenseInput) -> dict:
+    if payload.period_end < payload.period_start:
+        raise HTTPException(status_code=422, detail="period_end must be on or after period_start")
+    try:
+        expense_id = save_manual_store_expense(
+            article=payload.article, amount_rub=payload.amount_rub, source=payload.source,
+            period_start=payload.period_start.isoformat(), period_end=payload.period_end.isoformat(),
+            note=payload.note, include_in_management_result=payload.include_in_management_result,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"id": expense_id, "message": "Общий расход магазина сохранён"}
+
+
+@app.patch("/api/v1/settings/store-expenses/{expense_id}/inclusion")
+def update_manual_store_expense_inclusion(expense_id: int, payload: ManualExpenseInclusionInput) -> dict:
+    try:
+        updated = set_manual_store_expense_inclusion(expense_id, payload.include_in_management_result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Общий расход магазина не найден")
+    return {"id": expense_id, "include_in_management_result": payload.include_in_management_result}
+
+
+@app.delete("/api/v1/settings/store-expenses/{expense_id}")
+def remove_manual_store_expense(expense_id: int) -> dict:
+    if not delete_manual_store_expense(expense_id):
+        raise HTTPException(status_code=404, detail="Общий расход магазина не найден")
+    return {"message": "Общий расход магазина удалён"}
+
+
+@app.get("/api/v1/settings/store-expense-templates")
+def get_recurring_store_expense_templates() -> dict:
+    items = list_recurring_store_expense_templates()
+    for item in items:
+        item["active"] = bool(item.get("active", 0))
+    return {"items": items}
+
+
+@app.post("/api/v1/settings/store-expense-templates")
+def create_recurring_store_expense_template_route(payload: RecurringStoreExpenseTemplateInput) -> dict:
+    try:
+        template_id = create_recurring_store_expense_template(
+            article=payload.article, amount_rub=payload.amount_rub,
+            note=payload.note, active=payload.active,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"id": template_id, "message": "Шаблон регулярного расхода сохранён"}
+
+
+@app.patch("/api/v1/settings/store-expense-templates/{template_id}/active")
+def update_recurring_store_expense_template_active(
+    template_id: int, payload: RecurringStoreExpenseActiveInput,
+) -> dict:
+    if not set_recurring_store_expense_template_active(template_id, payload.active):
+        raise HTTPException(status_code=404, detail="Шаблон расхода не найден")
+    return {"id": template_id, "active": payload.active}
+
+
+@app.post("/api/v1/settings/store-expense-templates/generate")
+def generate_recurring_store_expense_templates(payload: RecurringStoreExpenseGenerateInput) -> dict:
+    try:
+        return generate_recurring_store_expenses(year=payload.year, month=payload.month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/settings/store-expenses/import/preview")
+async def preview_store_expense_import(file: UploadFile = File(...)) -> dict:
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=422, detail="CSV не должен превышать 5 МиБ")
+    try:
+        rows = parse_store_expense_csv(content)
+        batch = save_store_expense_import_preview(
+            content_sha256=hashlib.sha256(content).hexdigest(), rows=rows,
+        )
+    except (ExpenseCsvError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "batch_id": batch["batch_id"], "already_imported": batch["already_imported"],
+        "rows": [{key: value for key, value in row.items() if key != "row_fingerprint"} for row in batch["rows"]],
+        "valid_count": batch["valid_count"], "invalid_count": batch["invalid_count"],
+        "duplicate_count": batch["duplicate_count"],
+    }
+
+
+@app.post("/api/v1/settings/store-expenses/import/{batch_id}/confirm")
+def confirm_store_expense_import_route(batch_id: str) -> dict:
+    try:
+        return confirm_store_expense_import(batch_id)
+    except ValueError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail="Пакет импорта не найден") from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/api/v1/dashboard/management-economics")
 def get_management_economics(
     nm_id: int = Query(..., gt=0),
@@ -3049,6 +3198,153 @@ def get_management_economics(
         "coverage": {"covered": sorted(covered), "missing": sorted(set(EXPENSE_ARTICLES) - covered), "count": len(covered), "total": len(EXPENSE_ARTICLES), "percent": round(len(covered) / len(EXPENSE_ARTICLES) * 100, 2)},
         "items": rows,
     })
+
+
+@app.get("/api/v1/dashboard/management-pnl")
+def get_management_pnl(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """Whole-store management P&L layered on the dashboard's hybrid result.
+
+    Manual rows are deducted only when a recognized external source was
+    explicitly confirmed by the tenant. WB commission is always excluded
+    because it is already reflected in the marketplace financial result.
+    """
+    try:
+        window_start, window_end = resolve_window(period, datetime.now(ZoneInfo("Europe/Moscow")).date(), start, end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+    start, end = window_start, window_end
+    if end < start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+
+    snapshot = _build_dashboard_cached(start, end)
+    products = getattr(snapshot, "financial_products", pd.DataFrame())
+    if products is None:
+        products = pd.DataFrame()
+
+    def numeric_column(frame: pd.DataFrame, *names: str) -> pd.Series:
+        for name in names:
+            if name in frame.columns:
+                return pd.to_numeric(frame[name], errors="coerce").fillna(0.0)
+        return pd.Series(0.0, index=frame.index, dtype="float64")
+
+    def numbers_by_product(frame: pd.DataFrame) -> dict[int, tuple[float, float]]:
+        if frame.empty or "Артикул WB" not in frame.columns:
+            return {}
+        ids = pd.to_numeric(frame["Артикул WB"], errors="coerce")
+        revenues = numeric_column(frame, "Выкупы по цене покупателя", "Выручка")
+        units = numeric_column(frame, "Продано нетто", "Продажи, шт", "Продажи", "Количество")
+        result: dict[int, tuple[float, float]] = {}
+        for idx, raw_id in ids.items():
+            if pd.isna(raw_id) or int(raw_id) <= 0:
+                continue
+            nm_id = int(raw_id)
+            old_revenue, old_units = result.get(nm_id, (0.0, 0.0))
+            result[nm_id] = (old_revenue + float(revenues.loc[idx]), old_units + float(units.loc[idx]))
+        return result
+
+    selected_metrics = numbers_by_product(products)
+    financial = getattr(snapshot, "financial", {}) or {}
+    profit_value = pd.to_numeric(financial.get("profit"), errors="coerce")
+    accounting_profit = float(profit_value) if pd.notna(profit_value) else None
+    revenue_value = pd.to_numeric(financial.get("sales"), errors="coerce")
+    units_value = pd.to_numeric(financial.get("net_units"), errors="coerce")
+    revenue = float(revenue_value) if pd.notna(revenue_value) else float(numeric_column(products, "Выкупы по цене покупателя", "Выручка").sum()) if not products.empty else 0.0
+    units = float(units_value) if pd.notna(units_value) else float(numeric_column(products, "Продано нетто", "Продажи, шт", "Продажи", "Количество").sum()) if not products.empty else 0.0
+    total_expenses = [
+        {**expense, "scope": "sku"}
+        for expense in read_manual_expenses(start=start, end=end)
+    ]
+    total_expenses.extend(
+        {**expense, "scope": "store", "allocation_basis": "total"}
+        for expense in read_manual_store_expenses(start=start, end=end)
+    )
+    overlap_cache: dict[tuple[date, date], dict[int, tuple[float, float]]] = {(start, end): selected_metrics}
+
+    included_external = excluded_unconfirmed = excluded_commission = unknown_source = 0.0
+    included_items: list[dict[str, object]] = []
+    excluded_items: list[dict[str, object]] = []
+    unknown_items: list[dict[str, object]] = []
+    for expense in total_expenses:
+        scope = str(expense.get("scope") or "sku")
+        expense_start = date.fromisoformat(str(expense["period_start"]))
+        expense_end = date.fromisoformat(str(expense["period_end"]))
+        overlap_start, overlap_end = max(start, expense_start), min(end, expense_end)
+        overlap_days = max((overlap_end - overlap_start).days + 1, 0)
+        if not overlap_days:
+            continue
+        basis = str(expense.get("allocation_basis") or "total")
+        amount = float(expense.get("amount_rub") or 0)
+        unknown_basis = basis not in {"total", "per_unit", "revenue_pct"}
+        allocation_unknown = False
+        if scope == "store" or basis == "total":
+            source_metrics = {}
+            expense_days = max((expense_end - expense_start).days + 1, 1)
+            allocated = amount * min(overlap_days / expense_days, 1.0)
+        elif unknown_basis:
+            allocated = None
+        else:
+            key = (overlap_start, overlap_end)
+            if key not in overlap_cache:
+                overlap_data = _build_dashboard_cached(overlap_start, overlap_end)
+                overlap_cache[key] = numbers_by_product(getattr(overlap_data, "financial_products", pd.DataFrame()))
+            source_metrics = overlap_cache[key]
+            metrics = source_metrics.get(int(expense["nm_id"]))
+            if metrics is None:
+                # A SKU absent from the active financial rows cannot be
+                # allocated safely from product-level revenue or units.
+                allocation_unknown = True
+                allocated = None
+            elif basis == "per_unit":
+                allocated = amount * metrics[1]
+            else:
+                allocated = metrics[0] * amount / 100
+
+        article = str(expense.get("article") or "")
+        source = str(expense.get("source") or "").strip().lower()
+        opted_in = bool(expense.get("include_in_management_result", False))
+        item = {
+            **expense,
+            "scope": scope,
+            "allocation_basis": basis,
+            "allocated_rub": round(allocated, 2) if allocated is not None else None,
+        }
+        if article == "wb_commission":
+            excluded_commission += allocated or 0.0
+            excluded_items.append({**item, "exclusion_reason": "Комиссия WB уже учтена в финансовом результате"})
+        elif source not in {"manual", "import"} or unknown_basis or allocation_unknown:
+            unknown_source += allocated or 0.0
+            unknown_items.append({**item, "exclusion_reason": "Источник, основа или данные для распределения не распознаны; сумма не включена"})
+        elif not opted_in:
+            excluded_unconfirmed += allocated or 0.0
+            excluded_items.append({**item, "exclusion_reason": "Включение в управленческий результат не подтверждено"})
+        else:
+            included_external += allocated or 0.0
+            included_items.append(item)
+
+    report_rows = pd.to_numeric(financial.get("report_rows"), errors="coerce")
+    has_report_data = bool((pd.notna(report_rows) and report_rows > 0) or not products.empty)
+    return json_safe({
+        "period": {"start": start.isoformat(), "end": end.isoformat()},
+        "data_status": "missing_store_profit" if has_report_data and accounting_profit is None else ("ok" if has_report_data else "no_financial_data"),
+        "revenue_rub": round(revenue, 2),
+        "units": round(units, 2),
+        "accounting_profit_rub": round(accounting_profit, 2) if accounting_profit is not None else None,
+        "confirmed_external_expenses_rub": round(included_external, 2),
+        "management_profit_rub": round(accounting_profit - included_external, 2) if accounting_profit is not None else None,
+        "excluded_unconfirmed_rub": round(excluded_unconfirmed, 2),
+        "excluded_wb_commission_rub": round(excluded_commission, 2),
+        "unknown_source_rub": round(unknown_source, 2),
+        "unknown_allocation_count": sum(1 for item in unknown_items if item.get("allocated_rub") is None),
+        "expenses": {"included": included_items, "excluded": excluded_items, "unknown_source": unknown_items},
+        "attestation": "confirmed_by_tenant",
+        "note": "Подтверждение означает заявление пользователя, что расход внешний и не задвоен с данными WB, рекламой и себестоимостью.",
+    })
+
+
 
 
 @app.patch("/api/v1/settings/product-costs")

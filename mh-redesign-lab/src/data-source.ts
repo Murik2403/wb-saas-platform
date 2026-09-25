@@ -185,6 +185,30 @@ export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
 export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; include_in_management_result: boolean; created_at: string; updated_at: string };
 export type ManagementEconomics = { nm_id: number; data_status: string; period: { start: string; end: string }; revenue_rub: number; units: number; accounting_profit_rub: number; manual_expenses_rub: number; management_profit_rub: number; excluded_wb_commission_rub: number; excluded_manual_expenses_rub: number; coverage: { covered: string[]; missing: string[]; count: number; total: number; percent: number }; items: Array<ManualExpense & { allocated_rub: number; excluded_from_result: boolean; exclusion_reason: string | null }> };
+export type StoreExpense = { id: number; article: string; amount_rub: number; source: "manual" | "import"; period_start: string; period_end: string; note: string; include_in_management_result: boolean; created_at: string; updated_at: string };
+export type StoreExpenseImportPreviewRow = { line_number: number; article: string; amount_rub: number; period_start: string; period_end: string; note: string; errors: string[]; duplicate: boolean };
+export type StoreExpenseImportPreview = { batch_id: string; already_imported: boolean; rows: StoreExpenseImportPreviewRow[]; valid_count: number; invalid_count: number; duplicate_count: number };
+export type RecurringStoreExpenseTemplate = { id: number; article: string; amount_rub: number; note: string; active: boolean };
+export type RecurringStoreExpenseTemplatePayload = Omit<RecurringStoreExpenseTemplate, "id">;
+export type RecurringStoreExpenseGeneration = { created: number; already_exists: number; expense_ids: number[] };
+export type StoreExpenseImportConfirmation = { batch_id: string; created_count: number; expense_ids: number[]; already_confirmed: boolean };
+export type ManagementPnlExpense = { id: number; scope?: "sku" | "store"; nm_id?: number | null; article: string; amount_rub: number; allocated_rub: number | null; allocation_basis: string; source: string; period_start: string; period_end: string; include_in_management_result: boolean; exclusion_reason?: string };
+export type ManagementPnl = {
+  period: { start: string; end: string };
+  data_status: "ok" | "no_financial_data" | "missing_store_profit";
+  revenue_rub: number;
+  units: number;
+  accounting_profit_rub: number | null;
+  confirmed_external_expenses_rub: number;
+  management_profit_rub: number | null;
+  excluded_unconfirmed_rub: number;
+  excluded_wb_commission_rub: number;
+  unknown_source_rub: number;
+  unknown_allocation_count: number;
+  expenses: { included: ManagementPnlExpense[]; excluded: ManagementPnlExpense[]; unknown_source: ManagementPnlExpense[] };
+  attestation: "confirmed_by_tenant";
+  note: string;
+};
 export type ProductionNorm = { material_unit?: string; material_name?: string; nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
 export type MaterialInventory = { material_key?: string; material_name: string; balance_known: number | boolean; full_rolls: number; partial_meters: number; roll_length: number; unit: string; tracking_mode: "packaged" | "quantity"; opening_rate_rub: number; note: string; updated_at?: string };
 export type MaterialFifoRow = MaterialInventory & { physical_meters: number; fifo_meters: number; fifo_amount_rub: number; weighted_rate_rub_m: number; next_fifo_rate_rub_m: number; active_layers: number; difference_meters: number };
@@ -891,11 +915,91 @@ export async function deleteManualExpense(id: number): Promise<{ message: string
   return response.json() as Promise<{ message: string }>;
 }
 
+export async function getManualStoreExpenses(): Promise<{ items: StoreExpense[] }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expenses`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error(`/api/v1/settings/store-expenses: HTTP ${response.status}`);
+  return response.json() as Promise<{ items: StoreExpense[] }>;
+}
+
+export function createManualStoreExpense(payload: Omit<StoreExpense, "id" | "created_at" | "updated_at">): Promise<{ id: number; message: string }> {
+  return postOperation("/api/v1/settings/store-expenses", payload);
+}
+
+export async function deleteManualStoreExpense(id: number): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expenses/${id}`, { method: "DELETE", headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось удалить общий расход: HTTP ${response.status}`);
+  return response.json() as Promise<{ message: string }>;
+}
+
+export async function updateManualStoreExpenseInclusion(id: number, includeInManagementResult: boolean): Promise<{ id: number; include_in_management_result: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expenses/${id}/inclusion`, {
+    method: "PATCH",
+    headers: { ...apiHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ include_in_management_result: includeInManagementResult }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось изменить учёт общего расхода: HTTP ${response.status}`);
+  return response.json() as Promise<{ id: number; include_in_management_result: boolean }>;
+}
+
+export async function previewStoreExpenseImport(file: File): Promise<StoreExpenseImportPreview> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expenses/import/preview`, {
+    method: "POST",
+    headers: apiHeaders(),
+    body,
+  });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось проверить CSV: HTTP ${response.status}`);
+  return response.json() as Promise<StoreExpenseImportPreview>;
+}
+
+export async function confirmStoreExpenseImport(batchId: string): Promise<StoreExpenseImportConfirmation> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expenses/import/${encodeURIComponent(batchId)}/confirm`, {
+    method: "POST",
+    headers: apiHeaders(),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось подтвердить импорт: HTTP ${response.status}`);
+  return response.json() as Promise<StoreExpenseImportConfirmation>;
+}
+
+export async function getRecurringStoreExpenseTemplates(): Promise<{ items: RecurringStoreExpenseTemplate[] }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expense-templates`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось загрузить шаблоны расходов: HTTP ${response.status}`);
+  return response.json() as Promise<{ items: RecurringStoreExpenseTemplate[] }>;
+}
+
+export async function setRecurringStoreExpenseTemplateActive(id: number, active: boolean): Promise<{ id: number; active: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/store-expense-templates/${id}/active`, {
+    method: "PATCH",
+    headers: { ...apiHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ active }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `Не удалось изменить шаблон расхода: HTTP ${response.status}`);
+  return response.json() as Promise<{ id: number; active: boolean }>;
+}
+
+export function createRecurringStoreExpenseTemplate(payload: RecurringStoreExpenseTemplatePayload): Promise<{ id: number; message: string }> {
+  return postOperation("/api/v1/settings/store-expense-templates", payload);
+}
+
+export function generateRecurringStoreExpenses(year: number, month: number): Promise<RecurringStoreExpenseGeneration> {
+  return postOperation("/api/v1/settings/store-expense-templates/generate", { year, month });
+}
+
 export async function getManagementEconomics(nmId: number, start: string, end: string): Promise<ManagementEconomics> {
   const query = `?nm_id=${encodeURIComponent(String(nmId))}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
   const response = await fetch(`${API_BASE_URL}/api/v1/dashboard/management-economics${query}`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`/api/v1/dashboard/management-economics: HTTP ${response.status}`);
   return response.json() as Promise<ManagementEconomics>;
+}
+
+export async function getManagementPnl(period: DashboardPeriod, signal: AbortSignal = new AbortController().signal): Promise<ManagementPnl> {
+  const query = new URLSearchParams({ period: period.id });
+  if (period.id === "custom") {
+    if (period.start) query.set("start", period.start);
+    if (period.end) query.set("end", period.end);
+  }
+  return fetchJson<ManagementPnl>(`/api/v1/dashboard/management-pnl?${query.toString()}`, signal);
 }
 
 export async function getProductionNorms(): Promise<{ items: ProductionNorm[] }> {

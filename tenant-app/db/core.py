@@ -155,6 +155,67 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_manual_expenses_nm_period
                 ON manual_expenses(nm_id, period_start, period_end);
 
+            CREATE TABLE IF NOT EXISTS manual_store_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article TEXT NOT NULL CHECK (article IN (
+                    'purchase_production','wb_commission','logistics_returns','storage',
+                    'acceptance','advertising','packaging_labor','defects_losses','taxes'
+                )),
+                amount_rub REAL NOT NULL CHECK (amount_rub >= 0),
+                source TEXT NOT NULL CHECK (source IN ('manual','import')),
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                include_in_management_result INTEGER NOT NULL DEFAULT 0
+                    CHECK (include_in_management_result IN (0,1)),
+                row_fingerprint TEXT,
+                CHECK (period_end >= period_start)
+            );
+            CREATE INDEX IF NOT EXISTS idx_manual_store_expenses_period
+                ON manual_store_expenses(period_start, period_end);
+
+            CREATE TABLE IF NOT EXISTS recurring_store_expense_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article TEXT NOT NULL CHECK (article IN (
+                    'purchase_production','wb_commission','logistics_returns','storage',
+                    'acceptance','advertising','packaging_labor','defects_losses','taxes'
+                )),
+                amount_rub REAL NOT NULL CHECK (amount_rub >= 0),
+                note TEXT NOT NULL DEFAULT '',
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_recurring_store_expense_templates_active
+                ON recurring_store_expense_templates(active, id);
+
+            CREATE TABLE IF NOT EXISTS recurring_store_expense_occurrences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER NOT NULL,
+                period_start TEXT NOT NULL,
+                expense_id INTEGER UNIQUE,
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','cancelled')),
+                created_at TEXT NOT NULL,
+                UNIQUE(template_id, period_start),
+                FOREIGN KEY(template_id) REFERENCES recurring_store_expense_templates(id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_recurring_store_expense_occurrences_period
+                ON recurring_store_expense_occurrences(period_start, template_id);
+
+            CREATE TABLE IF NOT EXISTS store_expense_import_batches (
+                id TEXT PRIMARY KEY,
+                content_sha256 TEXT NOT NULL UNIQUE CHECK (length(content_sha256)=64),
+                status TEXT NOT NULL DEFAULT 'preview' CHECK (status IN ('preview','confirmed')),
+                rows_json TEXT NOT NULL,
+                result_json TEXT,
+                created_at TEXT NOT NULL,
+                confirmed_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_store_expense_import_batches_status
+                ON store_expense_import_batches(status, created_at);
+
             CREATE TABLE IF NOT EXISTS products_catalog (
                 nm_id INTEGER PRIMARY KEY,
                 supplier_article TEXT,
@@ -715,6 +776,72 @@ def init_db() -> None:
         if "include_in_management_result" not in manual_expense_columns:
             conn.execute(
                 "ALTER TABLE manual_expenses ADD COLUMN include_in_management_result INTEGER NOT NULL DEFAULT 0 CHECK (include_in_management_result IN (0,1))"
+            )
+
+        # Intermediate deployments may already have store expenses without
+        # the explicit P&L opt-in or the idempotent import fingerprint.
+        store_expense_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(manual_store_expenses)").fetchall()
+        }
+        if "include_in_management_result" not in store_expense_columns:
+            conn.execute(
+                "ALTER TABLE manual_store_expenses ADD COLUMN include_in_management_result INTEGER NOT NULL DEFAULT 0 CHECK (include_in_management_result IN (0,1))"
+            )
+        if "row_fingerprint" not in store_expense_columns:
+            conn.execute("ALTER TABLE manual_store_expenses ADD COLUMN row_fingerprint TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_manual_store_expenses_import_fingerprint "
+            "ON manual_store_expenses(row_fingerprint) WHERE row_fingerprint IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_manual_store_expenses_inclusion "
+            "ON manual_store_expenses(include_in_management_result, period_start, period_end)"
+        )
+
+        # Keep a tombstone when a generated monthly expense is deleted, so a
+        # later generation request does not silently recreate it.
+        occurrence_columns = {
+            str(row["name"]): row
+            for row in conn.execute("PRAGMA table_info(recurring_store_expense_occurrences)").fetchall()
+        }
+        if occurrence_columns and (
+            ("expense_id" in occurrence_columns and occurrence_columns["expense_id"]["notnull"])
+            or "status" not in occurrence_columns
+        ):
+            conn.execute("DROP INDEX IF EXISTS idx_recurring_store_expense_occurrences_period")
+            conn.execute(
+                "ALTER TABLE recurring_store_expense_occurrences "
+                "RENAME TO recurring_store_expense_occurrences_legacy"
+            )
+            conn.execute(
+                """CREATE TABLE recurring_store_expense_occurrences (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       template_id INTEGER NOT NULL,
+                       period_start TEXT NOT NULL,
+                       expense_id INTEGER UNIQUE,
+                       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','cancelled')),
+                       created_at TEXT NOT NULL,
+                       UNIQUE(template_id,period_start),
+                       FOREIGN KEY(template_id) REFERENCES recurring_store_expense_templates(id) ON DELETE RESTRICT
+                   )"""
+            )
+            legacy_columns = {str(row["name"]) for row in conn.execute(
+                "PRAGMA table_info(recurring_store_expense_occurrences_legacy)"
+            ).fetchall()}
+            required_legacy_columns = {"id", "template_id", "period_start", "expense_id", "created_at"}
+            if not required_legacy_columns.issubset(legacy_columns):
+                raise RuntimeError("Cannot safely migrate recurring expense occurrences: legacy columns are incomplete")
+            conn.execute(
+                """INSERT INTO recurring_store_expense_occurrences(
+                       id,template_id,period_start,expense_id,status,created_at
+                   ) SELECT id,template_id,period_start,expense_id,'active',created_at
+                       FROM recurring_store_expense_occurrences_legacy"""
+            )
+            conn.execute("DROP TABLE recurring_store_expense_occurrences_legacy")
+            conn.execute(
+                "CREATE INDEX idx_recurring_store_expense_occurrences_period "
+                "ON recurring_store_expense_occurrences(period_start, template_id)"
             )
 
         # v4.0: supplier directory and auditable partial payments.

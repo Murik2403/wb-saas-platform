@@ -1453,6 +1453,36 @@ button.export-row {
   gap: 0.55rem;
 }
 
+.management-pnl-summary {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-color: rgba(32, 211, 174, 0.38);
+}
+
+.management-pnl-summary .section-header h2 {
+  margin-bottom: 0;
+}
+
+.management-pnl-exclusions {
+  margin-top: 0.55rem;
+}
+
+.management-pnl-attestation {
+  margin: 0.75rem 0;
+}
+
+.management-pnl-lines {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.management-pnl-lines strong {
+  color: var(--text);
+}
+
 .production-row,
 .shipment-row {
   min-height: 6.2rem;
