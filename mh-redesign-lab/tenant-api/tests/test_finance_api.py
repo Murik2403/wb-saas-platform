@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pandas as pd
+from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
 API_DIR = Path(__file__).resolve().parents[1]
@@ -125,6 +126,80 @@ def test_finance_export_contains_legacy_reconciliation_sheets():
     )
     sheets = set(load_workbook(BytesIO(workbook), read_only=True).sheetnames)
     assert {"Сводка", "Статьи расходов", "Юнит-экономика", "Сверка WB", "Выгрузка WB", "Операции магазина", "Методика"} <= sheets
+
+
+def test_finance_csv_export_http_contract_includes_period_headers_and_product_rows(monkeypatch):
+    from types import SimpleNamespace
+    import csv
+    import io
+
+    requested_periods = []
+    products = pd.DataFrame([
+        {"Артикул": "Салфетки", "Прибыль": 376.5},
+        {"Артикул": "Чехол", "Прибыль": -12.0},
+    ])
+    monkeypatch.setattr(
+        api,
+        "_build_dashboard_cached",
+        lambda start, end: requested_periods.append((start, end))
+        or SimpleNamespace(financial_products=products, financial={}),
+    )
+
+    response = TestClient(api.app, base_url="http://127.0.0.1").get(
+        "/api/v1/operations/finance/export",
+        params={"period": "custom", "start": "2026-09-01", "end": "2026-09-19", "format": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="marketshelper-finance-2026-09-01-2026-09-19.csv"'
+    )
+    assert requested_periods == [(date(2026, 9, 1), date(2026, 9, 19))]
+    assert response.content.startswith(b"\xef\xbb\xbf")
+    rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"), newline=""), delimiter=";"))
+    assert rows == [
+        {"Артикул": "Салфетки", "Прибыль": "376.5"},
+        {"Артикул": "Чехол", "Прибыль": "-12.0"},
+    ]
+
+
+def test_finance_csv_export_requires_both_custom_period_bounds(monkeypatch):
+    called = []
+    monkeypatch.setattr(api, "_build_dashboard_cached", lambda *_: called.append(True))
+
+    for params in (
+        {"period": "custom", "end": "2026-09-19", "format": "csv"},
+        {"period": "custom", "start": "2026-09-01", "format": "csv"},
+    ):
+        response = TestClient(api.app, base_url="http://127.0.0.1").get("/api/v1/operations/finance/export", params=params)
+        assert response.status_code == 422
+        assert response.json()["detail"] == "custom_period_requires_start_and_end"
+
+    assert called == []
+
+
+def test_finance_csv_export_empty_dataframe_has_headers_and_no_data_rows(monkeypatch):
+    from types import SimpleNamespace
+    import csv
+    import io
+
+    monkeypatch.setattr(
+        api,
+        "_build_dashboard_cached",
+        lambda *_: SimpleNamespace(financial_products=pd.DataFrame(columns=["Артикул", "Прибыль"]), financial={}),
+    )
+
+    response = TestClient(api.app, base_url="http://127.0.0.1").get(
+        "/api/v1/operations/finance/export",
+        params={"period": "custom", "start": "2026-09-01", "end": "2026-09-19", "format": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.content.startswith(b"\xef\xbb\xbf")
+    rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"), newline=""), delimiter=";"))
+    assert rows == [["Артикул", "Прибыль"]]
 
 
 def test_wb_token_routes_validate_before_persisting(monkeypatch):
