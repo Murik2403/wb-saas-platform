@@ -28,7 +28,7 @@ def _baseline_product_cost(conn: sqlite3.Connection, nm_id: int) -> float:
     row = conn.execute("SELECT cost_per_wb_unit FROM costs WHERE nm_id=?", (int(nm_id),)).fetchone()
     return max(0.0, float(row["cost_per_wb_unit"] or 0) if row else 0.0)
 
-def _finished_layer_totals(conn: sqlite3.Connection, nm_id: int, location: str) -> tuple[int, float]:
+def _finished_layer_totals(conn: sqlite3.Connection, nm_id: int, location: str, chrt_id: int = 0) -> tuple[int, float]:
     column = _finished_location_column(location)
     row = conn.execute(
         f"""
@@ -36,17 +36,22 @@ def _finished_layer_totals(conn: sqlite3.Connection, nm_id: int, location: str) 
                COALESCE(SUM({column}*unit_cost_rub),0) AS amount
           FROM finished_goods_cost_layers
          WHERE nm_id=? AND status<>'reversed' AND {column}>0
+           AND chrt_id=?
         """,
-        (int(nm_id),),
+        (int(nm_id), int(chrt_id)),
     ).fetchone()
     return max(0, int(row["units"] or 0) if row else 0), max(0.0, float(row["amount"] or 0) if row else 0.0)
 
-def _physical_finished_units(conn: sqlite3.Connection, nm_id: int, location: str) -> tuple[bool, int]:
+def _physical_finished_units(conn: sqlite3.Connection, nm_id: int, location: str, chrt_id: int = 0) -> tuple[bool, int]:
     loc = str(location or "").strip().casefold()
     if loc == "ready":
+        if int(chrt_id or 0) > 0:
+            return False, 0  # product_pipeline is only tracked at nmID grain.
         row = conn.execute("SELECT local_known,ready_units FROM product_pipeline WHERE nm_id=?", (int(nm_id),)).fetchone()
         return (bool(row and int(row["local_known"] or 0) == 1), max(0, int(row["ready_units"] or 0) if row else 0))
     if loc == "inbound":
+        if int(chrt_id or 0) > 0:
+            return False, 0
         row = conn.execute("SELECT inbound_known,inbound_units FROM product_pipeline WHERE nm_id=?", (int(nm_id),)).fetchone()
         return (bool(row and int(row["inbound_known"] or 0) == 1), max(0, int(row["inbound_units"] or 0) if row else 0))
     if loc == "wb":
@@ -55,8 +60,9 @@ def _physical_finished_units(conn: sqlite3.Connection, nm_id: int, location: str
             SELECT COALESCE(SUM(quantity),0) AS units
               FROM stocks
              WHERE nm_id=? AND snapshot_at=(SELECT MAX(snapshot_at) FROM stocks)
+               AND chrt_id=?
             """,
-            (int(nm_id),),
+            (int(nm_id), int(chrt_id)),
         ).fetchone()
         latest = conn.execute("SELECT MAX(snapshot_at) AS snapshot_at FROM stocks").fetchone()
         return (bool(latest and latest["snapshot_at"]), max(0, int(row["units"] or 0) if row else 0))
@@ -74,6 +80,7 @@ def _create_finished_goods_layer(
     unit_cost_rub: float,
     location: str,
     note: str = "",
+    chrt_id: int = 0,
 ) -> int:
     qty = max(0, int(units or 0))
     if qty <= 0:
@@ -88,14 +95,15 @@ def _create_finished_goods_layer(
         INSERT INTO finished_goods_cost_layers(
             nm_id,supplier_article,product_name,source_type,source_ref,source_date,
             original_units,ready_units,inbound_units,wb_units,unit_cost_rub,original_amount_rub,
-            status,note,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'active',?,?,?)
+            status,note,created_at,updated_at,chrt_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'active',?,?,?,?)
         """,
         (
             int(nm_id), str(supplier_article or ""), str(product_name or ""),
             str(source_type or "opening"), str(source_ref), source_date,
             qty, balances["ready_units"], balances["inbound_units"], balances["wb_units"],
             rate, round(qty * rate, 2), str(note or ""), now, now,
+            max(0, int(chrt_id or 0)),
         ),
     )
     return int(cur.lastrowid)
@@ -120,12 +128,22 @@ def _ensure_finished_goods_capacity(
     product_name: str,
     location: str,
     required_units: int,
+    chrt_id: int = 0,
 ) -> None:
     required = max(0, int(required_units or 0))
-    layered, _ = _finished_layer_totals(conn, int(nm_id), location)
+    if int(chrt_id or 0) == 0:
+        variant_layer = conn.execute(
+            "SELECT 1 FROM finished_goods_cost_layers WHERE nm_id=? AND chrt_id>0 AND status<>'reversed' LIMIT 1",
+            (int(nm_id),),
+        ).fetchone()
+        if variant_layer is not None:
+            raise ValueError(
+                f"Для nmID {int(nm_id)} есть вариантные FIFO-слои; для движения нужен точный chrt_id."
+            )
+    layered, _ = _finished_layer_totals(conn, int(nm_id), location, chrt_id)
     if layered >= required:
         return
-    known, physical = _physical_finished_units(conn, int(nm_id), location)
+    known, physical = _physical_finished_units(conn, int(nm_id), location, chrt_id)
     if known and physical > layered:
         missing = physical - layered
         _create_finished_goods_layer(
@@ -133,7 +151,7 @@ def _ensure_finished_goods_capacity(
             f"opening_{location}",
             f"opening_auto:{location}:{int(nm_id)}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
             datetime.now().date().isoformat(), missing, _baseline_product_cost(conn, int(nm_id)), location,
-            "Автоматически досоздано по подтверждённому физическому остатку.",
+            "Автоматически досоздано по подтверждённому физическому остатку.", chrt_id=chrt_id,
         )
         layered += missing
     if layered < required:
@@ -142,25 +160,27 @@ def _ensure_finished_goods_capacity(
             "Сначала подтвердите остаток или инициализируйте FIFO готовой продукции."
         )
 
-def _cost_pending_wb_units(conn: sqlite3.Connection, nm_id: int) -> int:
+def _cost_pending_wb_units(conn: sqlite3.Connection, nm_id: int, chrt_id: int = 0) -> int:
     row = conn.execute(
         """
         SELECT COALESCE(SUM(wb_units),0) AS units
           FROM finished_goods_cost_layers
          WHERE nm_id=? AND status<>'reversed' AND source_type='reconstruction_cost_pending' AND wb_units>0
+           AND chrt_id=?
         """,
-        (int(nm_id),),
+        (int(nm_id), int(chrt_id)),
     ).fetchone()
     return max(0, int(row["units"] or 0) if row else 0)
 
-def _regular_wb_fifo_units(conn: sqlite3.Connection, nm_id: int) -> int:
+def _regular_wb_fifo_units(conn: sqlite3.Connection, nm_id: int, chrt_id: int = 0) -> int:
     row = conn.execute(
         """
         SELECT COALESCE(SUM(wb_units),0) AS units
           FROM finished_goods_cost_layers
          WHERE nm_id=? AND status<>'reversed' AND source_type<>'reconstruction_cost_pending' AND wb_units>0
+           AND chrt_id=?
         """,
-        (int(nm_id),),
+        (int(nm_id), int(chrt_id)),
     ).fetchone()
     return max(0, int(row["units"] or 0) if row else 0)
 
@@ -173,13 +193,15 @@ def _move_finished_goods_fifo(
     units: int,
     from_location: str,
     to_location: str | None,
+    chrt_id: int = 0,
 ) -> tuple[float, list[dict[str, float]]]:
     qty = max(0, int(units or 0))
     if qty <= 0:
         return 0.0, []
+    conn.execute("UPDATE inventory_movements SET chrt_id=? WHERE id=?", (max(0, int(chrt_id or 0)), int(movement_id)))
     if str(from_location or "").strip().casefold() == "wb":
-        pending = _cost_pending_wb_units(conn, int(nm_id))
-        regular = _regular_wb_fifo_units(conn, int(nm_id))
+        pending = _cost_pending_wb_units(conn, int(nm_id), chrt_id)
+        regular = _regular_wb_fifo_units(conn, int(nm_id), chrt_id)
         if pending > 0 and regular < qty:
             raise ValueError(
                 f"COST_PENDING: для nmID {int(nm_id)} есть {pending} ед. с неопределённой себестоимостью. "
@@ -187,15 +209,16 @@ def _move_finished_goods_fifo(
             )
     from_col = _finished_location_column(from_location)
     to_col = _finished_location_column(to_location) if to_location in FINISHED_GOODS_LOCATIONS else None
-    _ensure_finished_goods_capacity(conn, nm_id, supplier_article, product_name, from_location, qty)
+    _ensure_finished_goods_capacity(conn, nm_id, supplier_article, product_name, from_location, qty, chrt_id)
     pending_filter = " AND source_type<>'reconstruction_cost_pending'" if str(from_location or "").strip().casefold() == "wb" else ""
     rows = conn.execute(
         f"""
         SELECT * FROM finished_goods_cost_layers
          WHERE nm_id=? AND status<>'reversed' AND {from_col}>0 {pending_filter}
+           AND chrt_id=?
          ORDER BY COALESCE(source_date,'1900-01-01'),id
         """,
-        (int(nm_id),),
+        (int(nm_id), int(chrt_id)),
     ).fetchall()
     remaining = qty
     amount_total = 0.0
@@ -356,16 +379,18 @@ def initialize_finished_goods_fifo(reconcile_wb: bool = False) -> dict[str, Any]
     with connect() as conn:
         ids = conn.execute(
             """
-            SELECT nm_id FROM products_catalog WHERE nm_id>0
-            UNION SELECT nm_id FROM product_pipeline WHERE nm_id>0
-            UNION SELECT nm_id FROM costs WHERE nm_id>0
-            UNION SELECT nm_id FROM stocks WHERE nm_id>0
+            SELECT nm_id,0 AS chrt_id FROM products_catalog WHERE nm_id>0
+            UNION SELECT nm_id,0 AS chrt_id FROM product_pipeline WHERE nm_id>0
+            UNION SELECT nm_id,0 AS chrt_id FROM costs WHERE nm_id>0
+            UNION SELECT nm_id,chrt_id FROM stocks WHERE nm_id>0
+            UNION SELECT nm_id,chrt_id FROM finished_goods_cost_layers WHERE nm_id>0 AND status<>'reversed'
             """
         ).fetchall()
         latest = conn.execute("SELECT MAX(snapshot_at) AS snapshot_at FROM stocks").fetchone()
         snapshot = str(latest["snapshot_at"] or "") if latest else ""
         for item in ids:
             nm_id = int(item["nm_id"] or 0)
+            chrt_id = max(0, int(item["chrt_id"] or 0))
             meta = conn.execute(
                 """
                 SELECT COALESCE(pc.supplier_article,c.supplier_article,'') AS supplier_article,
@@ -380,24 +405,24 @@ def initialize_finished_goods_fifo(reconcile_wb: bool = False) -> dict[str, Any]
             product = str(meta["product_name"] or "") if meta else ""
             baseline = _baseline_product_cost(conn, nm_id)
             for location in ("ready", "inbound", "wb"):
-                known, physical = _physical_finished_units(conn, nm_id, location)
+                known, physical = _physical_finished_units(conn, nm_id, location, chrt_id)
                 if not known:
                     continue
-                layered, _ = _finished_layer_totals(conn, nm_id, location)
+                layered, _ = _finished_layer_totals(conn, nm_id, location, chrt_id)
                 diff = physical - layered
                 if diff > 0:
                     _create_finished_goods_layer(
                         conn, nm_id, article, product, f"opening_{location}",
-                        f"opening:{location}:{nm_id}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                        f"opening:{location}:{nm_id}:{chrt_id}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
                         datetime.now().date().isoformat(), diff, baseline, location,
-                        "Стартовый/досинхронизированный остаток готовой продукции по базовой себестоимости.",
+                        "Стартовый/досинхронизированный остаток готовой продукции по базовой себестоимости.", chrt_id=chrt_id,
                     )
                     result["created"] += 1
                     result["units"] += diff
                 elif diff < 0:
                     if location == "wb" and reconcile_wb:
                         qty = abs(diff)
-                        source_key = f"wb_snapshot:{snapshot}:{nm_id}:{layered}->{physical}"
+                        source_key = f"wb_snapshot:{snapshot}:{nm_id}:{chrt_id}:{layered}->{physical}"
                         if _active_movement(conn, "wb_cost_reconciliation", source_key) is None:
                             cur = conn.execute(
                                 """
@@ -405,19 +430,19 @@ def initialize_finished_goods_fifo(reconcile_wb: bool = False) -> dict[str, Any]
                                     event_key,movement_type,nm_id,supplier_article,product_name,quantity,
                                     ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
                                     source_task_key,reference_movement_id,status,note,created_at,reversed_at,
-                                    goods_cost_rub,goods_unit_cost_rub
-                                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                    goods_cost_rub,goods_unit_cost_rub,chrt_id
+                                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                                 """,
                                 (
                                     _next_event_key(conn, "wb_cost_reconciliation", source_key), "wb_cost_reconciliation",
                                     nm_id, article, product, qty, 0, 0, "WB snapshot",
                                     datetime.now().date().isoformat(), None, source_key, None, "applied",
                                     "Списание стоимости по уменьшению фактического остатка WB; управленческая сверка.",
-                                    datetime.now().isoformat(timespec="seconds"), None, 0.0, 0.0,
+                                    datetime.now().isoformat(timespec="seconds"), None, 0.0, 0.0, chrt_id,
                                 ),
                             )
                             movement_id = int(cur.lastrowid)
-                            cost, _ = _move_finished_goods_fifo(conn, movement_id, nm_id, article, product, qty, "wb", None)
+                            cost, _ = _move_finished_goods_fifo(conn, movement_id, nm_id, article, product, qty, "wb", None, chrt_id)
                             conn.execute(
                                 "UPDATE inventory_movements SET goods_cost_rub=?,goods_unit_cost_rub=?,note=? WHERE id=?",
                                 (cost, round(cost/qty, 4) if qty else 0.0,

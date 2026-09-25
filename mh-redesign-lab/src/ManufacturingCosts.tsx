@@ -4,9 +4,9 @@ import "./ManufacturingCosts.css";
 
 type Material = { material_name: string; unit: string };
 type Layer = Material & { id: number; remaining_quantity: number; unit_cost_rub: number };
-type Product = { nm_id: number; product_name: string; supplier_article?: string };
+type Product = { nm_id: number; chrt_id?: number; variant_label?: string; barcodes?: string; product_name: string; supplier_article?: string };
 type Equipment = { id: number; name: string; resource_unit: "units" | "hours"; resource_quantity: number; consumed_resource: number; rate_per_resource_unit: number };
-type Bom = { id: number; nm_id: number; version: number; note?: string; materials?: Array<{ material_name: string; quantity_per_unit: number; unit: string }>; operations?: Array<{ name: string; rate_per_unit: number }>; packaging_per_unit?: number; other_per_unit?: number };
+type Bom = { id: number; nm_id: number; chrt_id?: number; version: number; note?: string; materials?: Array<{ material_name: string; quantity_per_unit: number; unit: string }>; operations?: Array<{ name: string; rate_per_unit: number }>; packaging_per_unit?: number; other_per_unit?: number };
 type RecordRow = Record<string, unknown>;
 export type ManufacturingCostsData = {
   materials: Material[]; material_layers: Layer[]; products: Product[];
@@ -53,8 +53,20 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function Decimal({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <Field label={label}><input required inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)} /></Field>;
 }
-function ProductSelect({ products, value, onChange, label }: { products: Product[]; value: string; onChange: (value: string) => void; label: string }) {
-  return <Field label={label}><select required value={value} onChange={(event) => onChange(event.target.value)}><option value="">Выберите товар</option>{products.map((item) => <option key={item.nm_id} value={item.nm_id}>{item.product_name || `WB ${item.nm_id}`} · {item.nm_id}</option>)}</select></Field>;
+const productValue = (product: Product, variantAware: boolean) => variantAware && Number(product.chrt_id ?? 0) > 0 ? `${product.nm_id}:${product.chrt_id}` : String(product.nm_id);
+function selectedProduct(products: Product[], value: string, variantAware: boolean) {
+  const [nm, chrt] = value.split(":").map(Number);
+  return products.find((item) => item.nm_id === nm && (!variantAware || Number(item.chrt_id ?? 0) === (chrt || 0)));
+}
+function applicableBoms(boms: Bom[], product?: Product) {
+  if (!product) return [];
+  const exact = boms.filter((item) => item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === Number(product.chrt_id ?? 0));
+  if (exact.length || !Number(product.chrt_id ?? 0)) return exact;
+  return boms.filter((item) => item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === 0);
+}
+function ProductSelect({ products, value, onChange, label, variantAware = false }: { products: Product[]; value: string; onChange: (value: string) => void; label: string; variantAware?: boolean }) {
+  const options = variantAware ? products : [...new Map(products.map((item) => [item.nm_id, item])).values()];
+  return <Field label={label}><select required value={value} onChange={(event) => onChange(event.target.value)}><option value="">Выберите товар</option>{options.map((item) => <option key={`${item.nm_id}:${item.chrt_id ?? 0}`} value={productValue(item, variantAware)}>{item.product_name || `WB ${item.nm_id}`} · {item.nm_id}{variantAware && Number(item.chrt_id ?? 0) > 0 ? ` · ${item.variant_label || `вариант ${item.chrt_id}`}` : ""}</option>)}</select></Field>;
 }
 
 export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: () => void; canEdit?: boolean } = {}) {
@@ -119,10 +131,13 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
     {success && <p role="status" className="mfg-success">{success}</p>}
     {data && <div className="mfg-panels">
       <form onSubmit={(event) => void save(event, "/boms", () => {
+        const product = selectedProduct(data.products, bomProduct, true);
+        if (!product) throw new Error("Выберите товар и вариант.");
         const names = components.map((item) => item.material_name);
         if (new Set(names).size !== names.length) throw new Error("Каждый материал добавьте в состав один раз.");
         return {
-          nm_id: number(bomProduct, "Товар", { positive: true, integer: true }),
+          nm_id: product.nm_id,
+          chrt_id: Number(product.chrt_id ?? 0),
           materials: components.map((item) => { const material = data.materials.find((row) => row.material_name === item.material_name); if (!material) throw new Error("Выберите материал из справочника."); return { material_name: material.material_name, unit: material.unit, quantity_per_unit: number(item.quantity, `Расход ${material.material_name}`, { positive: true }) }; }),
           operations: operations.map((item) => { if (!item.name.trim()) throw new Error("Укажите название операции."); return { name: item.name.trim(), rate_per_unit: number(item.rate, "Расценка", { money: true }), ...(item.equipment_id ? { equipment_id: number(item.equipment_id, "Оборудование", { integer: true, positive: true }), equipment_usage_per_unit: number(item.usage, "Расход ресурса", { positive: true }) } : {}) }; }),
           packaging_per_unit: number(packaging, "Упаковка", { money: true }), other_per_unit: number(other, "Прочие затраты", { money: true }), note: bomNote.trim(),
@@ -131,7 +146,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
         <fieldset disabled={disabled || !permitted("boms") || !data.products.length || !data.materials.length}><legend>Состав изделия — новая версия</legend>
           <p>Расход указывается на одну продаваемую единицу. Сохранение создаёт новую версию; прежние выпуски сохраняют свою себестоимость.</p>
           {!data.products.length || !data.materials.length ? <p>Сначала добавьте товары и материалы в справочники.</p> : null}
-          <ProductSelect label="Товар для состава изделия" products={data.products} value={bomProduct} onChange={setBomProduct} />
+          <ProductSelect label="Товар и вариант для состава изделия" products={data.products} value={bomProduct} onChange={setBomProduct} variantAware />
           {components.map((item, index) => { const material = data.materials.find((row) => row.material_name === item.material_name); return <div className="mfg-row" key={index}>
             <Field label={`Материал ${index + 1}`}><select required value={item.material_name} onChange={(event) => updateComponent(index, { material_name: event.target.value })}><option value="">Выберите материал</option>{data.materials.map((row) => <option key={row.material_name} value={row.material_name}>{row.material_name} ({row.unit})</option>)}</select></Field>
             <Decimal label={`Расход материала ${index + 1}${material ? `, ${material.unit}` : ""}`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
@@ -150,7 +165,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
           <div className="mfg-row"><Decimal label="Упаковка, ₽/ед." value={packaging} onChange={setPackaging} /><Decimal label="Прочие затраты, ₽/ед." value={other} onChange={setOther} /></div>
           <Field label="Примечание к версии"><input value={bomNote} onChange={(event) => setBomNote(event.target.value)} /></Field>
           <button className="primary-button" type="submit">Сохранить новую версию</button>
-          {data.boms.filter((item) => !bomProduct || item.nm_id === Number(bomProduct)).map((item) => <details key={item.id}><summary>WB {item.nm_id} · версия {item.version}{item.note ? ` · ${item.note}` : ""}</summary><ul>{item.materials?.map((material) => <li key={material.material_name}>{material.material_name}: {material.quantity_per_unit} {material.unit}/изделие</li>)}{item.operations?.map((operation, index) => <li key={index}>{operation.name}: {rub(operation.rate_per_unit)}/изделие</li>)}</ul><p>Упаковка: {rub(item.packaging_per_unit)}/изделие. Прочие: {rub(item.other_per_unit)}/изделие.</p></details>)}
+          {data.boms.filter((item) => { const product = selectedProduct(data.products, bomProduct, true); return !product || (item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === Number(product.chrt_id ?? 0)); }).map((item) => <details key={item.id}><summary>WB {item.nm_id}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · версия {item.version}{item.note ? ` · ${item.note}` : ""}</summary><ul>{item.materials?.map((material) => <li key={material.material_name}>{material.material_name}: {material.quantity_per_unit} {material.unit}/изделие</li>)}{item.operations?.map((operation, index) => <li key={index}>{operation.name}: {rub(operation.rate_per_unit)}/изделие</li>)}</ul><p>Упаковка: {rub(item.packaging_per_unit)}/изделие. Прочие: {rub(item.other_per_unit)}/изделие.</p></details>)}
         </fieldset>
       </form>
 
@@ -174,11 +189,13 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
 
       <form onSubmit={(event) => void save(event, "/piecework", () => {
         if (!labor.source.trim() || !labor.operation.trim() || !labor.worker.trim()) throw new Error("Укажите задание, операцию и исполнителя.");
-        return { source_key: labor.source.trim(), nm_id: number(labor.product, "Товар", { positive: true, integer: true }), operation_name: labor.operation.trim(), worker: labor.worker.trim(), quantity: number(labor.quantity, "Объём работы", { positive: true }), rate_per_unit: number(labor.rate, "Расценка работы", { money: true }), work_date: labor.date, event_key: labor.key };
+        const product = selectedProduct(data.products, labor.product, true);
+        if (!product) throw new Error("Выберите товар и вариант.");
+        return { source_key: labor.source.trim(), nm_id: product.nm_id, chrt_id: Number(product.chrt_id ?? 0), operation_name: labor.operation.trim(), worker: labor.worker.trim(), quantity: number(labor.quantity, "Объём работы", { positive: true }), rate_per_unit: number(labor.rate, "Расценка работы", { money: true }), work_date: labor.date, event_key: labor.key };
       }, "Сдельная работа сохранена и будет включена в выпуск этого задания.", () => setLabor((item) => ({ ...item, quantity: "", key: eventKey() })))}>
         <fieldset disabled={disabled || !permitted("piecework") || !data.products.length}><legend>Сдельная работа по заданию</legend><p>Внесите все выполненные операции до выпуска. Код задания должен совпадать с кодом в форме выпуска ниже.</p>
           <Field label="Код задания для работы"><input required value={labor.source} onChange={(event) => setLabor({ ...labor, source: event.target.value })} /></Field>
-          <ProductSelect label="Товар для сдельной работы" products={data.products} value={labor.product} onChange={(product) => setLabor({ ...labor, product })} />
+          <ProductSelect label="Товар и вариант для сдельной работы" products={data.products} value={labor.product} onChange={(product) => setLabor({ ...labor, product })} variantAware />
           <Field label="Название выполненной операции"><input required value={labor.operation} onChange={(event) => setLabor({ ...labor, operation: event.target.value })} /></Field>
           <Field label="Исполнитель"><input required value={labor.worker} onChange={(event) => setLabor({ ...labor, worker: event.target.value })} /></Field>
           <Decimal label="Объём выполненной работы, ед." value={labor.quantity} onChange={(quantity) => setLabor({ ...labor, quantity })} />
@@ -206,16 +223,16 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
       </form>
 
       <form onSubmit={(event) => void save(event, "/releases", () => {
-        const product = data.products.find((item) => String(item.nm_id) === release.product);
-        const bom = data.boms.find((item) => String(item.id) === release.bom && item.nm_id === product?.nm_id);
+        const product = selectedProduct(data.products, release.product, true);
+        const bom = applicableBoms(data.boms, product).find((item) => String(item.id) === release.bom);
         if (!product || !bom) throw new Error("Выберите товар и его версию состава.");
         if (!release.source.trim()) throw new Error("Укажите код задания выпуска.");
-        return { source_key: release.source.trim(), nm_id: product.nm_id, quantity: number(release.quantity, "Количество выпуска", { positive: true, integer: true }), production_date: release.date, bom_version_id: bom.id, product_name: product.product_name, supplier_article: product.supplier_article ?? "" };
+        return { source_key: release.source.trim(), nm_id: product.nm_id, chrt_id: Number(product.chrt_id ?? 0), quantity: number(release.quantity, "Количество выпуска", { positive: true, integer: true }), production_date: release.date, bom_version_id: bom.id, product_name: product.product_name, supplier_article: product.supplier_article ?? "" };
       }, "Выпуск проведён: материалы и производственные затраты учтены.", () => setRelease((item) => ({ ...item, source: "", quantity: "" })))}>
         <fieldset disabled={disabled || !permitted("releases") || !data.boms.length}><legend>Выпуск по составу изделия</legend><p>Выпуск списывает материалы FIFO и фиксирует работу, упаковку и износ. После проведения сдельные операции в это задание добавить нельзя.</p><p>Повторная отправка тех же данных с тем же кодом задания не создаёт второй выпуск. Для нового или исправленного выпуска после отмены используйте новый код задания.</p>
           <Field label="Код задания выпуска"><input required value={release.source} onChange={(event) => setRelease({ ...release, source: event.target.value })} /></Field>
-          <ProductSelect label="Товар для выпуска" products={data.products} value={release.product} onChange={(product) => setRelease({ ...release, product, bom: "" })} />
-          <Field label="Версия состава для выпуска"><select required value={release.bom} onChange={(event) => setRelease({ ...release, bom: event.target.value })}><option value="">Выберите версию</option>{data.boms.filter((item) => item.nm_id === Number(release.product)).map((item) => <option key={item.id} value={item.id}>Версия {item.version}{item.note ? ` · ${item.note}` : ""}</option>)}</select></Field>
+          <ProductSelect label="Товар и вариант для выпуска" products={data.products} value={release.product} onChange={(product) => setRelease({ ...release, product, bom: "" })} variantAware />
+          <Field label="Версия состава для выпуска"><select required value={release.bom} onChange={(event) => setRelease({ ...release, bom: event.target.value })}><option value="">Выберите версию</option>{applicableBoms(data.boms, selectedProduct(data.products, release.product, true)).map((item) => <option key={item.id} value={item.id}>{Number(item.chrt_id ?? 0) === 0 && selectedProduct(data.products, release.product, true)?.chrt_id ? "Общий состав · " : ""}Версия {item.version}{item.note ? ` · ${item.note}` : ""}</option>)}</select></Field>
           <Decimal label="Количество выпуска, целые ед." value={release.quantity} onChange={(quantity) => setRelease({ ...release, quantity })} />
           <Field label="Дата выпуска"><input required type="date" value={release.date} onChange={(event) => setRelease({ ...release, date: event.target.value })} /></Field>
           <button className="primary-button" type="submit">Провести выпуск</button>
@@ -224,7 +241,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
       </form>
       <div className="mfg-journal"><h3>Журнал производственного учёта</h3><p>Сдельных записей: {data.piecework.length}. Списаний брака: {data.defects.length}. Выпусков: {data.releases.length}.</p><p>Отмена восстанавливает учётные остатки. Уже использованную партию отменить нельзя; сервер проверяет это перед действием.</p>
         <h4>Выпуски — последние 10</h4>{!data.releases.length && <p>Выпусков пока нет.</p>}
-        {data.releases.slice(0, 10).map((item, index) => <details key={String(item.id ?? index)}><summary>{String(item.production_date ?? "")} · {String(item.source_key ?? "")} · {String(item.quantity ?? "")} ед. · {rub(item.total_cost_rub)}{item.status === "reversed" ? " · Отменён" : ""}</summary><p>На единицу: {rub(item.unit_cost_rub)}. Материалы: {rub(item.material_cost_rub)}. Работа: {rub(item.labor_cost_rub)}. Износ: {rub(item.depreciation_cost_rub)}. Упаковка: {rub(item.packaging_cost_rub)}. Прочие: {rub(item.other_cost_rub)}.</p>{item.movement_id != null && <button type="button" disabled={disabled || !permitted("reverse") || item.status === "reversed"} onClick={(event) => void save(event, `/movements/${Number(item.movement_id)}/reverse`, () => ({}), "Выпуск отменён. Для исправленного выпуска используйте новый код задания.", () => {})}>Отменить выпуск {String(item.source_key ?? item.id)}</button>}</details>)}
+        {data.releases.slice(0, 10).map((item, index) => <details key={String(item.id ?? index)}><summary>{String(item.production_date ?? "")} · {String(item.source_key ?? "")} · WB {String(item.nm_id ?? "")}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · {String(item.quantity ?? "")} ед. · {rub(item.total_cost_rub)}{item.status === "reversed" ? " · Отменён" : ""}</summary><p>На единицу: {rub(item.unit_cost_rub)}. Материалы: {rub(item.material_cost_rub)}. Работа: {rub(item.labor_cost_rub)}. Износ: {rub(item.depreciation_cost_rub)}. Упаковка: {rub(item.packaging_cost_rub)}. Прочие: {rub(item.other_cost_rub)}.</p>{item.movement_id != null && <button type="button" disabled={disabled || !permitted("reverse") || item.status === "reversed"} onClick={(event) => void save(event, `/movements/${Number(item.movement_id)}/reverse`, () => ({}), "Выпуск отменён. Для исправленного выпуска используйте новый код задания.", () => {})}>Отменить выпуск {String(item.source_key ?? item.id)}</button>}</details>)}
         <h4>Сдельная работа — последние 10</h4>{!data.piecework.length && <p>Сдельных записей пока нет.</p>}
         {data.piecework.slice(0, 10).map((item, index) => <p key={String(item.id ?? index)}>{String(item.work_date ?? "")} · {String(item.source_key ?? "")} · {String(item.worker ?? "")} · {String(item.operation_name ?? "")} · {String(item.quantity ?? "")} × {rub(item.rate_per_unit)} = {rub(Number(item.quantity) * Number(item.rate_per_unit))} · {item.release_movement_id ? "Включено в выпуск" : "Ожидает выпуска"}</p>)}
         <h4>Брак — последние 10</h4>{!data.defects.length && <p>Списаний брака пока нет.</p>}

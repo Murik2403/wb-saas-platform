@@ -123,6 +123,31 @@ def test_bom_version_readback_preserves_previous_specification(client):
     assert next(row for row in rows if row["id"] == second["id"])["materials"][0]["quantity_per_unit"] == 2.5
 
 
+def test_workspace_exposes_wb_size_variants_and_keeps_legacy_fallback(client):
+    with core.connect() as conn:
+        conn.execute("UPDATE products_catalog SET raw_json=? WHERE nm_id=123", ('{"sizes":[{"chrtID":501,"techSize":"S","skus":["111"]},{"chrtID":502,"techSize":"M","skus":["222"]}]}',))
+    products = client.get(PREFIX).json()["products"]
+    assert [(item["chrt_id"], item["variant_label"], item["barcodes"]) for item in products] == [(501, "S", "111"), (502, "M", "222")]
+
+
+def test_variant_boms_and_release_keep_variant_identity(client):
+    small = post(client, "/boms", bom_payload(chrt_id=501, note="Размер S"))
+    medium = post(client, "/boms", bom_payload(chrt_id=502, note="Размер M", operations=[{"name": "Пошив", "rate_per_unit": 3}]))
+    legacy = post(client, "/boms", bom_payload(note="Общий состав"))
+    assert (small["chrt_id"], small["version"]) == (501, 1)
+    assert (medium["chrt_id"], medium["version"]) == (502, 1)
+    assert legacy["chrt_id"] == 0
+    post(client, "/piecework", {"source_key": "variant-job", "nm_id": 123, "chrt_id": 502, "operation_name": "Пошив", "worker": "Мария", "quantity": 1, "rate_per_unit": 10, "work_date": "2026-09-23", "event_key": "variant-labor"})
+    release = post(client, "/releases", {"nm_id": 123, "chrt_id": 502, "quantity": 1, "production_date": "2026-09-23", "source_key": "variant-job", "bom_version_id": medium["id"]})
+    assert release["chrt_id"] == 502
+    assert release["labor_cost_rub"] == 10
+    duplicate_other_variant = client.post(PREFIX + "/releases", json={"nm_id": 123, "chrt_id": 501, "quantity": 1, "production_date": "2026-09-23", "source_key": "variant-job", "bom_version_id": small["id"]})
+    assert duplicate_other_variant.status_code == 422
+    assert "другого варианта" in duplicate_other_variant.json()["detail"]
+    mismatched = client.post(PREFIX + "/releases", json={"nm_id": 123, "chrt_id": 502, "quantity": 1, "production_date": "2026-09-23", "source_key": "bad-variant-job", "bom_version_id": small["id"]})
+    assert mismatched.status_code == 422
+
+
 def test_release_and_defect_reversal_restore_inventory_without_reusing_job_key(client):
     bom = post(client, "/boms", bom_payload())
     body = {"nm_id": 123, "quantity": 3, "production_date": "2026-09-23", "source_key": "reverse-job", "bom_version_id": bom["id"]}

@@ -47,11 +47,25 @@ def post_dispatches(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
             expected = _movement_date_text(task["expected_arrival_date"])
             inbound_delta = 0 if route == "FBS" else qty
             status = "closed" if route == "FBS" else "open"
+            chrt_id = max(0, int(task["chrt_id"] or 0)) if "chrt_id" in task.keys() else 0
+            if chrt_id == 0:
+                variant_stock = conn.execute(
+                    """SELECT 1 FROM finished_goods_cost_layers
+                         WHERE nm_id=? AND chrt_id>0 AND status<>'reversed'
+                           AND (ready_units>0 OR inbound_units>0 OR wb_units>0) LIMIT 1""",
+                    (int(task["nm_id"] or 0),),
+                ).fetchone()
+                if variant_stock is not None:
+                    result["errors"].append(
+                        f"{task['supplier_article']}: для отгрузки нужен вариант товара (chrt_id); есть размерные FIFO-слои."
+                    )
+                    continue
             conn.execute("SAVEPOINT post_dispatch_task")
             try:
                 _ensure_finished_goods_capacity(
                     conn, int(task["nm_id"] or 0), str(task["supplier_article"] or ""),
                     str(task["product_name"] or ""), "ready", qty,
+                    chrt_id=chrt_id,
                 )
                 _apply_pipeline_delta(
                     conn, int(task["nm_id"] or 0), str(task["supplier_article"] or ""),
@@ -63,8 +77,8 @@ def post_dispatches(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
                         event_key,movement_type,nm_id,supplier_article,product_name,quantity,
                         ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
                         source_task_key,reference_movement_id,status,note,created_at,reversed_at,
-                        goods_cost_rub,goods_unit_cost_rub
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        goods_cost_rub,goods_unit_cost_rub,chrt_id
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         _next_event_key(conn, "dispatch", source_key), "dispatch",
@@ -72,14 +86,14 @@ def post_dispatches(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
                         str(task["product_name"] or ""), qty, -qty, inbound_delta, route,
                         dispatch_date, expected, source_key, None, status,
                         "Проведение фактической отгрузки",
-                        datetime.now().isoformat(timespec="seconds"), None, 0.0, 0.0,
+                        datetime.now().isoformat(timespec="seconds"), None, 0.0, 0.0, chrt_id,
                     ),
                 )
                 movement_id = int(cur.lastrowid)
                 destination = None if route == "FBS" else "inbound"
                 goods_cost, allocations = _move_finished_goods_fifo(
                     conn, movement_id, int(task["nm_id"] or 0), str(task["supplier_article"] or ""),
-                    str(task["product_name"] or ""), qty, "ready", destination,
+                    str(task["product_name"] or ""), qty, "ready", destination, chrt_id=chrt_id,
                 )
                 note = ", ".join(f"слой #{int(a['layer_id'])}: {int(a['units'])} ед." for a in allocations)
                 conn.execute(
@@ -132,6 +146,7 @@ def post_wb_receipts(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
                 result["skipped"] += 1
                 continue
             qty = max(0, int(dispatch["quantity"] or task["actual_units"] or 0))
+            chrt_id = max(0, int(dispatch["chrt_id"] or 0)) if "chrt_id" in dispatch.keys() else 0
             conn.execute("SAVEPOINT post_wb_receipt_task")
             try:
                 _apply_pipeline_delta(
@@ -144,8 +159,8 @@ def post_wb_receipts(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
                         event_key,movement_type,nm_id,supplier_article,product_name,quantity,
                         ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
                         source_task_key,reference_movement_id,status,note,created_at,reversed_at,
-                        goods_cost_rub,goods_unit_cost_rub
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        goods_cost_rub,goods_unit_cost_rub,chrt_id
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         _next_event_key(conn, "wb_receipt", source_key), "wb_receipt",
@@ -154,7 +169,7 @@ def post_wb_receipts(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
                         _movement_date_text(task["expected_arrival_date"]) or datetime.now().date().isoformat(),
                         _movement_date_text(task["expected_arrival_date"]), source_key, int(dispatch["id"]),
                         "applied", "Поставка принята WB", datetime.now().isoformat(timespec="seconds"), None,
-                        0.0, 0.0,
+                        0.0, 0.0, chrt_id,
                     ),
                 )
                 receipt_id = int(cur.lastrowid)
@@ -271,7 +286,8 @@ def undo_inventory_movement(movement_id: int) -> dict[str, Any]:
                     material_key,material_name,material_delta,
                     procurement_order_id,procurement_item_id,procurement_quantity,
                     material_cost_rub,unit_cost_rub,goods_cost_rub,goods_unit_cost_rub
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ,chrt_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     f"reversal|{int(movement['id'])}", "reversal", int(movement["nm_id"] or 0),
@@ -289,6 +305,7 @@ def undo_inventory_movement(movement_id: int) -> dict[str, Any]:
                     -float(movement["unit_cost_rub"] or 0) if "unit_cost_rub" in movement.keys() else 0.0,
                     -float(movement["goods_cost_rub"] or 0) if "goods_cost_rub" in movement.keys() else 0.0,
                     -float(movement["goods_unit_cost_rub"] or 0) if "goods_unit_cost_rub" in movement.keys() else 0.0,
+                    max(0, int(movement["chrt_id"] or 0)) if "chrt_id" in movement.keys() else 0,
                 ),
             )
             if procurement_order_id > 0:

@@ -19,6 +19,31 @@ from .base import DbTestCase
 
 
 class ProcurementReceiptCreatesMaterialLayerTests(DbTestCase):
+    def test_product_receipt_keeps_variant_on_item_movement_and_fifo_layer(self) -> None:
+        order_id = procurement.create_procurement_order(
+            procurement_type="Товар", supplier_name="Supplier", status="Запланировано",
+            order_date="2026-01-01", payment_due_date=None, expected_date="2026-01-10", note="",
+            items=pd.DataFrame([{
+                "nm_id": 981235, "chrt_id": 321, "supplier_article": "SKU-321",
+                "product_name": "Variant product", "quantity": 2, "unit_price": 75,
+            }]),
+        )
+        item = procurement.read_procurement_items(order_id).iloc[0]
+        self.assertEqual(int(item["chrt_id"]), 321)
+        result = procurement.post_procurement_receipt(
+            order_id, pd.DataFrame([{"item_id": int(item["id"]), "receive_now": 2}])
+        )
+        self.assertEqual(result["errors"], [])
+        with connect() as conn:
+            movement = conn.execute(
+                "SELECT chrt_id FROM inventory_movements WHERE movement_type='procurement_product_receipt'"
+            ).fetchone()
+            layer = conn.execute(
+                "SELECT chrt_id,ready_units,unit_cost_rub FROM finished_goods_cost_layers WHERE nm_id=981235"
+            ).fetchone()
+        self.assertEqual(movement["chrt_id"], 321)
+        self.assertEqual(tuple(layer), (321, 2, 75.0))
+
     def test_receipt_landed_cost_creates_expected_fifo_layer(self) -> None:
         order_id = procurement.create_procurement_order(
             procurement_type="Сырьё",

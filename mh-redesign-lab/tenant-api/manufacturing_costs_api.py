@@ -29,6 +29,7 @@ class Operation(Input):
 
 class Bom(Input):
     nm_id: int = Field(gt=0)
+    chrt_id: int = Field(default=0, ge=0)
     materials: list[Material] = Field(min_length=1, max_length=100)
     operations: list[Operation] = Field(default_factory=list, max_length=100)
     packaging_per_unit: FiniteFloat = Field(default=0, ge=0)
@@ -47,6 +48,7 @@ class Equipment(Input):
 class Piecework(Input):
     source_key: str = Field(min_length=1, max_length=200)
     nm_id: int = Field(gt=0)
+    chrt_id: int = Field(default=0, ge=0)
     operation_name: str = Field(min_length=1, max_length=250)
     worker: str = Field(min_length=1, max_length=250)
     quantity: FiniteFloat = Field(gt=0)
@@ -65,6 +67,7 @@ class Defect(Input):
 
 class Release(Input):
     nm_id: int = Field(gt=0)
+    chrt_id: int = Field(default=0, ge=0)
     quantity: int = Field(gt=0)
     production_date: date
     source_key: str = Field(min_length=1, max_length=200)
@@ -113,8 +116,41 @@ def workspace(request: Request):
     allowed_actions = [name for name in ["boms", "equipment", "piecework", "defects", "releases"] if write_allowed(role, "POST", f"/api/v1/manufacturing-costs/{name}")]
     if role in {"owner", "manager"}:
         allowed_actions.append("reverse")
+    import json
     catalog = read_table("products_catalog")
-    products = catalog[["nm_id", "product_name"]].drop_duplicates("nm_id").to_dict("records") if not catalog.empty and {"nm_id", "product_name"}.issubset(catalog.columns) else []
+    products = []
+    if not catalog.empty and {"nm_id", "product_name"}.issubset(catalog.columns):
+        for row in catalog.to_dict("records"):
+            try:
+                raw = json.loads(row.get("raw_json") or "{}")
+            except (TypeError, ValueError):
+                raw = {}
+            if not isinstance(raw, dict):
+                raw = {}
+            sizes = raw.get("sizes")
+            variants = []
+            if isinstance(sizes, list):
+                for size in sizes:
+                    if not isinstance(size, dict):
+                        continue
+                    try:
+                        chrt_id = int(size.get("chrtID", size.get("chrtId", size.get("chrt_id", 0))) or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if chrt_id <= 0:
+                        continue
+                    sku_values = size.get("skus") if isinstance(size.get("skus"), list) else []
+                    barcode = ", ".join(str(value) for value in sku_values if value)
+                    label = str(size.get("techSize") or size.get("wbSize") or "").strip()
+                    variants.append({"chrt_id": chrt_id, "variant_label": label, "barcodes": barcode})
+            common = {"nm_id": int(row["nm_id"]), "product_name": str(row.get("product_name") or ""),
+                      "supplier_article": str(row.get("supplier_article") or raw.get("vendorCode") or "")}
+            if variants:
+                for variant in variants:
+                    products.append({**common, **variant})
+            else:
+                products.append({**common, "chrt_id": 0, "variant_label": "", "barcodes": ""})
+        products = list({(p["nm_id"], p["chrt_id"]): p for p in products}.values())
     return json_safe({"allowed_actions": allowed_actions, "materials": store.list_material_catalog(), "material_layers": store.list_material_layers(), "products": products,
                       "boms": store.list_bom_versions(), "equipment": store.list_equipment(), "piecework": store.list_piecework(),
                       "defects": store.list_material_defects(), "releases": store.list_manufacturing_releases()})

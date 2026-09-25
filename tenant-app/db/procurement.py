@@ -254,12 +254,13 @@ def create_procurement_order(
                 if supplier_price <= 0 and delivery_foreign <= 0 and extra_rub <= 0 and legacy_price > 0:
                     supplier_price, item_rate = legacy_price, 1.0
                 rows.append((
-                    order_id, "Сырьё", material_name.casefold(), material_name, 0, "", "",
+                    order_id, "Сырьё", material_name.casefold(), material_name, 0, "", "", 0,
                     quantity, unit, roll_length, supplier_price, item_rate, delivery_foreign, extra_rub, landed_price,
                     0.0, 0.0, str(row.get("note", "") or ""), now, now,
                 ))
             else:
                 nm_id = _int(row.get("nm_id"))
+                chrt_id = max(0, _int(row.get("chrt_id")))
                 supplier_article = str(row.get("supplier_article", "") or "").strip()
                 product_name = str(row.get("product_name", "") or "").strip()
                 if nm_id <= 0 and not supplier_article:
@@ -273,7 +274,7 @@ def create_procurement_order(
                 if supplier_price <= 0 and delivery_foreign <= 0 and extra_rub <= 0 and legacy_price > 0:
                     supplier_price, item_rate = legacy_price, 1.0
                 rows.append((
-                    order_id, "Товар", "", "", nm_id, supplier_article, product_name,
+                    order_id, "Товар", "", "", nm_id, supplier_article, product_name, chrt_id,
                     quantity, "шт", 0.0, supplier_price, item_rate, delivery_foreign, extra_rub, landed_price,
                     0.0, 0.0, str(row.get("note", "") or ""), now, now,
                 ))
@@ -283,9 +284,9 @@ def create_procurement_order(
             """
             INSERT INTO procurement_items(
                 order_id,item_type,material_key,material_name,nm_id,supplier_article,product_name,
-                quantity,unit,roll_length,supplier_unit_price,exchange_rate,delivery_unit_foreign,extra_unit_rub,
+                chrt_id,quantity,unit,roll_length,supplier_unit_price,exchange_rate,delivery_unit_foreign,extra_unit_rub,
                 unit_price,received_quantity,posted_quantity,note,created_at,updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             rows,
         )
@@ -697,11 +698,11 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     """
                     INSERT INTO inventory_movements(
                         event_key,movement_type,nm_id,supplier_article,product_name,quantity,
-                        ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
-                        source_task_key,reference_movement_id,status,note,created_at,reversed_at,
-                        material_key,material_name,material_delta,procurement_order_id,procurement_item_id,
-                        procurement_quantity,material_cost_rub,unit_cost_rub
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
+                    source_task_key,reference_movement_id,status,note,created_at,reversed_at,
+                    material_key,material_name,material_delta,procurement_order_id,procurement_item_id,chrt_id,
+                    procurement_quantity,material_cost_rub,unit_cost_rub
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_key, movement_type, int(item["nm_id"] or 0),
@@ -710,7 +711,7 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                         datetime.now().date().isoformat(), None, source_key, None, "applied",
                         f"Приёмка закупки {order['order_number']}", now, None,
                         str(item["material_key"] or ""), str(item["material_name"] or ""), material_delta,
-                        int(order_id), int(item_id), float(qty), 0.0, 0.0,
+                        int(order_id), int(item_id), int(item["chrt_id"] or 0), float(qty), 0.0, 0.0,
                     ),
                 )
                 movement_id = int(movement_cur.lastrowid)
@@ -724,6 +725,7 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                         str(item["product_name"] or ""), "procurement_product", f"movement:{movement_id}",
                         datetime.now().date().isoformat(), ready_delta, landed_unit, "ready",
                         f"Закупка {order['order_number']}; позиция #{int(item_id)}; фактическая полная стоимость.",
+                        chrt_id=int(item["chrt_id"] or 0),
                     )
                     receipt_amount = round(ready_delta * landed_unit, 2)
                     conn.execute(

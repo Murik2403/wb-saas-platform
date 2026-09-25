@@ -17,7 +17,7 @@ async function open() { render(<ManufacturingCosts />); await screen.findByText(
 function writes() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"); }
 async function fillLabor() {
   await userEvent.type(screen.getByLabelText("Код задания для работы"), "job-1");
-  await userEvent.selectOptions(screen.getByLabelText("Товар для сдельной работы"), "123");
+  await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для сдельной работы"), "123");
   await userEvent.type(screen.getByLabelText("Название выполненной операции"), "Пошив");
   await userEvent.type(screen.getByLabelText("Исполнитель"), "Мария");
   await userEvent.type(screen.getByLabelText("Объём выполненной работы, ед."), "3");
@@ -33,7 +33,7 @@ describe("manufacturing cost input", () => {
   });
   it("uses catalogue material units and submits a version with decimal costs", async () => {
     await open();
-    await userEvent.selectOptions(screen.getByLabelText("Товар для состава изделия"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123");
     await userEvent.selectOptions(screen.getByLabelText("Материал 1"), "Ткань");
     await userEvent.clear(screen.getByLabelText("Расход материала 1, м²"));
     await userEvent.type(screen.getByLabelText("Расход материала 1, м²"), "0,25");
@@ -44,6 +44,33 @@ describe("manufacturing cost input", () => {
     expect(writes()[0][0]).toBe("/api/v1/manufacturing-costs/boms");
     expect(JSON.parse(writes()[0][1]?.body as string)).toMatchObject({ nm_id: 123, packaging_per_unit: 12.5, materials: [{ material_name: "Ткань", unit: "м²", quantity_per_unit: 0.25 }] });
   });
+  it("selects the WB size variant for BOM and release requests", async () => {
+    const variants: ManufacturingCostsData = {
+      ...data,
+      products: [
+        { nm_id: 123, chrt_id: 501, variant_label: "S", product_name: "Салфетки" },
+        { nm_id: 123, chrt_id: 502, variant_label: "M", product_name: "Салфетки" },
+      ],
+      boms: [{ id: 11, nm_id: 123, chrt_id: 501, version: 1 }, { id: 12, nm_id: 123, chrt_id: 502, version: 1 }],
+    };
+    fetchMock.mockImplementation(async () => json(variants));
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123:502");
+    await userEvent.selectOptions(screen.getByLabelText("Материал 1"), "Ткань");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить новую версию" }));
+    await screen.findByText("Новая версия состава изделия сохранена.");
+    expect(JSON.parse(writes()[0][1]?.body as string)).toMatchObject({ nm_id: 123, chrt_id: 502 });
+
+    await userEvent.type(screen.getByLabelText("Код задания выпуска"), "job-size-m");
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для выпуска"), "123:502");
+    const bomSelect = screen.getByLabelText("Версия состава для выпуска");
+    expect(bomSelect.querySelectorAll("option")).toHaveLength(2);
+    await userEvent.selectOptions(bomSelect, "12");
+    await userEvent.type(screen.getByLabelText("Количество выпуска, целые ед."), "1");
+    await userEvent.click(screen.getByRole("button", { name: "Провести выпуск" }));
+    await screen.findByText("Выпуск проведён: материалы и производственные затраты учтены.");
+    expect(JSON.parse(writes()[1][1]?.body as string)).toMatchObject({ nm_id: 123, chrt_id: 502, bom_version_id: 12 });
+  });
   it("keeps failed labor input and idempotency key for retry and prevents concurrent submits", async () => {
     await open(); await fillLabor();
     let rejectWrite!: (reason: Error) => void;
@@ -53,6 +80,7 @@ describe("manufacturing cost input", () => {
     expect(writes()).toHaveLength(1); expect(button).toBeDisabled();
     const first = JSON.parse(writes()[0][1]?.body as string);
     expect(first.rate_per_unit).toBe(125.5);
+    expect(first.chrt_id).toBe(0);
     rejectWrite(new Error("Связь прервана"));
     await screen.findByRole("alert");
     expect(screen.getByLabelText("Сдельная расценка, ₽/ед.")).toHaveValue("125,50");
@@ -93,7 +121,7 @@ describe("manufacturing cost input", () => {
     const onChanged = vi.fn(); render(<ManufacturingCosts onChanged={onChanged} />);
     await screen.findByText("Состав изделия — новая версия");
     await userEvent.type(screen.getByLabelText("Код задания выпуска"), "job-2");
-    await userEvent.selectOptions(screen.getByLabelText("Товар для выпуска"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для выпуска"), "123");
     await userEvent.selectOptions(screen.getByLabelText("Версия состава для выпуска"), "1");
     await userEvent.type(screen.getByLabelText("Количество выпуска, целые ед."), "1,5");
     await userEvent.click(screen.getByRole("button", { name: "Провести выпуск" }));
@@ -120,7 +148,7 @@ describe("manufacturing cost input", () => {
   it("shows a used-batch reversal error and preserves the journal record", async () => {
     const withRelease = { ...data, allowed_actions: ["reverse"], releases: [{ id: 1, movement_id: 22, source_key: "job-used", status: "applied", quantity: 3, total_cost_rub: 458.25 }] };
     fetchMock.mockImplementation(async () => json(withRelease)); await open();
-    fireEvent.click(screen.getByText(/job-used · 3 ед./));
+    fireEvent.click(screen.getByText(/job-used · WB/));
     fetchMock.mockImplementationOnce(async () => json({ detail: "Партия уже использована" }, 422));
     await userEvent.click(screen.getByRole("button", { name: "Отменить выпуск job-used" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Партия уже использована");

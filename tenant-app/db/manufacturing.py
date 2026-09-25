@@ -20,23 +20,24 @@ def init_manufacturing_schema(conn: sqlite3.Connection) -> None:
     # execute individually: executescript would commit the caller's migration.
     statements = [
         """CREATE TABLE IF NOT EXISTS manufacturing_boms (
-            id INTEGER PRIMARY KEY, nm_id INTEGER NOT NULL, version INTEGER NOT NULL,
+            id INTEGER PRIMARY KEY, nm_id INTEGER NOT NULL, chrt_id INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL,
             materials_json TEXT NOT NULL, operations_json TEXT NOT NULL,
             packaging_per_unit REAL NOT NULL, other_per_unit REAL NOT NULL,
-            note TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(nm_id,version))""",
+            note TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(nm_id,chrt_id,version))""",
         """CREATE TABLE IF NOT EXISTS manufacturing_equipment (
             id INTEGER PRIMARY KEY, name TEXT NOT NULL, acquisition_cost_rub REAL NOT NULL,
             salvage_value_rub REAL NOT NULL, resource_quantity REAL NOT NULL,
             resource_unit TEXT NOT NULL, consumed_resource REAL NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS manufacturing_piecework (
-            id INTEGER PRIMARY KEY, source_key TEXT NOT NULL, nm_id INTEGER NOT NULL,
+            id INTEGER PRIMARY KEY, source_key TEXT NOT NULL, nm_id INTEGER NOT NULL, chrt_id INTEGER NOT NULL DEFAULT 0,
             operation_name TEXT NOT NULL, worker TEXT NOT NULL, quantity REAL NOT NULL,
             rate_per_unit REAL NOT NULL, work_date TEXT NOT NULL, event_key TEXT NOT NULL UNIQUE,
             request_hash TEXT NOT NULL, release_movement_id INTEGER, created_at TEXT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS manufacturing_releases (
             id INTEGER PRIMARY KEY, movement_id INTEGER NOT NULL UNIQUE,
             source_key TEXT NOT NULL UNIQUE, request_hash TEXT NOT NULL, nm_id INTEGER NOT NULL,
+            chrt_id INTEGER NOT NULL DEFAULT 0,
             quantity INTEGER NOT NULL, production_date TEXT NOT NULL, bom_version_id INTEGER NOT NULL,
             materials_json TEXT NOT NULL, labor_json TEXT NOT NULL, equipment_json TEXT NOT NULL,
             material_cost_rub REAL NOT NULL, labor_cost_rub REAL NOT NULL,
@@ -55,6 +56,30 @@ def init_manufacturing_schema(conn: sqlite3.Connection) -> None:
     ]
     for statement in statements:
         conn.execute(statement)
+
+    # Upgrade the NM-only BOM table while preserving old versions as the
+    # legacy/default variant (chrt_id=0). Rebuilding is required because its
+    # original UNIQUE(nm_id,version) constraint prevents per-variant versions.
+    bom_columns = {row["name"] for row in conn.execute("PRAGMA table_info(manufacturing_boms)")}
+    if "chrt_id" not in bom_columns:
+        conn.execute("ALTER TABLE manufacturing_boms RENAME TO manufacturing_boms_legacy")
+        conn.execute("""CREATE TABLE manufacturing_boms (
+            id INTEGER PRIMARY KEY, nm_id INTEGER NOT NULL, chrt_id INTEGER NOT NULL DEFAULT 0,
+            version INTEGER NOT NULL, materials_json TEXT NOT NULL, operations_json TEXT NOT NULL,
+            packaging_per_unit REAL NOT NULL, other_per_unit REAL NOT NULL,
+            note TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(nm_id,chrt_id,version))""")
+        conn.execute("""INSERT INTO manufacturing_boms(
+            id,nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,
+            other_per_unit,note,created_at)
+            SELECT id,nm_id,0,version,materials_json,operations_json,packaging_per_unit,
+                   other_per_unit,note,created_at FROM manufacturing_boms_legacy""")
+        conn.execute("DROP TABLE manufacturing_boms_legacy")
+    release_columns = {row["name"] for row in conn.execute("PRAGMA table_info(manufacturing_releases)")}
+    if "chrt_id" not in release_columns:
+        conn.execute("ALTER TABLE manufacturing_releases ADD COLUMN chrt_id INTEGER NOT NULL DEFAULT 0")
+    piecework_columns = {row["name"] for row in conn.execute("PRAGMA table_info(manufacturing_piecework)")}
+    if "chrt_id" not in piecework_columns:
+        conn.execute("ALTER TABLE manufacturing_piecework ADD COLUMN chrt_id INTEGER NOT NULL DEFAULT 0")
 
 
 def _number(value: Any, name: str, *, positive: bool = False) -> float:
@@ -76,6 +101,19 @@ def _integer(value: Any, name: str) -> int:
     if not number.is_integer():
         raise ValueError(f"{name}: требуется целое число")
     return int(number)
+
+
+def _variant_id(value: Any) -> int:
+    """WB chrtID may be zero only for the explicitly legacy nmID-level row."""
+    if isinstance(value, bool):
+        raise ValueError("Вариант: требуется целое неотрицательное число")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Вариант: требуется целое неотрицательное число") from exc
+    if number < 0 or str(value).strip() not in {str(number), f"{number}.0"}:
+        raise ValueError("Вариант: требуется целое неотрицательное число")
+    return number
 
 
 def _text(value: Any, name: str) -> str:
@@ -149,8 +187,10 @@ def list_equipment() -> list[dict]:
 
 
 def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] | None = None,
-                     packaging_per_unit: float = 0, other_per_unit: float = 0, note: str = "") -> dict:
+                     packaging_per_unit: float = 0, other_per_unit: float = 0, note: str = "",
+                     chrt_id: int | None = None) -> dict:
     nm_id = _integer(nm_id, "Артикул")
+    chrt_id = _variant_id(chrt_id) if chrt_id is not None else 0
     packaging = _number(packaging_per_unit, "Упаковка")
     other = _number(other_per_unit, "Прочие затраты")
     if not materials or len(materials) > 100 or len(operations or []) > 100:
@@ -184,20 +224,29 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
                     raise ValueError("Оборудование не найдено")
                 step.update(equipment_id=equipment_id, equipment_usage_per_unit=_number(item.get("equipment_usage_per_unit"), "Ресурс на единицу", positive=True))
             steps.append(step)
-        version = conn.execute("SELECT COALESCE(MAX(version),0)+1 FROM manufacturing_boms WHERE nm_id=?", (nm_id,)).fetchone()[0]
-        cur = conn.execute("INSERT INTO manufacturing_boms(nm_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (?,?,?,?,?,?,?,?)", (nm_id,version,_json(components),_json(steps),packaging,other,str(note or "").strip(),_now()))
+        version = conn.execute("SELECT COALESCE(MAX(version),0)+1 FROM manufacturing_boms WHERE nm_id=? AND chrt_id=?", (nm_id,chrt_id)).fetchone()[0]
+        cur = conn.execute("INSERT INTO manufacturing_boms(nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (?,?,?,?,?,?,?,?,?)", (nm_id,chrt_id,version,_json(components),_json(steps),packaging,other,str(note or "").strip(),_now()))
         return _decode(conn.execute("SELECT * FROM manufacturing_boms WHERE id=?",(cur.lastrowid,)).fetchone())
 
 
-def list_bom_versions(nm_id: int | None = None) -> list[dict]:
+def list_bom_versions(nm_id: int | None = None, chrt_id: int | None = None) -> list[dict]:
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM manufacturing_boms" + (" WHERE nm_id=?" if nm_id is not None else "") + " ORDER BY nm_id,version DESC", (() if nm_id is None else (_integer(nm_id,"Артикул"),)))
+        where, params = [], []
+        if nm_id is not None:
+            where.append("nm_id=?")
+            params.append(_integer(nm_id,"Артикул"))
+        if chrt_id is not None:
+            where.append("chrt_id=?")
+            params.append(_integer(chrt_id,"Вариант"))
+        rows = conn.execute("SELECT * FROM manufacturing_boms" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY nm_id,chrt_id,version DESC", tuple(params))
         return [_decode(row) for row in rows]
 
 
 def post_piecework(source_key: str, nm_id: int, operation_name: str, worker: str,
-                   quantity: float, rate_per_unit: float, work_date: str, event_key: str) -> dict:
+                   quantity: float, rate_per_unit: float, work_date: str, event_key: str,
+                   chrt_id: int | None = None) -> dict:
     fields = dict(source_key=_text(source_key,"Задание"),nm_id=_integer(nm_id,"Артикул"),
+                  chrt_id=_variant_id(chrt_id) if chrt_id is not None else 0,
                   operation_name=_text(operation_name,"Операция"),worker=_text(worker,"Исполнитель"),
                   quantity=_number(quantity,"Количество",positive=True),rate_per_unit=_number(rate_per_unit,"Расценка"),
                   work_date=_day(work_date),event_key=_text(event_key,"Ключ операции"))
@@ -209,9 +258,12 @@ def post_piecework(source_key: str, nm_id: int, operation_name: str, worker: str
             if old["request_hash"] != digest:
                 raise ValueError("Этот ключ уже использован для другой операции")
             return _decode(old)
-        if conn.execute("SELECT 1 FROM manufacturing_releases WHERE source_key=?",(fields["source_key"],)).fetchone():
+        if conn.execute(
+            "SELECT 1 FROM manufacturing_releases WHERE source_key=? OR substr(source_key,1,length(?)+6)=?||'|chrt:'",
+            (fields["source_key"],fields["source_key"],fields["source_key"]),
+        ).fetchone():
             raise ValueError("Выпуск уже проведён: нельзя менять его трудозатраты")
-        conn.execute("INSERT INTO manufacturing_piecework(source_key,nm_id,operation_name,worker,quantity,rate_per_unit,work_date,event_key,request_hash,created_at) VALUES (:source_key,:nm_id,:operation_name,:worker,:quantity,:rate_per_unit,:work_date,:event_key,:request_hash,:created_at)", {**fields,"request_hash":digest,"created_at":_now()})
+        conn.execute("INSERT INTO manufacturing_piecework(source_key,nm_id,chrt_id,operation_name,worker,quantity,rate_per_unit,work_date,event_key,request_hash,created_at) VALUES (:source_key,:nm_id,:chrt_id,:operation_name,:worker,:quantity,:rate_per_unit,:work_date,:event_key,:request_hash,:created_at)", {**fields,"request_hash":digest,"created_at":_now()})
         return _decode(conn.execute("SELECT * FROM manufacturing_piecework WHERE event_key=?",(fields["event_key"],)).fetchone())
 
 
@@ -250,22 +302,45 @@ def _movement(conn, *, event_key, movement_type, nm_id=0, quantity=0, source_key
 
 
 def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
-                       bom_version_id=None, supplier_article="", product_name="") -> dict:
+                       bom_version_id=None, supplier_article="", product_name="", chrt_id=None) -> dict:
     from .fifo_materials import _consume_material_fifo
     from .fifo_finished_goods import _create_finished_goods_layer
     from .production import _apply_pipeline_delta
     nm_id, quantity = _integer(nm_id,"Артикул"), _integer(quantity,"Количество выпуска")
+    chrt_id = _variant_id(chrt_id) if chrt_id is not None else 0
     day, key = _day(production_date), _text(source_key,"Задание")
     requested_version = _integer(bom_version_id,"Версия BOM") if bom_version_id is not None else None
-    digest = _hash([nm_id,quantity,day,key,requested_version,str(supplier_article),str(product_name)])
-    old = conn.execute("SELECT * FROM manufacturing_releases WHERE source_key=?",(key,)).fetchone()
+    # Preserve the old key for legacy callers. Variant suffixes keep historical
+    # rows readable, but the caller's base task key remains globally single-use:
+    # a retry routed to another variant must never create a second release.
+    release_key = key if chrt_id == 0 else f"{key}|chrt:{chrt_id}"
+    digest = _hash([nm_id,chrt_id,quantity,day,key,requested_version,str(supplier_article),str(product_name)])
+    old = conn.execute("SELECT * FROM manufacturing_releases WHERE source_key=?",(release_key,)).fetchone()
     if old:
         if old["request_hash"] != digest or old["status"] != "applied":
             raise ValueError("Ключ выпуска уже использован; для нового выпуска нужен новый ключ")
         return {**_decode(old),"posted":0,"skipped":1,"units":0,"cost_rub":0}
-    if conn.execute("SELECT 1 FROM inventory_movements WHERE source_task_key=? AND movement_type IN ('production_receipt','production_receipt_wip') AND reversed_at IS NULL",(key,)).fetchone():
+    variant_prefix = f"{key}|chrt:"
+    existing_keys = conn.execute(
+        "SELECT source_key FROM manufacturing_releases WHERE source_key=? OR substr(source_key,1,?)=?",
+        (key, len(variant_prefix), variant_prefix),
+    ).fetchall()
+    if existing_keys:
+        raise ValueError("Ключ задания уже использован для другого варианта; для нового выпуска нужен новый ключ")
+    if conn.execute("SELECT 1 FROM inventory_movements WHERE source_task_key=? AND movement_type IN ('production_receipt','production_receipt_wip') AND reversed_at IS NULL",(release_key,)).fetchone():
         raise ValueError("По заданию уже есть производственная проводка")
-    bom = conn.execute("SELECT * FROM manufacturing_boms WHERE nm_id=?" + (" AND id=?" if requested_version else " ORDER BY version DESC LIMIT 1"), ((nm_id,requested_version) if requested_version else (nm_id,))).fetchone()
+    if requested_version:
+        bom = conn.execute("SELECT * FROM manufacturing_boms WHERE nm_id=? AND id=?", (nm_id,requested_version)).fetchone()
+        if bom is not None:
+            bom_chrt_id = int(bom["chrt_id"] or 0)
+            if (chrt_id == 0 and bom_chrt_id != 0) or (chrt_id > 0 and bom_chrt_id not in (0, chrt_id)):
+                raise ValueError("Версия BOM относится к другому варианту")
+    else:
+        bom = conn.execute("SELECT * FROM manufacturing_boms WHERE nm_id=? AND chrt_id=? ORDER BY version DESC LIMIT 1", (nm_id,chrt_id)).fetchone()
+        if bom is None and chrt_id:
+            # A legacy NM-level BOM may serve a variant only when that variant
+            # has no own specification.
+            bom = conn.execute("SELECT * FROM manufacturing_boms WHERE nm_id=? AND chrt_id=0 ORDER BY version DESC LIMIT 1", (nm_id,)).fetchone()
     if bom is None:
         raise ValueError("Спецификация для артикула не найдена")
     spec = _decode(bom)
@@ -276,7 +351,12 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
         if available + 0.000001 < needed:
             raise ValueError(f"Недостаточно FIFO-слоёв «{item['material_name']}»")
         components.append({**item,"quantity":needed})
-    actuals = [dict(r) for r in conn.execute("SELECT * FROM manufacturing_piecework WHERE source_key=?",(key,))]
+    actuals = [dict(r) for r in conn.execute(
+        "SELECT * FROM manufacturing_piecework WHERE source_key=? AND chrt_id IN (?,0) ORDER BY CASE WHEN chrt_id=? THEN 0 ELSE 1 END,id",
+        (key,chrt_id,chrt_id),
+    )]
+    if chrt_id and any(int(row["chrt_id"] or 0) == chrt_id for row in actuals):
+        actuals = [row for row in actuals if int(row["chrt_id"] or 0) == chrt_id]
     if any(r["nm_id"] != nm_id or r["work_date"] > day for r in actuals):
         raise ValueError("Проверьте артикул и дату сдельных операций")
     known_operations = {op["name"] for op in spec["operations"]}
@@ -302,7 +382,8 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
             prior = min(machine["resource_quantity"],machine["consumed_resource"]+previous_usage)
             charge = round(round((prior+depreciable_usage)*rate,2)-round(prior*rate,2),2)
             equipment.append({"equipment_id":machine["id"],"name":machine["name"],"operation_name":op["name"],"resource_unit":machine["resource_unit"],"usage":usage,"depreciable_usage":depreciable_usage,"rate_per_resource_unit":rate,"amount_rub":charge})
-    movement_id = _movement(conn,event_key="manufacturing:"+key,movement_type="production_receipt",nm_id=nm_id,quantity=quantity,source_key=key,day=day,ready_delta=quantity,note=f"BOM v{bom['version']}")
+    movement_id = _movement(conn,event_key="manufacturing:"+release_key,movement_type="production_receipt",nm_id=nm_id,quantity=quantity,source_key=release_key,day=day,ready_delta=quantity,note=f"BOM v{bom['version']}" + (f"; chrt_id {chrt_id}" if chrt_id else ""))
+    conn.execute("UPDATE inventory_movements SET chrt_id=? WHERE id=?", (chrt_id,movement_id))
     material_total = 0.0
     for item in components:
         _change_physical(conn,item["material_key"],-item["quantity"],item["unit"])
@@ -315,21 +396,26 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
     total = round(material_total+labor_total+depreciation+packaging+other,2)
     unit_cost = round(total/quantity,6)
     _apply_pipeline_delta(conn,nm_id,str(supplier_article),quantity,0)
-    layer_id = _create_finished_goods_layer(conn,nm_id,str(supplier_article),str(product_name),"production",f"movement:{movement_id}",day,quantity,unit_cost,"ready",f"BOM v{bom['version']}")
+    layer_id = _create_finished_goods_layer(conn,nm_id,str(supplier_article),str(product_name),"production",f"movement:{movement_id}",day,quantity,unit_cost,"ready",f"BOM v{bom['version']}" + (f"; chrt_id {chrt_id}" if chrt_id else ""),chrt_id=chrt_id)
     conn.execute("UPDATE inventory_movements SET supplier_article=?,product_name=?,material_cost_rub=?,unit_cost_rub=?,goods_cost_rub=?,goods_unit_cost_rub=? WHERE id=?",(str(supplier_article),str(product_name),material_total,unit_cost,total,unit_cost,movement_id))
-    conn.execute("INSERT INTO production_cost_batches(movement_id,nm_id,supplier_article,product_name,batch_date,produced_units,material_key,material_name,material_meters,material_cost_rub,packaging_cost_rub,labor_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,status,note,created_at) VALUES (?,?,?,?,?,?,'','BOM',0,?,?,?,?,?,?,'active',?,?)",(movement_id,nm_id,str(supplier_article),str(product_name),day,quantity,material_total,packaging,labor_total,other+depreciation,total,unit_cost,f"BOM v{bom['version']}; амортизация {depreciation}",_now()))
+    conn.execute("INSERT INTO production_cost_batches(movement_id,nm_id,supplier_article,product_name,batch_date,produced_units,material_key,material_name,material_meters,material_cost_rub,packaging_cost_rub,labor_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,chrt_id,status,note,created_at) VALUES (?,?,?,?,?,?,'','BOM',0,?,?,?,?,?,?,?,'active',?,?)",(movement_id,nm_id,str(supplier_article),str(product_name),day,quantity,material_total,packaging,labor_total,other+depreciation,total,unit_cost,chrt_id,f"BOM v{bom['version']}; амортизация {depreciation}",_now()))
     for entry in equipment:
         conn.execute("UPDATE manufacturing_equipment SET consumed_resource=consumed_resource+?,updated_at=? WHERE id=?",(entry["usage"],_now(),entry["equipment_id"]))
-    conn.execute("UPDATE manufacturing_piecework SET release_movement_id=? WHERE source_key=?",(movement_id,key))
-    conn.execute("INSERT INTO manufacturing_releases(movement_id,source_key,request_hash,nm_id,quantity,production_date,bom_version_id,materials_json,labor_json,equipment_json,material_cost_rub,labor_cost_rub,depreciation_cost_rub,packaging_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,finished_layer_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(movement_id,key,digest,nm_id,quantity,day,bom["id"],_json(components),_json(labor),_json(equipment),material_total,labor_total,depreciation,packaging,other,total,unit_cost,layer_id,_now()))
+    if actuals:
+        conn.execute(
+            f"UPDATE manufacturing_piecework SET release_movement_id=? WHERE id IN ({','.join('?' for _ in actuals)})",
+            (movement_id, *(int(row["id"]) for row in actuals)),
+        )
+    conn.execute("INSERT INTO manufacturing_releases(movement_id,source_key,request_hash,nm_id,chrt_id,quantity,production_date,bom_version_id,materials_json,labor_json,equipment_json,material_cost_rub,labor_cost_rub,depreciation_cost_rub,packaging_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,finished_layer_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(movement_id,release_key,digest,nm_id,chrt_id,quantity,day,bom["id"],_json(components),_json(labor),_json(equipment),material_total,labor_total,depreciation,packaging,other,total,unit_cost,layer_id,_now()))
     return {**_decode(conn.execute("SELECT * FROM manufacturing_releases WHERE movement_id=?",(movement_id,)).fetchone()),"posted":1,"skipped":0,"units":quantity,"cost_rub":total}
 
 
 def post_manufacturing_release(nm_id: int, quantity: int, production_date: str, source_key: str,
-                               bom_version_id: int | None = None, supplier_article: str = "", product_name: str = "") -> dict:
+                               bom_version_id: int | None = None, supplier_article: str = "", product_name: str = "",
+                               chrt_id: int | None = None) -> dict:
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        return _post_release_conn(conn,nm_id=nm_id,quantity=quantity,production_date=production_date,source_key=source_key,bom_version_id=bom_version_id,supplier_article=supplier_article,product_name=product_name)
+        return _post_release_conn(conn,nm_id=nm_id,quantity=quantity,production_date=production_date,source_key=source_key,bom_version_id=bom_version_id,supplier_article=supplier_article,product_name=product_name,chrt_id=chrt_id)
 
 
 def list_manufacturing_releases(nm_id: int | None = None) -> list[dict]:

@@ -362,6 +362,7 @@ def init_db() -> None:
                 other_cost_rub REAL NOT NULL DEFAULT 0,
                 total_cost_rub REAL NOT NULL DEFAULT 0,
                 unit_cost_rub REAL NOT NULL DEFAULT 0,
+                chrt_id INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'active',
                 note TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -385,6 +386,7 @@ def init_db() -> None:
                 wb_units INTEGER NOT NULL DEFAULT 0,
                 unit_cost_rub REAL NOT NULL DEFAULT 0,
                 original_amount_rub REAL NOT NULL DEFAULT 0,
+                chrt_id INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'active',
                 note TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -432,6 +434,7 @@ def init_db() -> None:
                 note TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                chrt_id INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(movement_id) REFERENCES inventory_movements(id),
                 FOREIGN KEY(matched_sale_event_id) REFERENCES sales_fifo_events(id)
             );
@@ -631,6 +634,7 @@ def init_db() -> None:
                 task_date TEXT,
                 stage TEXT,
                 nm_id INTEGER DEFAULT 0,
+                chrt_id INTEGER NOT NULL DEFAULT 0,
                 supplier_article TEXT,
                 product_name TEXT,
                 planned_units INTEGER DEFAULT 0,
@@ -664,6 +668,7 @@ def init_db() -> None:
                 note TEXT,
                 created_at TEXT NOT NULL,
                 reversed_at TEXT,
+                chrt_id INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(reference_movement_id) REFERENCES inventory_movements(id)
             );
             CREATE INDEX IF NOT EXISTS idx_inventory_movements_nm ON inventory_movements(nm_id);
@@ -699,6 +704,7 @@ def init_db() -> None:
                 material_key TEXT DEFAULT '',
                 material_name TEXT DEFAULT '',
                 nm_id INTEGER DEFAULT 0,
+                chrt_id INTEGER NOT NULL DEFAULT 0,
                 supplier_article TEXT DEFAULT '',
                 product_name TEXT DEFAULT '',
                 quantity REAL NOT NULL DEFAULT 0,
@@ -844,6 +850,11 @@ def init_db() -> None:
                 "ON recurring_store_expense_occurrences(period_start, template_id)"
             )
 
+        # Variant identity is optional; zero preserves legacy nmID-level rows.
+        for table in ("production_cost_batches", "finished_goods_cost_layers", "inventory_movements", "sales_fifo_events", "execution_tasks", "procurement_items"):
+            columns = {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "chrt_id" not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN chrt_id INTEGER NOT NULL DEFAULT 0")
         # v4.0: supplier directory and auditable partial payments.
         order_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(procurement_orders)").fetchall()}
         if "supplier_id" not in order_columns:

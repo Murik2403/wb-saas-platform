@@ -54,6 +54,57 @@ class ManufacturingTests(DbTestCase):
         self.assertEqual(self.release()["posted"],0)  # retry after BOM edit still same job
         self.assertEqual(m.post_piecework("job-1",123,"Пошив","Анна",3,7,"2026-09-23","labor-1")["id"],labor["id"])
 
+    def test_bom_versions_are_scoped_to_variant_and_exact_variant_wins(self):
+        self.seed()
+        legacy = m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":2,"unit":"м"}],chrt_id=111)
+        m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":3,"unit":"м"}],chrt_id=222)
+        newest = m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":4,"unit":"м"}],chrt_id=111)
+        self.assertEqual((legacy["version"], newest["version"]), (1, 2))
+        release = self.release(key="variant-release", quantity=1, chrt_id=111)
+        self.assertEqual(release["bom_version_id"], newest["id"])
+        self.assertEqual(release["chrt_id"], 111)
+        self.assertEqual(release["material_cost_rub"], 40)
+        with connect() as conn:
+            layer = conn.execute("SELECT chrt_id FROM finished_goods_cost_layers WHERE id=?", (release["finished_layer_id"],)).fetchone()
+            movement = conn.execute("SELECT chrt_id FROM inventory_movements WHERE id=?", (release["movement_id"],)).fetchone()
+            batch = conn.execute("SELECT chrt_id FROM production_cost_batches WHERE movement_id=?", (release["movement_id"],)).fetchone()
+        self.assertEqual((layer["chrt_id"], movement["chrt_id"], batch["chrt_id"]), (111, 111, 111))
+
+    def test_old_bom_schema_migrates_to_legacy_variant_zero(self):
+        with connect() as conn:
+            conn.execute("DROP TABLE manufacturing_boms")
+            conn.execute("""CREATE TABLE manufacturing_boms (
+                id INTEGER PRIMARY KEY,nm_id INTEGER NOT NULL,version INTEGER NOT NULL,
+                materials_json TEXT NOT NULL,operations_json TEXT NOT NULL,
+                packaging_per_unit REAL NOT NULL,other_per_unit REAL NOT NULL,
+                note TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(nm_id,version))""")
+            conn.execute("INSERT INTO manufacturing_boms VALUES (1,123,1,'[]','[]',0,0,'legacy','2026-09-01')")
+            m.init_manufacturing_schema(conn)
+            migrated = conn.execute("SELECT chrt_id,version,note FROM manufacturing_boms WHERE id=1").fetchone()
+            self.assertEqual(tuple(migrated), (0, 1, "legacy"))
+            conn.execute("INSERT INTO manufacturing_boms(nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (123,501,1,'[]','[]',0,0,'S','2026-09-02')")
+    def test_variant_uses_legacy_bom_only_when_exact_bom_absent(self):
+        self.seed()
+        legacy = m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        release = self.release(key="variant-fallback", quantity=1, chrt_id=333)
+        self.assertEqual(release["bom_version_id"], legacy["id"])
+        self.assertEqual(release["chrt_id"], 333)
+        self.assertEqual(release["material_cost_rub"], 10)
+
+    def test_legacy_release_cannot_select_variant_specific_bom(self):
+        self.seed()
+        variant_bom = m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}],chrt_id=111)
+        with self.assertRaisesRegex(ValueError, "другому варианту"):
+            self.release(key="legacy-mismatch", quantity=1, bom_version_id=variant_bom["id"], chrt_id=0)
+    def test_same_task_key_cannot_post_release_for_another_variant(self):
+        self.seed()
+        m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}],chrt_id=111)
+        m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":2,"unit":"м"}],chrt_id=222)
+        self.release(key="shared-task", quantity=1, chrt_id=111)
+        with self.assertRaisesRegex(ValueError, "другого варианта"):
+            self.release(key="shared-task", quantity=1, chrt_id=222)
+        self.assertEqual({row["chrt_id"] for row in m.list_manufacturing_releases(123)}, {111})
     def test_shortage_second_component_rolls_back_first_fifo_and_labor(self):
         first = self.seed()
         self.seed("Нить","кг",10,100)

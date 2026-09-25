@@ -23,6 +23,22 @@ def _sales_raw_srid(raw_json: str | None) -> str:
         return ""
     return str(payload.get("srid") or payload.get("SRID") or payload.get("odid") or "").strip()
 
+def _sales_raw_chrt_id(raw_json: str | None) -> int:
+    """Read WB's characteristic id while treating absent/invalid values as legacy unknown."""
+    try:
+        payload = json.loads(str(raw_json or "{}"))
+    except Exception:
+        return 0
+    for key in ("chrtID", "chrtId", "chrt_id", "chrtid"):
+        value = payload.get(key)
+        try:
+            parsed = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return 0
+
 def _initialize_sales_fifo_baseline_if_needed(conn: sqlite3.Connection) -> dict[str, Any]:
     """Register all currently stored sale/return rows as pre-FIFO history once.
 
@@ -50,14 +66,14 @@ def _initialize_sales_fifo_baseline_if_needed(conn: sqlite3.Connection) -> dict[
             """
             INSERT OR IGNORE INTO sales_fifo_events(
                 sale_record_id,sale_id,srid,nm_id,supplier_article,product_name,event_date,event_type,
-                units,fifo_cost_rub,unit_cost_rub,status,movement_id,matched_sale_event_id,note,created_at,updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,1,0,0,'baseline',NULL,NULL,?,?,?)
+                units,fifo_cost_rub,unit_cost_rub,status,movement_id,matched_sale_event_id,note,created_at,updated_at,chrt_id
+            ) VALUES (?,?,?,?,?,?,?,?,1,0,0,'baseline',NULL,NULL,?,?,?,?)
             """,
             (
                 str(row["id"]),str(row["sale_id"] or ""),_sales_raw_srid(row["raw_json"]),int(row["nm_id"] or 0),
                 str(row["supplier_article"] or ""),str(row["product_name"] or ""),str(row["sale_date"] or ""),
                 "return" if int(row["is_return"] or 0)==1 else "sale",
-                "Историческая операция до включения точного FIFO-COGS.",now,now,
+                "Историческая операция до включения точного FIFO-COGS.",now,now,_sales_raw_chrt_id(row["raw_json"]),
             ),
         )
         inserted += int(cur.rowcount or 0)
@@ -119,33 +135,35 @@ def _insert_sales_fifo_event(
         """
         INSERT INTO sales_fifo_events(
             sale_record_id,sale_id,srid,nm_id,supplier_article,product_name,event_date,event_type,
-            units,fifo_cost_rub,unit_cost_rub,status,movement_id,matched_sale_event_id,note,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?)
+            units,fifo_cost_rub,unit_cost_rub,status,movement_id,matched_sale_event_id,note,created_at,updated_at,chrt_id
+        ) VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)
         """,
         (
             str(row["id"]),str(row["sale_id"] or ""),_sales_raw_srid(row["raw_json"]),int(row["nm_id"] or 0),
             str(row["supplier_article"] or ""),product_name,str(row["sale_date"] or ""),event_type,
             round(max(0.0,float(fifo_cost or 0)),2),round(max(0.0,float(fifo_cost or 0)),4),status,
-            movement_id,matched_sale_event_id,str(note or ""),now,now,
+            movement_id,matched_sale_event_id,str(note or ""),now,now,_sales_raw_chrt_id(row["raw_json"]),
         ),
     )
     return int(cur.lastrowid)
 
-def _find_matching_sale_fifo_event(conn: sqlite3.Connection,nm_id: int,srid: str) -> sqlite3.Row | None:
+def _find_matching_sale_fifo_event(conn: sqlite3.Connection,nm_id: int,srid: str,chrt_id: int=0) -> sqlite3.Row | None:
     if not srid:
         return None
     return conn.execute(
         """
         SELECT e.* FROM sales_fifo_events e
          WHERE e.nm_id=? AND e.srid=? AND e.event_type='sale' AND e.status IN ('applied','baseline')
+           AND e.chrt_id=?
            AND NOT EXISTS (
                SELECT 1 FROM sales_fifo_events r
                 WHERE r.matched_sale_event_id=e.id AND r.event_type='return' AND r.status='applied'
            )
-         ORDER BY CASE WHEN e.status='applied' THEN 0 ELSE 1 END,COALESCE(e.event_date,'') DESC,e.id DESC
+         ORDER BY CASE WHEN e.chrt_id=? THEN 0 ELSE 1 END,
+                  CASE WHEN e.status='applied' THEN 0 ELSE 1 END,COALESCE(e.event_date,'') DESC,e.id DESC
          LIMIT 1
         """,
-        (int(nm_id),str(srid)),
+        (int(nm_id),str(srid),int(chrt_id),int(chrt_id)),
     ).fetchone()
 
 def _restore_return_to_original_layers(
@@ -211,6 +229,7 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
             conn.execute(f"SAVEPOINT {savepoint}")
             try:
                 nm_id=int(row["nm_id"] or 0); article=str(row["supplier_article"] or ""); product=str(row["product_name"] or "")
+                chrt_id=_sales_raw_chrt_id(row["raw_json"])
                 event_type="return" if int(row["is_return"] or 0)==1 else "sale"
                 source_key=str(row["id"])
                 event_key=f"sales_fifo:{source_key}"
@@ -219,16 +238,16 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
                     INSERT INTO inventory_movements(
                         event_key,movement_type,nm_id,supplier_article,product_name,quantity,ready_delta,inbound_delta,
                         route,movement_date,expected_arrival_date,source_task_key,reference_movement_id,status,note,
-                        created_at,reversed_at,goods_cost_rub,goods_unit_cost_rub
-                    ) VALUES (?,?,?,?,?,1,0,0,'WB sale',?,NULL,?,NULL,'applied','',?,NULL,0,0)
+                        created_at,reversed_at,goods_cost_rub,goods_unit_cost_rub,chrt_id
+                    ) VALUES (?,?,?,?,?,1,0,0,'WB sale',?,NULL,?,NULL,'applied','',?,NULL,0,0,?)
                     """,
                     (event_key,"wb_return_fifo" if event_type=="return" else "wb_sale_fifo",nm_id,article,product,
-                     str(row["sale_date"] or "")[:10],source_key,datetime.now().isoformat(timespec="seconds")),
+                     str(row["sale_date"] or "")[:10],source_key,datetime.now().isoformat(timespec="seconds"),chrt_id),
                 )
                 movement_id=int(cur.lastrowid); matched_id=None; note=""
                 if event_type=="sale":
                     try:
-                        fifo_cost,_=_move_finished_goods_fifo(conn,movement_id,nm_id,article,product,1,"wb",None)
+                        fifo_cost,_=_move_finished_goods_fifo(conn,movement_id,nm_id,article,product,1,"wb",None,chrt_id)
                     except ValueError as fifo_exc:
                         if "COST_PENDING:" in str(fifo_exc):
                             raise
@@ -239,13 +258,14 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
                             conn,nm_id,article,product,"synthetic_sale",f"synthetic_sale:{source_key}",
                             str(row["sale_date"] or "")[:10],1,baseline,"wb",
                             "Временный слой для продажи без доступного FIFO-остатка; требуется сверка WB.",
+                            chrt_id,
                         )
-                        fifo_cost,_=_move_finished_goods_fifo(conn,movement_id,nm_id,article,product,1,"wb",None)
+                        fifo_cost,_=_move_finished_goods_fifo(conn,movement_id,nm_id,article,product,1,"wb",None,chrt_id)
                         note="Продажа обработана через временный слой; проверьте сверку остатков WB."
                     result["sales"]+=1
                 else:
                     srid=_sales_raw_srid(row["raw_json"])
-                    matched=_find_matching_sale_fifo_event(conn,nm_id,srid)
+                    matched=_find_matching_sale_fifo_event(conn,nm_id,srid,chrt_id)
                     fifo_cost=0.0; restored=0
                     if matched is not None:
                         matched_id=int(matched["id"])
@@ -257,6 +277,7 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
                             conn,nm_id,article,product,"return_unmatched",f"return:{source_key}",
                             str(row["sale_date"] or "")[:10],1,rate,"wb",
                             "Возврат без точного слоя исходной продажи; стоимость восстановлена по доступной ставке.",
+                            chrt_id,
                         )
                         fifo_cost=rate
                         note="Возврат не удалось полностью сопоставить с исходной продажей."

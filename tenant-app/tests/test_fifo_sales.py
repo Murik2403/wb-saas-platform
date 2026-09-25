@@ -27,7 +27,7 @@ NM_ID = 800001
 class SalesFifoTestCase(DbTestCase):
     def _insert_sale(
         self, conn, sale_record_id: str, *, srid: str = "", is_return: int = 0,
-        sale_date: str = "2026-01-01T10:00:00", nm_id: int = NM_ID,
+        sale_date: str = "2026-01-01T10:00:00", nm_id: int = NM_ID, chrt_id: int = 0,
     ) -> None:
         conn.execute(
             """
@@ -35,7 +35,7 @@ class SalesFifoTestCase(DbTestCase):
             VALUES (?,?,?,?,?,?,?)
             """,
             (sale_record_id, sale_date, sale_date, nm_id, "ART-1", is_return,
-             json.dumps({"srid": srid} if srid else {})),
+             json.dumps(({"srid": srid} if srid else {}) | ({"chrtID": chrt_id} if chrt_id else {}))),
         )
 
 
@@ -84,6 +84,31 @@ class ProcessSalesFifoWithoutInitializationTests(SalesFifoTestCase):
 
 
 class ProcessSalesFifoNewSaleTests(SalesFifoTestCase):
+    def test_sale_consumes_only_its_characteristic_and_persists_it(self) -> None:
+        initialize_sales_fifo_tracking()
+        with connect() as conn:
+            first = _create_finished_goods_layer(
+                conn, NM_ID, "ART-1", "Тест S", "opening", "variant:11", "2026-01-01", 1, 110.0, "wb", chrt_id=11
+            )
+            _create_finished_goods_layer(
+                conn, NM_ID, "ART-1", "Тест M", "opening", "variant:22", "2026-01-01", 1, 220.0, "wb", chrt_id=22
+            )
+            self._insert_sale(conn, "S-11", srid="SR-V", chrt_id=11)
+        result = process_sales_fifo_events()
+        self.assertEqual(result["errors"], 0)
+        with connect() as conn:
+            event = conn.execute("SELECT * FROM sales_fifo_events WHERE sale_record_id='S-11'").fetchone()
+            movement = conn.execute("SELECT * FROM inventory_movements WHERE id=?", (event["movement_id"],)).fetchone()
+            allocation = conn.execute(
+                "SELECT layer_id FROM finished_goods_fifo_allocations WHERE movement_id=? AND status='applied'",
+                (event["movement_id"],),
+            ).fetchone()
+            left = conn.execute("SELECT SUM(wb_units) AS n FROM finished_goods_cost_layers WHERE chrt_id=22").fetchone()["n"]
+        self.assertEqual(event["chrt_id"], 11)
+        self.assertEqual(movement["chrt_id"], 11)
+        self.assertEqual(allocation["layer_id"], first)
+        self.assertEqual(left, 1)
+
     def test_new_sale_consumes_oldest_fifo_layer_and_records_exact_cogs(self) -> None:
         initialize_sales_fifo_tracking()  # no sales yet -> starts tracking from here
         with connect() as conn:
@@ -142,6 +167,63 @@ class ProcessSalesFifoNewSaleTests(SalesFifoTestCase):
 
 
 class ProcessSalesFifoReturnTests(SalesFifoTestCase):
+    def test_variant_return_matches_same_variant_and_restores_its_original_layer(self) -> None:
+        initialize_sales_fifo_tracking()
+        with connect() as conn:
+            variant_layer = _create_finished_goods_layer(
+                conn, NM_ID, "ART-1", "Тест S", "opening", "return-variant:11", "2026-01-01", 1, 110.0, "wb", chrt_id=11
+            )
+            _create_finished_goods_layer(
+                conn, NM_ID, "ART-1", "Тест M", "opening", "return-variant:22", "2026-01-01", 1, 220.0, "wb", chrt_id=22
+            )
+            self._insert_sale(conn, "S-11", srid="SR-V", chrt_id=11)
+        process_sales_fifo_events()
+        with connect() as conn:
+            self._insert_sale(conn, "R-11", srid="SR-V", is_return=1, chrt_id=11)
+        result = process_sales_fifo_events()
+        self.assertEqual(result["errors"], 0)
+        with connect() as conn:
+            sale = conn.execute("SELECT * FROM sales_fifo_events WHERE sale_record_id='S-11'").fetchone()
+            ret = conn.execute("SELECT * FROM sales_fifo_events WHERE sale_record_id='R-11'").fetchone()
+            restored = conn.execute("SELECT wb_units FROM finished_goods_cost_layers WHERE id=?", (variant_layer,)).fetchone()["wb_units"]
+            other = conn.execute("SELECT wb_units FROM finished_goods_cost_layers WHERE chrt_id=22").fetchone()["wb_units"]
+        self.assertEqual(ret["matched_sale_event_id"], sale["id"])
+        self.assertEqual(ret["chrt_id"], 11)
+        self.assertEqual(restored, 1)
+        self.assertEqual(other, 1)
+
+    def test_variant_return_does_not_match_another_known_variant(self) -> None:
+        initialize_sales_fifo_tracking()
+        with connect() as conn:
+            _create_finished_goods_layer(
+                conn, NM_ID, "ART-1", "Тест M", "opening", "mismatch-variant:22", "2026-01-01", 1, 220.0, "wb", chrt_id=22
+            )
+            self._insert_sale(conn, "S-22", srid="SR-V", chrt_id=22)
+        process_sales_fifo_events()
+        with connect() as conn:
+            self._insert_sale(conn, "R-11", srid="SR-V", is_return=1, chrt_id=11)
+        process_sales_fifo_events()
+        with connect() as conn:
+            ret = conn.execute("SELECT * FROM sales_fifo_events WHERE sale_record_id='R-11'").fetchone()
+            sale = conn.execute("SELECT * FROM sales_fifo_events WHERE sale_record_id='S-22'").fetchone()
+        self.assertIsNone(ret["matched_sale_event_id"])
+        self.assertEqual(sale["chrt_id"], 22)
+
+    def test_variant_return_does_not_match_legacy_nm_only_sale(self) -> None:
+        initialize_sales_fifo_tracking()
+        with connect() as conn:
+            _create_finished_goods_layer(
+                conn, NM_ID, "ART-1", "Legacy", "opening", "legacy-return", "2026-01-01", 1, 80.0, "wb", chrt_id=0
+            )
+            self._insert_sale(conn, "S-legacy", srid="SR-LEGACY", chrt_id=0)
+        process_sales_fifo_events()
+        with connect() as conn:
+            self._insert_sale(conn, "R-variant", srid="SR-LEGACY", is_return=1, chrt_id=11)
+        process_sales_fifo_events()
+        with connect() as conn:
+            ret = conn.execute("SELECT * FROM sales_fifo_events WHERE sale_record_id='R-variant'").fetchone()
+        self.assertIsNone(ret["matched_sale_event_id"])
+
     def test_return_restores_cost_into_the_original_layer(self) -> None:
         initialize_sales_fifo_tracking()
         with connect() as conn:

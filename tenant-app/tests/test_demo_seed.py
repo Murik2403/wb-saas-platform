@@ -56,7 +56,7 @@ def test_demo_seed_builds_rolling_fifo_example_idempotently(tmp_path, monkeypatc
         assert scenario_order["order_date"] == (seed_demo_data.TODAY - timedelta(days=32)).isoformat()
         batch = conn.execute(
             "SELECT production_date,packaging_cost_rub,total_cost_rub FROM manufacturing_releases WHERE source_key=?",
-            ("demo-fifo-learning-release-v1",),
+            ("demo-fifo-learning-release-v1|chrt:100001",),
         ).fetchone()
         assert batch is not None and batch["packaging_cost_rub"] == 120
         assert batch["production_date"] == (seed_demo_data.TODAY - timedelta(days=24)).isoformat()

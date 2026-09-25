@@ -68,6 +68,16 @@ class FinishedLayerTotalsTests(DbTestCase):
         self.assertEqual(units, 15)
         self.assertAlmostEqual(amount, 10 * 50.0 + 5 * 60.0, places=2)
 
+    def test_variant_fifo_never_consumes_another_known_variant(self) -> None:
+        with connect() as conn:
+            _create_finished_goods_layer(conn, NM_ID, "ART-1", "S", "opening", "variant:111", "2026-01-01", 1, 50.0, "wb", chrt_id=111)
+            _create_finished_goods_layer(conn, NM_ID, "ART-1", "M", "opening", "variant:222", "2026-01-01", 2, 90.0, "wb", chrt_id=222)
+            with self.assertRaisesRegex(ValueError, "доступно 1 ед"):
+                _move_finished_goods_fifo(conn, 901, NM_ID, "ART-1", "S", 2, "wb", None, chrt_id=111)
+            units_s, _ = _finished_layer_totals(conn, NM_ID, "wb", chrt_id=111)
+            units_m, _ = _finished_layer_totals(conn, NM_ID, "wb", chrt_id=222)
+        self.assertEqual((units_s, units_m), (1, 2))
+
 
 class EnsureFinishedGoodsCapacityTests(DbTestCase):
     def test_noop_when_layered_units_already_cover_required(self) -> None:

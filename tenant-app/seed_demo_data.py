@@ -351,7 +351,7 @@ def _seed_fifo_learning_scenario() -> None:
     )
     release = post_manufacturing_release(
         nm_id, quantity=10, production_date=days["production"], source_key="demo-fifo-learning-release-v1",
-        bom_version_id=int(bom["id"]), supplier_article=article, product_name=product,
+        bom_version_id=int(bom["id"]), supplier_article=article, product_name=product, chrt_id=nm_id,
     )
     if not release.get("posted"):
         raise RuntimeError(f"Demo learning production release failed: {release}")
@@ -360,7 +360,7 @@ def _seed_fifo_learning_scenario() -> None:
 
     save_execution_tasks(pd.DataFrame([{
         "task_key": "demo-fifo-learning-dispatch-v1", "task_type": "dispatch", "task_date": days["dispatch"],
-        "stage": "Отгрузка", "nm_id": nm_id, "supplier_article": article, "product_name": product,
+        "stage": "Отгрузка", "nm_id": nm_id, "chrt_id": nm_id, "supplier_article": article, "product_name": product,
         "planned_units": 10, "actual_units": 10, "status": "Отгружено", "route": "Стандартная FBO",
         "dispatch_date": days["dispatch"], "expected_arrival_date": days["arrival"],
         "note": "Учебный FIFO-сценарий демо",
@@ -383,7 +383,7 @@ def _seed_fifo_learning_scenario() -> None:
     with connect() as conn:
         for suffix, day, is_return, sign in (("sale", days["sale"], 0, 1), ("return", days["return"], 1, -1)):
             sale_id = f"demo-fifo-learning-{suffix}-v1"
-            raw = '{"srid":"DEMO-FIFO-LEARNING-001","demo":true}'
+            raw = '{"srid":"DEMO-FIFO-LEARNING-001","chrtID":100001,"demo":true}'
             price = 890.0
             conn.execute(
                 "INSERT INTO sales(id,sale_date,nm_id,supplier_article,brand,subject,warehouse_name,sale_id,total_price,finished_price,price_with_disc,for_pay,is_return,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

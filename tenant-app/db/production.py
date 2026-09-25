@@ -280,6 +280,7 @@ def save_execution_tasks(df: pd.DataFrame) -> None:
             _date_text(r.get("task_date")),
             str(r.get("stage", "") or ""),
             _int(r.get("nm_id")),
+            max(0, _int(r.get("chrt_id"))),
             str(r.get("supplier_article", "") or ""),
             str(r.get("product_name", "") or ""),
             max(0, _int(r.get("planned_units"))),
@@ -297,14 +298,15 @@ def save_execution_tasks(df: pd.DataFrame) -> None:
         conn.executemany(
             """
             INSERT INTO execution_tasks(
-                task_key,task_type,task_date,stage,nm_id,supplier_article,product_name,
+                task_key,task_type,task_date,stage,nm_id,chrt_id,supplier_article,product_name,
                 planned_units,actual_units,status,route,dispatch_date,expected_arrival_date,note,updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(task_key) DO UPDATE SET
                 task_type=excluded.task_type,
                 task_date=excluded.task_date,
                 stage=excluded.stage,
                 nm_id=excluded.nm_id,
+                chrt_id=excluded.chrt_id,
                 supplier_article=excluded.supplier_article,
                 product_name=excluded.product_name,
                 planned_units=excluded.planned_units,
@@ -587,6 +589,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                         production_date=date_value, source_key=source_key,
                         supplier_article=str(task["supplier_article"] or ""),
                         product_name=str(task["product_name"] or ""),
+                        chrt_id=int(task["chrt_id"] or 0),
                     )
                     conn.execute("RELEASE SAVEPOINT post_bom_task")
                     result["posted"] += posted["posted"]
@@ -603,6 +606,11 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                 continue
 
             if use_wip:
+                if int(task["chrt_id"] or 0) > 0:
+                    result["errors"].append(
+                        f"{task['supplier_article']}: незавершённое производство пока не различает chrt_id; выпуск остановлен, чтобы не смешать варианты."
+                    )
+                    continue
                 conn.execute("SAVEPOINT post_production_wip_task")
                 try:
                     posted = _post_wip_packaging_conn(
@@ -649,8 +657,8 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                         event_key,movement_type,nm_id,supplier_article,product_name,quantity,
                         ready_delta,inbound_delta,route,movement_date,expected_arrival_date,
                         source_task_key,reference_movement_id,status,note,created_at,reversed_at,
-                        material_key,material_name,material_delta,material_cost_rub,unit_cost_rub
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        material_key,material_name,material_delta,material_cost_rub,unit_cost_rub,chrt_id
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_key, "production_receipt",
@@ -659,7 +667,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                         source_key, None, "applied",
                         f"Закрытие смены; списано {meters:.3f} м сырья «{material_name}»",
                         datetime.now().isoformat(timespec="seconds"), None,
-                        material_key, material_name, -meters, 0.0, 0.0,
+                        material_key, material_name, -meters, 0.0, 0.0, int(task["chrt_id"] or 0),
                     ),
                 )
                 movement_id = int(movement_cur.lastrowid)
@@ -695,12 +703,12 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                         movement_id,nm_id,supplier_article,product_name,batch_date,produced_units,
                         material_key,material_name,material_meters,material_cost_rub,
                         packaging_cost_rub,labor_cost_rub,other_cost_rub,total_cost_rub,unit_cost_rub,
-                        status,note,created_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+                        chrt_id,status,note,created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
                     """,
                     (movement_id, int(task["nm_id"] or 0), str(task["supplier_article"] or ""),
                      str(task["product_name"] or ""), date_value, qty, material_key, material_name,
-                     meters, material_cost, packaging_total, labor_total, other_total, total_cost, unit_cost,
+                     meters, material_cost, packaging_total, labor_total, other_total, total_cost, unit_cost, int(task["chrt_id"] or 0),
                      f"Фактическая партия по FIFO; упаковка {packaging_unit:.2f} ₽/ед. ({packaging_source}); {allocation_note}", datetime.now().isoformat(timespec="seconds")),
                 )
                 _create_finished_goods_layer(
@@ -708,6 +716,7 @@ def close_production_shift(task_date: Any) -> dict[str, Any]:
                     str(task["product_name"] or ""), "production", f"movement:{movement_id}",
                     date_value, qty, unit_cost, "ready",
                     f"Оприходовано из производственной партии #{movement_id}; сырьё списано по FIFO.",
+                    chrt_id=int(task["chrt_id"] or 0),
                 )
                 conn.execute(
                     "UPDATE inventory_movements SET goods_cost_rub=?,goods_unit_cost_rub=? WHERE id=?",
