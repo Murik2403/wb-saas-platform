@@ -18,6 +18,7 @@ import production_workspace_api as workspace_api
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "DB_PATH", tmp_path / "workspace.sqlite")
+    monkeypatch.setattr(workspace_api.config, "DB_PATH", tmp_path / "workspace.sqlite")
     monkeypatch.setattr(workspace_api.config, "IS_DEMO", False)
     core.init_db()
     app = FastAPI()
@@ -76,6 +77,39 @@ def test_issue_close_package_and_block_consumed_batch_reversal(client):
     assert result["wip"]["batches"][0]["remaining_units"] == 4
     assert result["materials"][0]["available_meters"] == 15
     assert result["wip"]["batches"][0]["unit_cost_rub"] == 50
+
+
+def test_first_production_result_is_recorded_on_finished_goods_receipt_and_retry(client):
+    seed()
+    with core.connect() as conn:
+        conn.execute(
+            "INSERT INTO costs(nm_id,packaging_cost_rub,packaging_cost_status,packaging_cost_source,packaging_cost_confirmed_at) "
+            "VALUES (101,0,'confirmed','manual','2026-09-23T12:00:00')"
+        )
+    _, issue_response = issue(client)
+    batch_id = issue_response.json()["batch_id"]
+    assert client.post(f"/api/v1/production-workspace/wip/{batch_id}/complete", json={"produced_units": 10}).status_code == 200
+    package = dict(request_id=str(uuid4()), nm_id=101, chrt_id=0, qty_sets=1, packaging_date="2026-09-23")
+
+    first = client.post("/api/v1/production-workspace/wip/package", json=package)
+    assert first.status_code == 200, first.text
+    with core.connect() as conn:
+        event = conn.execute(
+            "SELECT event_key,event_name,occurred_at FROM growth_event_outbox WHERE event_name='first_production_result'"
+        ).fetchone()
+    assert event is not None
+    assert event[0] == event[1] == "first_production_result"
+    assert event[2]
+
+    retry = client.post("/api/v1/production-workspace/wip/package", json=package)
+    assert retry.status_code == 200, retry.text
+    with core.connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM growth_event_outbox WHERE event_name='first_production_result'"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT occurred_at FROM growth_event_outbox WHERE event_name='first_production_result'"
+        ).fetchone()[0] == event[2]
 
 
 def test_completion_reversal_can_be_closed_again(client):

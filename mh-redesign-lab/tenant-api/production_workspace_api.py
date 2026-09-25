@@ -5,7 +5,7 @@ This module never initializes a database or starts background jobs.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 from typing import Annotated, Literal
 from uuid import UUID
@@ -20,6 +20,8 @@ from db.wip import (issue_wip_material, complete_wip_blank_batch,
                     post_manual_wip_packaging, read_wip_blank_batches,
                     read_wip_blank_summary, read_wip_blank_allocations, wip_module_status,
                     validate_catalog_identity)
+from growth_activation import record_growth_event
+from growth_delivery import deliver_pending_growth_events
 from today_service import json_safe
 import config
 
@@ -87,6 +89,24 @@ def _result(result: dict) -> dict:
     if result.get("errors"):
         raise HTTPException(422, detail="; ".join(map(str, result["errors"])))
     return json_safe(result)
+
+
+def _record_first_production_result() -> None:
+    """Queue the first finished-goods result without affecting inventory writes."""
+    try:
+        record_growth_event(
+            config.DB_PATH,
+            event_name="first_production_result",
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+        )
+        try:
+            deliver_pending_growth_events(config.DB_PATH)
+        except Exception:
+            # The durable outbox is retried on later delivery attempts.
+            pass
+    except Exception:
+        # Growth tracking must never fail an already committed stock receipt.
+        return
 
 
 def _batch(batch_id: int) -> dict:
@@ -250,7 +270,13 @@ def package(payload: PackageInput) -> dict:
             raise HTTPException(422, detail=str(exc)) from exc
     if previous and (previous["nm_id"] != payload.nm_id or previous["chrt_id"] != payload.chrt_id or previous["quantity"] != payload.qty_sets or previous["movement_date"] != payload.packaging_date.isoformat()):
         raise HTTPException(409, detail="Этот идентификатор уже использован для другой комплектации")
-    return _result(post_manual_wip_packaging(payload.nm_id, payload.qty_sets, payload.packaging_date, payload.note, source_key=key, chrt_id=payload.chrt_id))
+    result = _result(post_manual_wip_packaging(
+        payload.nm_id, payload.qty_sets, payload.packaging_date, payload.note,
+        source_key=key, chrt_id=payload.chrt_id,
+    ))
+    if result.get("posted") or result.get("skipped"):
+        _record_first_production_result()
+    return result
 
 
 @router.put("/capacity")
