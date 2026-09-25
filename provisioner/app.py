@@ -40,7 +40,7 @@ BACKUP_DIR = os.environ.get("WB_SAAS_BACKUP_DIR", "/opt/wb-saas/backups")
 BACKUP_MOUNT = Path("/backups")
 BACKUP_HELPER_IMAGE = "alpine:3.20"
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
-CONTROL_PLANE_BACKUP_GROUP = "control-plane"
+CONTROL_PLANE_BACKUP_GROUP = "control-plane-encrypted"
 _DEMO_RESEED_LOCK = threading.Lock()
 
 
@@ -292,6 +292,7 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
     if not BACKUP_ENCRYPTION_KEY:
         raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
     backup_dir = BACKUP_MOUNT / backup_group
+    backup_host_dir = Path(BACKUP_DIR) / backup_group
     backup_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{backup_group}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     archive_name = f"{stem}.tar.gz.enc"
@@ -301,15 +302,16 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
     try:
         client.containers.run(
             BACKUP_HELPER_IMAGE,
-            command=["tar", "czf", f"/backup/{backup_group}/{plain_name}", "-C", "/data", "."],
+            command=["tar", "czf", f"/backup/{plain_name}", "-C", "/data", "."],
             volumes={
                 volume_name: {"bind": "/data", "mode": "ro"},
-                BACKUP_DIR: {"bind": "/backup", "mode": "rw"},
+                str(backup_host_dir): {"bind": "/backup", "mode": "rw"},
             },
             remove=True,
             network_disabled=True,
             security_opt=["no-new-privileges:true"],
             cap_drop=["ALL"],
+            cap_add=["DAC_READ_SEARCH"],
             read_only=True,
             tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
         )

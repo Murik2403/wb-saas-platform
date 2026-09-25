@@ -42,6 +42,9 @@ def test_control_plane_backup_mounts_only_resolved_gateway_volume(tmp_path, monk
     run_kwargs = client.containers.run.call_args.kwargs
     assert run_kwargs["volumes"] == {
         "project_gateway_data": {"bind": "/data", "mode": "ro"},
-        "/host/backups": {"bind": "/backup", "mode": "rw"},
+        str(app.Path("/host/backups") / "control-plane-encrypted"): {"bind": "/backup", "mode": "rw"},
     }
-    assert run_kwargs["command"][2].startswith("/backup/control-plane/.")
+    assert run_kwargs["cap_drop"] == ["ALL"]
+    assert run_kwargs["cap_add"] == ["DAC_READ_SEARCH"]
+    assert run_kwargs["network_disabled"] is True
+    assert run_kwargs["command"][2].startswith("/backup/.control-plane-encrypted-")
