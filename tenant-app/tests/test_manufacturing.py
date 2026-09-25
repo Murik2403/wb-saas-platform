@@ -13,11 +13,11 @@ from .base import DbTestCase
 
 
 class ManufacturingTests(DbTestCase):
-    def seed(self, name="Ткань", unit="м", quantity=20, rate=10):
+    def seed(self, name="Ткань", unit="м", quantity=20, rate=10, source_suffix=""):
         with connect() as conn:
             self.set_material_physical_stock(conn,name.casefold(),name,partial_meters=quantity,roll_length=1)
             conn.execute("UPDATE material_inventory_color SET unit=?,tracking_mode='quantity' WHERE material_key=?",(unit,name.casefold()))
-            return _create_material_layer(conn,name.casefold(),name,"opening","test:"+name,"2026-09-01",quantity,rate)
+            return _create_material_layer(conn,name.casefold(),name,"opening","test:"+name+source_suffix,"2026-09-01",quantity,rate)
 
     def bom(self, **kwargs):
         return m.save_bom_version(123,[{"material_name":"Ткань","quantity_per_unit":2,"unit":"м"},{"material_name":"Нить","quantity_per_unit":0.1,"unit":"кг"}],**kwargs)
@@ -105,6 +105,115 @@ class ManufacturingTests(DbTestCase):
         with self.assertRaisesRegex(ValueError, "другого варианта"):
             self.release(key="shared-task", quantity=1, chrt_id=222)
         self.assertEqual({row["chrt_id"] for row in m.list_manufacturing_releases(123)}, {111})
+
+    def _catalog_base(self, nm_id, article):
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (?,?,?,?)",
+                (nm_id, article, article, '{"sizes":[]}'),
+            )
+
+    def test_nested_semifinished_bom_consumes_exact_fifo_and_reverses_dependency_order(self):
+        self.seed("Ткань", "м", 10, 10)
+        self._catalog_base(222, "BLANK")
+        m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        first = m.post_manufacturing_release(222, 1, "2026-09-23", "blank-1")
+        # Force the next source layer to carry a distinct historical cost.
+        self.seed("Ткань", "м", 10, 20, source_suffix=":second")
+        second = m.post_manufacturing_release(222, 1, "2026-09-24", "blank-2")
+        self._catalog_base(333, "SUBASSEMBLY")
+        m.save_bom_version(333, [{"component_type":"semi_finished","nm_id":222,"chrt_id":0,
+                                  "quantity_per_unit":2,"unit":"шт"}])
+        middle = m.post_manufacturing_release(333,1,"2026-09-25","middle-1")
+        m.save_bom_version(123, [{"component_type":"semi_finished","nm_id":333,"chrt_id":0,
+                                  "quantity_per_unit":1,"unit":"шт"}])
+
+        finished = m.post_manufacturing_release(123,1,"2026-09-26","final-1")
+        self.assertEqual(finished["material_cost_rub"], middle["unit_cost_rub"])
+        with connect() as conn:
+            allocations = conn.execute(
+                "SELECT layer_id,units,amount_rub,from_location,to_location FROM finished_goods_fifo_allocations WHERE movement_id=? ORDER BY id",
+                (finished["movement_id"],),
+            ).fetchall()
+            middle_allocations = conn.execute(
+                "SELECT layer_id,units,amount_rub FROM finished_goods_fifo_allocations WHERE movement_id=? ORDER BY id",
+                (middle["movement_id"],),
+            ).fetchall()
+            self.assertEqual([int(row["layer_id"]) for row in allocations], [middle["finished_layer_id"]])
+            self.assertEqual([int(row["layer_id"]) for row in middle_allocations], [first["finished_layer_id"], second["finished_layer_id"]])
+            self.assertEqual([int(row["units"]) for row in middle_allocations], [1, 1])
+            self.assertAlmostEqual(sum(float(row["amount_rub"]) for row in middle_allocations),middle["material_cost_rub"],places=2)
+            self.assertAlmostEqual(float(allocations[0]["amount_rub"]),middle["unit_cost_rub"],places=2)
+            self.assertTrue(all((row["from_location"], row["to_location"]) == ("ready", "out") for row in allocations))
+
+        blocked = undo_inventory_movement(first["movement_id"])
+        self.assertFalse(blocked["ok"])
+        self.assertIn("Сначала отмените", blocked["message"])
+        undone_consumer = undo_inventory_movement(finished["movement_id"])
+        self.assertTrue(undone_consumer["ok"], undone_consumer)
+        undone_middle = undo_inventory_movement(middle["movement_id"])
+        self.assertTrue(undone_middle["ok"], undone_middle)
+        with connect() as conn:
+            restored = conn.execute(
+                "SELECT id,ready_units,status FROM finished_goods_cost_layers WHERE id IN (?,?) ORDER BY id",
+                (first["finished_layer_id"],second["finished_layer_id"]),
+            ).fetchall()
+            self.assertEqual([int(row["ready_units"]) for row in restored],[1,1])
+            self.assertTrue(all(row["status"] == "active" for row in restored))
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM finished_goods_fifo_allocations WHERE movement_id=? AND status='applied'",
+                (middle["movement_id"],),
+            ).fetchone()[0],0)
+        undone_second = undo_inventory_movement(second["movement_id"])
+        undone_first = undo_inventory_movement(first["movement_id"])
+        self.assertTrue(undone_second["ok"], undone_second)
+        self.assertTrue(undone_first["ok"], undone_first)
+        self.assertFalse(undo_inventory_movement(finished["movement_id"])["ok"])
+
+    def test_bom_rejects_nested_recipe_cycle(self):
+        self.seed()
+        self._catalog_base(123, "FINAL")
+        self._catalog_base(222, "BLANK")
+        m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        m.save_bom_version(123, [{"component_type":"semi_finished","nm_id":222,"chrt_id":0,
+                                  "quantity_per_unit":1,"unit":"шт"}])
+        with self.assertRaisesRegex(ValueError, "цикл"):
+            m.save_bom_version(222, [{"component_type":"semi_finished","nm_id":123,"chrt_id":0,
+                                      "quantity_per_unit":1,"unit":"шт"}])
+
+    def test_nested_shortage_is_atomic_and_variant_layers_never_cross(self):
+        layer = self.seed("Ткань", "м", 20, 10)
+        with connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (222,'BLANK','Заготовка','{\"sizes\":[{\"chrtID\":501},{\"chrtID\":502}]}')")
+        m.save_bom_version(222,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}],chrt_id=501)
+        m.save_bom_version(222,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}],chrt_id=502)
+        m.save_bom_version(123,[
+            {"material_name":"Ткань","quantity_per_unit":1,"unit":"м"},
+            {"component_type":"semi_finished","nm_id":222,"chrt_id":501,"quantity_per_unit":1,"unit":"шт"},
+        ])
+        wrong_variant = m.post_manufacturing_release(222,1,"2026-09-23","variant-502",chrt_id=502)
+        self.assertEqual(wrong_variant["posted"],1)
+        before_final = self.physical("Ткань")
+        with self.assertRaisesRegex(ValueError,"Недостаточно FIFO-полуфабрикатов"):
+            self.release(key="blocked-final",quantity=1)
+        self.assertEqual(self.physical("Ткань"),before_final)
+        with connect() as conn:
+            remaining = conn.execute("SELECT remaining_meters FROM material_cost_layers WHERE id=?",(layer,)).fetchone()[0]
+            self.assertEqual(remaining,before_final)  # raw FIFO remains at its pre-final state
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM material_fifo_consumptions").fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements WHERE movement_type='production_receipt' AND nm_id=123").fetchone()[0],0)
+
+    def test_fractional_semi_finished_requirement_is_rejected_before_posting(self):
+        self.seed()
+        self._catalog_base(222,"BLANK")
+        m.save_bom_version(222,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        m.post_manufacturing_release(222,2,"2026-09-23","blank-2")
+        m.save_bom_version(123,[{"component_type":"semi_finished","nm_id":222,"chrt_id":0,
+                                 "quantity_per_unit":0.5,"unit":"шт"}])
+        with self.assertRaisesRegex(ValueError,"Количество полуфабриката должно быть целым"):
+            self.release(key="fractional-final",quantity=1)
+        with connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements WHERE source_task_key='fractional-final'").fetchone()[0],0)
     def test_shortage_second_component_rolls_back_first_fifo_and_labor(self):
         first = self.seed()
         self.seed("Нить","кг",10,100)

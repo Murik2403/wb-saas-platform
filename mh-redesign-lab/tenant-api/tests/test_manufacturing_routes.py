@@ -29,7 +29,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "DB_PATH", tmp_path / "manufacturing.sqlite3")
     core.init_db()
     with core.connect() as conn:
-        conn.execute("INSERT INTO products_catalog(nm_id,product_name,raw_json) VALUES (123,'Салфетки','{}')")
+        conn.execute("INSERT INTO products_catalog(nm_id,product_name,raw_json) VALUES (123,'Салфетки','{\"sizes\":[]}')")
         conn.execute("INSERT INTO material_inventory_color(material_key,material_name,balance_known,full_rolls,partial_meters,roll_length,note,updated_at,unit,tracking_mode) VALUES ('ткань','Ткань',1,0,20,1,'','2026-09-23','м²','quantity')")
         _create_material_layer(conn, "ткань", "Ткань", "opening", "test-layer", "2026-09-01", 20, 10.5)
     app = FastAPI()
@@ -121,6 +121,43 @@ def test_bom_version_readback_preserves_previous_specification(client):
     rows = client.get(PREFIX).json()["boms"]
     assert next(row for row in rows if row["id"] == first["id"])["materials"][0]["quantity_per_unit"] == 2
     assert next(row for row in rows if row["id"] == second["id"])["materials"][0]["quantity_per_unit"] == 2.5
+
+
+def test_typed_semifinished_component_bom_is_validated_and_read_back(client):
+    with core.connect() as conn:
+        conn.execute(
+            "INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (222,'BLANK','Заготовка','{\"sizes\":[]}')"
+        )
+    child = post(client, "/boms", {**bom_payload(), "nm_id": 222})
+    parent = post(client, "/boms", bom_payload(materials=[{
+        "component_type": "semi_finished", "nm_id": 222, "chrt_id": 0,
+        "quantity_per_unit": 2, "unit": "шт",
+    }]))
+    assert child["id"] == parent["materials"][0]["component_bom_version_id"]
+    assert parent["materials"][0] == {
+        "component_type": "semi_finished", "nm_id": 222, "chrt_id": 0,
+        "component_bom_version_id": child["id"], "quantity_per_unit": 2.0, "unit": "шт",
+    }
+
+
+def test_nested_bom_cycle_is_rejected_over_http(client):
+    with core.connect() as conn:
+        conn.execute(
+            "INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (222,'BLANK','Заготовка','{\"sizes\":[]}')"
+        )
+    post(client, "/boms", {**bom_payload(), "nm_id": 222})
+    post(client, "/boms", bom_payload(materials=[{
+        "component_type": "semi_finished", "nm_id": 222, "chrt_id": 0,
+        "quantity_per_unit": 1, "unit": "шт",
+    }]))
+    response = client.post(PREFIX + "/boms", json={
+        **bom_payload(nm_id=222), "materials": [{
+            "component_type": "semi_finished", "nm_id": 123, "chrt_id": 0,
+            "quantity_per_unit": 1, "unit": "шт",
+        }],
+    })
+    assert response.status_code == 422
+    assert "цикл" in response.json()["detail"]
 
 
 def test_workspace_exposes_wb_size_variants_and_keeps_legacy_fallback(client):

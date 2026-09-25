@@ -155,6 +155,47 @@ def _equipment(row: sqlite3.Row) -> dict:
     return item
 
 
+def _bom_for_component(conn: sqlite3.Connection, nm_id: int, chrt_id: int) -> sqlite3.Row | None:
+    row = conn.execute(
+        "SELECT * FROM manufacturing_boms WHERE nm_id=? AND chrt_id=? ORDER BY version DESC LIMIT 1",
+        (int(nm_id), int(chrt_id)),
+    ).fetchone()
+    if row is None and chrt_id:
+        row = conn.execute(
+            "SELECT * FROM manufacturing_boms WHERE nm_id=? AND chrt_id=0 ORDER BY version DESC LIMIT 1",
+            (int(nm_id),),
+        ).fetchone()
+    return row
+
+
+def _assert_acyclic_bom_route(conn: sqlite3.Connection, component_nm_id: int, component_chrt_id: int,
+                               target: tuple[int, int], path: set[tuple[int, int]], depth: int = 1,
+                               visited_depths: dict[tuple[int, int], int] | None = None) -> int:
+    identity = (int(component_nm_id), int(component_chrt_id))
+    if identity == target or identity in path:
+        raise ValueError("В маршруте производства обнаружен цикл")
+    if depth > 8:
+        raise ValueError("Глубина маршрута не должна превышать 8 этапов")
+    visited_depths = visited_depths if visited_depths is not None else {}
+    if visited_depths.get(identity, 0) >= depth:
+        return depth
+    visited_depths[identity] = depth
+    bom = _bom_for_component(conn, *identity)
+    if bom is None:
+        raise ValueError(f"Спецификация полуфабриката {identity[0]} / {identity[1]} не найдена")
+    next_path = {*path, identity}
+    max_depth = depth
+    for nested in json.loads(str(bom["materials_json"] or "[]")):
+        if str(nested.get("component_type") or "raw_material") != "semi_finished":
+            continue
+        child_depth = _assert_acyclic_bom_route(
+            conn, int(nested["nm_id"]), int(nested["chrt_id"]), target, next_path, depth + 1,
+            visited_depths,
+        )
+        max_depth = max(max_depth, child_depth)
+    return max_depth
+
+
 def save_equipment(name: str, acquisition_cost_rub: float, salvage_value_rub: float,
                    resource_quantity: float, resource_unit: str, equipment_id: int | None = None) -> dict:
     name = _text(name, "Название оборудования")
@@ -198,20 +239,53 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         components, steps, keys, names = [], [], set(), set()
+        visited_route_depths: dict[tuple[int, int], int] = {}
         for item in materials:
+            quantity = _number(item.get("quantity_per_unit"), "Норма", positive=True)
+            if round(quantity, 6) < 0.001:
+                raise ValueError("Норма должна быть >= 0.001")
+            component_type = str(item.get("component_type") or "raw_material")
+            if component_type == "semi_finished":
+                if item.get("material_name") or item.get("material_key"):
+                    raise ValueError("Полуфабрикат нельзя одновременно задать как сырьё")
+                component_nm_id = _integer(item.get("nm_id"), "Артикул полуфабриката")
+                component_chrt_id = _variant_id(item.get("chrt_id", 0))
+                identity = ("semi_finished", component_nm_id, component_chrt_id)
+                if identity in keys:
+                    raise ValueError("Повторяющиеся компоненты объедините")
+                from .wip import validate_catalog_identity
+                validate_catalog_identity(conn, component_nm_id, component_chrt_id)
+                child_bom = _bom_for_component(conn, component_nm_id, component_chrt_id)
+                if child_bom is None:
+                    raise ValueError(f"Спецификация полуфабриката {component_nm_id} / {component_chrt_id} не найдена")
+                _assert_acyclic_bom_route(conn, component_nm_id, component_chrt_id,
+                                          (nm_id, chrt_id), set(), visited_depths=visited_route_depths)
+                unit = str(item.get("unit") or "шт")
+                if unit != "шт":
+                    raise ValueError("Единица полуфабриката должна быть шт")
+                keys.add(identity)
+                components.append({"component_type":"semi_finished","nm_id":component_nm_id,
+                                   "chrt_id":component_chrt_id,"component_bom_version_id":int(child_bom["id"]),
+                                   "quantity_per_unit":quantity,"unit":"шт"})
+                continue
+            if component_type != "raw_material":
+                raise ValueError("Тип компонента должен быть raw_material или semi_finished")
+            if item.get("nm_id") is not None or item.get("chrt_id") is not None:
+                raise ValueError("Для сырья не указывают артикул или вариант товара")
             name = _text(item.get("material_name"), "Материал")
             key = name.casefold()
-            quantity = _number(item.get("quantity_per_unit"), "Норма", positive=True)
-            if round(quantity, 6) < 0.001 or key in keys:
-                raise ValueError("Норма должна быть >= 0.001; повторяющиеся компоненты объедините")
+            identity = ("raw_material", key)
+            if identity in keys:
+                raise ValueError("Повторяющиеся компоненты объедините")
             row = conn.execute("SELECT * FROM material_inventory_color WHERE material_key=?", (key,)).fetchone()
             if row is None:
                 raise ValueError(f"Материал «{name}» отсутствует в справочнике")
             unit = str(row["unit"] or "м")
             if item.get("unit", unit) != unit:
                 raise ValueError(f"Единица материала «{name}» должна быть {unit}")
-            keys.add(key)
-            components.append({"material_key":key,"material_name":row["material_name"],"quantity_per_unit":quantity,"unit":unit})
+            keys.add(identity)
+            components.append({"component_type":"raw_material","material_key":key,
+                               "material_name":row["material_name"],"quantity_per_unit":quantity,"unit":unit})
         for item in operations or []:
             name = _text(item.get("name"), "Операция")
             if name.casefold() in names:
@@ -304,7 +378,7 @@ def _movement(conn, *, event_key, movement_type, nm_id=0, quantity=0, source_key
 def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
                        bom_version_id=None, supplier_article="", product_name="", chrt_id=None) -> dict:
     from .fifo_materials import _consume_material_fifo
-    from .fifo_finished_goods import _create_finished_goods_layer
+    from .fifo_finished_goods import _create_finished_goods_layer, _move_finished_goods_fifo
     from .production import _apply_pipeline_delta
     nm_id, quantity = _integer(nm_id,"Артикул"), _integer(quantity,"Количество выпуска")
     chrt_id = _variant_id(chrt_id) if chrt_id is not None else 0
@@ -347,10 +421,24 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
     components, labor, equipment = [], [], []
     for item in spec["materials"]:
         needed = round(item["quantity_per_unit"]*quantity,6)
-        available = conn.execute("SELECT COALESCE(SUM(remaining_meters),0) FROM material_cost_layers WHERE material_key=? AND status='active' AND (source_date IS NULL OR source_date<=?)",(item["material_key"],day)).fetchone()[0]
-        if available + 0.000001 < needed:
-            raise ValueError(f"Недостаточно FIFO-слоёв «{item['material_name']}»")
-        components.append({**item,"quantity":needed})
+        if item.get("component_type") == "semi_finished":
+            if not float(needed).is_integer():
+                raise ValueError("Количество полуфабриката должно быть целым")
+            needed_units = int(needed)
+            available = conn.execute(
+                "SELECT COALESCE(SUM(ready_units),0) FROM finished_goods_cost_layers "
+                "WHERE nm_id=? AND chrt_id=? AND status<>'reversed' AND ready_units>0 "
+                "AND (source_date IS NULL OR source_date<=?)",
+                (int(item["nm_id"]),int(item["chrt_id"]),day),
+            ).fetchone()[0]
+            if int(available or 0) < needed_units:
+                raise ValueError(f"Недостаточно FIFO-полуфабрикатов {item['nm_id']} / {item['chrt_id']}")
+            components.append({**item,"quantity":needed,"required_units":needed_units})
+        else:
+            available = conn.execute("SELECT COALESCE(SUM(remaining_meters),0) FROM material_cost_layers WHERE material_key=? AND status='active' AND (source_date IS NULL OR source_date<=?)",(item["material_key"],day)).fetchone()[0]
+            if available + 0.000001 < needed:
+                raise ValueError(f"Недостаточно FIFO-слоёв «{item['material_name']}»")
+            components.append({**item,"quantity":needed})
     actuals = [dict(r) for r in conn.execute(
         "SELECT * FROM manufacturing_piecework WHERE source_key=? AND chrt_id IN (?,0) ORDER BY CASE WHEN chrt_id=? THEN 0 ELSE 1 END,id",
         (key,chrt_id,chrt_id),
@@ -386,8 +474,20 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
     conn.execute("UPDATE inventory_movements SET chrt_id=? WHERE id=?", (chrt_id,movement_id))
     material_total = 0.0
     for item in components:
-        _change_physical(conn,item["material_key"],-item["quantity"],item["unit"])
-        cost, allocations = _consume_material_fifo(conn,movement_id,item["material_key"],item["material_name"],item["quantity"])
+        if item.get("component_type") == "semi_finished":
+            catalog = conn.execute("SELECT supplier_article,product_name FROM products_catalog WHERE nm_id=?",
+                                   (int(item["nm_id"]),)).fetchone()
+            cost, allocations = _move_finished_goods_fifo(
+                conn,movement_id,int(item["nm_id"]),str(catalog["supplier_article"] or ""),
+                str(catalog["product_name"] or ""),int(item["required_units"]),"ready","out",
+                chrt_id=int(item["chrt_id"]),
+            )
+            from .production import _apply_pipeline_delta
+            _apply_pipeline_delta(conn,int(item["nm_id"]),str(catalog["supplier_article"] or ""),
+                                  -int(item["required_units"]),0)
+        else:
+            _change_physical(conn,item["material_key"],-item["quantity"],item["unit"])
+            cost, allocations = _consume_material_fifo(conn,movement_id,item["material_key"],item["material_name"],item["quantity"])
         item.update(cost_rub=cost,allocations=allocations)
         material_total += cost
     labor_total = round(sum(r["amount_rub"] for r in labor),2)
@@ -479,9 +579,16 @@ def _undo_manufacturing_conn(conn: sqlite3.Connection, movement_id: int) -> dict
                     if any(e["equipment_id"] == item["equipment_id"] for e in json.loads(later[0])):
                         raise ValueError("Сначала отмените более поздние выпуски на этом оборудовании")
             _reverse_finished_goods_source_layer(conn,movement_id)
+            from .fifo_finished_goods import _reverse_finished_goods_allocations
+            _reverse_finished_goods_allocations(conn,movement_id)
             _reverse_fifo_consumption(conn,movement_id)
             for component in data["materials"]:
-                _change_physical(conn,component["material_key"],component["quantity"],component["unit"])
+                if component.get("component_type") == "semi_finished":
+                    from .production import _apply_pipeline_delta
+                    _apply_pipeline_delta(conn,int(component["nm_id"]),"",
+                                          int(component["required_units"]),0)
+                else:
+                    _change_physical(conn,component["material_key"],component["quantity"],component["unit"])
             _apply_pipeline_delta(conn,row["nm_id"],"",-row["quantity"],0)
             for item in data["equipment"]:
                 conn.execute("UPDATE manufacturing_equipment SET consumed_resource=MAX(0,consumed_resource-?),updated_at=? WHERE id=?",(item["usage"],_now(),item["equipment_id"]))

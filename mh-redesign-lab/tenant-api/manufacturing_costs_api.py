@@ -15,9 +15,12 @@ class Input(BaseModel):
 
 
 class Material(Input):
-    material_name: str = Field(min_length=1, max_length=250)
+    component_type: Literal["raw_material", "semi_finished"] = "raw_material"
+    material_name: str | None = Field(default=None, min_length=1, max_length=250)
+    nm_id: int | None = Field(default=None, gt=0)
+    chrt_id: int | None = Field(default=None, ge=0)
     quantity_per_unit: FiniteFloat = Field(gt=0)
-    unit: str = Field(min_length=1, max_length=16)
+    unit: str | None = Field(default=None, min_length=1, max_length=16)
 
 
 class Operation(Input):
