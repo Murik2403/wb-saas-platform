@@ -34,7 +34,7 @@
   // Lifecycle conversions are queued only after the server-rendered, signed
   // consent has initialized the counter. The event name is a fixed allowlist;
   // no account, email, SKU, or other user data is sent to Metrika.
-  const allowedGoals = new Set(["account_created", "trial_started", "first_useful_report"]);
+  const allowedGoals = new Set(["account_created", "trial_started", "first_useful_report", "signup"]);
   window.marketshelperTrackGoal = function (goal) {
     if (choice !== "analytics" || !counter || !allowedGoals.has(goal)) return false;
     startCounter();

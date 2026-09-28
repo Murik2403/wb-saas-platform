@@ -118,11 +118,12 @@ test('private page with an empty counter never loads a tracker even after analyt
 test('lifecycle goals are sent only after server consent and only from the allowlist', () => {
   const denied = boot({ choice: 'essential', goals: 'account_created,trial_started' });
   assert.deepEqual(denied.events(), []);
-  const page = boot({ choice: 'analytics', goals: 'account_created,trial_started,first_useful_report,private_value' });
+  const page = boot({ choice: 'analytics', goals: 'account_created,trial_started,first_useful_report,signup,private_value' });
   assert.deepEqual(page.events().filter(event => event[1] === 'reachGoal'), [
     [12345678, 'reachGoal', 'account_created'],
     [12345678, 'reachGoal', 'trial_started'],
     [12345678, 'reachGoal', 'first_useful_report'],
+    [12345678, 'reachGoal', 'signup'],
   ]);
 });
 

@@ -444,7 +444,7 @@ def verify_email_sent(request: Request, invite: str = ""):
     response = templates.TemplateResponse(
         request,
         "verify_email_sent.html",
-        {"analytics_goals": ["account_created"], "csrf_token": csrf_token, "invite": invite},
+        {"analytics_goals": ["account_created", "signup"], "csrf_token": csrf_token, "invite": invite},
     )
     csrf.set_cookie(response, csrf_token)
     return response
@@ -486,7 +486,7 @@ def resend_verification(
         request,
         "verify_email_sent.html",
         {
-            "analytics_goals": ["account_created"],
+            "analytics_goals": ["account_created", "signup"],
             "csrf_token": resend_csrf_token,
             "invite": invite,
             "resend_message": "Если аккаунт существует и email ещё не подтверждён, мы отправили новое письмо. Проверьте папку «Спам».",
