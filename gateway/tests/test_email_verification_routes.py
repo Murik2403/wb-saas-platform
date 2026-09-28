@@ -27,12 +27,18 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.init_db()
+        self.original_growth_cookie_secret = app.config.GROWTH_COOKIE_SECRET
+
+    def tearDown(self) -> None:
+        app.config.GROWTH_COOKIE_SECRET = self.original_growth_cookie_secret
+        super().tearDown()
 
     def _app_connect(self, *args, **kwargs):
         return REAL_CONNECT(self.db_path)
 
     def test_registration_sends_verification_and_does_not_start_provisioning(self) -> None:
         app.auth_rate_limiter.clear()
+        app.config.GROWTH_COOKIE_SECRET = "test-growth-signing-key"
         background = BackgroundTasks()
         with (
             mock.patch.object(app.control_db, "connect", side_effect=self._app_connect),
@@ -45,6 +51,7 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
             )
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/verify-email-sent")
+        self.assertIn("mh_registration_goal=", response.headers.get("set-cookie", ""))
         self.assertEqual(len(background.tasks), 1)
         with self.connect() as conn:
             account = accounts.get_account_by_email(conn, "seller@example.test")
@@ -72,6 +79,16 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
             account = accounts.get_account_by_email(conn, "optin@example.test")
             self.assertTrue(account["pdn_consent_at"])
             self.assertTrue(account["marketing_consent_at"])
+
+    def test_rejected_registration_does_not_mark_signup_goal(self) -> None:
+        app.auth_rate_limiter.clear()
+        background = BackgroundTasks()
+        with mock.patch.object(app.csrf, "verify", return_value=False):
+            response = app.register_submit(
+                _request("/register"), background, "seller@example.test", "safe-password-123", "yes", "csrf"
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("mh_registration_goal=", " ".join(response.headers.getlist("set-cookie")))
 
     def test_unverified_login_is_rejected(self) -> None:
         with self.connect() as conn:
@@ -130,6 +147,8 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
                 "csrf",
             )
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("signup", response.body.decode("utf-8"))
+        self.assertNotIn("account_created", response.body.decode("utf-8"))
         self.assertIn("Если аккаунт существует", response.body.decode("utf-8"))
         self.assertEqual(len(background.tasks), 1)
         with self.connect() as conn:
@@ -153,5 +172,43 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
                 "csrf",
             )
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("signup", response.body.decode("utf-8"))
+        self.assertNotIn("account_created", response.body.decode("utf-8"))
         self.assertIn("Если аккаунт существует", response.body.decode("utf-8"))
         self.assertEqual(len(background.tasks), 0)
+
+    def test_confirmation_page_counts_registration_only_with_valid_marker_and_analytics_consent(self) -> None:
+        app.config.GROWTH_COOKIE_SECRET = "test-growth-signing-key"
+        marker = app.growth_web._sign({"registration": True}, "registration-goal", 300)
+        consent = app.growth_web._sign({"choice": "analytics"}, "consent", 180 * 86400)
+        request = _request(
+            "/verify-email-sent", "GET",
+            headers=[(b"cookie", f"mh_registration_goal={marker}; mh_analytics_consent={consent}".encode())],
+        )
+        response = app.verify_email_sent(request)
+        body = response.body.decode("utf-8")
+        self.assertIn('data-goals="account_created,signup"', body)
+        set_cookies = response.headers.getlist("set-cookie")
+        self.assertTrue(any("mh_registration_goal=" in value for value in set_cookies))
+        self.assertTrue(any("Max-Age=0" in value for value in set_cookies))
+
+    def test_confirmation_page_does_not_count_direct_visit_or_registration_without_consent(self) -> None:
+        app.config.GROWTH_COOKIE_SECRET = "test-growth-signing-key"
+        marker = app.growth_web._sign({"registration": True}, "registration-goal", 300)
+        consent = app.growth_web._sign({"choice": "essential"}, "consent", 180 * 86400)
+        requests = [
+            _request("/verify-email-sent", "GET"),
+            _request("/verify-email-sent", "GET", headers=[(b"cookie", f"mh_registration_goal={marker}; mh_analytics_consent={consent}".encode())]),
+        ]
+        for request in requests:
+            response = app.verify_email_sent(request)
+            body = response.body.decode("utf-8")
+            self.assertNotIn("signup", body)
+            self.assertNotIn("account_created", body)
+
+        tampered = _request(
+            "/verify-email-sent", "GET",
+            headers=[(b"cookie", b"mh_registration_goal=invalid.signature")],
+        )
+        response = app.verify_email_sent(tampered)
+        self.assertNotIn("signup", response.body.decode("utf-8"))

@@ -84,12 +84,21 @@ class GrowthIntegrationTests(GatewayDbTestCase):
 
     def test_private_pages_do_not_get_a_counter(self):
         self.choose("analytics")
-        for path in ("/register", "/login", "/verify-email-sent", "/forgot-password"):
+        for path in ("/register", "/login", "/forgot-password"):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('data-counter=""', response.text)
                 self.assertNotIn("reachGoal", response.text)
+                self.assertIn("private, no-store", response.headers.get("cache-control", ""))
+
+    def test_registration_confirmation_is_analytics_enabled_only_after_successful_signup(self):
+        self.choose("analytics")
+        response = self.client.get("/verify-email-sent")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-counter="12345678"', response.text)
+        self.assertIn('data-goals=""', response.text)
+        self.assertIn("private, no-store", response.headers.get("cache-control", ""))
 
     def test_calculator_landing_page_keeps_attribution_after_consent(self):
         self.choose("analytics", utm_source="yandex", utm_campaign="wb_pilot_01", utm_term="unit_01")

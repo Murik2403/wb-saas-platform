@@ -22,9 +22,11 @@ import config
 
 CONSENT_COOKIE = "mh_analytics_consent"
 SOURCE_COOKIE = "mh_acquisition"
+REGISTRATION_GOAL_COOKIE = "mh_registration_goal"
 CONSENT_VERSION = 2
 SOURCE_TTL = 30 * 86400
 CONSENT_TTL = 180 * 86400
+REGISTRATION_GOAL_TTL = 5 * 60
 UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term")
 PUBLIC_ANALYTICS_PATHS = {
     "/", "/pricing", "/dlya-proizvoditeley-wb", "/sebestoimost-wb",
@@ -77,7 +79,7 @@ def consent_choice(request: Request) -> str:
 
 def metrika_counter(request: Request) -> str:
     counter = str(config.YANDEX_METRIKA_ID)
-    if optional_analytics_available() and request.url.path in PUBLIC_ANALYTICS_PATHS and counter.isdigit():
+    if optional_analytics_available() and request.url.path in PUBLIC_ANALYTICS_PATHS | {"/verify-email-sent"} and counter.isdigit():
         return counter
     return ""
 
@@ -89,6 +91,18 @@ def _source(values) -> dict[str, str]:
 
 def _set_cookie(response, name: str, value: str, ttl: int) -> None:
     response.set_cookie(name, value, max_age=ttl, httponly=True, secure=config.COOKIE_SECURE, samesite="lax", path="/")
+
+
+def set_registration_goal_marker(response) -> None:
+    """Mark a successful registration redirect without storing account data."""
+    value = _sign({"registration": True}, "registration-goal", REGISTRATION_GOAL_TTL)
+    if value:
+        _set_cookie(response, REGISTRATION_GOAL_COOKIE, value, REGISTRATION_GOAL_TTL)
+
+
+def has_registration_goal_marker(request: Request) -> bool:
+    data = _read(request.cookies.get(REGISTRATION_GOAL_COOKIE, ""), "registration-goal")
+    return data.get("registration") is True
 
 
 def registration_source(request: Request) -> tuple[dict, datetime | None]:

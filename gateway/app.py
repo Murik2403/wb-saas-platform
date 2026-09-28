@@ -401,7 +401,9 @@ def register_submit(
     )
     sent_params = {"invite": invite} if invite else {}
     sent_url = f"/verify-email-sent?{urlencode(sent_params)}" if sent_params else "/verify-email-sent"
-    return RedirectResponse(sent_url, status_code=303)
+    response = RedirectResponse(sent_url, status_code=303)
+    growth_web.set_registration_goal_marker(response)
+    return response
 
 
 @app.get("/unsubscribe", response_class=HTMLResponse)
@@ -441,12 +443,15 @@ def unsubscribe(request: Request, token: str = Form("")):
 @app.get("/verify-email-sent", response_class=HTMLResponse)
 def verify_email_sent(request: Request, invite: str = ""):
     csrf_token = csrf.get_or_create_token(request)
+    registration_completed = growth_web.has_registration_goal_marker(request)
+    goals = ["account_created", "signup"] if registration_completed and growth_web.consent_choice(request) == "analytics" else []
     response = templates.TemplateResponse(
         request,
         "verify_email_sent.html",
-        {"analytics_goals": ["account_created"], "csrf_token": csrf_token, "invite": invite},
+        {"analytics_goals": goals, "csrf_token": csrf_token, "invite": invite},
     )
     csrf.set_cookie(response, csrf_token)
+    response.delete_cookie(growth_web.REGISTRATION_GOAL_COOKIE, path="/")
     return response
 
 
@@ -486,7 +491,7 @@ def resend_verification(
         request,
         "verify_email_sent.html",
         {
-            "analytics_goals": ["account_created"],
+            "analytics_goals": [],
             "csrf_token": resend_csrf_token,
             "invite": invite,
             "resend_message": "Если аккаунт существует и email ещё не подтверждён, мы отправили новое письмо. Проверьте папку «Спам».",
