@@ -44,6 +44,7 @@ COPY mh-redesign-lab/tenant-api/request_security.py ./request_security.py
 COPY mh-redesign-lab/tenant-api/action_plan_executor.py ./action_plan_executor.py
 COPY mh-redesign-lab/tenant-api/growth_activation.py ./growth_activation.py
 COPY mh-redesign-lab/tenant-api/growth_delivery.py ./growth_delivery.py
+COPY mh-redesign-lab/tenant-api/growth_outbox_worker.py ./growth_outbox_worker.py
 COPY mh-redesign-lab/tenant-api/store_expense_import.py ./store_expense_import.py
 COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
 COPY mh-redesign-lab/deploy/nginx.tenant-staging.conf /etc/nginx/conf.d/default.conf

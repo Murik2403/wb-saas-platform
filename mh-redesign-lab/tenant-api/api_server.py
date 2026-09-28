@@ -10,9 +10,11 @@ covers all 12 sections.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 import json
 import hashlib
+import logging
 import math
 import os
 from contextlib import asynccontextmanager
@@ -34,7 +36,21 @@ from pydantic import BaseModel, FiniteFloat, Field
 from ads_service import compute_ads
 from backup_tools import create_backup, latest_backup, list_backups
 from calculations import build_dashboard
-from config import DB_PATH, IS_DEMO, delete_ozon_credentials, delete_token, get_ozon_credentials, get_token, load_settings, save_ozon_credentials, save_settings, save_token
+from config import (
+    DB_PATH,
+    INTERNAL_API_SECRET,
+    INTERNAL_API_URL,
+    IS_DEMO,
+    TENANT_SLUG,
+    delete_ozon_credentials,
+    delete_token,
+    get_ozon_credentials,
+    get_token,
+    load_settings,
+    save_ozon_credentials,
+    save_settings,
+    save_token,
+)
 from db import (
     apply_finished_goods_reconciliation,
     close_production_shift,
@@ -71,6 +87,7 @@ from overview_service import (
 from products_service import compute_products
 from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 from growth_delivery import deliver_pending_growth_events
+from growth_outbox_worker import delivery_worker_enabled, run_growth_outbox_worker
 from today_service import compute_today, json_safe
 from ui_helpers import build_data_quality_overview
 from reports.store import ReportStore
@@ -116,6 +133,8 @@ from dashboard_cache import DashboardResponseCache
 from sync import sync_all, sync_ads_only, sync_finances
 from wb_api import WBAPI
 from report_tools import build_finance_excel, build_reconciliation
+
+logger = logging.getLogger(__name__)
 from sync_lock import is_sync_running, sync_lock
 from sync_runner import SyncRunner
 from request_security import write_origin_allowed
@@ -718,9 +737,27 @@ async def lifespan(app):
         _startup()
         if os.environ.get("MH_LOCAL_JOBS") == "1" and not IS_DEMO:
             local_jobs.start()
+        growth_worker_stop = None
+        growth_worker_task = None
+        if delivery_worker_enabled(
+            is_demo=IS_DEMO,
+            internal_api_url=INTERNAL_API_URL,
+            internal_api_secret=INTERNAL_API_SECRET,
+            tenant_slug=TENANT_SLUG,
+        ):
+            growth_worker_stop = asyncio.Event()
+            growth_worker_task = asyncio.create_task(
+                run_growth_outbox_worker(growth_worker_stop, DB_PATH),
+                name="growth-outbox-delivery",
+            )
+            logger.info("Growth outbox retry worker started")
         try:
             yield
         finally:
+            if growth_worker_task is not None:
+                growth_worker_stop.set()
+                await growth_worker_task
+                logger.info("Growth outbox retry worker stopped")
             local_jobs.stop()
 
 
