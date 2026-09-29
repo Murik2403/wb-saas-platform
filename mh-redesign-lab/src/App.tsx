@@ -8,6 +8,7 @@ import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
 import { OzonAccounting } from "./OzonAccounting";
+import { PriceScenarios } from "./PriceScenarios";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { RuntimeStatus } from "./RuntimeStatus";
@@ -1824,6 +1825,7 @@ function FinanceView({
       <ManagementPnlSummary period={period} />
       <ShopWorkspaces />
       <OzonAccounting />
+      <PriceScenarios />
       {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <section className={`panel finance-cogs-evidence ${financeReport.cogsEvidence.complete ? "" : "finance-cogs-incomplete"}`} aria-label="Покрытие себестоимости в прибыли">
         <SectionHeader compact kicker="Себестоимость в P&L" title={financeReport.cogsEvidence.complete ? "Себестоимость подтверждена или оценена полностью" : "В прибыли есть строки без себестоимости"}>
           <PackageCheck size={18} />
