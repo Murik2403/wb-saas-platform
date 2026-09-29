@@ -13,27 +13,29 @@
 
 ### Task 1: Atomic journal storage and writers
 Files: `tenant-app/db/core.py`, new `tenant-app/db/settings_history.py`, `tenant-app/db/fifo_materials.py`, `tenant-app/db/production.py`, new DB tests.
-- [ ] Add table `settings_change_history(id INTEGER PRIMARY KEY, kind TEXT, nm_id INTEGER, before_json TEXT, after_json TEXT, changed_at TEXT, source TEXT, actor TEXT)` with kind/nm/time index; reject UPDATE/DELETE with SQLite triggers.
-- [ ] Define `append_settings_change(conn, *, kind, nm_id, before, after, source, actor=None)`; JSON snapshots compare known typed fields and skip unchanged values. Initial creation has before=null.
-- [ ] Instrument save_costs/save_production_settings under their existing connection transaction. Preserve function signatures with optional keyword-only source/actor. Acquire write transaction before old-value reads; journal and mutation rollback together.
-- [ ] Tests: creation and real change snapshots, no-op dedup, failed journal insertion rolls back current values/batch, repeated init, journal immutable, legacy writers covered.
+- [x] Add table `settings_change_history(id INTEGER PRIMARY KEY, kind TEXT, nm_id INTEGER, before_json TEXT, after_json TEXT, changed_at TEXT, source TEXT, actor TEXT)` with kind/nm/time index; reject UPDATE/DELETE with SQLite triggers.
+- [x] Define `append_settings_change(conn, *, kind, nm_id, before, after, source, actor=None)`; JSON snapshots compare known typed fields and skip unchanged values. Initial creation has before=null.
+- [x] Instrument save_costs/save_production_settings under their existing connection transaction. Preserve function signatures with optional keyword-only source/actor. Acquire write transaction before old-value reads; journal and mutation rollback together.
+- [x] Tests: creation and real change snapshots, no-op dedup, failed journal insertion rolls back current values/batch, repeated init, journal immutable, legacy writers covered.
 
 ### Task 2: API writes and paginated read
 Files: `mh-redesign-lab/tenant-api/api_server.py`, new API tests.
-- [ ] Preserve cost PATCH validation and call shared writer with source=tenant_api and forwarded x-tenant-account actor if present.
-- [ ] Journal norm PATCH in the same SQLite transaction; validate the entire batch/duplicates/missing rows before mutation, reject nonfinite fields via existing models.
-- [ ] GET `/api/v1/settings/change-history?kind=cost|production_norm&nm_id=<positive>&limit=25&offset=0` returns `{items:[{id,kind,nm_id,before,after,changed_at,source,actor}],total,limit,offset}`; optional filters, limit1..100. No mutations exposed.
-- [ ] Tests prove transactional old/new values, no-op, invalid batch untouched, filters/paging, tenant viewer read allowed/write denied and manufacturing snapshots unchanged.
+- [x] Preserve cost PATCH validation and call shared writer with source=tenant_api and forwarded x-tenant-account actor if present.
+- [x] Journal norm PATCH in the same SQLite transaction; validate the entire batch/duplicates/missing rows before mutation, reject nonfinite fields via existing models.
+- [x] GET `/api/v1/settings/change-history?kind=cost|production_norm&nm_id=<positive>&limit=25&offset=0` returns `{items:[{id,kind,nm_id,before,after,changed_at,source,actor}],total,limit,offset}`; optional filters, limit1..100. No mutations exposed.
+- [x] Tests prove transactional old/new values, no-op, invalid batch untouched, filters/paging, tenant viewer read allowed/write denied and manufacturing snapshots unchanged.
 
 ### Task 3: Settings panel
 Files: new `mh-redesign-lab/src/SettingsChangeHistory.tsx` and tests, `src/data-source.ts`, `src/App.tsx`, small scoped styles if needed.
-- [ ] Typed `getSettingsChangeHistory({kind?,nm_id?,limit?,offset?})` consumes exact API.
-- [ ] Settings panel “История норм и себестоимости” shows date, product WB identity, change type, readable before→after fields, source/actor only when present. Known-field Russian labels only, no raw JSON dumps.
-- [ ] Filter by product WB ID and type; pagination, refresh, loading/error/retry/empty states. Explain records start when tracking enabled. Panel independently loads; failure cannot hide Settings.
-- [ ] UI tests: real before/after formatting, first creation, filtering resets offset, pagination, retry/empty. Build and full relevant frontend tests.
+- [x] Typed `getSettingsChangeHistory({kind?,nm_id?,limit?,offset?})` consumes exact API.
+- [x] Settings panel “История норм и себестоимости” shows date, product WB identity, change type, readable before→after fields, source/actor only when present. Known-field Russian labels only, no raw JSON dumps.
+- [x] Filter by product WB ID and type; pagination, refresh, loading/error/retry/empty states. Explain records start when tracking enabled. Panel independently loads; failure cannot hide Settings.
+- [x] UI tests: real before/after formatting, first creation, filtering resets offset, pagination, retry/empty. Build and full relevant frontend tests.
 
 ### Task 4: Release acceptance
-- [ ] Independently inspect all deltas and full tenant/API/frontend tests plus build. Update code graph.
-- [ ] Commit scoped source, export/build with exact full revision, verify image ID/label.
-- [ ] Independently restore encrypted tenant backup and run candidate and original APIs on isolated migrated copy.
-- [ ] Verified live rollout mvvorokov with previous container retained; new read API, existing business APIs, assets and immutable revision confirmed; document deployment and remaining audit gaps.
+- [x] Independently inspect all deltas and full tenant/API/frontend tests plus build. Update code graph.
+- [x] Commit scoped source, export/build with exact full revision, verify image ID/label.
+- [x] Independently restore encrypted tenant backup and run candidate and original APIs on isolated migrated copy.
+- [x] Verified live rollout mvvorokov with previous container retained; new read API, existing business APIs, assets and immutable revision confirmed; document deployment and remaining audit gaps.
+
+Verified acceptance: docs/marketing/RELEASE_ACCEPTANCE_2026-09-30.md. Runtime e7c39ff deployed; authenticated manual visual review remains separate.
