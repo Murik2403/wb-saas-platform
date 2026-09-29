@@ -84,6 +84,12 @@ class MarketingRouteTests(unittest.TestCase):
         self.assertIn("id=\"calcStorage\"", html)
         self.assertIn("id=\"calcTax\"", html)
 
+    def test_calculator_hero_links_directly_to_the_form(self):
+        html = self.client.get("/calculator").text
+        self.assertIn('href="#calculator-form"', html)
+        self.assertIn('id="calculator-form"', html)
+        self.assertIn('>Перейти к расчёту</a>', html)
+
     def test_calculator_explains_manual_coverage_for_external_articles(self):
         html = self.client.get("/calculator").text
         self.assertIn("учитывает каждую статью только после того, как вы введёте её значение", html)
