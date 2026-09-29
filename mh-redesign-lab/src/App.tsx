@@ -5,6 +5,7 @@ import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { SupplyPlanning } from "./SupplyPlanning";
 import { CashflowPanel } from "./CashflowPanel";
+import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
 import { OzonAccounting } from "./OzonAccounting";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
@@ -1162,7 +1163,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? <SettingsViewV2 onSynced={dashboard.refresh} /> : null}
+        {activeNav === "settings" ? <><MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} /><SettingsViewV2 onSynced={dashboard.refresh} /></> : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">

@@ -1,0 +1,8 @@
+.migration-import { padding: 24px; margin-bottom: 20px; }
+.migration-import fieldset { border: 1px solid var(--border-color, #35414a); border-radius: 12px; padding: 16px; }
+.migration-import label { display: grid; gap: 6px; margin: 12px 0; min-width: 0; }
+.migration-import textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: ui-monospace, monospace; }
+.migration-import select, .migration-import textarea { color: inherit; background: var(--surface-color, #10151d); border: 1px solid var(--border-color, #35414a); padding: 10px; border-radius: 8px; }
+.migration-import details { margin-top: 18px; }
+.migration-import summary { cursor: pointer; }
+.migration-import :focus-visible { outline: 2px solid #23dbad; outline-offset: 3px; }
