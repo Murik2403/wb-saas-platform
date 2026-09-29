@@ -133,7 +133,16 @@ def workspace(start, end):
         walk(row)
         if row.get("container_fees"):
             blockers.add("Начисления по грузоместам сохранены; их структура пока не подтверждена.")
-        for item in (row.get("posting") or {}).get("products", []):
+        posting=row.get("posting")
+        product_rows=posting.get("products") if isinstance(posting,dict) else None
+        if category in {"POSTING","ITEM"} and (not isinstance(product_rows,list) or not product_rows):
+            blockers.add("Товарное начисление без подтверждённого состава: объём и себестоимость неизвестны.")
+        if not isinstance(product_rows,list):
+            product_rows=[]
+        for item in product_rows:
+            if not isinstance(item,dict):
+                blockers.add("Не распознан состав товарного начисления Ozon.")
+                continue
             try:
                 qty = int(item["quantity"])
                 if qty <= 0 or isinstance(item["quantity"], bool) or qty != item["quantity"]: raise ValueError()

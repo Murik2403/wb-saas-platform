@@ -85,6 +85,18 @@ class OzonLedgerTests(DbTestCase):
         with connect() as conn:
             assert conn.execute("SELECT COUNT(*) FROM ozon_cost_mapping_history").fetchone()[0] == 1
 
+    def test_missing_or_unrecognized_trade_detail_never_means_confirmed_zero_cost(self):
+        for category in ("POSTING","ITEM"):
+            for posting in (None,{},[],{"products":[]},{"products":"unknown"},{"products":["unknown"]}):
+                row={"accrual_id":2,"date":"2026-09-01","total_amount":{"amount":"100","currency":"RUB"},"accrued_category":category,"posting":posting}
+                import_snapshot(fixture_snapshot([row]))
+                result=workspace("2026-09-01","2026-09-02")
+                assert result["source_complete"] is True
+                assert result["accounting_complete"] is False
+                assert result["profit_rub"] is None
+                assert result["estimate_after_known_cogs_rub"] is None
+                assert result["blockers"]
+
 
 class Response:
     status_code = 200

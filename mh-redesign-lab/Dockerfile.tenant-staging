@@ -41,6 +41,7 @@ COPY mh-redesign-lab/tenant-api/production_workspace_api.py mh-redesign-lab/tena
 COPY mh-redesign-lab/tenant-api/supply_planning_api.py mh-redesign-lab/tenant-api/cashflow_routes.py mh-redesign-lab/tenant-api/shop_workspaces_api.py ./
 COPY mh-redesign-lab/tenant-api/dashboard_cache.py ./dashboard_cache.py
 COPY mh-redesign-lab/tenant-api/ozon_accounting_api.py ./ozon_accounting_api.py
+COPY mh-redesign-lab/tenant-api/migration_import_api.py ./migration_import_api.py
 COPY mh-redesign-lab/tenant-api/sync_runner.py ./sync_runner.py
 COPY mh-redesign-lab/tenant-api/request_security.py ./request_security.py
 COPY mh-redesign-lab/tenant-api/action_plan_executor.py ./action_plan_executor.py

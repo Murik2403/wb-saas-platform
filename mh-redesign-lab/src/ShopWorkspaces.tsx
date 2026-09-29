@@ -7,14 +7,14 @@ type Report={financial:Financial;products:Array<{nm_id:number;name:string;cost:n
 type Consolidated={total:Financial;complete:boolean;shops:Array<{id:number;name:string;available:boolean}>};
 export async function shopRequest<T>(path:string,method='GET',body?:unknown):Promise<T>{
   const r=await fetch('/api/v1/shop-workspaces'+path,{method,credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});
-  if(!r.ok){let detail='Не удалось выполнить действие';try{const v=await r.json();if(typeof v.detail==='string')detail=v.detail;}catch{/* Keep generic error */}throw new Error(detail);}
+  if(!r.ok){let detail=`Не удалось выполнить действие (HTTP ${r.status})`;try{const v=await r.json();if(typeof v.detail==='string')detail=v.detail;}catch{/* Keep generic error */}throw new Error(detail);}
   return r.json() as Promise<T>;
 }
 const money=(value:unknown)=>typeof value==='number'?value.toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₽':'Нет данных';
 export function ShopWorkspaces(){
  const [list,setList]=useState<Listing|null>(null),[selected,setSelected]=useState(''),[report,setReport]=useState<Report|null>(null),[consolidated,setConsolidated]=useState<Consolidated|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
- const [start,setStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().slice(0,10);}),[end,setEnd]=useState(()=>new Date().toISOString().slice(0,10));
+ const [start,setStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});}),[end,setEnd]=useState(()=>new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'}));
  async function reload(){setList(await shopRequest<Listing>(''));}
  useEffect(()=>{let live=true;shopRequest<Listing>('').then(v=>{if(live)setList(v);}).catch(e=>{if(live)setError(String(e.message));});return()=>{live=false;};},[]);
  async function perform(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Не удалось выполнить действие');}finally{setBusy(false);}}
