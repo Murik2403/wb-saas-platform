@@ -1,0 +1,7 @@
+.incident-workflow { display:grid; gap:1rem; }
+.incident-workflow form { display:grid; gap:.75rem; border:1px solid var(--border,#333); padding:1rem; border-radius:12px; }
+.incident-workflow label { display:grid; gap:.3rem; }
+.incident-workflow input,.incident-workflow select,.incident-workflow textarea { min-width:0; padding:.6rem; }
+.incident-workflow small { display:block; overflow-wrap:anywhere; }
+.incident-workflow pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; }
+.incident-workflow li { margin-block:.7rem; }

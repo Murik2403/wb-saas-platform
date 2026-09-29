@@ -30,6 +30,10 @@ def connect():
     try:
         yield conn
         conn.commit()
+    except sqlite3.IntegrityError as exc:
+        if "QUARANTINE:" in str(exc):
+            raise ValueError("QUARANTINE: движение заблокировано карантином; сначала снимите резерв инцидента.") from exc
+        raise
     finally:
         conn.close()
 

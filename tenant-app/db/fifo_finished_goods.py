@@ -14,6 +14,7 @@ import pandas as pd
 from config import DB_PATH
 
 from .core import connect
+from .incident_workflow import held_units
 
 
 FINISHED_GOODS_LOCATIONS = {"ready": "ready_units", "inbound": "inbound_units", "wb": "wb_units"}
@@ -220,6 +221,8 @@ def _move_finished_goods_fifo(
         """,
         (int(nm_id), int(chrt_id)),
     ).fetchall()
+    if sum(max(0, int(row[from_col] or 0) - held_units(conn, int(row["id"]), from_location)) for row in rows) < qty:
+        raise ValueError("QUARANTINE: недостаточно свободных FIFO-единиц; сначала снимите карантин.")
     remaining = qty
     amount_total = 0.0
     allocations: list[dict[str, float]] = []
@@ -227,7 +230,7 @@ def _move_finished_goods_fifo(
     for row in rows:
         if remaining <= 0:
             break
-        available = max(0, int(row[from_col] or 0))
+        available = max(0, int(row[from_col] or 0) - held_units(conn, int(row["id"]), from_location))
         take = min(available, remaining)
         if take <= 0:
             continue
@@ -284,7 +287,7 @@ def _move_dispatch_allocation_to_wb(
     for row in rows:
         if remaining <= 0:
             break
-        take = min(max(0, int(row["units"] or 0)), max(0, int(row["inbound_units"] or 0)), remaining)
+        take = min(max(0, int(row["units"] or 0)), max(0, int(row["inbound_units"] or 0) - held_units(conn, int(row["layer_id"]), "inbound")), remaining)
         if take <= 0:
             continue
         amount = round(take * float(row["unit_cost_rub"] or 0), 2)
@@ -328,6 +331,7 @@ def _reverse_finished_goods_allocations(conn: sqlite3.Connection, movement_id: i
             to_col = _finished_location_column(to_loc)
             current = conn.execute(f"SELECT {to_col} AS units FROM finished_goods_cost_layers WHERE id=?", (int(row["layer_id"]),)).fetchone()
             available = max(0, int(current["units"] or 0) if current else 0)
+            available -= held_units(conn, int(row["layer_id"]), to_loc)
             if available < qty:
                 raise ValueError("Нельзя отменить движение: часть этой партии уже ушла следующим этапом.")
             assignments.append(f"{to_col}={to_col}-?")
@@ -353,6 +357,8 @@ def _reverse_finished_goods_source_layer(conn: sqlite3.Connection, movement_id: 
     ).fetchone()
     if layer is None:
         return
+    if any(held_units(conn, int(layer["id"]), loc) for loc in FINISHED_GOODS_LOCATIONS):
+        raise ValueError("QUARANTINE: сначала снимите карантин с этой партии.")
     active_alloc = conn.execute(
         "SELECT COUNT(*) AS n FROM finished_goods_fifo_allocations WHERE layer_id=? AND status='applied'",
         (int(layer["id"]),),

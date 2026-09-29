@@ -1,3 +1,4 @@
+import { IncidentWorkflow } from "./IncidentWorkflow";
 import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
@@ -1601,6 +1602,7 @@ function StockView({
 }) {
   return (
     <div className="workspace-view">
+      <IncidentWorkflow />
       <section className="split-hero">
         <button className={cx("hero-card", "detail-trigger", stockHero.tone === "danger" ? "urgent" : "calm")} type="button" onClick={() => onAction("Поставка", "Пополнение")}>
           <div className="eyebrow">
