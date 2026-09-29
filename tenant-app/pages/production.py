@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from html import escape
 from pathlib import Path
 import hashlib
+import json
 import math
 import time
 from zoneinfo import ZoneInfo
@@ -50,6 +51,93 @@ from db import (
 from html import (
     escape,
 )
+
+
+def build_wip_product_variant_options(production_settings: pd.DataFrame, products_catalog: pd.DataFrame) -> list[dict]:
+    """Return enabled product/variant identities only when WB catalog data verifies them."""
+    if production_settings.empty or products_catalog.empty:
+        return []
+    catalog_by_nm: dict[int, dict] = {}
+    for _, catalog in products_catalog.iterrows():
+        try:
+            catalog_by_nm[int(catalog.get("nm_id") or 0)] = catalog.to_dict()
+        except (TypeError, ValueError):
+            continue
+    options: list[dict] = []
+    for _, setting in production_settings.iterrows():
+        try:
+            if int(pd.to_numeric(setting.get("enabled", 0), errors="coerce") or 0) != 1:
+                continue
+            nm_id = int(setting.get("nm_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        catalog = catalog_by_nm.get(nm_id)
+        if nm_id <= 0 or catalog is None:
+            continue
+        try:
+            raw = json.loads(str(catalog.get("raw_json") or ""))
+        except (TypeError, ValueError):
+            continue
+        sizes = raw.get("sizes") if isinstance(raw, dict) else None
+        if not isinstance(sizes, list):
+            continue
+        variants: list[dict] = []
+        valid = True
+        for size in sizes:
+            if not isinstance(size, dict):
+                valid = False
+                break
+            try:
+                chrt_id = int(size.get("chrtID", size.get("chrtId", size.get("chrt_id", 0))) or 0)
+            except (TypeError, ValueError):
+                valid = False
+                break
+            if chrt_id <= 0:
+                valid = False
+                break
+            variants.append({
+                "chrt_id": chrt_id,
+                "variant_label": str(size.get("techSize") or size.get("wbSize") or size.get("origName") or "").strip(),
+            })
+        if not valid:
+            continue
+        if not variants:
+            variants = [{"chrt_id": 0, "variant_label": "Базовый товар"}]
+        for variant in variants:
+            options.append({
+                **setting.to_dict(),
+                "nm_id": nm_id,
+                **variant,
+                "product_name": str(catalog.get("product_name") or "").strip(),
+            })
+    return options
+
+
+def filter_wip_summary_for_identity(
+    summary: pd.DataFrame, nm_id: int, chrt_id: int, material_name: str, blank_type: str,
+) -> pd.DataFrame:
+    """Select only this identity's WIP; generic pre-migration stock is base-only."""
+    if summary.empty:
+        return summary.copy()
+    if "nm_id" not in summary or "chrt_id" not in summary:
+        return summary.iloc[0:0].copy()
+    item_nm_id, item_chrt_id = int(nm_id), int(chrt_id)
+    nm_values = pd.to_numeric(summary["nm_id"], errors="coerce").fillna(0).astype(int)
+    chrt_values = pd.to_numeric(summary["chrt_id"], errors="coerce").fillna(0).astype(int)
+    names = summary.get("material_name", pd.Series("", index=summary.index)).fillna("").astype(str).str.strip()
+    blanks = summary.get("blank_type", pd.Series("", index=summary.index)).fillna("").astype(str).str.strip()
+    identity = nm_values.eq(item_nm_id) & chrt_values.eq(item_chrt_id)
+    if item_nm_id > 0 and item_chrt_id == 0:
+        identity |= nm_values.eq(0) & chrt_values.eq(0)
+    return summary[identity & names.eq(str(material_name).strip()) & blanks.eq(str(blank_type).strip())].copy()
+
+
+def wip_product_identity_label(nm_id: int, chrt_id: int, labels: dict[tuple[int, int], str] | None = None) -> str:
+    item_nm_id, item_chrt_id = int(nm_id or 0), int(chrt_id or 0)
+    if item_nm_id <= 0:
+        return "Старые данные без привязки к товару и варианту"
+    return (labels or {}).get((item_nm_id, item_chrt_id),
+        f"Товар {item_nm_id} · вариант {item_chrt_id}" if item_chrt_id > 0 else f"Товар {item_nm_id} · базовый товар")
 
 
 def render(ctx: dict) -> None:
@@ -1848,6 +1936,13 @@ def render(ctx: dict) -> None:
                     "Партия останется открытой, а количество можно внести позднее без повторного списания материала."
                 )
                 material_inventory_wip = read_table("material_inventory_color")
+                cfg_wip = read_table("production_settings")
+                catalog_wip = read_table("products_catalog")
+                wip_product_options = build_wip_product_variant_options(cfg_wip, catalog_wip)
+                wip_identity_labels = {
+                    (int(product["nm_id"]), int(product["chrt_id"])): f"{product.get('product_name') or product.get('supplier_article') or product['nm_id']} · {product.get('variant_label') or 'базовый товар'}"
+                    for product in wip_product_options
+                }
                 if material_inventory_wip.empty:
                     st.warning("Сначала заполните остатки сырья по цветам в настройках.")
                 else:
@@ -1857,8 +1952,23 @@ def render(ctx: dict) -> None:
                     material_inventory_wip["material_name"] = material_inventory_wip.get("material_name", "").fillna("").astype(str)
                     material_options = material_inventory_wip["material_name"].dropna().astype(str).str.strip()
                     material_options = sorted(x for x in material_options.unique().tolist() if x)
+                    # Only offer a product/variant when its saved BOM points to a
+                    # confirmed material balance and a concrete blank type.
+                    wip_product_options = [
+                        product for product in wip_product_options
+                        if str(product.get("material_name") or "").strip() in material_options
+                        and str(product.get("blank_type") or "").strip()
+                        and str(product.get("blank_type") or "").strip() != "Не задано"
+                    ]
+                    wip_product_label_by_key = {
+                        f"{int(product['nm_id'])}:{int(product['chrt_id'])}":
+                        f"{product.get('supplier_article') or product['nm_id']} · {product.get('product_name') or ''} · {product.get('variant_label') or 'базовый товар'} · {product.get('material_name') or ''} · {product.get('blank_type') or ''}"
+                        for product in wip_product_options
+                    }
                     if not material_options:
                         st.warning("Нет подтверждённых остатков сырья по цветам.")
+                    elif not wip_product_options:
+                        st.warning("Нет производимых товаров с проверенными вариантами в каталоге WB.")
                     else:
                         issue_mode = st.radio(
                             "Способ проведения",
@@ -1869,20 +1979,24 @@ def render(ctx: dict) -> None:
                         issue_cols = st.columns(3)
                         with issue_cols[0]:
                             wip_batch_date = st.date_input("Дата производства", value=today_msk, key="wip_batch_date")
-                            wip_material_name = st.selectbox("Материал / цвет", material_options, key="wip_material_name")
+                            selected_wip_product_key = st.selectbox(
+                                "Товар и вариант", list(wip_product_label_by_key),
+                                format_func=lambda key: wip_product_label_by_key.get(key, key), key="wip_issue_product_variant",
+                            )
+                            selected_wip_nm_id, selected_wip_chrt_id = map(int, selected_wip_product_key.split(":"))
+                            selected_wip_product = next(
+                                product for product in wip_product_options
+                                if int(product["nm_id"]) == selected_wip_nm_id and int(product["chrt_id"]) == selected_wip_chrt_id
+                            )
+                            wip_material_name = st.selectbox(
+                                "Материал / цвет (из норм товара)", [str(selected_wip_product["material_name"]).strip()],
+                                key="wip_material_name", disabled=True,
+                            )
                         with issue_cols[1]:
-                            # Offer whatever blank types the tenant has already configured
-                            # in Settings (any number, freely named) instead of a fixed list;
-                            # fall back to free text if nothing is configured yet.
-                            configured_blank_types = sorted({
-                                str(t).strip()
-                                for t in read_table("production_settings").get("blank_type", pd.Series(dtype=str)).astype(str)
-                                if str(t).strip() and str(t).strip() != "Не задано"
-                            })
-                            if configured_blank_types:
-                                wip_blank_type = st.selectbox("Тип заготовки", configured_blank_types, key="wip_blank_type")
-                            else:
-                                wip_blank_type = st.text_input("Тип заготовки", key="wip_blank_type_text").strip()
+                            wip_blank_type = st.selectbox(
+                                "Тип заготовки (из норм товара)", [str(selected_wip_product["blank_type"]).strip()],
+                                key="wip_blank_type", disabled=True,
+                            )
                             selected_material_row = material_inventory_wip[material_inventory_wip["material_name"].astype(str).eq(str(wip_material_name))].head(1)
                             wip_roll_length = float(selected_material_row.iloc[0].get("roll_length", 25.5) or 25.5) if not selected_material_row.empty else 25.5
                             wip_unit = str(selected_material_row.iloc[0].get("unit", "м") or "м").strip() if not selected_material_row.empty else "м"
@@ -1904,7 +2018,6 @@ def render(ctx: dict) -> None:
                             else:
                                 st.metric("Итого к списанию", f"{wip_total_meters:.3f} {wip_unit}")
 
-                        cfg_wip = read_table("production_settings")
                         theoretical_units = 0
                         per_blank_rate = 0.0
                         if not cfg_wip.empty:
@@ -1916,6 +2029,7 @@ def render(ctx: dict) -> None:
                                 cfg_wip["enabled"].eq(1)
                                 & cfg_wip.get("material_name", "").fillna("").astype(str).str.strip().eq(str(wip_material_name).strip())
                                 & cfg_wip.get("blank_type", "").fillna("").astype(str).str.strip().eq(str(wip_blank_type).strip())
+                                & pd.to_numeric(cfg_wip.get("nm_id", 0), errors="coerce").fillna(0).astype(int).eq(selected_wip_nm_id)
                             ].copy()
                             if not matching_cfg.empty:
                                 rates = matching_cfg["material_per_unit"] / matching_cfg["pack_size"]
@@ -1960,10 +2074,12 @@ def render(ctx: dict) -> None:
                                 wip_result = post_wip_blank_batch(
                                     wip_batch_date, wip_material_name, wip_blank_type, wip_total_meters,
                                     int(wip_produced_units), int(wip_scrap_units), wip_issue_note,
+                                    nm_id=selected_wip_nm_id, chrt_id=selected_wip_chrt_id,
                                 )
                             else:
                                 wip_result = issue_wip_material(
                                     wip_batch_date, wip_material_name, wip_blank_type, wip_total_meters, wip_issue_note,
+                                    nm_id=selected_wip_nm_id, chrt_id=selected_wip_chrt_id,
                                 )
                             if wip_result.get("errors"):
                                 st.session_state["movement_flash"] = ("error", " | ".join(str(x) for x in wip_result.get("errors", [])))
@@ -2021,10 +2137,14 @@ def render(ctx: dict) -> None:
                     st.info("Заготовки в НЗП ещё не оприходованы.")
                 else:
                     summary_view = wip_summary.copy()
+                    summary_view["Товар и вариант"] = summary_view.apply(
+                        lambda row: wip_product_identity_label(row.get("nm_id", 0), row.get("chrt_id", 0), wip_identity_labels), axis=1,
+                    )
                     st.dataframe(
-                        summary_view[["material_name", "blank_type", "remaining_units", "avg_unit_cost_rub", "remaining_cost_rub", "open_batches", "open_meters"]],
+                        summary_view[["Товар и вариант", "nm_id", "chrt_id", "material_name", "blank_type", "remaining_units", "avg_unit_cost_rub", "remaining_cost_rub", "open_batches", "open_meters"]],
                         hide_index=True, use_container_width=True,
                         column_config={
+                            "Товар и вариант": "Товар и вариант", "nm_id": "Артикул WB", "chrt_id": "Вариант WB",
                             "material_name": "Материал / цвет", "blank_type": "Тип заготовки",
                             "remaining_units": st.column_config.NumberColumn("Остаток, шт.", format="%d"),
                             "avg_unit_cost_rub": st.column_config.NumberColumn("Средняя стоимость, ₽/шт.", format="%.2f"),
@@ -2038,14 +2158,18 @@ def render(ctx: dict) -> None:
                 else:
                     batch_view = wip_batches.copy()
                     batch_view["batch_date"] = pd.to_datetime(batch_view["batch_date"], errors="coerce")
+                    batch_view["Товар и вариант"] = batch_view.apply(
+                        lambda row: wip_product_identity_label(row.get("nm_id", 0), row.get("chrt_id", 0), wip_identity_labels), axis=1,
+                    )
                     status_labels = {"open": "Материал выдан", "active": "Есть остаток", "depleted": "Израсходована", "reversed": "Отменена"}
                     batch_view["Статус"] = batch_view.get("status", "").astype(str).map(status_labels).fillna(batch_view.get("status", ""))
                     st.dataframe(
-                        batch_view[["id", "batch_date", "material_name", "blank_type", "issued_meters", "produced_units", "scrap_units", "remaining_units", "unit_cost_rub", "remaining_cost_rub", "Статус", "note"]],
+                        batch_view[["id", "batch_date", "Товар и вариант", "nm_id", "chrt_id", "material_name", "blank_type", "issued_meters", "produced_units", "scrap_units", "remaining_units", "unit_cost_rub", "remaining_cost_rub", "Статус", "note"]],
                         hide_index=True, use_container_width=True, height=430,
                         column_config={
                             "id": st.column_config.NumberColumn("Партия", format="%d"),
                             "batch_date": st.column_config.DateColumn("Дата", format="DD.MM.YYYY"),
+                            "Товар и вариант": "Товар и вариант", "nm_id": "Артикул WB", "chrt_id": "Вариант WB",
                             "material_name": "Материал / цвет", "blank_type": "Тип заготовки",
                             "issued_meters": st.column_config.NumberColumn("Списано материала, м", format="%.3f"),
                             "produced_units": st.column_config.NumberColumn("Выпущено, шт.", format="%d"),
@@ -2074,37 +2198,30 @@ def render(ctx: dict) -> None:
                 )
                 cfg_pack = read_table("production_settings")
                 catalog_pack = read_table("products_catalog")
+                pack_product_options = build_wip_product_variant_options(cfg_pack, catalog_pack)
+                pack_label_by_key = {
+                    f"{int(product['nm_id'])}:{int(product['chrt_id'])}":
+                    f"{product.get('supplier_article') or product['nm_id']} · {product.get('product_name') or ''} · {product.get('variant_label') or 'базовый товар'} · {product.get('material_name') or ''} · {product.get('blank_type') or ''} · {int(product.get('pack_size') or 1)} шт."
+                    for product in pack_product_options
+                }
                 if cfg_pack.empty:
                     st.info("Нет настроенных производимых товаров.")
                 else:
-                    cfg_pack = cfg_pack.copy()
-                    cfg_pack["enabled"] = pd.to_numeric(cfg_pack.get("enabled", 0), errors="coerce").fillna(0).astype(int)
-                    cfg_pack = cfg_pack[cfg_pack["enabled"].eq(1)].copy()
-                    if not catalog_pack.empty:
-                        cfg_pack = cfg_pack.merge(catalog_pack[["nm_id", "product_name"]], on="nm_id", how="left")
-                    else:
-                        cfg_pack["product_name"] = ""
-                    cfg_pack["pack_size"] = pd.to_numeric(cfg_pack.get("pack_size", 1), errors="coerce").fillna(1).clip(lower=1).astype(int)
-                    cfg_pack["label"] = cfg_pack.apply(
-                        lambda r: f"{r.get('supplier_article','')} · {r.get('product_name','')} · {r.get('material_name','')} · {r.get('blank_type','')} · {int(r.get('pack_size',1))} шт.", axis=1
-                    )
-                    pack_options = cfg_pack["nm_id"].astype(int).tolist()
+                    pack_options = list(pack_label_by_key)
                     if not pack_options:
-                        st.info("Нет включённых производимых товаров.")
+                        st.info("Нет производимых товаров с проверенными вариантами в каталоге WB.")
                     else:
-                        pack_label_by_nm = dict(zip(cfg_pack["nm_id"].astype(int), cfg_pack["label"].astype(str)))
-                        selected_pack_nm = st.selectbox("Товар / комплект", pack_options, format_func=lambda x: pack_label_by_nm.get(int(x), str(x)), key="manual_wip_pack_nm")
-                        pack_row = cfg_pack[cfg_pack["nm_id"].astype(int).eq(int(selected_pack_nm))].iloc[0]
+                        selected_pack_key = st.selectbox("Товар / вариант комплекта", pack_options, format_func=lambda key: pack_label_by_key.get(key, key), key="manual_wip_pack_variant")
+                        selected_pack_nm, selected_pack_chrt = map(int, selected_pack_key.split(":"))
+                        pack_row = next(product for product in pack_product_options
+                                        if int(product["nm_id"]) == selected_pack_nm and int(product["chrt_id"]) == selected_pack_chrt)
                         pack_material = str(pack_row.get("material_name", "") or "").strip()
                         pack_blank = str(pack_row.get("blank_type", "") or "").strip()
                         pack_size = int(pack_row.get("pack_size", 1) or 1)
-                        available_blanks = 0
-                        if not wip_summary.empty:
-                            match_summary = wip_summary[
-                                wip_summary.get("material_name", "").astype(str).str.strip().eq(pack_material)
-                                & wip_summary.get("blank_type", "").astype(str).str.strip().eq(pack_blank)
-                            ]
-                            available_blanks = int(pd.to_numeric(match_summary.get("remaining_units", 0), errors="coerce").fillna(0).sum()) if not match_summary.empty else 0
+                        match_summary = filter_wip_summary_for_identity(
+                            wip_summary, selected_pack_nm, selected_pack_chrt, pack_material, pack_blank,
+                        )
+                        available_blanks = int(pd.to_numeric(match_summary.get("remaining_units", 0), errors="coerce").fillna(0).sum()) if not match_summary.empty else 0
                         max_sets = available_blanks // max(1, pack_size)
                         pack_info_cols = st.columns(3)
                         with pack_info_cols[0]: kpi_card("Доступно заготовок", num(available_blanks), f"{pack_material} · {pack_blank}")
@@ -2117,7 +2234,10 @@ def render(ctx: dict) -> None:
                         manual_pack_note = st.text_input("Примечание к комплектации", key="manual_wip_pack_note")
                         manual_pack_confirm = st.checkbox(f"Подтверждаю упаковку {int(manual_pack_qty)} комплектов", key="manual_wip_pack_confirm", disabled=int(manual_pack_qty) <= 0)
                         if st.button("Оприходовать комплекты из НЗП", type="primary", use_container_width=True, key="post_manual_wip_packaging", disabled=not manual_pack_confirm or int(manual_pack_qty) <= 0):
-                            pack_result = post_manual_wip_packaging(int(selected_pack_nm), int(manual_pack_qty), manual_pack_date, manual_pack_note)
+                            pack_result = post_manual_wip_packaging(
+                                int(selected_pack_nm), int(manual_pack_qty), manual_pack_date, manual_pack_note,
+                                chrt_id=int(selected_pack_chrt),
+                            )
                             if pack_result.get("errors"):
                                 st.session_state["movement_flash"] = ("error", " | ".join(str(x) for x in pack_result.get("errors", [])))
                             else:

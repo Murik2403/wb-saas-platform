@@ -160,23 +160,58 @@ def issue_wip_material(
         return result
     key = _material_key(material_name)
     batch_key = str(source_key or "").strip() or f"wip:{date_value}:{key}:{blank_type.casefold()}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    item_nm_id, item_chrt_id = max(0, int(nm_id or 0)), max(0, int(chrt_id or 0))
+    item_nm_id, item_chrt_id = int(nm_id or 0), int(chrt_id or 0)
     with connect() as conn:
         existing = conn.execute("SELECT * FROM wip_blank_batches WHERE batch_key=?", (batch_key,)).fetchone()
         if existing:
-            if (str(existing["material_name"]) != material_name or str(existing["blank_type"]) != blank_type
+            if (str(existing["material_name"]) != material_name
+                    or str(existing["blank_type"]) != blank_type
                     or str(existing["batch_date"]) != date_value
                     or abs(float(existing["issued_meters"] or 0) - meters) > 0.0001
-                    or int(existing["nm_id"] or 0) != item_nm_id or int(existing["chrt_id"] or 0) != item_chrt_id):
+                    or int(existing["nm_id"] or 0) != item_nm_id
+                    or int(existing["chrt_id"] or 0) != item_chrt_id):
                 result["errors"].append("Этот идентификатор уже использован для другой выдачи НЗП.")
                 return result
             result["skipped"] = 1
             result["batch_id"] = int(existing["id"])
             return result
-        inventory = conn.execute("SELECT unit FROM material_inventory_color WHERE material_key=?", (key,)).fetchone()
-        unit = str(inventory["unit"] or "м") if inventory else "м"
-        conn.execute("SAVEPOINT issue_wip_material")
         try:
+            # API validation happens on a separate request-side read. Acquire
+            # the write lock before re-reading the catalog and saved production
+            # norm so neither can change between this check and the FIFO debit.
+            conn.execute("BEGIN IMMEDIATE")
+            locked_existing = conn.execute("SELECT * FROM wip_blank_batches WHERE batch_key=?", (batch_key,)).fetchone()
+            if locked_existing:
+                if (str(locked_existing["material_name"]) != material_name
+                        or str(locked_existing["blank_type"]) != blank_type
+                        or str(locked_existing["batch_date"]) != date_value
+                        or abs(float(locked_existing["issued_meters"] or 0) - meters) > 0.0001
+                        or int(locked_existing["nm_id"] or 0) != item_nm_id
+                        or int(locked_existing["chrt_id"] or 0) != item_chrt_id):
+                    result["errors"].append("Этот идентификатор уже использован для другой выдачи НЗП.")
+                    return result
+                result["skipped"] = 1
+                result["batch_id"] = int(locked_existing["id"])
+                return result
+            conn.execute("SAVEPOINT issue_wip_material")
+            if item_nm_id or item_chrt_id:
+                validate_catalog_identity(conn, item_nm_id, item_chrt_id)
+                setting = conn.execute(
+                    "SELECT material_name,blank_type FROM production_settings WHERE nm_id=? AND enabled=1",
+                    (item_nm_id,),
+                ).fetchone()
+                if setting is None:
+                    raise ValueError("Товар не включён в собственное производство.")
+                saved_material = str(setting["material_name"] or "").strip()
+                saved_blank = str(setting["blank_type"] or "").strip()
+                if not saved_material or not saved_blank:
+                    raise ValueError("Для товара не заполнены материал/цвет или тип заготовки.")
+                if material_name.casefold() != saved_material.casefold():
+                    raise ValueError("Материал не совпадает с сохранённой нормой выбранного товара.")
+                if blank_type.casefold() != saved_blank.casefold():
+                    raise ValueError("Тип заготовки не совпадает с сохранённой нормой выбранного товара.")
+            inventory = conn.execute("SELECT unit FROM material_inventory_color WHERE material_key=?", (key,)).fetchone()
+            unit = str(inventory["unit"] or "м") if inventory else "м"
             _apply_material_delta(conn, key, material_name, -meters)
             event_key = f"wip_material_issue|{batch_key}|v1"
             movement_cur = conn.execute(
@@ -224,8 +259,12 @@ def issue_wip_material(
             conn.execute("RELEASE SAVEPOINT issue_wip_material")
             result.update({"posted": 1, "meters": meters, "cost_rub": material_cost, "batch_id": batch_id})
         except Exception as exc:
-            conn.execute("ROLLBACK TO SAVEPOINT issue_wip_material")
-            conn.execute("RELEASE SAVEPOINT issue_wip_material")
+            if conn.in_transaction:
+                try:
+                    conn.execute("ROLLBACK TO SAVEPOINT issue_wip_material")
+                    conn.execute("RELEASE SAVEPOINT issue_wip_material")
+                except sqlite3.OperationalError:
+                    conn.rollback()
             result["errors"].append(str(exc))
     return result
 
@@ -311,8 +350,13 @@ def post_wip_blank_batch(
     scrap_units: int = 0,
     note: str = "",
     source_key: str | None = None,
+    nm_id: int = 0,
+    chrt_id: int = 0,
 ) -> dict[str, Any]:
-    issued = issue_wip_material(batch_date, material_name, blank_type, meters_used, note, source_key)
+    issued = issue_wip_material(
+        batch_date, material_name, blank_type, meters_used, note, source_key,
+        nm_id=nm_id, chrt_id=chrt_id,
+    )
     result = dict(issued)
     result.setdefault("units", 0)
     if issued.get("errors") or not int(issued.get("batch_id", 0) or 0):

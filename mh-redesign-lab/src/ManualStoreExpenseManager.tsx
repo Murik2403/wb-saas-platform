@@ -24,7 +24,8 @@ const articles = [
   ["taxes", "Налоги"],
 ] as const;
 
-function rub(value: number) {
+function rub(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "Не распознана";
   return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 }
 

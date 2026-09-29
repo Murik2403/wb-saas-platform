@@ -9,14 +9,15 @@ type Workspace = {
   read_only: boolean;
   wip: { status: { open_batches: number; open_cost_rub: number; remaining_units: number; remaining_cost_rub: number }; batches: Batch[] };
   materials: { material_name: string; unit: string; available_meters: number }[];
-  products: { nm_id: number; chrt_id: number; variant_label: string; supplier_article: string; product_name: string; pack_size: number }[];
+  products: { nm_id: number; chrt_id?: number; variant_label?: string; supplier_article: string; product_name: string; pack_size: number; material_name?: string; blank_type?: string }[];
   capacity: Capacity;
-  calendar: { date: string; planned_pieces: number | null; actual_pieces: number | null; capacity_pieces: number | null; overload_pieces: number | null; missing_pack_size: boolean; tasks: { task_key: string; product_name: string; supplier_article: string; status: string }[] }[];
+  calendar: { date: string; planned_pieces: number | null; actual_pieces: number | null; capacity_pieces: number | null; overload_pieces: number | null; missing_pack_size: boolean; tasks: { task_key: string; product_name: string; supplier_article: string; status: string; chrt_id?: number }[] }[];
   undated_tasks: { task_key: string }[];
 };
 const rub = (value: number) => value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 2 });
 const today = () => new Date().toLocaleDateString("en-CA");
 const number = (value: FormDataEntryValue | null) => Number(value);
+const productKey = (product: Workspace["products"][number]) => `${product.nm_id}:${Number(product.chrt_id ?? 0)}`;
 async function request<T>(path = "", method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${API_BASE_URL}/api/v1/production-workspace${path}`, { method, credentials: "include", headers: apiHeaders(body !== undefined), body: body === undefined ? undefined : JSON.stringify(body), signal });
   const data = await response.json().catch(() => null);
@@ -36,7 +37,7 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
   const [capacity, setCapacity] = useState<Capacity | null>(null);
   const issueId = useRef(crypto.randomUUID());
   const packageId = useRef(crypto.randomUUID());
-  const [selectedMaterial, setSelectedMaterial] = useState("");
+  const [selectedIssueProductKey, setSelectedIssueProductKey] = useState("");
   const [closing, setClosing] = useState<number | null>(null);
   const load = useCallback(async (signal?: AbortSignal) => {
     const next = await request<Workspace>(`?start=${encodeURIComponent(start)}&days=${days}`, "GET", undefined, signal);
@@ -65,13 +66,13 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
   }
   function issue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const element = event.currentTarget; const form = new FormData(element);
-    const [nm_id, chrt_id] = String(form.get("product") || "").split(":").map(Number);
-    void mutate("/wip/issue", { request_id: issueId.current, nm_id, chrt_id, batch_date: form.get("date"), material_name: form.get("material"), blank_type: form.get("blank"), meters_used: number(form.get("meters")), note: form.get("note") }, "Сырьё выдано в НЗП. Остаток и стоимость обновлены.", "POST", () => { element.reset(); issueId.current = crypto.randomUUID(); });
+    const [nmId, chrtId] = String(form.get("product") ?? "0:0").split(":").map(Number);
+    void mutate("/wip/issue", { request_id: issueId.current, nm_id: nmId, chrt_id: chrtId, batch_date: form.get("date"), material_name: form.get("material"), blank_type: form.get("blank"), meters_used: number(form.get("meters")), note: form.get("note") }, "Сырьё выдано в НЗП. Остаток и стоимость обновлены.", "POST", () => { element.reset(); issueId.current = crypto.randomUUID(); });
   }
   function packageBlanks(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const element = event.currentTarget; const form = new FormData(element);
-    const [nm_id, chrt_id] = String(form.get("product") || "").split(":").map(Number);
-    void mutate("/wip/package", { request_id: packageId.current, nm_id, chrt_id, qty_sets: number(form.get("quantity")), packaging_date: form.get("date"), note: form.get("note") }, "Готовые комплекты приняты на склад, заготовки списаны по FIFO.", "POST", () => { element.reset(); packageId.current = crypto.randomUUID(); });
+    const [nmId, chrtId] = String(form.get("product") ?? "0:0").split(":").map(Number);
+    void mutate("/wip/package", { request_id: packageId.current, nm_id: nmId, chrt_id: chrtId, qty_sets: number(form.get("quantity")), packaging_date: form.get("date"), note: form.get("note") }, "Готовые комплекты приняты на склад, заготовки списаны по FIFO.", "POST", () => { element.reset(); packageId.current = crypto.randomUUID(); });
   }
   function complete(event: FormEvent<HTMLFormElement>, id: number) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -79,8 +80,11 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
   }
   const readOnly = data?.read_only ?? false;
   const materials = data?.materials ?? [];
-  const currentMaterial = materials.find(m => m.material_name === selectedMaterial) ?? materials[0];
-  const materialUnit = currentMaterial?.unit || "ед.";
+  const issueProduct = data?.products.find(p => productKey(p) === selectedIssueProductKey) ?? data?.products[0];
+  const savedMaterial = issueProduct?.material_name?.trim() ?? "";
+  const savedBlank = issueProduct?.blank_type?.trim() ?? "";
+  const currentMaterial = materials.find(m => m.material_name.trim() === savedMaterial);
+  const materialUnit = currentMaterial?.unit || "м";
   return <section className="production-workspace" aria-label="НЗП и мощность производства">
     <header><h2>НЗП, заготовки и мощность</h2><button disabled={busy || loading} onClick={() => { setError(""); void load().catch((e: Error) => setError(e.message)); }}>Обновить производство</button></header>
     {error && <p role="alert" className="pw-error">{error}</p>}
@@ -91,11 +95,12 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
       {readOnly && <p role="status">Доступ только для просмотра. Производственные операции и настройки недоступны.</p>}
       <div className="pw-metrics"><p>Открыто партий <strong>{data.wip.status.open_batches}</strong></p><p>Сырьё в НЗП <strong>{rub(data.wip.status.open_cost_rub)}</strong></p><p>Заготовок на складе <strong>{data.wip.status.remaining_units} шт.</strong></p><p>Стоимость заготовок <strong>{rub(data.wip.status.remaining_cost_rub)}</strong></p></div>
       <div className="pw-forms">
-        <form onSubmit={issue} onChange={() => { issueId.current = crypto.randomUUID(); }}><h3>Выдать сырьё в НЗП</h3><p>Количество указывается в единицах материала из справочника. Стоимость выдачи рассчитывается по FIFO. Выберите точный вариант товара.</p>
+        <form onSubmit={issue} onChange={() => { issueId.current = crypto.randomUUID(); }}><h3>Выдать сырьё в НЗП</h3><p>Количество указывается в единицах материала из справочника. Стоимость выдачи рассчитывается по FIFO.</p>
           {!materials.length && <p>Сначала добавьте материал и его остаток в разделе «Склад».</p>}
-          <fieldset disabled={busy || readOnly || !materials.length || !data.products.length}><label>Дата выдачи<input name="date" type="date" defaultValue={today()} required /></label><label>Товар и вариант<select name="product" required>{data.products.map(p => <option key={`${p.nm_id}:${p.chrt_id}`} value={`${p.nm_id}:${p.chrt_id}`}>{p.product_name || p.supplier_article || p.nm_id} · {p.variant_label || "без варианта"} · #{p.chrt_id}</option>)}</select></label><label>Материал<select name="material" value={currentMaterial?.material_name ?? ""} onChange={e => setSelectedMaterial(e.target.value)} required>{materials.map(m => <option key={m.material_name} value={m.material_name}>{m.material_name} · {m.available_meters.toLocaleString("ru-RU")} {m.unit || "ед."}</option>)}</select></label><label>Тип заготовки<input name="blank" required maxLength={200} /></label><label>Расход сырья, {materialUnit}<input name="meters" type="number" min="0.001" step="0.001" max="10000000" required /></label><label>Комментарий<input name="note" maxLength={2000} /></label><button type="submit">Выдать в НЗП</button></fieldset>
+          {!data.products.length && <p>Сначала включите товар в производство и проверьте его варианты в каталоге.</p>}
+          <fieldset disabled={busy || readOnly || !data.products.length}><label>Дата выдачи<input name="date" type="date" defaultValue={today()} required /></label><label>Товар и вариант<select name="product" value={issueProduct ? productKey(issueProduct) : ""} onChange={e => setSelectedIssueProductKey(e.target.value)} required>{data.products.map(p => <option key={productKey(p)} value={productKey(p)}>{p.product_name || p.supplier_article || p.nm_id} · WB {p.nm_id}{Number(p.chrt_id ?? 0) > 0 ? ` · ${p.variant_label || `вариант ${p.chrt_id}`}` : " · базовый товар"}</option>)}</select></label><label>Материал / цвет по норме<input name="material" value={savedMaterial} readOnly required /></label><label>Тип заготовки по норме<input name="blank" value={savedBlank} readOnly required maxLength={200} /></label>{currentMaterial ? <p>Доступно: {currentMaterial.available_meters.toLocaleString("ru-RU")} {materialUnit}</p> : <p>В настройках товара не задан материал с остатком на складе.</p>}{!savedBlank && <p>В настройках товара не задан тип заготовки.</p>}<label>Расход сырья, {materialUnit}<input name="meters" type="number" min="0.001" step="0.001" max="10000000" required /></label><label>Комментарий<input name="note" maxLength={2000} /></label><button type="submit" disabled={!savedMaterial || !savedBlank || !currentMaterial}>Выдать в НЗП</button></fieldset>
         </form>
-        <form onSubmit={packageBlanks} onChange={() => { packageId.current = crypto.randomUUID(); }}><h3>Собрать готовые комплекты</h3><p>Заготовки спишутся по норме комплекта и выбранному варианту. Товар появится в готовом остатке.</p>{!data.products.length && <p>Сначала включите товар в производство и задайте его нормы.</p>}<fieldset disabled={busy || readOnly || !data.products.length}><label>Товар и вариант<select name="product" required>{data.products.map(p => <option key={`${p.nm_id}:${p.chrt_id}`} value={`${p.nm_id}:${p.chrt_id}`}>{p.product_name || p.supplier_article || p.nm_id} · {p.variant_label || "без варианта"} · #{p.chrt_id} · {p.pack_size} шт./комплект</option>)}</select></label><label>Дата комплектации<input name="date" type="date" defaultValue={today()} required /></label><label>Количество комплектов<input name="quantity" type="number" min="1" max="10000000" step="1" required /></label><label>Комментарий<input name="note" maxLength={2000} /></label><button type="submit">Собрать из заготовок</button></fieldset></form>
+        <form onSubmit={packageBlanks} onChange={() => { packageId.current = crypto.randomUUID(); }}><h3>Собрать готовые комплекты</h3><p>Заготовки спишутся по норме комплекта. Готовый остаток и себестоимость сохранят выбранный вариант WB.</p>{!data.products.length && <p>Сначала включите товар в производство и задайте его нормы.</p>}<fieldset disabled={busy || readOnly || !data.products.length}><label>Товар и вариант<select name="product" required>{data.products.map(p => <option key={productKey(p)} value={productKey(p)}>{p.product_name || p.supplier_article || p.nm_id} · WB {p.nm_id}{Number(p.chrt_id ?? 0) > 0 ? ` · ${p.variant_label || `вариант ${p.chrt_id}`}` : " · общий вариант"} · {p.pack_size} шт./комплект</option>)}</select></label><label>Дата комплектации<input name="date" type="date" defaultValue={today()} required /></label><label>Количество комплектов<input name="quantity" type="number" min="1" max="10000000" step="1" required /></label><label>Комментарий<input name="note" maxLength={2000} /></label><button type="submit">Собрать из заготовок</button></fieldset></form>
       </div>
       <h3>Партии НЗП и заготовок</h3>
       {!data.wip.batches.length && <p>Партий пока нет. Создайте первую выдачу сырья.</p>}
@@ -107,7 +112,7 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
       <h3>Календарь загрузки</h3><p>Сохранённые задания производства. Комплекты переведены в штуки по норме товара; календарь не создаёт и не переносит задания.</p><div className="pw-actions"><label>Начало календаря<input type="date" value={start} onChange={e => { if (e.target.value) setStart(e.target.value); }} /></label><label>Период<select value={days} onChange={e => setDays(Number(e.target.value))}><option value={7}>7 дней</option><option value={14}>14 дней</option><option value={30}>30 дней</option><option value={90}>90 дней</option></select></label></div>
       {!!data.undated_tasks.length && <p className="pw-error">Заданий без даты: {data.undated_tasks.length}. Они не включены в дневную загрузку.</p>}
       {!data.calendar.some(d => d.tasks.length) && <p>В выбранном периоде нет сохранённых производственных заданий.</p>}
-      <div className="pw-table-scroll"><table><caption>Загрузка по дням, в штуках изделий</caption><thead><tr><th>Дата</th><th>План</th><th>Факт</th><th>Мощность</th><th>Превышение</th><th>Задания</th></tr></thead><tbody>{data.calendar.map(d => <tr key={d.date} className={d.overload_pieces ? "pw-overload" : ""}><td>{d.date}</td><td>{d.planned_pieces ?? "Неизвестно"}</td><td>{d.actual_pieces ?? "Неизвестно"}</td><td>{d.capacity_pieces ?? "Не задана"}</td><td>{d.overload_pieces ?? "—"}</td><td>{d.missing_pack_size && <span>Не заполнен размер комплекта. </span>}{d.tasks.map(t => <div key={t.task_key}>{t.product_name || t.supplier_article} · {t.status}</div>)}</td></tr>)}</tbody></table></div>
+      <div className="pw-table-scroll"><table><caption>Загрузка по дням, в штуках изделий</caption><thead><tr><th>Дата</th><th>План</th><th>Факт</th><th>Мощность</th><th>Превышение</th><th>Задания</th></tr></thead><tbody>{data.calendar.map(d => <tr key={d.date} className={d.overload_pieces ? "pw-overload" : ""}><td>{d.date}</td><td>{d.planned_pieces ?? "Неизвестно"}</td><td>{d.actual_pieces ?? "Неизвестно"}</td><td>{d.capacity_pieces ?? "Не задана"}</td><td>{d.overload_pieces ?? "—"}</td><td>{d.missing_pack_size && <span>Не заполнен размер комплекта. </span>}{d.tasks.map(t => <div key={t.task_key}>{t.product_name || t.supplier_article}{Number(t.chrt_id ?? 0) > 0 ? ` · вариант ${t.chrt_id}` : ""} · {t.status}</div>)}</td></tr>)}</tbody></table></div>
     </>}
   </section>;
 }

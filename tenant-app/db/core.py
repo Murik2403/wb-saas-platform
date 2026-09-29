@@ -857,21 +857,26 @@ def init_db() -> None:
             columns = {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
             if "chrt_id" not in columns:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN chrt_id INTEGER NOT NULL DEFAULT 0")
-        # Variant-aware WIP keeps existing batches explicitly unassigned (0/0).
-        # Rebuild the old FIFO index: CREATE IF NOT EXISTS would preserve its
-        # pre-variant key and silently allow cross-variant candidate scans.
+        # WIP identity is additive: existing batches are deliberately retained as
+        # generic legacy 0/0 rows, because the current catalog cannot tell which
+        # historical variant was produced.
         wip_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(wip_blank_batches)").fetchall()}
         if "nm_id" not in wip_columns:
             conn.execute("ALTER TABLE wip_blank_batches ADD COLUMN nm_id INTEGER NOT NULL DEFAULT 0")
         if "chrt_id" not in wip_columns:
             conn.execute("ALTER TABLE wip_blank_batches ADD COLUMN chrt_id INTEGER NOT NULL DEFAULT 0")
-        wip_fifo_index = conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_wip_blank_batches_fifo'"
-        ).fetchone()
-        normalized_wip_index = "".join(str(wip_fifo_index["sql"] or "").lower().split()) if wip_fifo_index else ""
-        if "nm_id,chrt_id,batch_date,id" not in normalized_wip_index:
+        expected_wip_fifo_columns = ["material_key", "blank_type", "status", "nm_id", "chrt_id", "batch_date", "id"]
+        actual_wip_fifo_columns = [
+            str(row["name"])
+            for row in conn.execute("PRAGMA index_info(idx_wip_blank_batches_fifo)").fetchall()
+        ]
+        if actual_wip_fifo_columns != expected_wip_fifo_columns:
             conn.execute("DROP INDEX IF EXISTS idx_wip_blank_batches_fifo")
-            conn.execute("CREATE INDEX idx_wip_blank_batches_fifo ON wip_blank_batches(material_key,blank_type,status,nm_id,chrt_id,batch_date,id)")
+            conn.execute(
+                "CREATE INDEX idx_wip_blank_batches_fifo "
+                "ON wip_blank_batches(material_key,blank_type,status,nm_id,chrt_id,batch_date,id)"
+            )
+
         # v4.0: supplier directory and auditable partial payments.
         order_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(procurement_orders)").fetchall()}
         if "supplier_id" not in order_columns:

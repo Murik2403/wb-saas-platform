@@ -77,7 +77,7 @@ it("previews invalid and duplicate CSV rows and prevents confirmation without va
     already_imported: false,
     rows: [
       { line_number: 2, article: "storage", amount_rub: 500, period_start: "2026-09-01", period_end: "2026-09-30", note: "Склад", errors: [], duplicate: true },
-      { line_number: 3, article: "", amount_rub: 0, period_start: "", period_end: "", note: "", errors: ["Не указана статья"], duplicate: false },
+      { line_number: 3, article: "", amount_rub: null, period_start: "", period_end: "", note: "", errors: ["Не указана статья"], duplicate: false },
     ],
     valid_count: 0,
     invalid_count: 1,
@@ -91,6 +91,7 @@ it("previews invalid and duplicate CSV rows and prevents confirmation without va
   expect(await screen.findByText(/Строка 2/)).toBeInTheDocument();
   expect(screen.getByText(/Уже есть в реестре/)).toBeInTheDocument();
   expect(screen.getByText(/Не указана статья/)).toBeInTheDocument();
+  expect(screen.getByText("Не распознана")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Подтвердить импорт" })).toBeDisabled();
   expect(confirmStoreExpenseImport).not.toHaveBeenCalled();
 });

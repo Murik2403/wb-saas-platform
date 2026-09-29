@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { ProductionWorkspace } from "./ProductionWorkspace";
 
 vi.mock("./data-source", () => ({ API_BASE_URL: "/tenant-api", apiHeaders: (json: boolean) => ({ "x-tenant-id": "test-tenant", ...(json ? { "content-type": "application/json" } : {}) }) }));
-const data = { wip: { status: { open_batches: 0, open_cost_rub: 0, remaining_units: 0, remaining_cost_rub: 0 }, batches: [] }, materials: [{ material_name: "Ткань", unit: "м", available_meters: 20 }], products: [{ nm_id: 101, chrt_id: 0, variant_label: "Базовый товар", supplier_article: "QA", product_name: "QA", pack_size: 2 }], capacity: { capacity_known: false, pieces_per_day: 0, workdays: [0, 1], horizon_days: 14, fulfillment_lead_days: 4, emergency_cover_days: 7, expedited_fbo_lead_days: 3, fbs_lead_days: 0, note: "" }, calendar: [], undated_tasks: [] };
+const data = { wip: { status: { open_batches: 0, open_cost_rub: 0, remaining_units: 0, remaining_cost_rub: 0 }, batches: [] }, materials: [{ material_name: "Ткань", unit: "м", available_meters: 20 }], products: [{ nm_id: 101, chrt_id: 0, variant_label: "Базовый товар", supplier_article: "QA", product_name: "QA", pack_size: 2, material_name: "Ткань", blank_type: "Круг" }], capacity: { capacity_known: false, pieces_per_day: 0, workdays: [0, 1], horizon_days: 14, fulfillment_lead_days: 4, emergency_cover_days: 7, expedited_fbo_lead_days: 3, fbs_lead_days: 0, note: "" }, calendar: [], undated_tasks: [] };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => { fetchMock.mockReset(); fetchMock.mockImplementation(async () => json(data)); vi.stubGlobal("fetch", fetchMock); });
@@ -32,49 +32,65 @@ it("disables read-only writes but keeps refresh and calendar available", async (
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "GET")).toHaveLength(0);
 });
 
-it.each([["м", "Ткань"], ["кг", "Клей"], ["л", "Масло"], ["шт", "Фурнитура"]])("uses the catalogue unit %s for issue quantities without changing the API contract", async (unit, name) => {
-  const materials = [
-    { material_name: "Ткань", unit: "м", available_meters: 20 },
-    { material_name: "Клей", unit: "кг", available_meters: 5 },
-    { material_name: "Масло", unit: "л", available_meters: 3 },
-    { material_name: "Фурнитура", unit: "шт", available_meters: 12 },
-  ];
-  fetchMock.mockImplementation(async () => json({ ...data, materials }));
+it("uses the saved BOM material unit for issue quantities and historical batch display", async () => {
+  fetchMock.mockImplementation(async () => json({ ...data, materials: [...data.materials, { material_name: "Клей", unit: "кг", available_meters: 5 }], products: [{ ...data.products[0], material_name: "Клей", blank_type: "Заготовка" }], wip: { ...data.wip, batches: [{ id: 7, material_name: "Клей", blank_type: "Заготовка", unit: "кг", status: "open", issued_meters: 2.5, material_cost_rub: 250, reversed_at: null }] } }));
   render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
-  fireEvent.change(screen.getByLabelText("Материал"), { target: { value: name } });
-  expect(screen.getByLabelText(`Расход сырья, ${unit}`)).toBeInTheDocument();
-  expect(screen.getByRole("option", { name: `${name} · ${materials.find((m) => m.material_name === name)!.available_meters} ${unit}` })).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(`Расход сырья, ${unit}`), { target: { value: "2.5" } });
-  fireEvent.submit(screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!);
-  await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
-  const payload = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1]?.body as string);
-  expect(payload).toMatchObject({ material_name: name, meters_used: 2.5 });
+  expect(screen.getByLabelText("Расход сырья, кг")).toBeInTheDocument();
+  expect(screen.getByLabelText("Материал / цвет по норме")).toHaveValue("Клей");
+  expect(screen.getByLabelText("Материал / цвет по норме")).toHaveAttribute("readonly");
+  expect(screen.getByText(/Выдано 2.5 кг/)).toBeInTheDocument();
 });
 
-it("does not invent metres when the material unit is missing", async () => {
-  fetchMock.mockImplementation(async () => json({ ...data, materials: [{ material_name: "Сырьё без единицы", unit: "", available_meters: 5 }] }));
-  render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
-  expect(screen.getByLabelText("Расход сырья, ед.")).toBeInTheDocument();
-  expect(screen.getByRole("option", { name: "Сырьё без единицы · 5 ед." })).toBeInTheDocument();
+it("lets users select a configured product when the first product has incomplete norms", async () => {
+  fetchMock.mockImplementation(async () => json({ ...data, products: [
+    { ...data.products[0], material_name: "", blank_type: "" },
+    { ...data.products[0], nm_id: 102, product_name: "Готовый к производству" },
+  ] }));
+  render(<ProductionWorkspace />);
+  await screen.findByText("Выдать сырьё в НЗП");
+  const selector = screen.getAllByLabelText("Товар и вариант")[0];
+  expect(selector).not.toBeDisabled();
+  expect(screen.getByRole("button", { name: "Выдать в НЗП" })).toBeDisabled();
+  fireEvent.change(selector, { target: { value: "102:0" } });
+  expect(screen.getByLabelText("Материал / цвет по норме")).toHaveValue("Ткань");
+  expect(screen.getByRole("button", { name: "Выдать в НЗП" })).not.toBeDisabled();
+});
+
+it("posts the selected WB variant when packaging WIP blanks", async () => {
+  fetchMock.mockImplementation(async () => json({ ...data, products: [
+    { ...data.products[0], nm_id: 101, chrt_id: 501, variant_label: "S", product_name: "Футболка", supplier_article: "TEE" },
+    { ...data.products[0], nm_id: 101, chrt_id: 502, variant_label: "M", product_name: "Футболка", supplier_article: "TEE" },
+  ] }));
+  render(<ProductionWorkspace />);
+  await screen.findByText("Собрать готовые комплекты");
+  const form = screen.getByRole("button", { name: "Собрать из заготовок" }).closest("form")!;
+  fireEvent.change(screen.getAllByLabelText("Товар и вариант")[1], { target: { value: "101:502" } });
+  fireEvent.change(screen.getByLabelText("Количество комплектов"), { target: { value: "3" } });
+  fireEvent.submit(form);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
+  const write = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(write[1]?.body as string)).toMatchObject({ nm_id: 101, chrt_id: 502, qty_sets: 3 });
 });
 
 it("submits the selected product and exact variant for WIP issue and packaging", async () => {
   const products = [
-    { nm_id: 101, chrt_id: 501, variant_label: "S", supplier_article: "QA", product_name: "QA", pack_size: 2 },
-    { nm_id: 101, chrt_id: 502, variant_label: "M", supplier_article: "QA", product_name: "QA", pack_size: 2 },
+    { ...data.products[0], nm_id: 101, chrt_id: 501, variant_label: "S", supplier_article: "TEE", product_name: "Футболка" },
+    { ...data.products[0], nm_id: 101, chrt_id: 502, variant_label: "M", supplier_article: "TEE", product_name: "Футболка" },
   ];
   fetchMock.mockImplementation(async () => json({ ...data, products }));
-  render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
-  const issueForm = screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!;
-  fireEvent.change(screen.getAllByLabelText("Товар и вариант")[0], { target: { value: "101:501" } });
-  fireEvent.change(screen.getByLabelText("Тип заготовки"), { target: { value: "Круг" } });
+  render(<ProductionWorkspace />);
+  await screen.findByText("Выдать сырьё в НЗП");
+  const selects = screen.getAllByLabelText("Товар и вариант");
+  fireEvent.change(selects[0], { target: { value: "101:501" } });
   fireEvent.change(screen.getByLabelText("Расход сырья, м"), { target: { value: "2" } });
-  fireEvent.submit(issueForm);
+  fireEvent.submit(screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!);
   await screen.findByText("Сырьё выдано в НЗП. Остаток и стоимость обновлены.");
-  const issueBody = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1]?.body as string);
-  expect(issueBody).toMatchObject({ nm_id: 101, chrt_id: 501 });
-  const packageSelect = screen.getAllByLabelText("Товар и вариант")[1] as HTMLSelectElement;
-  fireEvent.change(packageSelect, { target: { value: "101:502" } });
+  const issue = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1]?.body as string);
+  expect(issue).toMatchObject({ nm_id: 101, chrt_id: 501 });
+  expect(issue).toMatchObject({ material_name: "Ткань", blank_type: "Круг" });
+  expect(screen.getByLabelText("Тип заготовки по норме")).toHaveAttribute("readonly");
+
+  fireEvent.change(selects[1], { target: { value: "101:502" } });
   fireEvent.change(screen.getByLabelText("Количество комплектов"), { target: { value: "1" } });
   fireEvent.submit(screen.getByRole("button", { name: "Собрать из заготовок" }).closest("form")!);
   await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2));
@@ -82,25 +98,25 @@ it("submits the selected product and exact variant for WIP issue and packaging",
   expect(packageBody).toMatchObject({ nm_id: 101, chrt_id: 502 });
 });
 
-it("labels legacy WIP batches as unassigned and only offers catalog product variants", async () => {
+it("labels legacy WIP batches as unassigned and only offers catalog variants", async () => {
   const legacyBatch = { id: 7, nm_id: 0, chrt_id: 0, product_label: "", unit: "м", material_name: "Ткань", blank_type: "Круг", status: "completed", issued_meters: 2, material_cost_rub: 20, produced_units: 3, scrap_units: 0, remaining_units: 3, unit_cost_rub: 6.67, completion_movement_id: 2, reversed_at: null };
   const products = [
-    { nm_id: 101, chrt_id: 501, variant_label: "S", supplier_article: "QA", product_name: "QA", pack_size: 2 },
-    { nm_id: 101, chrt_id: 502, variant_label: "M", supplier_article: "QA", product_name: "QA", pack_size: 2 },
+    { ...data.products[0], nm_id: 101, chrt_id: 501, variant_label: "S", supplier_article: "TEE", product_name: "Футболка" },
+    { ...data.products[0], nm_id: 101, chrt_id: 502, variant_label: "M", supplier_article: "TEE", product_name: "Футболка" },
   ];
   fetchMock.mockImplementation(async () => json({ ...data, products, wip: { ...data.wip, batches: [legacyBatch] } }));
-  render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
+  render(<ProductionWorkspace />);
+  await screen.findByText("Выдать сырьё в НЗП");
   expect(screen.getByText("Старые данные без привязки к товару и варианту")).toBeInTheDocument();
-  const options = Array.from((screen.getAllByLabelText("Товар и вариант")[0] as HTMLSelectElement).options).map((option) => option.value);
+  const options = Array.from((screen.getAllByLabelText("Товар и вариант")[0] as HTMLSelectElement).options).map(option => option.value);
   expect(options).toEqual(["101:501", "101:502"]);
-  expect(options).not.toContain("0:0");
 });
 
 it("keeps request identity on network retry, blocks duplicate submits and refreshes real state", async () => {
   const changed = vi.fn(); render(<ProductionWorkspace onChanged={changed} />);
   await screen.findByText("Выдать сырьё в НЗП");
-  fireEvent.change(screen.getByLabelText("Тип заготовки"), { target: { value: "Круг" } });
   fireEvent.change(screen.getByLabelText("Расход сырья, м"), { target: { value: "2.5" } });
+  expect(screen.getByLabelText("Расход сырья, м")).toHaveValue(2.5);
   let reject!: (error: Error) => void;
   fetchMock.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   const form = screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!;
@@ -120,7 +136,6 @@ it("keeps request identity on network retry, blocks duplicate submits and refres
 
 it("does not present a committed operation as a failed write when refreshing fails", async () => {
   render(<ProductionWorkspace />); await screen.findByText("Выдать сырьё в НЗП");
-  fireEvent.change(screen.getByLabelText("Тип заготовки"), { target: { value: "Круг" } });
   fireEvent.change(screen.getByLabelText("Расход сырья, м"), { target: { value: "2" } });
   fetchMock.mockImplementationOnce(async () => json({ posted: 1 })).mockImplementationOnce(async () => json({}, 503));
   fireEvent.submit(screen.getByRole("button", { name: "Выдать в НЗП" }).closest("form")!);
