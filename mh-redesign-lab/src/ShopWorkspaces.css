@@ -1,0 +1,7 @@
+.shop-workspaces { min-width: 0; }
+.shop-workspaces-form { display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:16px 0; }
+.shop-workspaces-form label { display:flex;flex-direction:column;gap:6px;flex:1 1 180px;min-width:0; }
+.shop-workspaces input,.shop-workspaces select { width:100%;box-sizing:border-box;min-width:0; }
+.shop-workspaces button { white-space:normal; }
+.shop-workspaces p { overflow-wrap:anywhere; }
+@media(max-width:600px){.shop-workspaces-form{display:grid;grid-template-columns:minmax(0,1fr);}.shop-workspaces-form button{width:100%;}}

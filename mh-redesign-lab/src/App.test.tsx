@@ -6,6 +6,8 @@ vi.mock("./cashflow-source", () => ({
   getCashflow: vi.fn(async () => ({items:[],events:[],daily:[],opening_balance_minor:0,actual_closing_minor:0,forecast_closing_minor:0,actual_inflow_minor:0,actual_outflow_minor:0,overdue_planned_minor:0,opening_confirmed:false,period_before_opening:false})),
   createCashEntry: vi.fn(), changeCashEntry: vi.fn(),
 }));
+// This suite tests App/FIFO behavior; shop networking is covered in its own suite.
+vi.mock("./ShopWorkspaces", () => ({ ShopWorkspaces: () => null }));
 
 import type { DashboardDataState } from "./data-source";
 import type { PageId } from "./contracts";

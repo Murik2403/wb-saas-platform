@@ -1,0 +1,40 @@
+import { useEffect, useState } from 'react';
+import './ShopWorkspaces.css';
+type Shop={id:number;name:string;active:boolean;synced_at:string|null};
+type Listing={items:Shop[];can_manage:boolean;can_write:boolean};
+type Financial=Record<string,number|string|boolean>;
+type Report={financial:Financial;products:Array<{nm_id:number;name:string;cost:number|null}>;product_count:number;stock_row_count:number;sync_errors:string[]};
+type Consolidated={total:Financial;complete:boolean;shops:Array<{id:number;name:string;available:boolean}>};
+export async function shopRequest<T>(path:string,method='GET',body?:unknown):Promise<T>{
+  const r=await fetch('/api/v1/shop-workspaces'+path,{method,credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});
+  if(!r.ok){let detail='Не удалось выполнить действие';try{const v=await r.json();if(typeof v.detail==='string')detail=v.detail;}catch{/* Keep generic error */}throw new Error(detail);}
+  return r.json() as Promise<T>;
+}
+const money=(value:unknown)=>typeof value==='number'?value.toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₽':'Нет данных';
+export function ShopWorkspaces(){
+ const [list,setList]=useState<Listing|null>(null),[selected,setSelected]=useState(''),[report,setReport]=useState<Report|null>(null),[consolidated,setConsolidated]=useState<Consolidated|null>(null);
+ const [busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [start,setStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().slice(0,10);}),[end,setEnd]=useState(()=>new Date().toISOString().slice(0,10));
+ async function reload(){setList(await shopRequest<Listing>(''));}
+ useEffect(()=>{let live=true;shopRequest<Listing>('').then(v=>{if(live)setList(v);}).catch(e=>{if(live)setError(String(e.message));});return()=>{live=false;};},[]);
+ async function perform(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Не удалось выполнить действие');}finally{setBusy(false);}}
+ async function add(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget,data=new FormData(form);await perform(async()=>{await shopRequest('', 'POST',{name:String(data.get('name')||''),token:String(data.get('token')||'')});form.reset();await reload();setConsolidated(null);});}
+ async function cost(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const data=new FormData(e.currentTarget);await perform(async()=>{await shopRequest('/'+selected+'/cost','PATCH',{nm_id:Number(data.get('nm_id')),cost_per_wb_unit:Number(data.get('cost'))});setReport(await shopRequest<Report>('/'+selected+'/report?start='+start+'&end='+end));setConsolidated(null);});}
+ async function reconnect(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget,data=new FormData(form);await perform(async()=>{await shopRequest('/'+String(data.get('shop'))+'/connection','POST',{token:String(data.get('token')||'')});form.reset();await reload();setReport(null);setConsolidated(null);});}
+ return <section className="panel shop-workspaces"><h2>Магазины WB</h2>
+ <p className="form-hint">Основной магазин остаётся в текущем кабинете. Дополнительные магазины имеют собственные подключения, товары, остатки и себестоимость. Расчёт прибыли предварительный, пока не заполнены затраты и финансовый период. Общие внешние расходы здесь не вычитаются.</p>
+ {error&&<p role="alert" className="operation-error">{error}</p>}
+ {!list?<button className="ghost-button" disabled={busy} onClick={()=>void perform(reload)}>Загрузить магазины</button>:<>
+ {list.can_manage&&<form onSubmit={add} className="shop-workspaces-form"><label>Название магазина<input disabled={busy} name="name" required maxLength={120}/></label><label>Токен дополнительного WB<input disabled={busy} name="token" type="password" autoComplete="off" required/></label><button disabled={busy}>Подключить магазин</button></form>}
+ {list.can_manage&&list.items.length>0&&<form onSubmit={reconnect} className="shop-workspaces-form"><label>Магазин для обновления подключения<select name="shop" disabled={busy}>{list.items.map(s=><option key={s.id} value={s.id}>{s.name}{s.active?'':' (отключён)'}</option>)}</select></label><label>Новый токен того же магазина<input disabled={busy} name="token" type="password" autoComplete="off" required/></label><button disabled={busy}>Обновить подключение, сохранив данные</button></form>}
+ <div className="shop-workspaces-form"><label>Период с<input disabled={busy} type="date" value={start} onChange={e=>{setStart(e.target.value);setReport(null);setConsolidated(null);}}/></label><label>По<input disabled={busy} type="date" value={end} onChange={e=>{setEnd(e.target.value);setReport(null);setConsolidated(null);}}/></label><button className="ghost-button" disabled={busy||!start||!end} onClick={()=>void perform(async()=>setConsolidated(await shopRequest<Consolidated>('/consolidated/report?start='+start+'&end='+end)))}>Общий отчёт WB</button></div>
+ {consolidated&&<div><h3>{consolidated.complete?'Общий результат':'Общий результат — предварительный'}</h3><p>Выручка: {money(consolidated.total.sales)} · После удержаний WB: {money(consolidated.total.after_wb)} · Себестоимость: {money(consolidated.total.cost)} · Прибыль: {money(consolidated.total.profit)}</p>{consolidated.shops.map(s=><p key={s.id}>{s.name}: {s.available?'данные включены':'нет подтверждённой загрузки; исключён из суммы'}</p>)}</div>}
+ <label>Дополнительный магазин<select disabled={busy} value={selected} onChange={e=>{setSelected(e.target.value);setReport(null);}}><option value="">Выберите магазин</option>{list.items.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+ {selected&&<><div className="operation-actions"><button disabled={busy||!start||!end} onClick={()=>void perform(async()=>setReport(await shopRequest<Report>('/'+selected+'/report?start='+start+'&end='+end)))}>Открыть отчёт магазина</button>{list.can_write&&<button disabled={busy} onClick={()=>void perform(async()=>{await shopRequest<Report>('/'+selected+'/sync','POST',{days:30});setReport(await shopRequest<Report>('/'+selected+'/report?start='+start+'&end='+end));await reload();setConsolidated(null);})}>Загрузить историю за 30 дней</button>}{list.can_manage&&<button className="ghost-button" disabled={busy} onClick={()=>void perform(async()=>{await shopRequest('/'+selected+'/deactivate','POST',{});setSelected('');setReport(null);setConsolidated(null);await reload();})}>Отключить магазин, сохранив данные</button>}</div>
+ {report&&<><h3>Результат выбранного магазина</h3><p>Товаров: {report.product_count} · Строк остатков: {report.stock_row_count}</p><p>Выручка: {money(report.financial.sales)} · Прибыль по учтённым данным: {money(report.financial.profit)}</p>{(!report.financial.cogs_complete||!report.financial.financial_period_complete)&&<p className="warning-text">Себестоимость или финансовый период неполны. Результат предварительный.</p>}{report.sync_errors.length>0&&<p className="warning-text">Часть источников не загрузилась. Повторите синхронизацию и проверьте категории токена.</p>}
+ {list.can_write&&report.products.length>0&&<form onSubmit={cost} className="shop-workspaces-form"><label>Товар этого магазина<select disabled={busy} name="nm_id">{report.products.map(p=><option key={p.nm_id} value={p.nm_id}>{p.name} · WB {p.nm_id} · {money(p.cost)}</option>)}</select></label><label>Себестоимость единицы, ₽<input disabled={busy} name="cost" type="number" required min="0" max="100000000" step="0.01"/></label><button disabled={busy}>Сохранить себестоимость магазина</button></form>}</>}
+ </>}
+ <p className="form-hint">Отключённые магазины: {list.items.filter(s=>!s.active).map(s=>s.name).join(', ')||'нет'}. Их данные сохраняются в резервной копии кабинета.</p>
+ </>}{busy&&<p role="status">Обрабатываем выбранный магазин…</p>}
+ </section>;
+}
