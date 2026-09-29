@@ -19,6 +19,7 @@ class Material(Input):
     material_name: str | None = Field(default=None, min_length=1, max_length=250)
     nm_id: int | None = Field(default=None, gt=0)
     chrt_id: int | None = Field(default=None, ge=0)
+    component_bom_version_id: int | None = Field(default=None, gt=0)
     quantity_per_unit: FiniteFloat = Field(gt=0)
     unit: str | None = Field(default=None, min_length=1, max_length=16)
 
@@ -154,7 +155,10 @@ def workspace(request: Request):
             else:
                 products.append({**common, "chrt_id": 0, "variant_label": "", "barcodes": ""})
         products = list({(p["nm_id"], p["chrt_id"]): p for p in products}.values())
-    return json_safe({"allowed_actions": allowed_actions, "materials": store.list_material_catalog(), "material_layers": store.list_material_layers(), "products": products,
+    from db.fifo_finished_goods import read_finished_goods_cost_layers
+    layers = read_finished_goods_cost_layers(active_only=True)
+    semi_stock = layers.loc[layers["ready_units"] > 0, ["id", "nm_id", "chrt_id", "ready_units", "unit_cost_rub", "source_date"]].to_dict("records")
+    return json_safe({"semi_finished_stock": semi_stock, "allowed_actions": allowed_actions, "materials": store.list_material_catalog(), "material_layers": store.list_material_layers(), "products": products,
                       "boms": store.list_bom_versions(), "equipment": store.list_equipment(), "piecework": store.list_piecework(),
                       "defects": store.list_material_defects(), "releases": store.list_manufacturing_releases()})
 

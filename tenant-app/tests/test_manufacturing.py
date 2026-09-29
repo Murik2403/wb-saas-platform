@@ -148,17 +148,20 @@ class ManufacturingTests(DbTestCase):
             )
 
     def test_nested_semifinished_bom_consumes_exact_fifo_and_reverses_dependency_order(self):
-        self.seed("Ткань", "м", 10, 10)
+        self.seed("Ткань", "м", 1, 10)
         self._catalog_base(222, "BLANK")
         original_bom = m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
         first = m.post_manufacturing_release(222, 1, "2026-09-23", "blank-1")
         # Force the next source layer to carry a distinct historical cost.
-        self.seed("Ткань", "м", 10, 20, source_suffix=":second")
+        self.seed("Ткань", "м", 1, 20, source_suffix=":second")
         revised_bom = m.save_bom_version(222, [{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}], note="Обновлённая спецификация")
         second = m.post_manufacturing_release(222, 1, "2026-09-24", "blank-2",bom_version_id=revised_bom["id"])
+        self.assertEqual(first["unit_cost_rub"],10)
+        self.assertEqual(second["unit_cost_rub"],20)
         self.assertNotEqual(original_bom["id"], revised_bom["id"])
         self.assertEqual(first["bom_version_id"], original_bom["id"])
         self.assertEqual(second["bom_version_id"], revised_bom["id"])
+        self._catalog_base(123, "FINAL")
         self._catalog_base(333, "SUBASSEMBLY")
         m.save_bom_version(333, [{"component_type":"semi_finished","nm_id":222,"chrt_id":0,
                                   "quantity_per_unit":2,"unit":"шт"}])
@@ -168,6 +171,11 @@ class ManufacturingTests(DbTestCase):
 
         finished = m.post_manufacturing_release(123,1,"2026-09-26","final-1")
         self.assertEqual(finished["material_cost_rub"], middle["unit_cost_rub"])
+        self.assertEqual(finished["unit_cost_rub"],30)
+        self.assertEqual(m.post_manufacturing_release(333,1,"2026-09-25","middle-1")["posted"],0)
+        self.assertEqual(m.post_manufacturing_release(123,1,"2026-09-26","final-1")["posted"],0)
+        with self.assertRaises(ValueError):
+            m.post_manufacturing_release(123,2,"2026-09-26","final-1")
         with connect() as conn:
             allocations = conn.execute(
                 "SELECT layer_id,units,amount_rub,from_location,to_location FROM finished_goods_fifo_allocations WHERE movement_id=? ORDER BY id",
@@ -217,6 +225,44 @@ class ManufacturingTests(DbTestCase):
         self.assertTrue(undone_first["ok"], undone_first)
         self.assertFalse(undo_inventory_movement(finished["movement_id"])["ok"])
 
+    def test_nested_snapshot_is_persisted_and_consumer_variant_is_preserved(self):
+        self.seed()
+        with connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (222,'BLANK','Blank','{\"sizes\":[{\"chrtID\":501}]}')")
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (123,'FINAL','Final','{\"sizes\":[{\"chrtID\":999}]}')")
+        m.save_bom_version(222,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}],chrt_id=501)
+        producer = m.post_manufacturing_release(222,2,"2026-09-23","producer",chrt_id=501)
+        m.save_bom_version(123,[{"component_type":"semi_finished","nm_id":222,"chrt_id":501,"quantity_per_unit":1,"unit":"шт"}],chrt_id=999)
+        result = m.post_manufacturing_release(123,1,"2026-09-24","consumer",chrt_id=999)
+        import json
+        with connect() as conn:
+            movement = conn.execute("SELECT chrt_id FROM inventory_movements WHERE id=?", (result["movement_id"],)).fetchone()
+            self.assertEqual(movement[0],999)
+            snapshot = json.loads(conn.execute("SELECT materials_json FROM manufacturing_releases WHERE id=?",(result["id"],)).fetchone()[0])
+            self.assertEqual(snapshot[0]["allocations"][0]["source_release_id"],producer["id"])
+            conn.execute("UPDATE finished_goods_cost_layers SET producer_release_id=NULL WHERE id=?",(producer["finished_layer_id"],))
+        replay = m.post_manufacturing_release(123,1,"2026-09-24","consumer",chrt_id=999)
+        self.assertEqual(replay["posted"],0)
+        self.assertEqual(replay["materials"][0]["allocations"][0]["source_release_id"],producer["id"])
+        restored = next(r for r in m.list_manufacturing_releases() if r["id"] == result["id"])
+        self.assertEqual(restored["materials"][0]["allocations"][0]["source_release_id"],producer["id"])
+
+    def test_nested_release_rejects_deleted_catalog_atomically(self):
+        self.seed()
+        self._catalog_base(123,"FINAL")
+        self._catalog_base(222,"BLANK")
+        m.save_bom_version(222,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])
+        m.post_manufacturing_release(222,1,"2026-09-23","producer")
+        m.save_bom_version(123,[{"component_type":"semi_finished","nm_id":222,"chrt_id":0,"quantity_per_unit":1,"unit":"шт"}])
+        with connect() as conn:
+            conn.execute("DELETE FROM products_catalog WHERE nm_id=222")
+            before = [tuple(r) for r in conn.execute("SELECT * FROM finished_goods_cost_layers")]
+        with self.assertRaises(ValueError):
+            m.post_manufacturing_release(123,1,"2026-09-24","blocked")
+        with connect() as conn:
+            self.assertEqual(before,[tuple(r) for r in conn.execute("SELECT * FROM finished_goods_cost_layers")])
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM manufacturing_releases WHERE source_key='blocked'").fetchone()[0],0)
+
     def test_bom_rejects_nested_recipe_cycle(self):
         self.seed()
         self._catalog_base(123, "FINAL")
@@ -229,6 +275,7 @@ class ManufacturingTests(DbTestCase):
                                       "quantity_per_unit":1,"unit":"шт"}])
 
     def test_nested_shortage_is_atomic_and_variant_layers_never_cross(self):
+        self._catalog_base(123, "FINAL")
         layer = self.seed("Ткань", "м", 20, 10)
         with connect() as conn:
             conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,raw_json) VALUES (222,'BLANK','Заготовка','{\"sizes\":[{\"chrtID\":501},{\"chrtID\":502}]}')")
@@ -251,6 +298,7 @@ class ManufacturingTests(DbTestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements WHERE movement_type='production_receipt' AND nm_id=123").fetchone()[0],0)
 
     def test_fractional_semi_finished_requirement_is_rejected_before_posting(self):
+        self._catalog_base(123, "FINAL")
         self.seed()
         self._catalog_base(222,"BLANK")
         m.save_bom_version(222,[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м"}])

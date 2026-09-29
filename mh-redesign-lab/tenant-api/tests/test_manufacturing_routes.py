@@ -84,7 +84,7 @@ def test_nested_release_api_exposes_pinned_and_actual_bom_provenance(client):
 
     child_v1 = post(client, "/boms", {"nm_id":222,"materials":[{"material_name":"Ткань","quantity_per_unit":1,"unit":"м²"}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
     child_release_v1 = post(client, "/releases", {"nm_id":222,"quantity":1,"production_date":"2026-09-10","source_key":"child-v1","bom_version_id":child_v1["id"]})
-    parent_bom = post(client, "/boms", {"nm_id":123,"materials":[{"component_type":"semi_finished","nm_id":222,"chrt_id":0,"quantity_per_unit":2,"unit":"шт"}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
+    parent_bom = post(client, "/boms", {"nm_id":123,"materials":[{"component_type":"semi_finished","nm_id":222,"chrt_id":0,"quantity_per_unit":2,"unit":"шт","component_bom_version_id":child_v1["id"]}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
     assert parent_bom["materials"][0]["nm_id"] == 222 and parent_bom["materials"][0]["chrt_id"] == 0, parent_bom
     child_v2 = post(client, "/boms", {"nm_id":222,"materials":[{"material_name":"Ткань","quantity_per_unit":2,"unit":"м²"}],"operations":[],"packaging_per_unit":0,"other_per_unit":0})
     child_release_v2 = post(client, "/releases", {"nm_id":222,"quantity":1,"production_date":"2026-09-11","source_key":"child-v2","bom_version_id":child_v2["id"]})

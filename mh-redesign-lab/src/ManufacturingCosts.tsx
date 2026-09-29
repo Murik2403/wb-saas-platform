@@ -12,6 +12,7 @@ type RecordRow = Record<string, unknown>;
 export type ManufacturingCostsData = {
   materials: Material[]; material_layers: Layer[]; products: Product[];
   boms: Bom[]; equipment: Equipment[]; piecework: RecordRow[]; defects: RecordRow[]; releases: RecordRow[];
+  semi_finished_stock?: Array<{ id: number; nm_id: number; chrt_id: number; ready_units: number; unit_cost_rub: number; source_date?: string | null }>;
   allowed_actions?: string[];
 };
 type MaterialInput = { component_type: "raw_material" | "semi_finished"; material_name: string; product: string; quantity: string };
@@ -165,8 +166,20 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
     const child = selectedProduct(data.products, item.product, true);
     return !target || !child || Boolean(routeBlocker(data.boms, data.products, target, child));
   }));
+  const releaseProduct = data && selectedProduct(data.products, release.product, true);
+  const releaseBom = data && applicableBoms(data.boms, releaseProduct || undefined).find((item) => String(item.id) === release.bom);
+  const releaseQty = Number(release.quantity.replace(",", "."));
+  const semiPreview = (releaseBom?.materials ?? []).filter((item) => item.component_type === "semi_finished").map((item) => {
+    const needed = releaseQty * item.quantity_per_unit;
+    const layers = (data?.semi_finished_stock ?? []).filter((layer) => layer.nm_id === item.nm_id && layer.chrt_id === Number(item.chrt_id ?? 0) && (!layer.source_date || layer.source_date <= release.date)).sort((a, b) => (a.source_date ?? "1900-01-01").localeCompare(b.source_date ?? "1900-01-01") || a.id - b.id);
+    const available = layers.reduce((sum, layer) => sum + layer.ready_units, 0);
+    let remaining = needed, cost = 0, count = 0;
+    for (const layer of layers) { const take = Math.min(layer.ready_units, Math.max(remaining, 0)); if (take > 0) { count++; cost += Math.round(take * layer.unit_cost_rub * 100) / 100; remaining -= take; } }
+    return { item, needed, available, cost, count, blocked: releaseQty > 0 && (!Number.isInteger(needed) || (data?.semi_finished_stock !== undefined && available < needed)) };
+  });
+  const releaseBlocked = semiPreview.some((entry) => entry.blocked);
   return <section className="manufacturing-costs" aria-labelledby="mfg-title" aria-busy={busy || loading}>
-    <div className="mfg-heading"><div><h2 id="mfg-title">Состав изделия и затраты производства</h2><p>Материалы, работа и износ оборудования входят в стоимость выпуска. Списанный брак учитывается отдельно.</p><p>Это стоимость выпуска и запасов. Финансовый отчёт пока использует себестоимость из настроек товара; выпуск сам по себе не является расходом от продаж.</p></div><button type="button" className="ghost-button" disabled={busy || loading} onClick={() => setReloadKey((value) => value + 1)}>Обновить данные</button></div>
+    <div className="mfg-heading"><div><h2 id="mfg-title">Состав изделия и затраты производства</h2><p>Материалы, работа и износ оборудования входят в стоимость выпуска. Списанный брак учитывается отдельно.</p><p>Это стоимость выпуска и запасов. Финансовый отчёт использует историческую стоимость FIFO при точном сопоставлении продаж; неполные данные помечаются как предварительные. Выпуск сам по себе не является расходом от продаж.</p></div><button type="button" className="ghost-button" disabled={busy || loading} onClick={() => setReloadKey((value) => value + 1)}>Обновить данные</button></div>
     {(!canEdit || data?.allowed_actions?.length === 0) && <p>У вашей роли нет прав на изменение производственного учёта. Данные доступны для просмотра.</p>}
     {canEdit && data?.allowed_actions && data.allowed_actions.length > 0 && data.allowed_actions.length < 6 && <p>Доступные действия ограничены вашей ролью. Остальные формы доступны для просмотра.</p>}
     {loading && <p role="status">Загружаем производственный учёт…</p>}
@@ -292,6 +305,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
         const product = selectedProduct(data.products, release.product, true);
         const bom = applicableBoms(data.boms, product).find((item) => String(item.id) === release.bom);
         if (!product || !bom) throw new Error("Выберите товар и его версию состава.");
+        if (releaseBlocked) throw new Error("Недостаточно полуфабрикатов или требуется дробное число единиц.");
         if (!release.source.trim()) throw new Error("Укажите код задания выпуска.");
         return { source_key: release.source.trim(), nm_id: product.nm_id, chrt_id: Number(product.chrt_id ?? 0), quantity: number(release.quantity, "Количество выпуска", { positive: true, integer: true }), production_date: release.date, bom_version_id: bom.id, product_name: product.product_name, supplier_article: product.supplier_article ?? "" };
       }, "Выпуск проведён: материалы и производственные затраты учтены.", () => setRelease((item) => ({ ...item, source: "", quantity: "" })))}>
@@ -301,7 +315,8 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
           <Field label="Версия состава для выпуска"><select required value={release.bom} onChange={(event) => setRelease({ ...release, bom: event.target.value })}><option value="">Выберите версию</option>{applicableBoms(data.boms, selectedProduct(data.products, release.product, true)).map((item) => <option key={item.id} value={item.id}>{Number(item.chrt_id ?? 0) === 0 && selectedProduct(data.products, release.product, true)?.chrt_id ? "Общий состав · " : ""}Версия {item.version}{item.note ? ` · ${item.note}` : ""}</option>)}</select></Field>
           <Decimal label="Количество выпуска, целые ед." value={release.quantity} onChange={(quantity) => setRelease({ ...release, quantity })} />
           <Field label="Дата выпуска"><input required type="date" value={release.date} onChange={(event) => setRelease({ ...release, date: event.target.value })} /></Field>
-          <button className="primary-button" type="submit">Провести выпуск</button>
+          {semiPreview.length > 0 && <div aria-label="Проверка полуфабрикатов"><p>Предварительная проверка на дату выпуска. Сервер повторно проверит остатки при проведении.</p><ul>{semiPreview.map(({ item, needed, available, cost, count, blocked }) => <li key={`${item.nm_id}:${item.chrt_id}`}>WB {item.nm_id} · вариант {item.chrt_id ?? 0} · спецификация #{item.component_bom_version_id}: нужно {needed || 0} шт, доступно {available} шт, партий FIFO {count}, стоимость {rub(cost)}.{blocked && <strong> Выпуск заблокирован: проверьте остаток и целое количество.</strong>}</li>)}</ul></div>}
+          <button className="primary-button" type="submit" disabled={releaseBlocked}>Провести выпуск</button>
           {!data.boms.length && <p>Сначала сохраните состав изделия.</p>}
         </fieldset>
       </form>

@@ -175,6 +175,8 @@ def _hydrate_semi_finished_provenance(conn: sqlite3.Connection, release: dict) -
             continue
         pinned_version = component.get("component_bom_version_id")
         for allocation in component.get("allocations", []):
+            if "source_provenance" in allocation:
+                continue  # New postings persist immutable provenance in materials_json.
             source = conn.execute(
                 """SELECT l.producer_release_id,r.bom_version_id,r.source_key
                    FROM finished_goods_cost_layers l
@@ -215,19 +217,23 @@ def _bom_for_component(conn: sqlite3.Connection, nm_id: int, chrt_id: int) -> sq
 
 def _assert_acyclic_bom_route(conn: sqlite3.Connection, component_nm_id: int, component_chrt_id: int,
                                target: tuple[int, int], path: set[tuple[int, int]], depth: int = 1,
-                               visited_depths: dict[tuple[int, int], int] | None = None) -> int:
+                               visited_depths: dict[tuple[int, int, int | None], int] | None = None,
+                               bom_version_id: int | None = None) -> int:
     identity = (int(component_nm_id), int(component_chrt_id))
     if identity == target or identity in path:
         raise ValueError("В маршруте производства обнаружен цикл")
     if depth > 8:
         raise ValueError("Глубина маршрута не должна превышать 8 этапов")
     visited_depths = visited_depths if visited_depths is not None else {}
-    if visited_depths.get(identity, 0) >= depth:
+    memo_identity = (*identity, bom_version_id)
+    if visited_depths.get(memo_identity, 0) >= depth:
         return depth
-    visited_depths[identity] = depth
-    bom = _bom_for_component(conn, *identity)
+    visited_depths[memo_identity] = depth
+    bom = conn.execute("SELECT * FROM manufacturing_boms WHERE id=? AND nm_id=? AND chrt_id IN (?,0)", (bom_version_id,*identity)).fetchone() if bom_version_id is not None else _bom_for_component(conn, *identity)
     if bom is None:
         raise ValueError(f"Спецификация полуфабриката {identity[0]} / {identity[1]} не найдена")
+    from .wip import validate_catalog_identity
+    validate_catalog_identity(conn, *identity, require_catalog=True)
     next_path = {*path, identity}
     max_depth = depth
     for nested in json.loads(str(bom["materials_json"] or "[]")):
@@ -235,7 +241,7 @@ def _assert_acyclic_bom_route(conn: sqlite3.Connection, component_nm_id: int, co
             continue
         child_depth = _assert_acyclic_bom_route(
             conn, int(nested["nm_id"]), int(nested["chrt_id"]), target, next_path, depth + 1,
-            visited_depths,
+            visited_depths, bom_version_id=nested.get("component_bom_version_id"),
         )
         max_depth = max(max_depth, child_depth)
     return max_depth
@@ -284,7 +290,7 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         components, steps, keys, names = [], [], set(), set()
-        visited_route_depths: dict[tuple[int, int], int] = {}
+        visited_route_depths: dict[tuple[int, int, int | None], int] = {}
         for item in materials:
             quantity = _number(item.get("quantity_per_unit"), "Норма", positive=True)
             if round(quantity, 6) < 0.001:
@@ -299,12 +305,17 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
                 if identity in keys:
                     raise ValueError("Повторяющиеся компоненты объедините")
                 from .wip import validate_catalog_identity
-                validate_catalog_identity(conn, component_nm_id, component_chrt_id)
-                child_bom = _bom_for_component(conn, component_nm_id, component_chrt_id)
+                validate_catalog_identity(conn, nm_id, chrt_id, require_catalog=True)
+                validate_catalog_identity(conn, component_nm_id, component_chrt_id, require_catalog=True)
+                requested_child_version = item.get("component_bom_version_id")
+                if requested_child_version is not None:
+                    child_bom = conn.execute("SELECT * FROM manufacturing_boms WHERE id=? AND nm_id=? AND chrt_id IN (?,0)", (_integer(requested_child_version,"Версия полуфабриката"),component_nm_id,component_chrt_id)).fetchone()
+                else:
+                    child_bom = _bom_for_component(conn, component_nm_id, component_chrt_id)
                 if child_bom is None:
                     raise ValueError(f"Спецификация полуфабриката {component_nm_id} / {component_chrt_id} не найдена")
                 _assert_acyclic_bom_route(conn, component_nm_id, component_chrt_id,
-                                          (nm_id, chrt_id), set(), visited_depths=visited_route_depths)
+                                          (nm_id, chrt_id), set(), visited_depths=visited_route_depths, bom_version_id=int(child_bom["id"]))
                 unit = str(item.get("unit") or "шт")
                 if unit != "шт":
                     raise ValueError("Единица полуфабриката должна быть шт")
@@ -315,7 +326,7 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
                 continue
             if component_type != "raw_material":
                 raise ValueError("Тип компонента должен быть raw_material или semi_finished")
-            if item.get("nm_id") is not None or item.get("chrt_id") is not None:
+            if item.get("nm_id") is not None or item.get("chrt_id") is not None or item.get("component_bom_version_id") is not None:
                 raise ValueError("Для сырья не указывают артикул или вариант товара")
             name = _text(item.get("material_name"), "Материал")
             key = name.casefold()
@@ -467,6 +478,9 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
     for item in spec["materials"]:
         needed = round(item["quantity_per_unit"]*quantity,6)
         if item.get("component_type") == "semi_finished":
+            from .wip import validate_catalog_identity
+            validate_catalog_identity(conn, nm_id, chrt_id, require_catalog=True)
+            validate_catalog_identity(conn, int(item["nm_id"]), int(item["chrt_id"]), require_catalog=True)
             if not float(needed).is_integer():
                 raise ValueError("Количество полуфабриката должно быть целым")
             needed_units = int(needed)
@@ -527,6 +541,7 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
                 str(catalog["product_name"] or ""),int(item["required_units"]),"ready","out",
                 chrt_id=int(item["chrt_id"]),
             )
+            conn.execute("UPDATE inventory_movements SET chrt_id=? WHERE id=?", (chrt_id, movement_id))
             from .production import _apply_pipeline_delta
             _apply_pipeline_delta(conn,int(item["nm_id"]),str(catalog["supplier_article"] or ""),
                                   -int(item["required_units"]),0)
@@ -535,6 +550,7 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
             cost, allocations = _consume_material_fifo(conn,movement_id,item["material_key"],item["material_name"],item["quantity"])
         item.update(cost_rub=cost,allocations=allocations)
         material_total += cost
+    _hydrate_semi_finished_provenance(conn, {"materials": components})
     labor_total = round(sum(r["amount_rub"] for r in labor),2)
     depreciation = round(sum(r["amount_rub"] for r in equipment),2)
     packaging, other = round(spec["packaging_per_unit"]*quantity,2),round(spec["other_per_unit"]*quantity,2)

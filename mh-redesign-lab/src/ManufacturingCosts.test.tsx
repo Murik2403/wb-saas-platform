@@ -25,6 +25,18 @@ async function fillLabor() {
 }
 
 describe("manufacturing cost input", () => {
+  it("blocks a nested release when same-variant stock is insufficient", async () => {
+    const nested: ManufacturingCostsData = { ...data, boms: [{ id: 1, nm_id: 123, version: 1, materials: [{ component_type: "semi_finished", nm_id: 222, chrt_id: 501, component_bom_version_id: 9, quantity_per_unit: 2, unit: "шт" }] }], semi_finished_stock: [{ id: 7, nm_id: 222, chrt_id: 502, ready_units: 100, unit_cost_rub: 10 }] };
+    fetchMock.mockImplementation(async () => json(nested));
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для выпуска"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Версия состава для выпуска"), "1");
+    await userEvent.type(screen.getByLabelText("Количество выпуска, целые ед."), "1");
+    expect(screen.getByRole("button", { name: "Провести выпуск" })).toBeDisabled();
+    expect(screen.getByText(/Выпуск заблокирован: проверьте остаток/)).toBeVisible();
+    expect(writes()).toHaveLength(0);
+  });
+
   it("preserves cents and rejects silent rounding, scientific notation and fractional released units", () => {
     expect(manufacturingNumber("125,50", "Цена", { money: true })).toBe(125.5);
     expect(manufacturingNumber("0,125", "Материал", { positive: true })).toBe(0.125);
@@ -226,7 +238,7 @@ describe("manufacturing cost input", () => {
       fireEvent.submit(screen.getByRole("button", { name }).closest("form")!);
     }
     expect(writes()).toHaveLength(0);
-    expect(screen.getByText(/Финансовый отчёт пока использует себестоимость из настроек товара/)).toBeVisible();
+    expect(screen.getByText(/Финансовый отчёт использует историческую стоимость FIFO/)).toBeVisible();
   });
   it("shows a used-batch reversal error and preserves the journal record", async () => {
     const withRelease = { ...data, allowed_actions: ["reverse"], releases: [{ id: 1, movement_id: 22, source_key: "job-used", status: "applied", quantity: 3, total_cost_rub: 458.25 }] };
