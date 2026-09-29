@@ -35,8 +35,8 @@ def _money(value):
 
 def import_snapshot(snapshot):
     start, end = snapshot["start_date"], snapshot["end_date"]
-    original_count = len(snapshot["accruals"])
-    prepared = {}
+    prepared = []
+    occurrences = {}
     for row in snapshot["accruals"]:
         identifier = row.get("accrual_id")
         if isinstance(identifier, bool) or not isinstance(identifier, (str, int)) or not str(identifier):
@@ -46,21 +46,25 @@ def import_snapshot(snapshot):
         if not start <= day <= end:
             raise ValueError("Ozon вернул начисление вне выбранного периода.")
         amount, currency = _money(row.get("total_amount"))
-        key = "ozon:accrual:"+str(identifier)
-        record = (key, str(identifier), day, currency, str(amount), canonical(row))
-        if key in prepared and prepared[key] != record:
-            raise ValueError("Дубликаты accrual_id имеют разные данные; загрузка остановлена.")
-        prepared[key] = record
-    snapshot = {**snapshot, "accruals": [json.loads(row[5]) for row in prepared.values()]}
+        # Source ID uniqueness is not assumed. Retain every occurrence in each
+        # completed day and replace that window atomically on subsequent imports.
+        payload = canonical(row)
+        fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        identity = day + ":" + fingerprint
+        occurrence = occurrences.get(identity, 0) + 1
+        occurrences[identity] = occurrence
+        key = "ozon:day:" + identity + ":" + str(occurrence)
+        prepared.append((key, str(identifier), day, currency, str(amount), payload))
+    snapshot = {**snapshot, "identical_row_occurrences": sum(v - 1 for v in occurrences.values())}
     encoded = canonical(snapshot)
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         ensure_schema(conn)
         # Source range is replaced atomically after all remote collections succeed.
         conn.execute("DELETE FROM ozon_accrual_ledger WHERE accrual_date BETWEEN ? AND ?", (start, end))
-        conn.executemany("INSERT INTO ozon_accrual_ledger VALUES (?,?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET accrual_id=excluded.accrual_id,accrual_date=excluded.accrual_date,currency=excluded.currency,amount_text=excluded.amount_text,payload_json=excluded.payload_json", prepared.values())
+        conn.executemany("INSERT INTO ozon_accrual_ledger VALUES (?,?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET accrual_id=excluded.accrual_id,accrual_date=excluded.accrual_date,currency=excluded.currency,amount_text=excluded.amount_text,payload_json=excluded.payload_json", prepared)
         conn.execute("INSERT INTO ozon_accounting_snapshots VALUES (?,?,?,?,?) ON CONFLICT(period_key) DO UPDATE SET created_at=excluded.created_at,payload_json=excluded.payload_json", (start+":"+end,start,end,datetime.now(timezone.utc).isoformat(),encoded))
-    return {"imported": len(prepared), "duplicates": original_count-len(prepared)}
+    return {"imported": len(prepared), "duplicates": 0, "identical_row_occurrences": snapshot["identical_row_occurrences"]}
 
 
 def save_cost_mapping(sku, mode, unit_cost=None, nm_id=None, chrt_id=0):
@@ -102,6 +106,8 @@ def workspace(start, end):
     types = {str(row.get("id")): row for row in data["types"]}
     net = Decimal(0); cogs = Decimal(0); sales_units = 0; covered_units = 0
     unknown_types = set(); blockers = set(); fees = {}; unknown_categories = set()
+    if data.get("identical_row_occurrences"):
+        blockers.add("В источнике есть одинаковые строки начислений: все сохранены, уникальность операций не подтверждена.")
     def walk(value):
         if isinstance(value, dict):
             if "type_id" in value:
@@ -156,4 +162,4 @@ def workspace(start, end):
     for row in data["products"]:
         sku = str(row.get("sku") or "")
         products.append({"sku": sku,"offer_id": str(row.get("offer_id") or ""),"product_id": row.get("product_id"),"stocks": stocks.get(str(row.get("product_id")), []),"cost_mapping": mappings.get(sku)})
-    return {"loaded": True,"source_complete": True,"accounting_complete": not blockers,"period": {"start_date": start,"end_date": end},"synced_at": saved["created_at"],"net_accrual_rub": str(net),"estimated_cogs_rub": str(cogs),"profit_rub": None,"estimate_after_known_cogs_rub": str(net-cogs) if covered_units == sales_units and not unknown_types and not unknown_categories else None,"sales_and_return_units": sales_units,"known_cost_units": covered_units,"exact_fifo_units": 0,"blockers": sorted(blockers),"products": products,"source_counts": {key: len(data[key]) for key in ("products","stocks","fbo","fbs","returns","accruals")},"fees": [{"type_id": key,"name": types.get(key,{}).get("description") or types.get(key,{}).get("name") or "Неизвестный сбор","amount_rub": str(value),"mapped": key in types} for key,value in sorted(fees.items())],"returns_scope": "Текущий реестр всех возвратов, не сумма возвратов выбранного периода."}
+    return {"loaded": True,"source_complete": True,"accounting_complete": not blockers,"period": {"start_date": start,"end_date": end},"synced_at": saved["created_at"],"net_accrual_rub": str(net),"estimated_cogs_rub": str(cogs),"profit_rub": None,"estimate_after_known_cogs_rub": str(net-cogs) if covered_units == sales_units and not blockers else None,"sales_and_return_units": sales_units,"known_cost_units": covered_units,"exact_fifo_units": 0,"blockers": sorted(blockers),"products": products,"source_counts": {key: len(data[key]) for key in ("products","stocks","fbo","fbs","returns","accruals")},"fees": [{"type_id": key,"name": types.get(key,{}).get("description") or types.get(key,{}).get("name") or "Неизвестный сбор","amount_rub": str(value),"mapped": key in types} for key,value in sorted(fees.items())],"returns_scope": "Текущий реестр всех возвратов, не сумма возвратов выбранного периода."}

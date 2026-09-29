@@ -26,17 +26,32 @@ class OzonLedgerTests(DbTestCase):
             assert conn.execute("SELECT COUNT(*) FROM ozon_accrual_ledger").fetchone()[0] == 1
             assert [tuple(row) for row in conn.execute("SELECT * FROM sales")] == before
 
-    def test_identical_rows_deduplicate_in_saved_snapshot_and_report(self):
+    def test_identical_rows_preserved_and_reimport_never_accumulates(self):
         snapshot = fixture_snapshot(); snapshot["accruals"] *= 2
         result = import_snapshot(snapshot)
-        assert result["duplicates"] == 1
-        assert workspace("2026-09-01","2026-09-02")["net_accrual_rub"] == "-12.34"
+        assert result["duplicates"] == 0
+        assert result["identical_row_occurrences"] == 1
+        import_snapshot(snapshot)
+        report = workspace("2026-09-01","2026-09-02")
+        assert report["net_accrual_rub"] == "-24.68"
+        assert report["accounting_complete"] is False
+        with connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM ozon_accrual_ledger").fetchone()[0] == 2
 
-    def test_conflicting_duplicate_and_invalid_money_leave_previous_report(self):
+    def test_reused_accrual_id_distinct_rows_and_days_are_not_dropped(self):
+        snapshot = fixture_snapshot()
+        other = {**snapshot["accruals"][0], "total_amount":{"amount":"999","currency":"RUB"}}
+        next_day = {**other, "date":"2026-09-02"}
+        import_snapshot({**snapshot,"accruals":snapshot["accruals"]+[other,next_day]})
+        assert workspace("2026-09-01","2026-09-02")["net_accrual_rub"] == "1985.66"
+        import_snapshot({**snapshot,"start_date":"2026-09-02","accruals":[next_day]})
+        with connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM ozon_accrual_ledger").fetchone()[0] == 3
+
+    def test_invalid_money_leaves_previous_report(self):
         snapshot = fixture_snapshot(); import_snapshot(snapshot)
-        conflict = {**snapshot["accruals"][0],"total_amount":{"amount":"999","currency":"RUB"}}
-        with pytest.raises(ValueError): import_snapshot({**snapshot,"accruals":snapshot["accruals"]+[conflict]})
-        with pytest.raises(ValueError): import_snapshot({**snapshot,"accruals":[{**conflict,"total_amount":{"amount":"NaN","currency":"RUB"}}]})
+        invalid = {**snapshot["accruals"][0],"total_amount":{"amount":"NaN","currency":"RUB"}}
+        with pytest.raises(ValueError): import_snapshot({**snapshot,"accruals":[invalid]})
         assert workspace("2026-09-01","2026-09-02")["net_accrual_rub"] == "-12.34"
 
     def test_unknown_fees_and_currency_block_complete_accounting(self):

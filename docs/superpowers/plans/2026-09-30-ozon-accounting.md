@@ -10,3 +10,6 @@ Build an isolated Ozon raw ledger, source snapshots and explicit SKU cost mappin
 - Owner/manager can synchronize or save cost mappings; all authenticated readers can view. No marketplace writes.
 - Provide date controls, sync status, source coverage, products/stocks/returns and editable SKU cost mapping in Finance. Avoid claiming complete P&L while component reconciliation is unverified.
 - Verify isolated DB/API/UI tests plus full suites/build and graph update; commit explicitly. Root deploys integrated revision after backup rehearsal.
+
+## Identity correction after independent review
+Primary read-only API checks on three real dates returned 2/3/5 rows, without repeated accrual_id; these IDs were not all in the fee dictionary. This bounded sample does not establish global event uniqueness. Completed day windows retain every source row, including identical occurrences, using day + canonical payload SHA256 + occurrence ordinal. Reimport replaces the date range transactionally. Identical occurrences block complete-accounting claims rather than being silently deleted. Invalid rows leave the previous snapshot untouched. Cross-period snapshots retain their explicit synchronization timestamp.
