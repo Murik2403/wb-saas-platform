@@ -1,0 +1,72 @@
+import { useEffect, useRef, useState } from "react";
+import { API_BASE_URL, apiHeaders, getDashboardSession } from "./data-source";
+import "./OzonAccounting.css";
+
+type CostMapping = { mode: "manual" | "wb_estimate"; unit_cost_text: string | null; nm_id: number | null };
+type Product = { sku: string; offer_id: string; product_id: number; stocks: Array<{ present?: number; reserved?: number; type?: string }>; cost_mapping?: CostMapping | null };
+type Workspace = { configured?: boolean; loaded: boolean; source_complete: boolean; accounting_complete: boolean; synced_at?: string; net_accrual_rub: string | null; estimated_cogs_rub?: string; estimate_after_known_cogs_rub?: string | null; profit_rub: string | null; sales_and_return_units?: number; known_cost_units?: number; products: Product[]; blockers: string[]; source_counts?: Record<string, number>; fees?: Array<{ type_id: string; name: string; amount_rub: string; mapped: boolean }>; returns_scope?: string };
+const iso = (day: Date) => `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,"0")}-${String(day.getDate()).padStart(2,"0")}`;
+const previous = (days: number) => { const day = new Date(); day.setDate(day.getDate()-days); return iso(day); };
+const money = (value: string | null | undefined) => value === null || value === undefined ? "не рассчитано" : `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
+async function request<T>(path: string, body?: unknown, method = "GET"): Promise<T> {
+  const result = await fetch(`${API_BASE_URL}/api/v1/ozon-accounting${path}`, { method, headers: apiHeaders(body !== undefined), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  if (!result.ok) { const error = await result.json().catch(() => ({})); throw new Error(typeof error.detail === "string" ? error.detail : `Ozon: HTTP ${result.status}`); }
+  return result.json() as Promise<T>;
+}
+
+export function OzonAccounting() {
+  const [start, setStart] = useState(() => previous(7));
+  const [end, setEnd] = useState(() => previous(1));
+  const [data, setData] = useState<Workspace | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [canWrite, setCanWrite] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, { mode: string; value: string }>>({});
+  const generation = useRef(0);
+  const period = `?start_date=${start}&end_date=${end}`;
+  const refresh = async () => {
+    const current = ++generation.current;
+    setBusy(true); setError(null);
+    try { const result = await request<Workspace>(`/workspace${period}`); if (current === generation.current) { setData(result); setDrafts({}); } }
+    catch (caught) { if (current === generation.current) setError(caught instanceof Error ? caught.message : "Не удалось прочитать Ozon"); }
+    finally { if (current === generation.current) setBusy(false); }
+  };
+  useEffect(() => { void getDashboardSession().then(session => setCanWrite(session.mode !== "demo" && ["owner", "manager"].includes(session.user.role.toLowerCase()))).catch(() => setCanWrite(false)); }, []);
+  useEffect(() => { setData(null); void refresh(); return () => { ++generation.current; }; }, [start, end]);
+  const sync = async () => {
+    if (busy || !canWrite) return;
+    setBusy(true); setError(null);
+    try { const result = await request<{ workspace: Workspace }>("/sync", { start_date: start, end_date: end }, "POST"); setData({ ...result.workspace, configured: true }); setDrafts({}); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Загрузка Ozon не завершена"); }
+    finally { setBusy(false); }
+  };
+  const save = async (product: Product) => {
+    const draft = drafts[product.sku]; if (!draft || busy || !canWrite) return;
+    setBusy(true); setError(null);
+    try { await request("/cost", { sku: product.sku, mode: draft.mode, ...(draft.mode === "manual" ? { unit_cost: draft.value.replace(",", ".") } : { nm_id: Number(draft.value) }) }, "PUT"); await refresh(); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Себестоимость не сохранена"); setBusy(false); }
+  };
+  return <section className="panel ozon-accounting" aria-labelledby="ozon-accounting-title">
+    <h2 id="ozon-accounting-title">Учёт Ozon</h2>
+    <p>Отдельный учёт начислений Ozon. Продажи и остатки WB сюда не объединяются. Итог начислений включает поступления и удержания маркетплейса; это не выручка.</p>
+    <div className="ozon-controls"><label>Ozon: с даты<input type="date" value={start} disabled={busy} onChange={event => setStart(event.target.value)} /></label><label>Ozon: по дату<input type="date" value={end} disabled={busy} onChange={event => setEnd(event.target.value)} /></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void refresh()}>Обновить сохранённый отчёт</button><button type="button" className="primary-button" disabled={busy || !canWrite || data?.configured === false} onClick={() => void sync()}>{busy ? "Загружаем…" : "Загрузить данные Ozon"}</button></div>
+    {error ? <p role="alert" className="operation-error">{error} Сохранённые данные не заменены частично.</p> : null}
+    {data?.configured === false ? <p>Подключите Ozon в разделе «Настройки».</p> : null}
+    {!canWrite ? <p>Загрузка и изменение себестоимости доступны владельцу и менеджеру.</p> : null}
+    {data?.loaded ? <>
+      <p role="status">Источники: {data.source_complete ? "все страницы загружены" : "неполная загрузка"}. Расчёт: {data.accounting_complete ? "по загруженным данным" : "предварительный"}. Последняя загрузка: {data.synced_at ? new Date(data.synced_at).toLocaleString("ru-RU") : "—"}.</p>
+      <div className="ozon-metrics"><div>Итог начислений Ozon<strong>{money(data.net_accrual_rub)}</strong></div><div>Оценочная себестоимость продаж и возвратов<strong>{money(data.estimated_cogs_rub)}</strong></div><div>Покрытие себестоимости<strong>{data.known_cost_units ?? 0} / {data.sales_and_return_units ?? 0} ед.</strong></div></div>
+      <p>Прибыль: {money(data.profit_rub)}. Точный FIFO Ozon требует подтверждённых списаний партий для этого канала. Оценочная ставка не заменяет исторический FIFO.</p>
+      {data.blockers.length ? <ul aria-label="Неполные данные Ozon">{data.blockers.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}
+      <p>{Object.entries(data.source_counts ?? {}).map(([key,value]) => `${({products:"Товары",stocks:"Остатки",fbo:"Отправления FBO",fbs:"Отправления FBS",returns:"Реестр возвратов",accruals:"Начисления"} as Record<string,string>)[key] ?? key}: ${value}`).join(" · ")}</p>
+      <p>{data.returns_scope}</p>
+      <h3>Себестоимость товаров Ozon</h3><p>Укажите свою ставку или артикул WB, откуда взять текущую оценку. Сопоставление никогда не выполняется автоматически.</p>
+      <div className="ozon-table-wrap"><table><thead><tr><th>Товар Ozon</th><th>Остатки</th><th>Источник себестоимости</th><th>Ставка / артикул WB</th><th>Действие</th></tr></thead><tbody>{data.products.slice(0,100).map(product => {
+        const draft = drafts[product.sku] ?? { mode: product.cost_mapping?.mode ?? "manual", value: product.cost_mapping?.unit_cost_text ?? String(product.cost_mapping?.nm_id ?? "") };
+        const patch = (value: Partial<typeof draft>) => setDrafts(current => ({...current,[product.sku]: {...draft,...value}}));
+        return <tr key={product.product_id}><td>{product.offer_id}<small>SKU {product.sku || "не указан"}</small></td><td>{product.stocks.length ? product.stocks.map((stock,index) => <small key={index}>{stock.type ?? "склад"}: {stock.present ?? "—"} шт., резерв {stock.reserved ?? "—"}</small>) : "Нет строк остатков"}</td><td><select aria-label={`Источник стоимости Ozon ${product.sku}`} disabled={!canWrite || busy} value={draft.mode} onChange={event => patch({mode:event.target.value,value:""})}><option value="manual">Моя ставка за единицу, RUB</option><option value="wb_estimate">Текущая оценка товара WB</option></select></td><td><input aria-label={`Стоимость Ozon ${product.sku}`} disabled={!canWrite || busy} value={draft.value} onChange={event => patch({value:event.target.value})} inputMode="decimal" /></td><td><button type="button" className="secondary-button" disabled={!canWrite || busy || !drafts[product.sku] || !product.sku} onClick={() => void save(product)}>Сохранить стоимость</button></td></tr>;
+      })}</tbody></table></div>{data.products.length > 100 ? <p>Показаны первые 100 товаров из {data.products.length}. Все товары учтены в загрузке.</p> : null}
+      {data.fees?.length ? <><h3>Сборы по справочнику Ozon</h3><p>Расшифровка уже входит в итог начислений: эти суммы не вычитаются повторно.</p><ul>{data.fees.map(fee => <li key={fee.type_id}>{fee.name}: {money(fee.amount_rub)}{fee.mapped ? "" : " · тип не распознан"}</li>)}</ul></> : null}
+    </> : data ? <p>{data.blockers.join(" ")}</p> : <p>Читаем сохранённый отчёт…</p>}
+  </section>;
+}

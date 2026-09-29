@@ -774,6 +774,8 @@ app.include_router(integration_router)
 app.include_router(supply_planning_router)
 from shop_workspaces_api import router as shop_workspaces_router
 app.include_router(shop_workspaces_router)
+from ozon_accounting_api import router as ozon_accounting_router
+app.include_router(ozon_accounting_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
 dashboard_response_cache = DashboardResponseCache()
 context_response_cache = DashboardResponseCache()

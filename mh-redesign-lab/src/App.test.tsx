@@ -11,6 +11,8 @@ vi.mock("./ShopWorkspaces", () => ({ ShopWorkspaces: () => null }));
 
 import type { DashboardDataState } from "./data-source";
 import type { PageId } from "./contracts";
+// Accounting has its own source/role/error tests; isolate operational drawers here.
+vi.mock("./OzonAccounting", () => ({ OzonAccounting: () => null }));
 import { getActionPlanItems, updateActionPlanItem, createActionPlanItem, financeExportUrl, adaptFinanceReport, getFinanceFifoReconciliationPage, getFbsSupplyBarcode, getFbsSupplyDetails, sendCustomerChatMessage, getAnalyticsDashboard, getReportDelivery, getReportOperations, getProductionExecution, saveProductionExecution, closeProductionExecution, createProcurementOperation, getProcurementOperations } from "./data-source";
 
 const mockedDashboard: DashboardDataState = {
