@@ -39,5 +39,6 @@ def test_finance_kpis_include_both_margin_denominators():
 
     assert kpis["net_margin_pct"]["value"] == "50.0%"
     assert kpis["orders_profitability_pct"]["value"] == "25.0%"
-    assert "все расходы" in kpis["net_margin_pct"]["note"]
+    assert "учтённым затратам" in kpis["net_margin_pct"]["note"]
+    assert "все расходы" not in kpis["net_margin_pct"]["note"]
     assert "сумма заказов" in kpis["orders_profitability_pct"]["note"]

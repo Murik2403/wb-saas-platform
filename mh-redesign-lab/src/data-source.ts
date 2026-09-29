@@ -1974,7 +1974,7 @@ function adaptFinanceMetrics(overview: ApiOverviewResponse | undefined, fallback
       detail: text(overview.period_label, fallback[3]?.detail ?? "период"),
       tone: normalizeTone(stock?.tone, fallback[3]?.tone ?? "info"),
     },
-    overviewMetricCard(netMargin, undefined, "Чистая маржинальность", "после всех расходов"),
+    overviewMetricCard(netMargin, undefined, "Расчётная маржинальность", "по учтённым затратам"),
     overviewMetricCard(orderProfitability, undefined, "Рентабельность заказов", "от суммы заказов"),
   ];
 }
