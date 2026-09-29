@@ -115,3 +115,15 @@ describe("SupplyPlanning", () => {
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
 });
+
+it("shows intermediate coverage and pinned raw-stage route", async () => {
+  mocks.preview.mockResolvedValue({ ...preview,
+    intermediate_allocations: [{ task_key: "final", nm_id: 20, chrt_id: 200, required_units: 3, covered_units: 2, produce_units: 1, due_date: "2026-10-10", bom_version_id: 8 }],
+    lines: [{ ...line, source_refs: [{ ...line.source_refs[0], route: [{ nm_id: 10, chrt_id: 100, bom_version: 1, bom_version_id: 7 }, { nm_id: 20, chrt_id: 200, bom_version: 2, bom_version_id: 8 }] }] }],
+  });
+  await calculate();
+  expect(screen.getByText("Полуфабрикаты по этапам")).toBeInTheDocument();
+  expect(screen.getByText("Спецификация #8")).toBeInTheDocument();
+  expect(screen.getByText(/Маршрут: WB 10\/100/)).toBeInTheDocument();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+});

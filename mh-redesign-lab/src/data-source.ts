@@ -703,11 +703,12 @@ export type SupplyPlanLine = {
   fallback_to_base_bom: boolean;
   due_date: string; tracking_mode: "packaged" | "quantity";
   supplier_candidates: Array<{ id: number; name: string; currency: string; lead_time_days: number }>;
-  source_refs: Array<{ task_key: string; nm_id: number; chrt_id: number; units: number; bom_version: number; bom_version_id: number }>;
+  source_refs: Array<{ task_key: string; nm_id: number; chrt_id: number; units: number; bom_version: number; bom_version_id: number; route?: Array<{ nm_id: number; chrt_id: number; bom_version_id: number; bom_version: number }> }>;
 };
 export type SupplyPlanPreview = {
   start_date: string; end_date: string; preview_fingerprint: string;
   lines: SupplyPlanLine[]; blockers: SupplyPlanBlocker[]; warnings: Array<Record<string, unknown>>;
+  intermediate_allocations?: Array<{ task_key: string; nm_id: number; chrt_id: number; due_date: string; required_units: number; covered_units: number; produce_units: number; bom_version_id: number }>;
   variant_demands: Array<{ task_key: string; nm_id: number; units: number; chrt_ids: number[]; task_date: string }>;
 };
 export type SupplyPlanAllocation = { task_key: string; chrt_id: number; units: number };

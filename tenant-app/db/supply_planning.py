@@ -7,6 +7,7 @@ import json
 import math
 import sqlite3
 from typing import Any, Iterable
+from .nested_supply import NestedDemandResolver, RouteError
 
 OPEN_STATUSES = {"Запланировано", "Заказано", "Частично оплачено", "Оплачено", "В пути", "Частично получено"}
 CLOSED_STATUSES = {"Отменено", "Получено"}
@@ -37,7 +38,7 @@ def _bom_signature(bom: dict[str, Any] | None) -> tuple[tuple[str, str, float], 
     if not bom:
         return None
     try:
-        return tuple(sorted((str(c["material_key"]), str(c["unit"]).strip().casefold(), round(float(c["quantity_per_unit"]), 9)) for c in bom.get("materials", [])))
+        return tuple(sorted((str(c.get("material_key") or f"semi:{c['nm_id']}:{c.get('chrt_id',0)}:{c.get('component_bom_version_id')}"), str(c["unit"]).strip().casefold(), round(float(c["quantity_per_unit"]), 9)) for c in bom.get("materials", [])))
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -48,6 +49,8 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
     tasks = [dict(t) for t in snapshot.get("tasks", [])]
     variants = [dict(v) for v in snapshot.get("variants", [])]
     boms = [dict(b) for b in snapshot.get("boms", [])]
+    resolver = NestedDemandResolver(snapshot)
+    nested_targets = {int(c.get("nm_id") or 0) for b in boms for c in b.get("materials", []) if c.get("component_type") == "semi_finished"}
     inventory = {str(i.get("material_key") or ""): dict(i) for i in snapshot.get("inventory", [])}
     fifo_inventory = {str(i.get("material_key") or ""): float(i.get("remaining_qty") or 0) for i in snapshot.get("fifo_inventory", [])}
     orders = [dict(o) for o in snapshot.get("open_orders", [])]
@@ -87,7 +90,7 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
         if chrt_id == 0 and len(set(variant_map.get(nm_id, []))) > 1:
             variant_ids = sorted(set(variant_map[nm_id]))
             signatures = [_bom_signature(_bom_for(boms, nm_id, variant)[0]) for variant in variant_ids]
-            if all(signature is not None and signature == signatures[0] for signature in signatures):
+            if nm_id not in nested_targets and all(signature is not None and signature == signatures[0] for signature in signatures):
                 demands.append({**base_ref, "variant_aggregate": variant_ids})
                 warnings.append({"code": "variant_demand_aggregated", "task_key": key, "chrt_ids": variant_ids})
                 continue
@@ -113,7 +116,13 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
             continue
         demands.append(base_ref)
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
-    for demand in demands:
+    def demand_order(demand):
+        variant = (demand.get("variant_aggregate") or [demand["chrt_id"]])[0]
+        bom, _ = _bom_for(boms, int(demand["nm_id"]), int(variant))
+        try: height = resolver.validate(int(demand["nm_id"]), int(variant), bom, float(demand["units"])) if bom else 99
+        except RouteError: height = 99
+        return (demand["task_date"], height, demand["task_key"], variant)
+    for demand in sorted(demands, key=demand_order):
         nm_id, chrt_id = int(demand["nm_id"]), int(demand["chrt_id"])
         variant_ids = demand.get("variant_aggregate") or [chrt_id]
         selected: list[tuple[int, dict[str, Any], bool]] = []
@@ -130,28 +139,32 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
         if demand.get("variant_aggregate"):
             selected = selected[:1]
         for variant, bom, fallback in selected:
-            if not bom.get("materials"):
-                blockers.append({"code": "empty_bom", "task_key": demand["task_key"], "bom_version_id": bom.get("id"), "message": "В спецификации нет сырья."})
-                continue
-            for component in bom["materials"]:
+            try:
+                resolver.validate(nm_id, variant, bom, float(demand["units"]))
+                import copy
+                checkpoint = (copy.deepcopy(resolver.layers), copy.deepcopy(resolver.planned), len(resolver.allocations))
                 try:
-                    material_key = str(component.get("material_key") or "").strip()
-                    name, unit = str(component.get("material_name") or "").strip(), str(component.get("unit") or "").strip()
-                    rate = float(component.get("quantity_per_unit"))
-                    required = float(demand["units"]) * rate
-                except (TypeError, ValueError):
-                    required, material_key, name, unit = 0, "", "", ""
-                if not material_key or not name or not unit or not math.isfinite(required) or required <= 0:
-                    blockers.append({"code": "invalid_bom_component", "task_key": demand["task_key"], "bom_version_id": bom.get("id"), "message": "Компонент BOM имеет неверное имя, единицу или расход."})
-                    continue
+                    components = list(resolver.expand(nm_id, variant, bom, float(demand["units"]), demand["task_date"], demand["task_key"]))
+                except RouteError:
+                    resolver.layers, resolver.planned = checkpoint[:2]
+                    del resolver.allocations[checkpoint[2]:]
+                    raise
+            except RouteError as exc:
+                blockers.append({"code":exc.code,"task_key":demand["task_key"],"bom_version_id":bom.get("id"),"message":str(exc)})
+                continue
+            for component in components:
+                material_key, name, unit = component["material_key"], component["material_name"], component["unit"]
+                required, stage_bom = component["required_qty"], component["stage_bom"]
                 group_key = (material_key, unit.casefold())
                 row = grouped.setdefault(group_key, {"material_key": material_key, "material_name": name, "unit": unit, "required_base_qty": 0.0, "demand_by_date": {}, "source_refs": [], "bom_version_ids": [], "fallback_to_base_bom": False, "due_date": demand["task_date"]})
                 row["required_base_qty"] += required
                 row["demand_by_date"][demand["task_date"]] = row["demand_by_date"].get(demand["task_date"], 0.0) + required
                 row["due_date"] = min(row["due_date"], demand["task_date"])
-                row["source_refs"].append({"task_key": demand["task_key"], "nm_id": nm_id, "chrt_id": variant, "units": demand["units"], "bom_version": bom.get("version"), "bom_version_id": bom.get("id")})
-                row["bom_version_ids"].append(int(bom.get("id") or 0))
+                row["source_refs"].append({"task_key": demand["task_key"], "nm_id": component["stage_nm_id"], "chrt_id": component["stage_chrt_id"], "units": component["stage_units"], "bom_version": stage_bom.get("version",0), "bom_version_id": stage_bom["id"], "route":component["route"], "intermediate_allocations": [a for a in resolver.allocations if a["task_key"] == demand["task_key"]]})
+                row["bom_version_ids"].extend(step["bom_version_id"] for step in component["route"])
                 row["fallback_to_base_bom"] = bool(row["fallback_to_base_bom"] or fallback)
+            if not demand.get("variant_aggregate"):
+                resolver.register_planned(nm_id, variant, bom, float(demand["units"]), demand["task_date"], demand["task_key"])
     lines: list[dict[str, Any]] = []
     for row in grouped.values():
         key, unit = row["material_key"], row["unit"]
@@ -248,8 +261,8 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
         if len(units) > 1:
             blockers.append({"code": "conflicting_bom_units", "material_key": key, "message": "В спецификациях для одного материала указаны разные единицы. Исправьте их перед закупкой."})
     lines.sort(key=lambda line: (line["due_date"], line["material_key"], line["unit"].casefold()))
-    result = {"start_date": snapshot.get("start_date"), "end_date": snapshot.get("end_date"), "lines": lines, "blockers": blockers, "warnings": warnings, "variant_demands": variant_demands, "preview_fingerprint": ""}
-    result["preview_fingerprint"] = _fingerprint(snapshot, allocations, lines, blockers)
+    result = {"start_date": snapshot.get("start_date"), "end_date": snapshot.get("end_date"), "lines": lines, "blockers": blockers, "warnings": warnings, "variant_demands": variant_demands, "intermediate_allocations": resolver.allocations, "preview_fingerprint": ""}
+    result["preview_fingerprint"] = _fingerprint(snapshot, allocations + resolver.allocations, lines, blockers)
     return result
 
 
@@ -264,11 +277,23 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
           AND task_date BETWEEN ? AND ? AND COALESCE(planned_units,0)>COALESCE(actual_units,0)
         ORDER BY task_date,task_key""", (start_date, end_date)).fetchall()]
     variants: list[dict[str, Any]] = []
+    catalog_identities = []
     for row in conn.execute("SELECT nm_id,raw_json FROM products_catalog").fetchall():
         try:
             raw = json.loads(row["raw_json"] or "{}")
         except (TypeError, ValueError):
             raw = {}
+        sizes = raw.get("sizes") if isinstance(raw, dict) else None
+        valid = isinstance(sizes, list)
+        identifiers = []
+        if valid:
+            for size in sizes:
+                try:
+                    identity = int(size.get("chrtID", size.get("chrtId", size.get("chrt_id",0)))) if isinstance(size,dict) else 0
+                    if identity <= 0: valid = False
+                    else: identifiers.append(identity)
+                except (ValueError, TypeError): valid = False
+        catalog_identities.append({"nm_id":int(row["nm_id"]), "valid":valid, "chrt_ids": sorted(set(identifiers)) if identifiers else [0] if valid else []})
         for size in raw.get("sizes", []) if isinstance(raw, dict) else []:
             if isinstance(size, dict):
                 try:
@@ -291,6 +316,10 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
         WHERE o.procurement_type='Сырьё' AND i.item_type='Сырьё'""").fetchall()
     suppliers = [dict(r) for r in conn.execute("SELECT id,name,default_currency,lead_time_days,active FROM suppliers WHERE active=1 ORDER BY name").fetchall()]
     fifo_inventory = [dict(r) for r in conn.execute("SELECT material_key,COALESCE(SUM(remaining_meters),0) AS remaining_qty FROM material_cost_layers WHERE status='active' GROUP BY material_key").fetchall()]
+    intermediate_layers = [dict(r) for r in conn.execute("""SELECT l.id,l.nm_id,l.chrt_id,l.ready_units,l.status,l.source_type,l.source_date,l.producer_release_id,
+        r.bom_version_id AS producer_bom_version_id,r.status AS producer_status
+        FROM finished_goods_cost_layers l LEFT JOIN manufacturing_releases r ON r.id=l.producer_release_id
+        WHERE l.ready_units>0 AND l.status<>'reversed' ORDER BY l.id""").fetchall()]
     # A hashable source revision lets confirm detect writes to otherwise unchanged selected fields too.
     revisions = {
         "tasks": [tuple(r) for r in conn.execute("SELECT task_key,task_date,nm_id,chrt_id,planned_units,actual_units,status,updated_at FROM execution_tasks WHERE task_date BETWEEN ? AND ? ORDER BY task_key", (start_date, end_date)).fetchall()],
@@ -299,7 +328,7 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
         "orders": [tuple(r) for r in po_rows],
         "fifo": [tuple(r) for r in fifo_inventory],
     }
-    return {"start_date": start_date, "end_date": end_date, "tasks": tasks, "variants": variants, "boms": boms, "inventory": inventory, "fifo_inventory": fifo_inventory, "open_orders": [dict(r) for r in po_rows], "suppliers": suppliers, "revisions": revisions}
+    return {"start_date": start_date, "end_date": end_date, "tasks": tasks, "variants": variants, "boms": boms, "inventory": inventory, "fifo_inventory": fifo_inventory, "open_orders": [dict(r) for r in po_rows], "suppliers": suppliers, "catalog_identities": catalog_identities, "intermediate_layers": intermediate_layers, "revisions": revisions}
 
 
 def _ensure_confirmation_schema(conn: sqlite3.Connection) -> None:
@@ -404,7 +433,7 @@ def confirm_supply_plan(conn: sqlite3.Connection, confirmation_key: str, request
                     order_id,item_type,material_key,material_name,quantity,unit,roll_length,supplier_unit_price,exchange_rate,delivery_unit_foreign,extra_unit_rub,unit_price,received_quantity,posted_quantity,note,created_at,updated_at
                 ) VALUES (?, 'Сырьё', ?, ?, ?, ?, ?, 0, 1, 0, 0, 0, 0, 0, ?, ?, ?)""",
                     (order_id, line["material_key"], line["material_name"], line["order_quantity"], line["order_unit"], roll,
-                     "Потребность рассчитана по BOM; цена не указана.", now, now))
+                     "Потребность рассчитана по BOM; цена не указана. Маршруты: " + _canonical(line["source_refs"]), now, now))
         if not order_ids:
             raise ValueError("Не осталось позиций с количеством для создания заявки.")
         conn.execute("INSERT INTO supply_plan_confirmations(confirmation_key,request_hash,preview_fingerprint,order_ids_json,created_at) VALUES (?,?,?,?,?)",
