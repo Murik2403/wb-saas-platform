@@ -4,6 +4,7 @@ import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { SupplyPlanning } from "./SupplyPlanning";
+import { CashflowPanel } from "./CashflowPanel";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { RuntimeStatus } from "./RuntimeStatus";
@@ -1070,7 +1071,7 @@ function App() {
         ) : null}
 
         {activeNav === "finance" ? (
-          <FinanceView
+          <><CashflowPanel role={session?.user.role ?? "viewer"} /><FinanceView
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
@@ -1080,6 +1081,7 @@ function App() {
             period={dashboardPeriod}
             setPeriod={setDashboardPeriod}
           />
+          </>
         ) : null}
 
         {activeNav === "production" ? (

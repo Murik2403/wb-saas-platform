@@ -762,6 +762,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="MARKETSHELPER tenant API", lifespan=lifespan)
+from cashflow_routes import router as cashflow_router
+app.include_router(cashflow_router)
 from production_workspace_api import router as production_workspace_router
 from manufacturing_costs_api import router as manufacturing_costs_router
 from integration_api import router as integration_router
