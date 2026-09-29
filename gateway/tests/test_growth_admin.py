@@ -33,7 +33,7 @@ class GrowthAdminTests(GatewayDbTestCase):
         with mock.patch.object(admin_routes, "_require_admin", return_value=None):
             read = admin_routes.admin_dashboard(request())
             change = admin_routes.admin_growth_exclusion(request(), self.account_id, "test", "valid")
-        self.assertEqual(read.headers["location"], "/login")
+        self.assertEqual(read.headers["location"], "/login?next=%2Fadmin")
         self.assertEqual(change.headers["location"], "/login")
         with self.connect() as conn:
             self.assertEqual(growth.growth_summary(conn)["excluded_accounts"], 0)

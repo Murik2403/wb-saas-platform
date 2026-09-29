@@ -51,6 +51,32 @@ def verify(state, path="/api/v1/integration/products", method="GET", host="selle
     })
 
 
+def test_admin_login_redirect_preserves_requested_destination(state, monkeypatch):
+    monkeypatch.setattr(gateway.config, "ADMIN_EMAILS", ["owner@example.test"])
+    client = state["client"]
+
+    response = client.get("/admin")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login?next=%2Fadmin"
+
+    login_page = client.get(response.headers["location"])
+    assert login_page.status_code == 200
+    assert re.search(r'name="next"\s+value="/admin"', login_page.text)
+
+    csrf_token = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_page.text).group(1)
+    submitted = client.post("/login", data={
+        "email": "owner@example.test",
+        "password": "tests-only-password",
+        "next": "/admin",
+        "csrf_token": csrf_token,
+    })
+    assert submitted.status_code == 303
+    assert submitted.headers["location"] == "/admin"
+
+    admin_page = client.get(submitted.headers["location"])
+    assert admin_page.status_code == 200
+
+
 @pytest.mark.parametrize("endpoint", ["products", "materials", "releases"])
 def test_valid_token_only_grants_scoped_reader_for_its_tenant(state, endpoint):
     response = verify(state, f"/api/v1/integration/{endpoint}?limit=1&offset=0")

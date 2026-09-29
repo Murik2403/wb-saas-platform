@@ -50,7 +50,9 @@ def _require_admin(request: Request):
 def admin_dashboard(request: Request):
     account = _require_admin(request)
     if account is None:
-        return RedirectResponse("/login", status_code=303)
+        # Preserve the requested admin destination so an administrator lands
+        # here after signing in instead of being sent to the tenant.
+        return RedirectResponse("/login?next=%2Fadmin", status_code=303)
 
     with control_db.connect() as conn:
         tenants = accounts.list_all_tenants_overview(conn)
