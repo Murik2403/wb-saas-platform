@@ -270,9 +270,13 @@ def _remove_network(client: Any, slug: str) -> None:
         return
 
 
-def _prune_old_backups(slug: str, keep_days: int) -> int:
+def _validate_backup_keep_days(keep_days: int) -> None:
     if not 1 <= keep_days <= 3650:
         raise HTTPException(status_code=422, detail="keep_days must be between 1 and 3650")
+
+
+def _prune_old_backups(slug: str, keep_days: int) -> int:
+    _validate_backup_keep_days(keep_days)
     tenant_dir = BACKUP_MOUNT / slug
     tenant_dir.mkdir(parents=True, exist_ok=True)
     cutoff = time.time() - keep_days * 86400
@@ -289,6 +293,8 @@ def _prune_old_backups(slug: str, keep_days: int) -> int:
 
 def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: Any) -> dict[str, str | int]:
     """Archive one fixed Docker volume to an encrypted archive namespace."""
+    # Reject invalid retention before any Docker, filesystem, or encryption side effects.
+    _validate_backup_keep_days(keep_days)
     if not BACKUP_ENCRYPTION_KEY:
         raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
     backup_dir = BACKUP_MOUNT / backup_group
@@ -745,6 +751,7 @@ def export_tenant(slug: str, request: TenantExportRequest):
 @app.post("/v1/tenants/{slug}/backup")
 def backup_tenant(slug: str, keep_days: int = 14) -> dict[str, str | int]:
     """Create an encrypted archive using only fixed helper image and paths."""
+    _validate_backup_keep_days(keep_days)
     _validate_slug(slug)
     return _backup_volume(_volume_name(slug), slug, keep_days, _client())
 
@@ -752,6 +759,7 @@ def backup_tenant(slug: str, keep_days: int = 14) -> dict[str, str | int]:
 @app.post("/v1/control-plane/backup")
 def backup_control_plane(keep_days: int = 14) -> dict[str, str | int]:
     """Back up only this Compose project's gateway_data volume."""
+    _validate_backup_keep_days(keep_days)
     client = _client()
     volume_name = _control_plane_volume_name(client)
     return _backup_volume(volume_name, CONTROL_PLANE_BACKUP_GROUP, keep_days, client)
