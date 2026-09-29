@@ -154,6 +154,35 @@ def test_partial_production_task_consumes_only_remaining_planned_units():
 
 
 class SupplyPlanningDatabaseTests(DbTestCase):
+    def test_concurrent_confirmation_creates_one_order(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from db.core import connect
+        with connect() as conn:
+            self._seed_plan(conn)
+            fingerprint = build_supply_preview(load_supply_plan_snapshot(conn, "2026-09-01", "2026-09-30"))["preview_fingerprint"]
+        def confirm_once():
+            with connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                current = build_supply_preview(load_supply_plan_snapshot(conn, "2026-09-01", "2026-09-30"))
+                return confirm_supply_plan(conn, "concurrent", "same-body", fingerprint, current,
+                    [{"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-10"}])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: confirm_once(), range(2)))
+        assert sorted(result["replayed"] for result in results) == [False, True]
+        with connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 1
+
+    def test_duplicate_material_confirmation_rolls_back(self):
+        from db.core import connect
+        with connect() as conn:
+            self._seed_plan(conn)
+            preview = build_supply_preview(load_supply_plan_snapshot(conn, "2026-09-01", "2026-09-30"))
+            edit = {"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-10"}
+            with self.assertRaisesRegex(ValueError, "повторно"):
+                confirm_supply_plan(conn, "duplicate", "hash", preview["preview_fingerprint"], preview, [edit, edit])
+            assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM supply_plan_confirmations").fetchone()[0] == 0
+
     def _seed_plan(self, conn):
         conn.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,chrt_id,planned_units,actual_units,status,updated_at) VALUES ('t1','production','2026-09-12',10,0,3,0,'Не начато','2026-09-01')")
         conn.execute("INSERT INTO manufacturing_boms(nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (10,0,1,?, '[]',0,0,'','2026-09-01')", ('[{"material_key":"fabric-a","material_name":"Ткань A","quantity_per_unit":2,"unit":"м"}]',))
@@ -210,3 +239,27 @@ class SupplyPlanningDatabaseTests(DbTestCase):
             with self.assertRaisesRegex(ValueError, "stale_preview"):
                 confirm_supply_plan(conn, "00000000-0000-4000-8000-000000000002", "hash", "stale", preview, [{"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-10"}])
             assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+
+def test_arrival_between_tasks_covers_later_demand_but_not_early_shortage():
+    source = snapshot(
+        tasks=[{"task_key": "early", "task_date": "2026-09-10", "nm_id": 1, "planned_units": 2},
+               {"task_key": "late", "task_date": "2026-09-20", "nm_id": 1, "planned_units": 8}],
+        boms=[{"id": 1, "nm_id": 1, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "unit": "кг", "quantity_per_unit": 1}]}],
+        inventory=[{"material_key": "a", "unit": "кг", "balance_known": 1, "partial_meters": 0}],
+        open_orders=[{"material_key": "a", "unit": "кг", "quantity": 8, "posted_quantity": 0, "status": "В пути", "expected_date": "2026-09-15"}],
+    )
+    line = build_supply_preview(source)["lines"][0]
+    assert line["shortage_base_qty"] == 2
+    assert line["open_order_covered_base_qty"] == 8
+
+
+def test_canceled_order_residual_does_not_block_or_cover_demand():
+    source = snapshot(
+        tasks=[{"task_key": "t", "task_date": "2026-09-10", "nm_id": 1, "planned_units": 2}],
+        boms=[{"id": 1, "nm_id": 1, "version": 1, "materials": [{"material_key": "a", "material_name": "A", "unit": "кг", "quantity_per_unit": 1}]}],
+        inventory=[{"material_key": "a", "unit": "кг", "balance_known": 1, "partial_meters": 0}],
+        open_orders=[{"material_key": "a", "unit": "кг", "quantity": 8, "status": "Отменено", "expected_date": "2026-09-05"}],
+    )
+    result = build_supply_preview(source)
+    assert result["blockers"] == []
+    assert result["lines"][0]["shortage_base_qty"] == 2

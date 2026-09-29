@@ -23,7 +23,7 @@ class Input(BaseModel):
 class VariantAllocation(Input):
     task_key: str = Field(min_length=1, max_length=200)
     chrt_id: Annotated[StrictInt, Field(gt=0)]
-    units: FiniteFloat = Field(gt=0, le=10_000_000)
+    units: Annotated[StrictInt, Field(gt=0, le=10_000_000)]
 
 
 class PreviewInput(Input):

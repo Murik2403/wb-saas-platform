@@ -65,6 +65,7 @@ describe("SupplyPlanning", () => {
     await screen.findByRole("alert");
     const retry = screen.getByRole("button", { name: "Повторить подтверждение" });
     expect(screen.getByLabelText("Количество заказа Ткань A")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Обновить расчёт" })).toBeDisabled();
     const first = structuredClone(mocks.confirm.mock.calls[0][0]);
     await userEvent.click(retry);
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2));

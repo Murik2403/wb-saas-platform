@@ -12,6 +12,12 @@
 
 ## Global Constraints
 
+### Release adaptation 2026-09-30
+
+Port the reviewed planning commits onto current deployed history/WIP lineage without replacing those features. Before acceptance, harden duplicate edited materials and variant allocations, calculate coverage chronologically across task dates (an arrival after the first task may cover later tasks), preserve retry identity after uncertain network responses, and display lead-time/late-arrival risks in plain Russian. Verify full DB/API/frontend suites and build; parent integrates and deploys only after isolated backup/rollback rehearsal.
+
+Adaptation verification: 288 tenant tests plus 8 subtests, 283 API tests, 82 frontend tests passed; production frontend build and diff check passed. Concurrent confirmation creates exactly one order; repeated payload replays and changed payload conflicts. The reviewed port retains SettingsChangeHistory and existing production WIP. Preview is authenticated read-only; confirmation is owner/manager-only and never sends an order to a supplier. UI warns about arrival after production need date. Scope is task-based planning using current versioned BOM and recorded inventory; it does not predict unrecorded future demand, reserve inventory, or implement nested semi-finished recipes. Deployment is performed by the integrating parent, not claimed here.
+
 - Preview performs no database writes and creates no reservation, order, movement, FIFO layer, or production task.
 - Never infer a variant when `nm_id` demand is ambiguous across different variant BOMs; require a complete explicit allocation or block confirmation.
 - Select exact `(nm_id, chrt_id, bom_version_id)` and use a base BOM for a variant only when the existing release fallback rule permits it; label the fallback.

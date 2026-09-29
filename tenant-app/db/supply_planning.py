@@ -60,8 +60,16 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
     for v in variants:
         variant_map.setdefault(int(v.get("nm_id") or 0), []).append(int(v.get("chrt_id") or 0))
     allocation_by_task: dict[str, list[dict[str, Any]]] = {}
+    seen_allocations: set[tuple[str, int]] = set()
     for item in allocations:
+        identity = (str(item.get("task_key") or ""), int(item.get("chrt_id") or 0))
+        if identity in seen_allocations:
+            blockers.append({"code": "duplicate_variant_allocation", "task_key": identity[0], "message": "Вариант задания указан в распределении повторно."})
+        seen_allocations.add(identity)
         allocation_by_task.setdefault(str(item.get("task_key") or ""), []).append(item)
+    task_keys = {str(task.get("task_key") or "") for task in tasks}
+    if any(key not in task_keys for key in allocation_by_task):
+        blockers.append({"code": "unknown_allocation_task", "message": "Распределение относится к заданию вне выбранного плана."})
     for task in tasks:
         key = str(task.get("task_key") or "")
         status = str(task.get("status") or "").strip()
@@ -89,7 +97,7 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
             for entry in split:
                 variant = int(entry.get("chrt_id") or 0)
                 qty = entry.get("units")
-                if variant not in variant_ids or isinstance(qty, bool) or not isinstance(qty, (int, float)) or not math.isfinite(qty) or qty <= 0:
+                if variant not in variant_ids or isinstance(qty, bool) or not isinstance(qty, (int, float)) or not math.isfinite(qty) or qty <= 0 or int(qty) != qty:
                     valid = False
                     continue
                 allocated_total += qty
@@ -137,8 +145,9 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                     blockers.append({"code": "invalid_bom_component", "task_key": demand["task_key"], "bom_version_id": bom.get("id"), "message": "Компонент BOM имеет неверное имя, единицу или расход."})
                     continue
                 group_key = (material_key, unit.casefold())
-                row = grouped.setdefault(group_key, {"material_key": material_key, "material_name": name, "unit": unit, "required_base_qty": 0.0, "source_refs": [], "bom_version_ids": [], "fallback_to_base_bom": False, "due_date": demand["task_date"]})
+                row = grouped.setdefault(group_key, {"material_key": material_key, "material_name": name, "unit": unit, "required_base_qty": 0.0, "demand_by_date": {}, "source_refs": [], "bom_version_ids": [], "fallback_to_base_bom": False, "due_date": demand["task_date"]})
                 row["required_base_qty"] += required
+                row["demand_by_date"][demand["task_date"]] = row["demand_by_date"].get(demand["task_date"], 0.0) + required
                 row["due_date"] = min(row["due_date"], demand["task_date"])
                 row["source_refs"].append({"task_key": demand["task_key"], "nm_id": nm_id, "chrt_id": variant, "units": demand["units"], "bom_version": bom.get("version"), "bom_version_id": bom.get("id")})
                 row["bom_version_ids"].append(int(bom.get("id") or 0))
@@ -156,6 +165,9 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                 available = max(0, float(stock.get("partial_meters") or 0) + (float(stock.get("full_rolls") or 0) * float(stock.get("roll_length") or 0) if tracking == "packaged" else 0))
             except (TypeError, ValueError):
                 available = None
+            if available is not None and not math.isfinite(available):
+                available = None
+                blockers.append({"code": "invalid_inventory_balance", "material_key": key, "message": "Остаток материала не является конечным числом; сверьте склад."})
             fifo_qty = fifo_inventory.get(key, 0.0)
             if available is not None and abs(available - fifo_qty) > 0.001:
                 blockers.append({"code": "fifo_stock_mismatch", "material_key": key, "physical_qty": round(available, 6), "fifo_qty": round(fifo_qty, 6), "message": "Физический остаток расходится с активными FIFO-слоями; сначала сверьте склад."})
@@ -173,11 +185,22 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                 blockers.append({"code": "invalid_pack_size", "material_key": key, "message": "Не задан корректный размер упаковки."})
                 pack_size = None
         po_covered = 0.0
+        arrivals: list[tuple[str, float]] = []
         for order in orders:
             if order.get("material_key") != key:
                 continue
-            remaining = max(0.0, float(order.get("quantity") or 0) - float(order.get("posted_quantity") or 0))
             status = str(order.get("status") or "")
+            if status == "Отменено":
+                continue
+            try:
+                quantity = float(order.get("quantity") or 0)
+                posted = float(order.get("posted_quantity") or 0)
+                if not math.isfinite(quantity) or not math.isfinite(posted) or posted < 0 or quantity < posted:
+                    raise ValueError("invalid quantities")
+                remaining = quantity - posted
+            except (ValueError, TypeError):
+                blockers.append({"code": "invalid_open_order_quantity", "material_key": key, "message": "Количество или проведённый остаток закупки некорректны; сверьте заявку."})
+                continue
             eta = str(order.get("expected_date") or "")
             order_unit = str(order.get("unit") or "").strip().casefold()
             if order_unit == "рулон" and tracking == "packaged":
@@ -194,13 +217,20 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
                 continue
             if status in CLOSED_STATUSES and remaining > 0:
                 blockers.append({"code": "closed_order_residual", "material_key": key, "order_id": order.get("order_id"), "message": "У закрытой заявки остался неполученный остаток; сверьте её."})
-            if status in OPEN_STATUSES and eta and eta <= row["due_date"]:
+            if status in OPEN_STATUSES and eta and eta <= max(row["demand_by_date"]):
+                arrivals.append((eta, remaining))
                 po_covered += remaining
             elif status in OPEN_STATUSES:
                 warnings.append({"code": "open_order_eta_risk", "material_key": key, "order_id": order.get("order_id"), "expected_date": eta or None, "due_date": row["due_date"]})
         row["physical_available_base_qty"] = round(available, 6) if available is not None else None
-        row["open_order_covered_base_qty"] = round(po_covered, 6)
-        row["shortage_base_qty"] = round(max(0.0, row["required_base_qty"] - (available or 0.0) - po_covered), 6)
+        cumulative_demand = 0.0
+        shortage = 0.0
+        for need_date, need_qty in sorted(row["demand_by_date"].items()):
+            cumulative_demand += need_qty
+            arrived = sum(qty for eta, qty in arrivals if eta <= need_date)
+            shortage = max(shortage, cumulative_demand - (available or 0.0) - arrived)
+        row["open_order_covered_base_qty"] = round(max(0.0, min(po_covered, row["required_base_qty"] - (available or 0.0) - shortage)), 6)
+        row["shortage_base_qty"] = round(max(0.0, shortage), 6)
         row["pack_size_base_qty"] = pack_size
         row["tracking_mode"] = tracking
         row["suggested_purchase_qty"] = round(math.ceil((row["shortage_base_qty"] - 1e-9) / pack_size), 6) if pack_size and row["shortage_base_qty"] > 0 else row["shortage_base_qty"]
@@ -211,6 +241,12 @@ def build_supply_preview(snapshot: dict[str, Any], variant_allocations: Iterable
             blockers.append({"code": "unit_mismatch", "material_key": key, "bom_unit": unit, "stock_unit": stock_unit})
         row["required_base_qty"] = round(row["required_base_qty"], 6)
         lines.append(row)
+    material_units: dict[str, set[str]] = {}
+    for line in lines:
+        material_units.setdefault(line["material_key"], set()).add(line["unit"].casefold())
+    for key, units in material_units.items():
+        if len(units) > 1:
+            blockers.append({"code": "conflicting_bom_units", "material_key": key, "message": "В спецификациях для одного материала указаны разные единицы. Исправьте их перед закупкой."})
     lines.sort(key=lambda line: (line["due_date"], line["material_key"], line["unit"].casefold()))
     result = {"start_date": snapshot.get("start_date"), "end_date": snapshot.get("end_date"), "lines": lines, "blockers": blockers, "warnings": warnings, "variant_demands": variant_demands, "preview_fingerprint": ""}
     result["preview_fingerprint"] = _fingerprint(snapshot, allocations, lines, blockers)
@@ -308,8 +344,13 @@ def confirm_supply_plan(conn: sqlite3.Connection, confirmation_key: str, request
         if not edits:
             raise ValueError("Добавьте количество для заказа хотя бы по одной строке.")
         groups: dict[tuple[int | None, str, str], list[dict[str, Any]]] = {}
+        seen_lines: set[tuple[str, str]] = set()
         for edit in edits:
             key, unit = str(edit.get("material_key") or ""), str(edit.get("unit") or "")
+            identity = (key, unit.casefold())
+            if identity in seen_lines:
+                raise ValueError("Материал указан в заявке повторно.")
+            seen_lines.add(identity)
             line = eligible.get((key, unit.casefold()))
             if line is None:
                 raise ValueError("Строка не принадлежит актуальному предпросмотру.")

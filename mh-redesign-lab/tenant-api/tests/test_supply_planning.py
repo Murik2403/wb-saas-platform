@@ -34,6 +34,25 @@ def preview_body():
     return {"start_date": "2026-09-01", "end_date": "2026-09-30", "variant_allocations": []}
 
 
+def test_fractional_variant_allocation_is_rejected(env):
+    response = env.post("/api/v1/supply-planning/preview", json={
+        **preview_body(), "variant_allocations": [{"task_key": "task:one", "chrt_id": 1, "units": 1.5}],
+    })
+    assert response.status_code == 422
+
+
+def test_duplicate_material_edits_do_not_create_orders(env):
+    preview = env.post("/api/v1/supply-planning/preview", json=preview_body()).json()
+    edit = {"material_key": "fabric-a", "unit": "м", "quantity": 1, "supplier_id": 1, "expected_date": "2026-09-11"}
+    response = env.post("/api/v1/supply-planning/confirm", json={
+        **preview_body(), "confirmation_key": "00000000-0000-4000-8000-000000000003",
+        "preview_fingerprint": preview["preview_fingerprint"], "edits": [edit, edit],
+    })
+    assert response.status_code == 422
+    with core.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM procurement_orders").fetchone()[0] == 0
+
+
 def test_preview_is_read_only_and_uses_remaining_task_units(env):
     with core.connect() as conn:
         conn.execute("UPDATE execution_tasks SET actual_units=2 WHERE task_key='task:one'")
