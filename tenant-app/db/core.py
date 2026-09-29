@@ -116,6 +116,31 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_ads_day ON ads_daily(day);
             CREATE INDEX IF NOT EXISTS idx_ads_nm ON ads_daily(nm_id);
 
+            CREATE TABLE IF NOT EXISTS settings_change_history (
+                id INTEGER PRIMARY KEY,
+                kind TEXT NOT NULL CHECK(kind IN ('cost','production_norm')),
+                nm_id INTEGER NOT NULL CHECK(nm_id > 0),
+                before_json TEXT,
+                after_json TEXT NOT NULL,
+                changed_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                actor TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_settings_history_kind_nm_time
+                ON settings_change_history(kind,nm_id,changed_at,id);
+            CREATE TRIGGER IF NOT EXISTS settings_history_no_replace
+                BEFORE INSERT ON settings_change_history
+                WHEN EXISTS(SELECT 1 FROM settings_change_history WHERE id=NEW.id)
+                BEGIN SELECT RAISE(ABORT, 'settings history is immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS settings_history_no_update
+                BEFORE UPDATE ON settings_change_history BEGIN
+                    SELECT RAISE(ABORT, 'settings history is immutable');
+                END;
+            CREATE TRIGGER IF NOT EXISTS settings_history_no_delete
+                BEFORE DELETE ON settings_change_history BEGIN
+                    SELECT RAISE(ABORT, 'settings history is immutable');
+                END;
+
             CREATE TABLE IF NOT EXISTS costs (
                 nm_id INTEGER PRIMARY KEY,
                 supplier_article TEXT,

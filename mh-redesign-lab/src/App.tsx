@@ -2,6 +2,7 @@ import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
+import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { RuntimeStatus } from "./RuntimeStatus";
@@ -2222,6 +2223,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
   const [ozonClientId, setOzonClientId] = useState("");
   const [ozonApiKey, setOzonApiKey] = useState("");
   const [message, setMessage] = useState("");
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | "expense" | "wb-token" | null>(null);
 
   const load = async () => {
@@ -2360,6 +2362,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     try {
       await updateProductCostSettings([item]);
       setMessage(`Себестоимость для «${item.product_name || item.supplier_article || item.nm_id}» сохранена`);
+      setHistoryRefreshKey((value) => value + 1);
       const costData = await getProductCostSettings();
       setProductCosts(costData.items);
       return true;
@@ -2419,6 +2422,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     try {
       await updateProductionNorms([{ nm_id: item.nm_id, material_per_unit: item.material_per_unit, min_batch: item.min_batch, pack_size: item.pack_size, enabled: item.enabled }]);
       setProductionNorms((rows) => rows.map((row) => row.nm_id === item.nm_id ? item : row));
+      setHistoryRefreshKey((value) => value + 1);
       setMessage(`Норма для «${item.supplier_article || item.nm_id}» сохранена`);
       setEditingNorm(null);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось сохранить норму"); }
@@ -2556,6 +2560,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <ManualStoreExpenseManager />
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
+      <SettingsChangeHistory refreshKey={historyRefreshKey} />
       {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item) => { void saveCost(item).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
       {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item) => { void saveNorm(item); }} /> : null}
     </div>

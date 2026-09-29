@@ -3385,7 +3385,7 @@ def get_management_pnl(
 
 
 @app.patch("/api/v1/settings/product-costs")
-def update_product_costs(payload: ProductCostsUpdateInput) -> dict:
+def update_product_costs(payload: ProductCostsUpdateInput, request: Request) -> dict:
     if not payload.items:
         raise HTTPException(status_code=422, detail="Нужна хотя бы одна строка себестоимости")
     if len(payload.items) > 500:
@@ -3406,7 +3406,7 @@ def update_product_costs(payload: ProductCostsUpdateInput) -> dict:
             "cost_per_wb_unit": item.cost_per_wb_unit,
             "note": item.note.strip(),
         })
-    save_costs(pd.DataFrame(rows))
+    save_costs(pd.DataFrame(rows), source="tenant_api", actor=request.headers.get("x-tenant-account"))
     return {"saved": len(rows)}
 
 
@@ -3454,26 +3454,57 @@ def get_production_norms() -> dict:
 
 
 @app.patch("/api/v1/settings/production-norms")
-def update_production_norms(payload: ProductionNormsUpdateInput) -> dict:
-    if not payload.items:
-        raise HTTPException(status_code=422, detail="Нет норм для сохранения")
+def update_production_norms(payload: ProductionNormsUpdateInput, request: Request) -> dict:
+    from db.settings_history import append_settings_change
+    if not payload.items or len(payload.items) > 500:
+        raise HTTPException(status_code=422, detail="Нужно от 1 до 500 норм для сохранения")
     if any(item.nm_id <= 0 or item.material_per_unit < 0 or item.min_batch <= 0 or item.pack_size <= 0 for item in payload.items):
         raise HTTPException(status_code=422, detail="Проверьте расход, размер партии и комплект")
-    with sqlite3.connect(DB_PATH) as conn:
+    if len({item.nm_id for item in payload.items}) != len(payload.items):
+        raise HTTPException(status_code=422, detail="Артикул WB передан дважды")
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
         columns = {row[1] for row in conn.execute("PRAGMA table_info(production_settings)")}
-        if "nm_id" not in columns:
+        required = {"nm_id", "material_per_unit", "min_batch", "pack_size", "enabled"}
+        if not required.issubset(columns):
             raise HTTPException(status_code=409, detail="Таблица норм производства недоступна")
+        before_rows = {}
         for item in payload.items:
-            assignments = []
-            values: list[object] = []
-            for name, value in (("material_per_unit", item.material_per_unit), ("min_batch", item.min_batch), ("pack_size", item.pack_size), ("enabled", int(item.enabled))):
-                if name in columns:
-                    assignments.append(f"{name} = ?")
-                    values.append(value)
-            if assignments:
-                values.append(item.nm_id)
-                conn.execute(f"UPDATE production_settings SET {', '.join(assignments)} WHERE nm_id = ?", values)
+            before = conn.execute("SELECT * FROM production_settings WHERE nm_id=?", (item.nm_id,)).fetchone()
+            if before is None:
+                raise HTTPException(status_code=422, detail=f"Норма для артикула WB {item.nm_id} не найдена")
+            before_rows[item.nm_id] = before
+        for item in payload.items:
+            conn.execute("UPDATE production_settings SET material_per_unit=?,min_batch=?,pack_size=?,enabled=? WHERE nm_id=?",
+                         (item.material_per_unit, item.min_batch, item.pack_size, int(item.enabled), item.nm_id))
+            after = conn.execute("SELECT * FROM production_settings WHERE nm_id=?", (item.nm_id,)).fetchone()
+            append_settings_change(conn, kind="production_norm", nm_id=item.nm_id, before=before_rows[item.nm_id], after=after,
+                                   source="tenant_api", actor=request.headers.get("x-tenant-account"))
     return {"saved": len(payload.items)}
+
+
+@app.get("/api/v1/settings/change-history")
+def get_settings_change_history(kind: str | None = Query(None, pattern="^(cost|production_norm)$"),
+                                nm_id: int | None = Query(None, gt=0), limit: int = Query(25, ge=1, le=100),
+                                offset: int = Query(0, ge=0)) -> dict:
+    clauses, params = [], []
+    if kind is not None:
+        clauses.append("kind=?")
+        params.append(kind)
+    if nm_id is not None:
+        clauses.append("nm_id=?")
+        params.append(nm_id)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
+        total = conn.execute("SELECT COUNT(*) FROM settings_change_history" + where, params).fetchone()[0]
+        rows = conn.execute("SELECT * FROM settings_change_history" + where + " ORDER BY id DESC LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
+    items = [{"id": row["id"], "kind": row["kind"], "nm_id": row["nm_id"],
+              "before": json.loads(row["before_json"]) if row["before_json"] is not None else None,
+              "after": json.loads(row["after_json"]), "changed_at": row["changed_at"], "source": row["source"], "actor": row["actor"]} for row in rows]
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/v1/agent/candidates")

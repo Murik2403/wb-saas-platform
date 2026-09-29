@@ -183,6 +183,10 @@ export type FifoReconciliationData = {
 export type TenantSettings = { sync_interval_minutes: number; initial_history_days: number; agent_interval_minutes: number; wb_connected: boolean; ozon_connected: boolean };
 export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_scopes: string[]; scope_metadata_available?: boolean; read_only?: boolean; expires_at?: number | null };
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
+export type SettingsChangeKind = "cost" | "production_norm";
+export type SettingsChangeHistoryItem = { id: number; kind: SettingsChangeKind; nm_id: number; before: Record<string, unknown> | null; after: Record<string, unknown>; changed_at: string; source: string | null; actor: string | null };
+export type SettingsChangeHistoryPage = { items: SettingsChangeHistoryItem[]; total: number; limit: number; offset: number };
+export type SettingsChangeHistoryQuery = { kind?: SettingsChangeKind; nm_id?: number; limit?: number; offset?: number };
 export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; include_in_management_result: boolean; created_at: string; updated_at: string };
 export type ManagementEconomics = { nm_id: number; data_status: string; period: { start: string; end: string }; revenue_rub: number; units: number; accounting_profit_rub: number; manual_expenses_rub: number; management_profit_rub: number; excluded_wb_commission_rub: number; excluded_manual_expenses_rub: number; coverage: { covered: string[]; missing: string[]; count: number; total: number; percent: number }; items: Array<ManualExpense & { allocated_rub: number; excluded_from_result: boolean; exclusion_reason: string | null }> };
 export type StoreExpense = { id: number; article: string; amount_rub: number; source: "manual" | "import"; period_start: string; period_end: string; note: string; include_in_management_result: boolean; created_at: string; updated_at: string };
@@ -896,6 +900,18 @@ export async function getProductCostSettings(): Promise<{ items: ProductCostSett
   const response = await fetch(`${API_BASE_URL}/api/v1/settings/product-costs`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`/api/v1/settings/product-costs: HTTP ${response.status}`);
   return response.json() as Promise<{ items: ProductCostSetting[] }>;
+}
+
+export async function getSettingsChangeHistory(query: SettingsChangeHistoryQuery = {}): Promise<SettingsChangeHistoryPage> {
+  const params = new URLSearchParams();
+  if (query.kind) params.set("kind", query.kind);
+  if (query.nm_id !== undefined) params.set("nm_id", String(query.nm_id));
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.offset !== undefined) params.set("offset", String(query.offset));
+  const suffix = params.size ? `?${params.toString()}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/change-history${suffix}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error(`/api/v1/settings/change-history: HTTP ${response.status}`);
+  return response.json() as Promise<SettingsChangeHistoryPage>;
 }
 
 export async function getManualExpenses(nmId?: number): Promise<{ items: ManualExpense[] }> {

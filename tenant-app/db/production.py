@@ -16,7 +16,7 @@ from config import DB_PATH
 from .core import connect
 
 
-def save_production_settings(df: pd.DataFrame) -> None:
+def save_production_settings(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None) -> None:
     from .core import connect
     required = {"nm_id", "enabled", "material_per_unit", "target_days", "min_batch"}
     if not required.issubset(df.columns):
@@ -40,14 +40,18 @@ def save_production_settings(df: pd.DataFrame) -> None:
                 str(r.get("material_name", "") or "").strip(),
             )
         )
+    from .settings_history import append_settings_change
     with connect() as conn:
-        conn.executemany(
-            """
-            INSERT INTO production_settings(
+        conn.execute("BEGIN IMMEDIATE")
+        for row in rows:
+            before = conn.execute("SELECT * FROM production_settings WHERE nm_id=?", (row[0],)).fetchone()
+            conn.execute(
+                """
+                INSERT INTO production_settings(
                 nm_id,supplier_article,enabled,material_per_unit,target_days,min_batch,note,
                 blank_type,pack_size,auto_rules,material_name
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(nm_id) DO UPDATE SET
+                ON CONFLICT(nm_id) DO UPDATE SET
                 supplier_article=excluded.supplier_article,
                 enabled=excluded.enabled,
                 material_per_unit=excluded.material_per_unit,
@@ -58,9 +62,11 @@ def save_production_settings(df: pd.DataFrame) -> None:
                 pack_size=excluded.pack_size,
                 auto_rules=excluded.auto_rules,
                 material_name=excluded.material_name
-            """,
-            rows,
-        )
+                """,
+                row,
+            )
+            after = conn.execute("SELECT * FROM production_settings WHERE nm_id=?", (row[0],)).fetchone()
+            append_settings_change(conn, kind="production_norm", nm_id=row[0], before=before, after=after, source=source, actor=actor)
 
 # Sentinel roll_length for materials tracked as a plain running quantity (no
 # fixed-size packaging) -- see ui_helpers.py's NO_PACKAGE_ROLL_LENGTH for the

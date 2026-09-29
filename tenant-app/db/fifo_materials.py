@@ -485,12 +485,15 @@ def refresh_auto_costs() -> int:
     from .core import connect
     now = datetime.now().isoformat(timespec="seconds")
     updated = 0
+    from .settings_history import append_settings_change
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         exact, fallback, exact_source, fallback_source = _material_rate_maps(conn)
         rows = conn.execute(
             """
             SELECT p.nm_id,p.material_name,p.material_per_unit,
                    COALESCE(c.packaging_cost_rub,0) AS packaging_cost_rub,
+                   COALESCE(c.packaging_cost_status,'unknown') AS packaging_cost_status,
                    COALESCE(c.labor_cost_rub,0) AS labor_cost_rub,
                    COALESCE(c.other_cost_rub,0) AS other_cost_rub
               FROM production_settings p
@@ -505,12 +508,12 @@ def refresh_auto_costs() -> int:
                 continue
             material_cost = max(0.0, float(row["material_per_unit"] or 0)) * rate
             packaging = max(0.0, float(row["packaging_cost_rub"] or 0))
-            if packaging <= 0:
+            if packaging <= 0 and row["packaging_cost_status"] != "confirmed":
                 packaging = 12.0
             total = material_cost + packaging + max(0.0, float(row["labor_cost_rub"] or 0)) + max(0.0, float(row["other_cost_rub"] or 0))
             source = exact_source.get(key, fallback_source)
             source_text = ("Цена цвета" if key in exact else "Общая ставка ПВХ") + (f" · {source}" if source else "")
-            existing = conn.execute("SELECT nm_id FROM costs WHERE nm_id=?", (int(row["nm_id"]),)).fetchone()
+            existing = conn.execute("SELECT * FROM costs WHERE nm_id=?", (int(row["nm_id"]),)).fetchone()
             if existing is None:
                 conn.execute(
                     """
@@ -529,16 +532,18 @@ def refresh_auto_costs() -> int:
                     """
                     UPDATE costs
                        SET forecast_material_cost_rub=?,forecast_total_cost_rub=?,forecast_rate_rub_m=?,
-                           forecast_source=?,packaging_cost_rub=CASE WHEN COALESCE(packaging_cost_rub,0)<=0 THEN ? ELSE packaging_cost_rub END,
+                           forecast_source=?,packaging_cost_rub=CASE WHEN COALESCE(packaging_cost_rub,0)<=0 AND COALESCE(packaging_cost_status,'unknown')!='confirmed' THEN ? ELSE packaging_cost_rub END,
                            updated_at=?
                      WHERE nm_id=?
                     """,
                     (material_cost, total, rate, source_text, packaging, now, int(row["nm_id"])),
                 )
+            after = conn.execute("SELECT * FROM costs WHERE nm_id=?", (int(row["nm_id"]),)).fetchone()
+            append_settings_change(conn, kind="cost", nm_id=int(row["nm_id"]), before=existing, after=after, source="forecast_refresh")
             updated += 1
     return updated
 
-def save_auto_cost_settings(df: pd.DataFrame) -> None:
+def save_auto_cost_settings(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None) -> None:
     from .core import _int, connect
     required = {"nm_id", "packaging_cost_rub", "labor_cost_rub", "other_cost_rub"}
     if df is None or df.empty or not required.issubset(df.columns):
@@ -546,7 +551,9 @@ def save_auto_cost_settings(df: pd.DataFrame) -> None:
     now = datetime.now().isoformat(timespec="seconds")
     if "packaging_cost_confirmed" not in df.columns:
         raise ValueError("Подтвердите стоимость упаковки отдельно для каждого товара. Ноль также нужно подтвердить вручную.")
+    from .settings_history import append_settings_change
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         for _, row in df.iterrows():
             nm_id = _int(row.get("nm_id"))
             if nm_id <= 0:
@@ -587,16 +594,20 @@ def save_auto_cost_settings(df: pd.DataFrame) -> None:
                  max(0.0, float(row.get("other_cost_rub", 0) or 0)),
                  str(row.get("note", existing["note"] if existing else "") or ""), now),
             )
+            after = conn.execute("SELECT * FROM costs WHERE nm_id=?", (nm_id,)).fetchone()
+            append_settings_change(conn, kind="cost", nm_id=nm_id, before=existing, after=after, source=source, actor=actor)
     refresh_auto_costs()
 
-def apply_forecast_costs(df: pd.DataFrame) -> int:
+def apply_forecast_costs(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None) -> int:
     """Apply selected next-batch forecasts to the cost used in profit."""
     from .core import _int, connect
     if df is None or df.empty or not {"nm_id", "apply_forecast"}.issubset(df.columns):
         return 0
     now = datetime.now().isoformat(timespec="seconds")
     applied = 0
+    from .settings_history import append_settings_change
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         for _, row in df.iterrows():
             if not bool(row.get("apply_forecast")):
                 continue
@@ -626,10 +637,12 @@ def apply_forecast_costs(df: pd.DataFrame) -> int:
                 """,
                 (forecast_total, forecast_material, note, now, nm_id),
             )
+            after = conn.execute("SELECT * FROM costs WHERE nm_id=?", (nm_id,)).fetchone()
+            append_settings_change(conn, kind="cost", nm_id=nm_id, before=current, after=after, source=source, actor=actor)
             applied += 1
     return applied
 
-def save_costs(df: pd.DataFrame) -> None:
+def save_costs(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None) -> None:
     from .core import connect
     required = {"nm_id", "cost_per_wb_unit"}
     if not required.issubset(df.columns):
@@ -647,17 +660,23 @@ def save_costs(df: pd.DataFrame) -> None:
                 datetime.now().isoformat(timespec="seconds"),
             )
         )
+    from .settings_history import append_settings_change
     with connect() as conn:
-        conn.executemany(
-            """
-            INSERT INTO costs(nm_id,supplier_article,cost_per_wb_unit,auto_material_cost,note,updated_at)
-            VALUES (?,?,?,0,?,?)
-            ON CONFLICT(nm_id) DO UPDATE SET
+        conn.execute("BEGIN IMMEDIATE")
+        for row in rows:
+            before = conn.execute("SELECT * FROM costs WHERE nm_id=?", (row[0],)).fetchone()
+            conn.execute(
+                """
+                INSERT INTO costs(nm_id,supplier_article,cost_per_wb_unit,auto_material_cost,note,updated_at)
+                VALUES (?,?,?,0,?,?)
+                ON CONFLICT(nm_id) DO UPDATE SET
                 supplier_article=excluded.supplier_article,
                 cost_per_wb_unit=excluded.cost_per_wb_unit,
                 auto_material_cost=0,
                 note=excluded.note,
                 updated_at=excluded.updated_at
-            """,
-            rows,
-        )
+                """,
+                row,
+            )
+            after = conn.execute("SELECT * FROM costs WHERE nm_id=?", (row[0],)).fetchone()
+            append_settings_change(conn, kind="cost", nm_id=row[0], before=before, after=after, source=source, actor=actor)
