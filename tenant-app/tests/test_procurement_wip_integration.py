@@ -19,6 +19,116 @@ from .base import DbTestCase
 
 
 class ProcurementReceiptCreatesMaterialLayerTests(DbTestCase):
+    def _grams_order(self, quantity=1000, **price):
+        with connect() as conn:
+            self.set_material_physical_stock(conn,'нить','Нить',partial_meters=0,roll_length=1)
+            conn.execute("UPDATE material_inventory_color SET unit='кг',tracking_mode='quantity' WHERE material_key='нить'")
+        order=procurement.create_procurement_order(procurement_type='Сырьё',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',items=pd.DataFrame([{'material_name':'Нить','unit':'г','quantity':quantity,**price}]))
+        item=int(procurement.read_procurement_items(order).iloc[0]['id'])
+        return order,item
+
+    def test_converted_currency_uses_decimal_source_components(self):
+        import json
+        order,item=self._grams_order(supplier_unit_price=0.1,exchange_rate=7)
+        result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':1000}]))
+        self.assertEqual(result['errors'],[])
+        with connect() as conn:
+            self.assertEqual(tuple(conn.execute('SELECT original_meters,unit_cost_rub_m,original_amount_rub FROM material_cost_layers').fetchone()),(1,700,700))
+            proof=json.loads(conn.execute('SELECT payload_json FROM material_unit_conversion_receipts').fetchone()[0])
+            self.assertEqual((proof['entered_unit_price_rub'],proof['source_total_rub']),('0.7','700'))
+
+    def test_converted_receipt_late_fifo_failure_rolls_back_counters_and_can_retry(self):
+        from unittest.mock import patch
+        order,item=self._grams_order(unit_price=0.1)
+        with connect() as conn:
+            before=tuple(conn.execute("SELECT * FROM material_inventory_color WHERE material_key='нить'").fetchone())
+            before_item=tuple(conn.execute('SELECT * FROM procurement_items WHERE id=?',(item,)).fetchone())
+        with patch('db.fifo_materials._create_material_layer',side_effect=ValueError('late FIFO failure')):
+            result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':1000}]))
+        self.assertTrue(result['errors'])
+        self.assertEqual((result['items'],result['posted'],result['materials_m'],result['products']),(0,0,0,0))
+        with connect() as conn:
+            self.assertEqual(tuple(conn.execute("SELECT * FROM material_inventory_color WHERE material_key='нить'").fetchone()),before)
+            self.assertEqual(tuple(conn.execute('SELECT * FROM procurement_items WHERE id=?',(item,)).fetchone()),before_item)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM inventory_movements').fetchone()[0],0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM material_cost_layers').fetchone()[0],0)
+            self.assertIsNone(conn.execute("SELECT name FROM sqlite_master WHERE name='material_unit_conversion_receipts'").fetchone())
+        self.assertEqual(procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':1000}]))['errors'],[])
+
+    def test_converted_fractional_cent_rejects_atomically(self):
+        order,item=self._grams_order(quantity=15,unit_price=0.001)
+        result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':15}]))
+        self.assertTrue(result['errors'])
+        self.assertIn('долю копейки',result['errors'][0])
+        self.assertEqual(result['items'],0)
+        with connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM inventory_movements').fetchone()[0],0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM material_cost_layers').fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT partial_meters FROM material_inventory_color WHERE material_key='нить'").fetchone()[0],0)
+        self.assertEqual(procurement.read_procurement_items(order).iloc[0]['received_quantity'],0)
+
+    def test_one_gram_undo_and_wip_keep_physical_fifo_in_agreement(self):
+        from db.inventory_movements import undo_inventory_movement
+        order,item=self._grams_order(unit_price=0.1)
+        for quantity in (999,1):
+            self.assertEqual(procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':quantity}]))['errors'],[])
+        with connect() as conn:
+            movement=conn.execute('SELECT MAX(id) FROM inventory_movements').fetchone()[0]
+        self.assertTrue(undo_inventory_movement(movement)['ok'])
+        self.assertFalse(undo_inventory_movement(movement)['ok'])
+        with connect() as conn:
+            self.assertEqual(conn.execute("SELECT full_rolls+partial_meters FROM material_inventory_color WHERE material_key='нить'").fetchone()[0],0.999)
+            row=conn.execute("SELECT SUM(remaining_meters),SUM(remaining_meters*unit_cost_rub_m) FROM material_cost_layers WHERE status='active'").fetchone()
+            self.assertAlmostEqual(row[0],0.999)
+            self.assertAlmostEqual(row[1],99.9)
+        self.assertEqual(procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':1}]))['errors'],[])
+        issue=wip.issue_wip_material(batch_date='2026-09-30',material_name='Нить',blank_type='Тип А',meters_used=0.001,note='boundary')
+        self.assertEqual(issue['errors'],[])
+        with connect() as conn:
+            self.assertEqual(conn.execute("SELECT full_rolls+partial_meters FROM material_inventory_color WHERE material_key='нить'").fetchone()[0],0.999)
+            self.assertEqual(conn.execute('SELECT SUM(remaining_meters) FROM material_cost_layers').fetchone()[0],0.999)
+
+    def test_packaged_wip_one_millimetre_preserves_partial_stock(self):
+        order=procurement.create_procurement_order(procurement_type='Сырьё',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',items=pd.DataFrame([{'material_name':'Ткань','unit':'рулон','roll_length':25.5,'quantity':1,'unit_price':2550}]))
+        item=int(procurement.read_procurement_items(order).iloc[0]['id'])
+        self.assertEqual(procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':1}]))['errors'],[])
+        issue=wip.issue_wip_material(batch_date='2026-09-30',material_name='Ткань',blank_type='Тип А',meters_used=0.001,note='boundary')
+        self.assertEqual(issue['errors'],[])
+        with connect() as conn:
+            self.assertEqual(tuple(conn.execute("SELECT full_rolls,partial_meters FROM material_inventory_color WHERE material_key='ткань'").fetchone()),(0,25.499))
+            self.assertEqual(conn.execute('SELECT SUM(remaining_meters) FROM material_cost_layers').fetchone()[0],25.499)
+
+    def test_product_late_fifo_failure_rolls_back_response_counters(self):
+        from unittest.mock import patch
+        order=procurement.create_procurement_order(procurement_type='Товар',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',items=pd.DataFrame([{'nm_id':981235,'supplier_article':'SKU','product_name':'Product','quantity':2,'unit_price':75}]))
+        item=int(procurement.read_procurement_items(order).iloc[0]['id'])
+        with patch('db.fifo_finished_goods._create_finished_goods_layer',side_effect=ValueError('late product failure')):
+            result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':item,'receive_now':2}]))
+        self.assertTrue(result['errors'])
+        self.assertEqual((result['items'],result['posted'],result['materials_m'],result['products']),(0,0,0,0))
+        with connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM inventory_movements').fetchone()[0],0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM finished_goods_cost_layers').fetchone()[0],0)
+        self.assertEqual(procurement.read_procurement_items(order).iloc[0]['received_quantity'],0)
+
+    def test_converted_whole_cent_prices_remain_exact(self):
+        from db.material_units import convert_material_amount
+        for quantity,total in ((10,'0.01'),(20,'0.02')):
+            self.assertEqual(convert_material_amount(quantity,'0.001','г','кг')['source_total_rub'],total)
+
+    def test_converted_float_storage_rejects_lost_cent(self):
+        from db.material_units import convert_material_amount
+        # Quantity and inverse unit price roundtrip independently; their large
+        # whole-cent product does not survive the existing FIFO float writer.
+        with self.assertRaisesRegex(ValueError,'слишком велика'):
+            convert_material_amount('999999999.99999','999999000','кг','г')
+
+    def test_decimal_landed_component_fallback_and_extra_costs(self):
+        from decimal import Decimal
+        base={'supplier_unit_price':0,'delivery_unit_foreign':0,'extra_unit_rub':0,'exchange_rate':7,'unit_price':0.7}
+        self.assertEqual(procurement._converted_landed_unit_cost(base),Decimal('0.7'))
+        self.assertEqual(procurement._converted_landed_unit_cost({**base,'supplier_unit_price':0.1,'delivery_unit_foreign':0.2,'extra_unit_rub':0.1}),Decimal('2.2'))
+
     def test_centimetres_receipt_preserves_known_packaged_catalog_length(self):
         with connect() as conn:
             self.set_material_physical_stock(conn,'ткань','Ткань',partial_meters=0,roll_length=25.5)

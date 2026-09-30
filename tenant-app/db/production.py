@@ -512,7 +512,7 @@ def _apply_material_delta(
     new_total = max(0.0, new_total)
     full_rolls = int(new_total // roll_length)
     partial = round(new_total - full_rolls * roll_length, 3)
-    if partial >= roll_length - 0.001:
+    if partial >= roll_length:
         full_rolls += 1
         partial = 0.0
     conn.execute(

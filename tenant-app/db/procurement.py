@@ -179,6 +179,23 @@ def _landed_unit_cost(
         return (supplier_price + delivery_foreign) * rate + extra_rub
     return max(0.0, float(legacy_unit_price or 0))
 
+
+def _converted_landed_unit_cost(item):
+    """Evaluate stored source components exactly before dimensional conversion."""
+    from decimal import Decimal, localcontext
+    def number(key, default=0):
+        value=Decimal(str(item[key] or default))
+        if not value.is_finite():
+            raise ValueError('Цена и курс должны быть конечными числами')
+        return max(Decimal(0), value)
+    supplier=number('supplier_unit_price')
+    delivery=number('delivery_unit_foreign')
+    extra=number('extra_unit_rub')
+    rate=max(Decimal('0.000001'),number('exchange_rate',1))
+    with localcontext() as context:
+        context.prec=100
+        return (supplier+delivery)*rate+extra if supplier>0 or delivery>0 or extra>0 else number('unit_price')
+
 def create_procurement_order(
     procurement_type: str,
     supplier_name: str,
@@ -687,7 +704,7 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     material_delta = qty * roll_length if str(item["unit"] or "") == "рулон" else qty
                     if existing is not None and str(item['unit'] or '').strip() != 'рулон' and str(item['unit'] or '').strip() != str(existing['unit'] or 'м'):
                         from .material_units import convert_material_amount
-                        entered_rate=_landed_unit_cost(item['supplier_unit_price'],item['exchange_rate'],item['delivery_unit_foreign'],item['extra_unit_rub'],item['unit_price'])
+                        entered_rate=_converted_landed_unit_cost(item)
                         unit_conversion=convert_material_amount(qty,entered_rate,str(item['unit']).strip(),str(existing['unit'] or 'м'))
                         material_delta=float(unit_conversion['base_quantity'])
                     exact_quantity_receipt = unit_conversion is not None or (existing is None and str(item['unit'] or '').strip() != 'рулон')
@@ -697,7 +714,6 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     else:
                         _apply_material_delta(conn, key, material_name, material_delta)
                     movement_type = "procurement_material_receipt"
-                    result["materials_m"] += material_delta
                 else:
                     ready_delta = int(round(qty))
                     if ready_delta <= 0:
@@ -705,7 +721,6 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     _apply_pipeline_delta(
                         conn, int(item["nm_id"] or 0), str(item["supplier_article"] or ""), ready_delta, 0
                     )
-                    result["products"] += ready_delta
                 event_key = _next_event_key(conn, movement_type, source_key)
                 movement_cur = conn.execute(
                     """
@@ -778,6 +793,8 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     (qty, qty, now, int(item_id)),
                 )
                 conn.execute("RELEASE SAVEPOINT procurement_receipt_item")
+                result["materials_m"] += material_delta
+                result["products"] += ready_delta
                 result["posted"] += qty
                 result["items"] += 1
             except Exception as exc:

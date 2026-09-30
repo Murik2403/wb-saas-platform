@@ -72,6 +72,10 @@ def convert_material_amount(quantity, unit_price, entered_unit, base_unit):
     if base_price>Decimal('1e12') or ('.' in text and len(text.split('.')[1])>6) or Decimal(str(float(base_price)))!=base_price:
         raise ValueError('Цена в единице справочника не сохраняется точно до 6 знаков; округление не выполняется')
     if source_total!=target_total: raise ValueError('Стоимость после перевода не совпадает с исходной')
+    if entered_unit != base_unit and source_total != source_total.quantize(Decimal('0.01')):
+        raise ValueError('Сумма после перевода содержит долю копейки; укажите документальную сумму/цену до копеек')
+    if entered_unit != base_unit and Decimal(str(round(float(q)*float(base_price),2))) != source_total:
+        raise ValueError('Сумма после перевода слишком велика для точного сохранения до копеек')
     return {'entered_quantity':provenance['entered_quantity_per_unit'],'entered_unit':entered_unit,
             'entered_unit_price_rub':_text(price),'conversion_factor':provenance['conversion_factor'],
             'base_quantity':_text(q),'base_unit':base_unit,'base_unit_price_rub':text,'source_total_rub':_text(source_total)}
