@@ -60,7 +60,10 @@ _DEMO_DAILY = None
 
 def _refresh_demo_and_healthcheck():
     reseed_demo()
-    client = _client()
+    # Reseed commits only after health while its verified rollback is retained.
+
+
+def _wait_demo_health(client):
     for _ in range(30):
         container = client.containers.get('wb-tenant-demo')
         container.reload()
@@ -522,7 +525,8 @@ def _restore_demo_backup(volume_name: str, slug: str, verified_name: str, client
     )
     check = client.containers.run(
         TENANT_IMAGE,
-        command=["python3", "-c", "import sqlite3; c=sqlite3.connect('/app/data/wb_dashboard.sqlite3'); print(c.execute('PRAGMA quick_check').fetchone()[0]); c.close()"],
+        entrypoint=["python3"],
+        command=["-c", "import sqlite3; c=sqlite3.connect('file:/app/data/wb_dashboard.sqlite3?mode=ro',uri=True); print(c.execute('PRAGMA quick_check').fetchone()[0]); c.close()"],
         network_disabled=True,
         volumes={volume_name: {"bind": "/app/data", "mode": "ro"}},
         user="10001:10001",
@@ -552,7 +556,8 @@ def _validate_demo_seed(volume_name: str, client: Any) -> dict[str, Any]:
     code = "import json; from demo_validation import validate_demo; r=validate_demo('/app/data/wb_dashboard.sqlite3'); print(json.dumps(r)); raise SystemExit(0 if r['ok'] else 1)"
     output = client.containers.run(
         TENANT_IMAGE,
-        command=["python3", "-c", code],
+        entrypoint=["python3"],
+        command=["-c", code],
         network_disabled=True,
         volumes={volume_name: {"bind": "/app/data", "mode": "ro"}},
         user="10001:10001",
@@ -663,35 +668,40 @@ def reseed_demo() -> dict[str, str]:
             stopped = False
             raise HTTPException(status_code=502, detail="Demo seed failed validation; previous tenant restored") from None
 
-        # Keep the old process and its configuration until the mutated volume
-        # has passed all validation checks.
+        # Keep original image/configuration until candidate runtime is healthy.
+        rollback_name = f"wb-tenant-demo-refresh-rollback-{time.time_ns()}"
         try:
-            old.remove(force=True)
+            old.rename(rollback_name)
         except Exception:
             try:
                 _restore_demo_backup(volume.name, slug, verified_name, client)
-                try:
-                    old.start()
-                except Exception:
-                    _start_demo_container(client, slug)
+                old.start()
             except Exception:
                 stopped = False
                 raise HTTPException(status_code=502, detail="Demo replacement failed; rollback could not be verified") from None
             stopped = False
             raise HTTPException(status_code=502, detail="Demo replacement failed; previous tenant restored") from None
-        stopped = False
         replaced = True
         try:
             _start_demo_container(client, slug)
+            _wait_demo_health(client)
         except Exception:
             try:
                 _remove_partial_demo(client, slug)
                 _restore_demo_backup(volume.name, slug, verified_name, client)
-                _start_demo_container(client, slug)
+                old.rename(_container_name(slug))
+                old.start()
             except Exception:
+                stopped = False
                 raise HTTPException(status_code=502, detail="Demo recreate failed; rollback could not be verified") from None
+            stopped = False
             replaced = False
             raise HTTPException(status_code=502, detail="Demo recreate failed; previous tenant restored") from None
+        stopped = False
+        try:
+            old.remove(force=True)
+        except Exception:
+            pass  # Healthy candidate remains live; stale stopped rollback is safe.
         return {"container": _container_name(slug)}
     except HTTPException:
         raise

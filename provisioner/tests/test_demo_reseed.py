@@ -16,6 +16,8 @@ class _Client:
         self.old = Mock()
         self.old.attrs = {"State": {"Status": "running"}}
         self.old_removed = False
+        self.old_renamed = False
+        self.old.rename.side_effect = lambda name: setattr(self, 'old_renamed', name != 'wb-tenant-demo')
         self.old.remove.side_effect = self._remove_old
         self.containers = Mock()
         self.containers.get.side_effect = self._get
@@ -24,7 +26,7 @@ class _Client:
         self.old_removed = True
 
     def _get(self, name):
-        if name == "wb-tenant-demo" and not self.old_removed:
+        if name == "wb-tenant-demo" and not self.old_removed and not self.old_renamed:
             return self.old
         raise RuntimeError("not found")
 
@@ -45,6 +47,7 @@ def _prepared(monkeypatch, tmp_path):
     client.containers.run.side_effect = run
     monkeypatch.setattr(app, "_validate_demo_seed", lambda *_args: events.append("validate") or {"ok": True})
     monkeypatch.setattr(app, "_start_demo_container", lambda *_args: events.append("start-new"))
+    monkeypatch.setattr(app, "_wait_demo_health", lambda *_args: events.append("healthy"))
     return client, events
 
 
@@ -54,7 +57,7 @@ def test_demo_reseed_verifies_backup_before_running_seed(monkeypatch, tmp_path):
     result = app.reseed_demo()
 
     assert result == {"container": "wb-tenant-demo"}
-    assert events == ["backup", "verify", "seed", "validate", "start-new"]
+    assert events == ["backup", "verify", "seed", "validate", "start-new", "healthy"]
     client.old.stop.assert_called_once()
     client.old.remove.assert_called_once_with(force=True)
     client.containers.run.assert_called_once()
@@ -110,8 +113,40 @@ def test_demo_reseed_recreate_failure_restores_snapshot_and_recreates_old(monkey
 
     assert raised.value.status_code == 502
     assert "details must not leak" not in raised.value.detail
-    assert events == ["backup", "verify", "seed", "validate", "start-new", "restore", "start-new"]
-    client.old.remove.assert_called_once_with(force=True)
+    assert events == ["backup", "verify", "seed", "validate", "start-new", "restore"]
+    client.old.remove.assert_not_called()
+    client.old.start.assert_called_once()
+    assert client.old.rename.call_args.args == ('wb-tenant-demo',)
+
+
+def test_unhealthy_candidate_restores_original_before_backup_cleanup(monkeypatch, tmp_path):
+    client, events = _prepared(monkeypatch, tmp_path)
+    marker = tmp_path/'demo'/'.snapshot.verified.tar.gz'
+    marker.parent.mkdir()
+    marker.write_bytes(b'verified')
+    def unhealthy(_client):
+        assert marker.exists()
+        events.append('unhealthy')
+        raise RuntimeError('health failed')
+    monkeypatch.setattr(app, '_wait_demo_health', unhealthy)
+    with pytest.raises(HTTPException):
+        app.reseed_demo()
+    assert events[-2:] == ['unhealthy','restore']
+    client.old.remove.assert_not_called()
+    client.old.start.assert_called_once()
+    assert client.old.rename.call_args.args == ('wb-tenant-demo',)
+
+
+def test_sqlite_helpers_override_tenant_entrypoint():
+    client = Mock()
+    client.containers.run.return_value = b'{"ok":true}'
+    assert app._validate_demo_seed('wb-tenant-data-demo', client)['ok']
+    args = client.containers.run.call_args.kwargs
+    assert args['entrypoint'] == ['python3'] and args['command'][0] == '-c'
+    client.containers.run.side_effect = [b'', b'', b'ok']
+    app._restore_demo_backup('wb-tenant-data-demo','demo','.verified.tar.gz',client)
+    args = client.containers.run.call_args.kwargs
+    assert args['entrypoint'] == ['python3'] and args['command'][0] == '-c'
 
 
 def test_verified_demo_backup_requires_valid_sqlite_database(tmp_path, monkeypatch):

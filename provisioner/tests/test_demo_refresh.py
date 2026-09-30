@@ -87,8 +87,7 @@ def test_healthcheck_must_pass_before_daily_success(monkeypatch):
     monkeypatch.setattr(app, '_client', lambda: client)
     monkeypatch.setattr(app.time, 'sleep', lambda _seconds: None)
     with pytest.raises(RuntimeError, match='health'):
-        app._refresh_demo_and_healthcheck()
-    reseed.assert_called_once()
+        app._wait_demo_health(client)
     assert container.reload.call_count == 30
     container.attrs['State']['Health']['Status'] = 'healthy'
-    app._refresh_demo_and_healthcheck()
+    app._wait_demo_health(client)
