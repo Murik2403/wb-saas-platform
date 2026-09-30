@@ -37,8 +37,8 @@
        critical) so "brand" and "needs attention" never look the same. */
     --bg:#0a0b12; --surface:#12141e; --surface-2:#1a1d2c;
     --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
-    --text:#eef0f7; --text-muted:#8d94aa; --text-faint:#5b6178;
-    --accent:#7c6cf6; --accent-strong:#9a8bff; --accent-soft:rgba(124,108,246,.14);
+    --text:#eef0f7; --text-muted:#8d94aa; --text-faint:#858ba1;
+    --focus:#9a8bff; --accent:#7c6cf6; --accent-strong:#9a8bff; --accent-soft:rgba(124,108,246,.14);
     --good:#3ecf8e; --good-soft:rgba(62,207,142,.12);
     --warn:#f2b84b; --warn-soft:rgba(242,184,75,.12);
     --critical:#f2677a; --critical-soft:rgba(242,103,122,.12);
@@ -96,7 +96,7 @@
     width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong);
     background: var(--bg); color: var(--text); font-size: .95rem; font-family: var(--font-display);
   }
-  input:focus { outline: none; border-color: var(--accent); }
+  input:focus { border-color: var(--accent); }
   .checkbox-line { display: flex; align-items: flex-start; gap: 9px; margin: 16px 0 0;
     font-size: .82rem; color: var(--text-muted); line-height: 1.5; cursor: pointer; }
   .checkbox-line input[type=checkbox] { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0;
@@ -457,7 +457,7 @@
   .calc-field .hint { font-size: .72rem; color: var(--text-faint); }
   .calc-field input, .calc-field select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong);
     background: var(--bg); color: var(--text); font-size: .95rem; font-family: var(--font-mono); }
-  .calc-field input:focus, .calc-field select:focus { outline: none; border-color: var(--accent); }
+  .calc-field input:focus, .calc-field select:focus { border-color: var(--accent); }
   .calc-result { background: var(--surface-2); padding: 26px 28px; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
   .calc-big { font-family: var(--font-mono); font-weight: 700; font-size: 2.1rem; line-height: 1; }
   .calc-big.good { color: var(--good); }
@@ -529,6 +529,17 @@
     #cookie-notice { right: 16px; bottom: 16px; }
     .cookie-actions { flex-direction: column-reverse; }
     #cookie-notice button { width: 100%; }
+  }
+  /* Shared keyboard focus: preserve visible outlines for every control. */
+  a[href]:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
   }
 </style>
 {% block head %}{% endblock %}
