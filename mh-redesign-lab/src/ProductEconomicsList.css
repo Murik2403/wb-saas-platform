@@ -1,0 +1,68 @@
+/* View switcher + table/list layouts for "Товары по артикулам". Tiles reuse .product-economics-card* from styles.css. */
+.product-view-switch {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  margin: 0.6rem 0 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(20, 25, 34, 0.7);
+}
+.product-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.product-view-switch button.active { background: rgba(124, 108, 246, 0.22); font-weight: 600; }
+
+.product-table-scroll { overflow-x: auto; }
+.product-economics-table { width: 100%; min-width: 46rem; border-collapse: collapse; }
+.product-economics-table th,
+.product-economics-table td { padding: 0.6rem 0.7rem; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.product-economics-table th:first-child,
+.product-economics-table td:first-child { text-align: left; white-space: normal; min-width: 16rem; }
+.product-economics-table tbody tr { cursor: pointer; }
+.product-economics-table tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+.product-sort { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.product-sort:hover,
+.product-sort:focus-visible { text-decoration: underline; }
+.product-row-open { display: grid; gap: 0.15rem; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.product-row-open small,
+.product-row-name small { opacity: 0.65; }
+
+.product-economics-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.product-economics-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 2fr) minmax(9rem, 1fr) minmax(6rem, 0.6fr) minmax(9rem, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(20, 25, 34, 0.7);
+  color: var(--text, #eef0f7);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.product-economics-rows .product-economics-row { color: var(--text, #eef0f7); }
+.product-economics-rows .product-economics-row > span { color: inherit; }
+.product-economics-rows .product-economics-row > span.negative { color: var(--danger, #ff6b6b); }
+.product-economics-rows .product-row-name strong { color: inherit; }
+.product-row-name { display: grid; gap: 0.1rem; }
+
+.negative,
+.product-economics-card-heading > strong.negative { color: var(--danger, #ff6b6b); }
+
+@media (max-width: 720px) {
+  .product-economics-row { grid-template-columns: 1fr 1fr; }
+  .product-row-name { grid-column: 1 / -1; }
+}
