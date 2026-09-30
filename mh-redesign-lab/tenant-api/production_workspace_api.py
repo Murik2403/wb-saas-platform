@@ -320,7 +320,7 @@ def workcenter_view(request:Request,start:date|None=None,days:int=Query(14,ge=1,
         with connect() as conn:
             conn.execute("BEGIN")
             source=centers_db.snapshot(conn,(start or date.today()).isoformat(),days)
-            history=[dict(r) for r in conn.execute("SELECT id,task_key,operation,before_json,after_json,actor_role,created_at FROM production_workcenter_history ORDER BY id DESC LIMIT 100")]
+            history=[dict(r) for r in conn.execute("SELECT id,task_key,operation,before_json,after_json,actor_role,created_at,actor FROM production_workcenter_history ORDER BY id DESC LIMIT 100")]
         role=request.headers.get("x-tenant-role","owner").lower()
         return dict(**source,**centers_db.loading(source),history=history,read_only=bool(config.IS_DEMO) or role not in {"owner","manager","technologist"},can_schedule=not config.IS_DEMO and role in {"owner","manager"})
     except (ValueError,) as exc:_workcenter_error(exc)
@@ -361,5 +361,5 @@ def workcenter_confirm(payload:ScheduleConfirmInput,request:Request):
     try:
         with connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            return centers_db.confirm(conn,payload.start.isoformat(),payload.days,payload.change.model_dump(mode="json"),payload.preview_fingerprint,str(payload.request_id),role)
+            return centers_db.confirm(conn,payload.start.isoformat(),payload.days,payload.change.model_dump(mode="json"),payload.preview_fingerprint,str(payload.request_id),role,actor=request.headers.get("x-tenant-account"))
     except Exception as exc:_workcenter_error(exc)

@@ -125,3 +125,27 @@ def test_restricted_identity_cannot_read_or_preview_calendar(client,role):
  setup(client);headers={'x-tenant-role':role}
  assert client.get(P,headers=headers).status_code==403
  assert client.post(P+'/preview',headers=headers,json=payload()).status_code==403
+
+
+def test_verified_actor_utc_and_append_only_history(client):
+ import sqlite3
+ from datetime import datetime,timedelta
+ setup(client);p=payload();r=client.post(P+'/preview',json=p).json()
+ assert client.post(P+'/confirm',json=dict(**p,preview_fingerprint=r['preview_fingerprint'],request_id=str(uuid4())),headers={'x-tenant-account':'owner@example.test'}).status_code==200
+ history=client.get(P).json()['history'][0]
+ assert history['actor']=='owner@example.test' and datetime.fromisoformat(history['created_at']).utcoffset()==timedelta(0)
+ with core.connect() as c:
+  for statement in ['UPDATE production_workcenter_history SET actor_role=\'viewer\'','DELETE FROM production_workcenter_history']:
+   with pytest.raises(sqlite3.IntegrityError,match='immutable'):c.execute(statement)
+  assert c.execute('SELECT COUNT(*) FROM production_workcenter_history').fetchone()[0]==1
+
+def test_history_migration_preserves_legacy_records_without_fabricating_actor():
+ import sqlite3
+ from db.workcenters import init_workcenter_schema
+ c=sqlite3.connect(':memory:')
+ c.execute("CREATE TABLE production_workcenter_history(id INTEGER PRIMARY KEY,request_id TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,task_key TEXT NOT NULL,operation TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,actor_role TEXT NOT NULL,created_at TEXT NOT NULL)")
+ c.execute("INSERT INTO production_workcenter_history VALUES (1,'legacy','hash','old','Sew','null','{}','manager','2026-09-01T12:00:00')")
+ init_workcenter_schema(c);init_workcenter_schema(c)
+ assert c.execute('SELECT request_id,actor_role,created_at,actor FROM production_workcenter_history').fetchone()==('legacy','manager','2026-09-01T12:00:00',None)
+ with pytest.raises(sqlite3.IntegrityError,match='immutable'):c.execute('DELETE FROM production_workcenter_history')
+ c.close()

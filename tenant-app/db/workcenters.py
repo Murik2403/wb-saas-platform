@@ -1,5 +1,5 @@
 """Minute-based shop-floor planning, separate from immutable production facts."""
-from datetime import date,timedelta,datetime
+from datetime import date,timedelta,datetime,timezone
 import hashlib,json,math
 
 def canonical(value):
@@ -15,6 +15,10 @@ def init_workcenter_schema(conn):
  """
  for statement in schema.split(";"):
   if statement.strip():conn.execute(statement)
+ columns={r[1] for r in conn.execute("PRAGMA table_info(production_workcenter_history)")}
+ if "actor" not in columns:conn.execute("ALTER TABLE production_workcenter_history ADD COLUMN actor TEXT")
+ for operation in ("UPDATE","DELETE"):
+  conn.execute(f"CREATE TRIGGER IF NOT EXISTS workcenter_history_{operation.lower()}_immutable BEFORE {operation} ON production_workcenter_history BEGIN SELECT RAISE(ABORT, 'Workcenter history is immutable'); END")
 
 def positive(value,limit):
  if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not 0<value<=limit: raise ValueError("Укажите конечное положительное число в допустимом диапазоне")
@@ -105,7 +109,7 @@ def preview(conn,source,change):
  result=deepcopy(source);result["assignments"]=[a for a in result["assignments"] if not(a["task_key"]==change["task_key"] and a["operation"]==change["operation"])];result["assignments"].append(dict(change))
  return dict(preview_fingerprint=fingerprint(dict(source=source,change=change)),before=current,after=change,**loading(result))
 
-def confirm(conn,start,days,change,token,request_id,role):
+def confirm(conn,start,days,change,token,request_id,role,actor=None):
  digest=fingerprint(dict(start=start,days=days,change=change,token=token))
  old=conn.execute("SELECT request_hash,after_json FROM production_workcenter_history WHERE request_id=?",(request_id,)).fetchone()
  if old:
@@ -115,5 +119,5 @@ def confirm(conn,start,days,change,token,request_id,role):
  if result["preview_fingerprint"]!=token:raise ValueError("stale_preview")
  after=dict(change,revision=change["revision"]+1)
  conn.execute("INSERT INTO production_workcenter_assignments(task_key,operation,center_id,scheduled_date,revision) VALUES (?,?,?,?,?) ON CONFLICT(task_key,operation) DO UPDATE SET center_id=excluded.center_id,scheduled_date=excluded.scheduled_date,revision=excluded.revision",(after["task_key"],after["operation"],after["center_id"],after["scheduled_date"],after["revision"]))
- conn.execute("INSERT INTO production_workcenter_history(request_id,request_hash,task_key,operation,before_json,after_json,actor_role,created_at) VALUES (?,?,?,?,?,?,?,?)",(request_id,digest,after["task_key"],after["operation"],canonical(result["before"]),canonical(after),role,datetime.now().isoformat()))
+ conn.execute("INSERT INTO production_workcenter_history(request_id,request_hash,task_key,operation,before_json,after_json,actor_role,created_at,actor) VALUES (?,?,?,?,?,?,?,?,?)",(request_id,digest,after["task_key"],after["operation"],canonical(result["before"]),canonical(after),role,datetime.now(timezone.utc).isoformat(),str(actor or f"role:{role}").strip()))
  return dict(replayed=False,assignment=after)
