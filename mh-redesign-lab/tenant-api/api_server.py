@@ -3234,12 +3234,15 @@ def get_management_economics(
             exclusion_reason = None
         rows.append({
             **expense,
+            "raw_inclusion": expense.get("include_in_management_result", False),
             "include_in_management_result": opted_in and not commission,
             "allocated_rub": round(allocated, 2),
             "excluded_from_result": excluded,
             "exclusion_reason": exclusion_reason,
         })
-    covered = {item["article"] for item in expenses}
+    from db.expense_coverage import read_coverage, observed_source_amounts
+    coverage_baseline = json_safe({"source_row": row, "data_status": status, "revenue_rub": revenue, "units": units, "accounting_profit_rub": base_profit, "observed_nonzero": observed_source_amounts(nm_id, start, end, row)})
+    expense_coverage = read_coverage(nm_id=nm_id, start=start, end=end, rows=rows, baseline=coverage_baseline)
     return json_safe({
         "nm_id": nm_id,
         "data_status": status,
@@ -3251,7 +3254,8 @@ def get_management_economics(
         "management_profit_rub": round(base_profit - manual_total, 2),
         "excluded_wb_commission_rub": round(excluded_total, 2),
         "excluded_manual_expenses_rub": round(excluded_manual_total, 2),
-        "coverage": {"covered": sorted(covered), "missing": sorted(set(EXPENSE_ARTICLES) - covered), "count": len(covered), "total": len(EXPENSE_ARTICLES), "percent": round(len(covered) / len(EXPENSE_ARTICLES) * 100, 2)},
+        "coverage": expense_coverage,
+        "coverage_source_context": coverage_baseline,
         "items": rows,
     })
 
@@ -3610,3 +3614,35 @@ def get_dashboard_reports() -> dict:
     return json_safe({"metrics": [{"key": "backup", "label": "Резервная копия", "value": backup.get("modified_at") if backup else "нет данных", "note": "локальное состояние"},
                                  {"key": "scheduled", "label": "Запланированные отчёты", "value": len(definitions), "note": "настройки tenant"}],
                       "reports": reports, "exports": exports})
+
+
+class ExpenseArticleAttestationInput(BaseModel):
+    expected_fingerprint: str = Field(min_length=64, max_length=64)
+    nm_id: int = Field(gt=0, strict=True)
+    start: date
+    end: date
+    article: str
+    state: str
+    source_ref: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=500)
+    request_key: str = Field(min_length=36, max_length=36)
+
+
+@app.get("/api/v1/settings/expense-coverage")
+def get_expense_article_coverage(request: Request, nm_id: int = Query(..., gt=0), start: date = Query(...), end: date = Query(...)):
+    result = get_management_economics(nm_id, start, end)
+    return {**result["coverage"], "nm_id": nm_id, "start": start.isoformat(), "end": end.isoformat(), "can_write": request.headers.get("x-tenant-role", "owner").lower() in {"owner", "manager"}}
+
+
+@app.post("/api/v1/settings/expense-coverage")
+def save_expense_article_coverage(payload: ExpenseArticleAttestationInput, request: Request):
+    from db.expense_coverage import save_attestation
+    result = get_management_economics(payload.nm_id, payload.start, payload.end)
+    try:
+        identifier = save_attestation(nm_id=payload.nm_id, start=payload.start, end=payload.end,
+            article=payload.article, state=payload.state, source_ref=payload.source_ref,
+            reason=payload.reason, actor=request.headers.get("x-tenant-account", "local-owner"),
+            request_key=payload.request_key, rows=result["items"], baseline=result["coverage_source_context"], expected_fingerprint=payload.expected_fingerprint)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"id": identifier, "message": "Подтверждение сохранено; суммы расходов не изменены"}

@@ -2678,3 +2678,19 @@ function compactActionLabel(value: unknown, fallback: string): string {
 
   return `${raw.slice(0, 25).trim()}...`;
 }
+
+export type ExpenseCoverage = {
+  nm_id: number; start: string; end: string; can_write: boolean;
+  count: number; total: number; preliminary: boolean;
+  items: Array<{ article: string; state: string; stale: boolean; source_ref: string; fingerprint: string; observed_source?: { source: string; quality: string; absolute_observed_rub: number } | null }>;
+  history: Array<{ id: number; article: string; state: string; source_ref: string; reason: string; actor: string; created_at: string }>;
+};
+export async function getExpenseCoverage(nmId: number, start: string, end: string): Promise<ExpenseCoverage> {
+  const query = new URLSearchParams({ nm_id: String(nmId), start, end });
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/expense-coverage?${query}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error(`Покрытие расходов: HTTP ${response.status}`);
+  return response.json() as Promise<ExpenseCoverage>;
+}
+export function saveExpenseCoverage(payload: { nm_id: number; start: string; end: string; article: string; state: string; source_ref: string; reason: string; request_key: string; expected_fingerprint: string }): Promise<{ id: number }> {
+  return postOperation("/api/v1/settings/expense-coverage", payload);
+}

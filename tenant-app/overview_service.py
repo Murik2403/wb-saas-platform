@@ -186,7 +186,7 @@ def compute_overview(ctx: dict, prev_ctx: dict | None = None) -> dict:
             "key": "profit", "hero": True,
             "label": "Прибыль по товарам (оценка)",
             "value": money(profit_value),
-            "note": "Расчётная, за период · точная цифра — в «Финансы»",
+            "note": "Расчётная, за период · подробный разбор — в «Финансы»",
             "delta": delta_pct(profit_value, prev_profit),
             "spark_key": None,
         },

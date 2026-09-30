@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 API_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(API_DIR.parents[1] / "tenant-app"))
@@ -13,6 +14,13 @@ spec = importlib.util.spec_from_file_location("management_economics_test_api", A
 api = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = api
 spec.loader.exec_module(api)
+
+
+@pytest.fixture(autouse=True)
+def coverage_database(monkeypatch, tmp_path):
+    import db.core as core
+    monkeypatch.setattr(core, "DB_PATH", tmp_path / "coverage.sqlite3")
+    core.init_db()
 
 
 def test_management_economics_uses_real_product_columns_and_excludes_commission(monkeypatch):
@@ -38,7 +46,7 @@ def test_management_economics_uses_real_product_columns_and_excludes_commission(
     assert result["items"][0]["excluded_from_result"] is True
     assert result["items"][0]["exclusion_reason"]
     assert result["excluded_wb_commission_rub"] == 50
-    assert result["coverage"]["percent"] > 0
+    assert result["coverage"]["percent"] == 0
     assert result["items"][0]["allocated_rub"] == 50
     assert result["items"][1]["excluded_from_result"] is True
 

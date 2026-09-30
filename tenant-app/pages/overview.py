@@ -48,7 +48,7 @@ def render(ctx: dict) -> None:
         kpi_card(
             "Прибыль по товарам (оценка)",
             money(data.financial.get("product_allocated_profit", 0.0)),
-            "Расчётная, за период · точная цифра — в «Финансы»",
+            "Расчётная, за период · подробный разбор — в «Финансы»",
             hero=True,
             delta=delta_pct(data.financial.get("product_allocated_profit", 0.0), prev_profit),
         )
