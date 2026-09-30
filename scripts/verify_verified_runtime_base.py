@@ -9,6 +9,7 @@ from pathlib import Path
 
 BASE_REVISION = 'ef616ed1712df28fd001f04a76b343eac386844b'
 BASE_IMAGE = 'sha256:8ae1f0d9bd63a129ad6aee8bbf5d823742643d269876dc766409520180239115'
+BASE_REFERENCE = 'mh-tenant@'+BASE_IMAGE
 INPUTS = {
     'tenant-app/requirements.txt': '/app/tenant-app/requirements.txt',
     'tenant-app/requirements.lock': '/app/tenant-app/requirements.lock',
@@ -40,18 +41,20 @@ def prepare(root, output):
               'FROM ${VERIFIED_TENANT_RUNTIME_BASE}\nWORKDIR /app/tenant-app\n\n'+original[original.index('COPY tenant-app/ ./'):].replace('COPY --from=frontend-build /frontend/dist /usr/share/nginx/html', 'RUN python -c "import shutil; from pathlib import Path; p=Path(\'/usr/share/nginx/html\'); shutil.rmtree(p); p.mkdir()"\nCOPY --from=frontend-build /frontend/dist /usr/share/nginx/html'))
     actual=git('show',revision+':mh-redesign-lab/Dockerfile.tenant-verified-base').decode()
     assert actual==expected, 'Build file differs from reviewed full COPY contract'
-    output.write_text(json.dumps(dict(base_image=BASE_IMAGE,base_revision=BASE_REVISION,
+    output.write_text(json.dumps(dict(base_image=BASE_IMAGE,base_reference=BASE_REFERENCE,base_revision=BASE_REVISION,
                                      candidate_revision=revision,hashes=hashes),indent=2)+'\n')
     print('VERIFIED_BASE_SOURCE_MANIFEST_OK '+revision)
 
 def verify(manifest):
     p=json.loads(manifest.read_text())
     assert p['base_image']==BASE_IMAGE and p['base_revision']==BASE_REVISION
+    assert p['base_reference']==BASE_REFERENCE
     assert re.fullmatch('[0-9a-f]{40}',p['candidate_revision'])
     assert set(p['hashes'])=={v for v in INPUTS.values() if v}
     assert all(re.fullmatch('[0-9a-f]{64}',v) for v in p['hashes'].values())
     info=json.loads(run('docker','image','inspect',BASE_IMAGE))[0]
     assert info['Id']==BASE_IMAGE
+    assert BASE_REFERENCE in info.get('RepoDigests',[]), 'Digest reference missing from local image store'
     assert info['Config']['Labels']['org.opencontainers.image.revision']==BASE_REVISION
     code='import hashlib,json,sys;from pathlib import Path;p=json.load(sys.stdin);assert all(hashlib.sha256(Path(k).read_bytes()).hexdigest()==v for k,v in p.items());print("VERIFIED_BASE_IMAGE_BYTES_OK")'
     result=subprocess.run(['docker','run','--rm','-i','--network','none','--read-only',
