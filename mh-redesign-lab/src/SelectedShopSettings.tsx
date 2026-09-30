@@ -14,7 +14,7 @@ export function SelectedShopSettings() {
   const cost=Number((drafts[item.nm_id]??'').replace(',','.')),reason=(reasons[item.nm_id]??'').trim();
   if(!Number.isFinite(cost)||cost<0||!(drafts[item.nm_id]??'').trim()||!reason){setError('Укажите неотрицательную себестоимость и основание изменения');return;}
   setBusy(item.nm_id);setError('');setMessage('');
-  try{await updateProductCostSettings([{nm_id:item.nm_id,supplier_article:item.supplier_article,cost_per_wb_unit:cost,note:item.note}],reason);setMessage('Себестоимость сохранена. Версия магазина обновляется.');}
+  try{await updateProductCostSettings([{nm_id:item.nm_id,supplier_article:item.supplier_article??'',cost_per_wb_unit:cost,note:item.note??''}],reason);setMessage('Себестоимость сохранена. Версия магазина обновляется.');}
   catch(caught){setError(caught instanceof Error?caught.message:'Себестоимость не сохранена. Повторите действие с теми же значениями.');}
   finally{setBusy(null);}
  }

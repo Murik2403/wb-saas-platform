@@ -1,4 +1,5 @@
 import { scopedFetch as fetch, shopReadTimeout } from "./selected-shop";
+import { writeError } from './write-error';
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActionRecommendation,
@@ -740,7 +741,7 @@ export function confirmSupplyPlan(input: { confirmation_key: string; preview_fin
 
 async function patchOperation<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { method: "PATCH", headers: apiHeaders(true), body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+  if (!response.ok) throw await writeError(response);
   return response.json() as Promise<T>;
 }
 
