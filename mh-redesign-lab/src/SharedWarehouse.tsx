@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {notifyShopDataUpdated} from './shop-data-updated';
 import {SharedWarehouseFinance} from './SharedWarehouseFinance';
 import {API_BASE_URL,apiHeaders} from './data-source';
 import {bindPrimaryWarehouse,currentShop,navigateToShop} from './selected-shop';
@@ -48,7 +49,7 @@ export function SharedWarehouse(){
     if(current.preview&&(!preview||preview.identity!==inputIdentity))throw new Error('Сначала проверьте текущее движение');
     const body={...current.body,...(current.preview&&action!=='return'?{fingerprint:preview?.result.fingerprint}:{})};
     const path=current.path+(current.preview?'/confirm':'');const submitted=receipt.current.snapshot(path,body);
-    await warehouseRequest(path,submitted.body,submitted.key);receipt.current.clear();setPreview(null);setMessage('Движение сохранено по исходному документу.');await refresh();
+    await warehouseRequest(path,submitted.body,submitted.key);notifyShopDataUpdated(shop);receipt.current.clear();setPreview(null);setMessage('Движение сохранено по исходному документу.');await refresh();
    }
   }catch(reason){setError(reason instanceof Error?reason.message:'Движение не сохранено');}finally{setBusy(false);}
  }

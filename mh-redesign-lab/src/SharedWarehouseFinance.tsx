@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {notifyShopDataUpdated} from './shop-data-updated';
 import {currentShop} from './selected-shop';
 import {WarehouseSubmission,warehouseRequest,type WarehouseWorkspace} from './shared-warehouse';
 type SourceRow={rrd_id:number;nm_id:number;chrt_id:number|null;variant_basis:string;operation_date:string;sale_date:string;units:number;event_type:'sale'|'return';source_kind:'wb_api'|'legacy_unverified'|'seller_mismatch';document_key:string|null;preliminary:boolean};
@@ -24,7 +25,7 @@ export function SharedWarehouseFinance({workspace}:{workspace:WarehouseWorkspace
    else{
     if(!preview||preview.identity!==identity)throw new Error('Проверьте выбранное сопоставление заново');
     const request=submitted.current.snapshot(prefix+'/financial-bindings/confirm',{...preview.body,fingerprint:preview.proof.fingerprint});
-    await warehouseRequest(prefix+'/financial-bindings/confirm',request.body,request.key);submitted.current.clear();setPreview(null);setMessage(manual?'Сохранён ручной источник. Финансовый результат остаётся предварительным.':'Документ связан с подтверждённой строкой WB.');await refresh();
+    await warehouseRequest(prefix+'/financial-bindings/confirm',request.body,request.key);notifyShopDataUpdated(shop);submitted.current.clear();setPreview(null);setMessage(manual?'Сохранён ручной источник. Финансовый результат остаётся предварительным.':'Документ связан с подтверждённой строкой WB.');await refresh();
    }
   }catch(caught){setError(caught instanceof Error?caught.message:'Сопоставление не сохранено');}finally{setBusy(false);}
  }

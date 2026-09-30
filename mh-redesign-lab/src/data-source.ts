@@ -1,5 +1,6 @@
 import { scopedFetch as fetch, shopReadTimeout } from "./selected-shop";
 import { writeError } from './write-error';
+import {shopDataUpdated,currentMutationEvent} from './shop-data-updated';
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActionRecommendation,
@@ -1301,6 +1302,12 @@ export function useDashboardData(activePage: PageId, selectedPeriod: DashboardPe
       }
     }
   }, [activePage, selectedPeriod]);
+
+  useEffect(() => {
+    const onAcceptedMutation=(event:Event)=>{if(currentMutationEvent(event))void refresh();};
+    window.addEventListener(shopDataUpdated,onAcceptedMutation);
+    return()=>window.removeEventListener(shopDataUpdated,onAcceptedMutation);
+  },[refresh]);
 
   useEffect(() => {
     if (API_MODE === "mock") {

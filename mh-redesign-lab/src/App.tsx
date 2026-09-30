@@ -1,4 +1,5 @@
 import { downloadScoped, currentShop } from "./selected-shop";
+import {fifoReasonLabel} from './fifo-reason';
 import { SelectedShopSettings } from "./SelectedShopSettings";
 import { SharedWarehouse } from './SharedWarehouse';
 import { ShopContextBoundary } from "./ShopContextBoundary";
@@ -1997,7 +1998,7 @@ function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
                 <td className="finance-fifo-srid">{row.srid || "—"}</td>
                 <td>{row.eventType === "return" ? "Возврат" : "Продажа"}</td>
                 <td>{row.units.toLocaleString("ru-RU")}</td>
-                <td><strong>{statusLabel[row.status] ?? row.status}</strong>{row.reason ? <small>{row.reason.replaceAll("_", " ")}</small> : null}</td>
+                <td><strong>{statusLabel[row.status] ?? row.status}</strong>{row.reason ? <small>{fifoReasonLabel(row.reason)}</small> : null}</td>
                 <td>{row.eligibleCostRub === null ? "—" : `${row.eligibleCostRub.toLocaleString("ru-RU")} ₽`}</td>
                 <td>{row.observedCostRub === null ? "—" : `${row.observedCostRub.toLocaleString("ru-RU")} ₽`}</td>
                 <td>{row.cogsSource === "exact_fifo" ? "Точный FIFO" : row.cogsSource === "manual_source_fifo" ? "FIFO по ручному источнику · предварительно" : row.cogsSource === "current_cost_estimate" ? "Оценка по текущей ставке" : row.cogsSource === "insufficient" ? "Нет себестоимости" : "Исключено"}<small>{row.cogsSource === "insufficient" ? "Прибыль предварительная" : `${Number(row.cogsRub ?? 0).toLocaleString("ru-RU")} ₽`}</small></td>
