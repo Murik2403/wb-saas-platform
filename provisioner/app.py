@@ -509,6 +509,23 @@ def _verify_demo_backup(archive_name: str, slug: str) -> str:
     return verified_name
 
 
+def _demo_snapshot_code(database: str = "/app/data/wb_dashboard.sqlite3") -> str:
+    """Copy a quiescent RO database including uncheckpointed WAL into private tmpfs.
+
+    SQLite may need writable WAL bookkeeping even for mode=ro; immutable would
+    silently ignore WAL. Only the private copy is writable, never the volume.
+    """
+    return (
+        "import pathlib, shutil, tempfile; "
+        f"source=pathlib.Path({database!r}); "
+        "scratch=tempfile.TemporaryDirectory(prefix='demo-sqlite-check-'); "
+        "snapshot=pathlib.Path(scratch.name)/source.name; "
+        "shutil.copyfile(source,snapshot); "
+        "[shutil.copyfile(str(source)+suffix,str(snapshot)+suffix) "
+        "for suffix in ('-wal','-journal') if pathlib.Path(str(source)+suffix).exists()]; "
+    )
+
+
 def _restore_demo_backup(volume_name: str, slug: str, verified_name: str, client: Any) -> None:
     # A failed seed can leave a new SQLite WAL beside the old database. Remove
     # only this tenant DB's sidecars before unpacking the verified snapshot.
@@ -540,14 +557,14 @@ def _restore_demo_backup(volume_name: str, slug: str, verified_name: str, client
     check = client.containers.run(
         TENANT_IMAGE,
         entrypoint=["python3"],
-        command=["-c", "import sqlite3; c=sqlite3.connect('file:/app/data/wb_dashboard.sqlite3?mode=ro',uri=True); print(c.execute('PRAGMA quick_check').fetchone()[0]); c.close()"],
+        command=["-c", _demo_snapshot_code() + "import sqlite3; c=sqlite3.connect(f'file:{snapshot}?mode=ro',uri=True); print(c.execute('PRAGMA quick_check').fetchone()[0]); c.close()"],
         network_disabled=True,
         volumes={volume_name: {"bind": "/app/data", "mode": "ro"}},
         user="10001:10001",
         security_opt=["no-new-privileges:true"],
         cap_drop=["ALL"],
         read_only=True,
-        tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+        tmpfs={"/tmp": "rw,noexec,nosuid,size=128m"},
     )
     if (check.decode("utf-8") if isinstance(check, bytes) else str(check)).strip() != "ok":
         raise ValueError("Restored demo database failed SQLite integrity check")
@@ -569,7 +586,7 @@ def _remove_partial_demo(client: Any, slug: str) -> None:
 
 def _validate_demo_seed(volume_name: str, client: Any) -> dict[str, Any]:
     """Check the seed marker and essential joined business/FIFO invariants read-only."""
-    code = "import json; from demo_validation import validate_demo; r=validate_demo('/app/data/wb_dashboard.sqlite3'); print(json.dumps(r)); raise SystemExit(0 if r['ok'] else 1)"
+    code = _demo_snapshot_code() + "import json; from demo_validation import validate_demo; r=validate_demo(str(snapshot)); print(json.dumps(r)); raise SystemExit(0 if r['ok'] else 1)"
     output = client.containers.run(
         TENANT_IMAGE,
         entrypoint=["python3"],
@@ -580,7 +597,7 @@ def _validate_demo_seed(volume_name: str, client: Any) -> dict[str, Any]:
         security_opt=["no-new-privileges:true"],
         cap_drop=["ALL"],
         read_only=True,
-        tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+        tmpfs={"/tmp": "rw,noexec,nosuid,size=128m"},
     )
     result = json.loads(output.decode("utf-8") if isinstance(output, bytes) else str(output))
     if result.get("ok") is not True:

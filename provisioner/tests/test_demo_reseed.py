@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import tarfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -202,3 +203,26 @@ def test_verified_demo_backup_requires_valid_sqlite_database(tmp_path, monkeypat
     archive_path.write_bytes(b"not an authenticated archive")
     with pytest.raises(Exception):
         app._verify_demo_backup(archive_path.name, "demo")
+
+
+def test_readonly_snapshot_preserves_uncheckpointed_wal(tmp_path):
+    source = tmp_path / 'fixture.sqlite3'
+    writer = sqlite3.connect(source)
+    writer.execute('PRAGMA journal_mode=WAL')
+    writer.execute('PRAGMA wal_autocheckpoint=0')
+    writer.execute('CREATE TABLE evidence(value INTEGER)')
+    writer.execute('INSERT INTO evidence VALUES(42)')
+    writer.commit()
+    assert Path(str(source)+'-wal').stat().st_size > 0
+    namespace = {}
+    exec(app._demo_snapshot_code(str(source)), namespace)
+    snapshot = namespace['snapshot']
+    reader = sqlite3.connect(f'file:{snapshot}?mode=ro', uri=True)
+    try:
+        assert reader.execute('SELECT value FROM evidence').fetchone()[0] == 42
+        assert reader.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+        assert Path(str(source)+'-wal').exists()
+    finally:
+        reader.close()
+        namespace['scratch'].cleanup()
+        writer.close()
