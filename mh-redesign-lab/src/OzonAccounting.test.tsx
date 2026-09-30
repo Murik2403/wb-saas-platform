@@ -2,16 +2,33 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { OzonAccounting } from "./OzonAccounting";
+import { clearShopContext, selectShop, type ShopSession } from "./selected-shop";
 const mocks = vi.hoisted(() => ({ session: vi.fn() }));
 vi.mock("./data-source", () => ({ API_BASE_URL: "/tenant-api", apiHeaders: () => ({"content-type":"application/json"}), getDashboardSession: mocks.session }));
+vi.mock("./selected-shop",async importOriginal=>({...await importOriginal<typeof import('./selected-shop')>(),scopedFetch:(...args:Parameters<typeof fetch>)=>globalThis.fetch(...args)}));
 const loaded = { configured:true, loaded:true, source_complete:true, accounting_complete:false, net_accrual_rub:"100", estimated_cogs_rub:"0", profit_rub:null, known_cost_units:0, sales_and_return_units:2, blockers:["Себестоимость не заполнена"],products:[{sku:"123",offer_id:"Товар",product_id:1,stocks:[],cost_mapping:null}], source_counts:{products:1,stocks:0,fbo:0,fbs:0,returns:0,accruals:1}, fees:[] };
 const response = (body: unknown, ok=true) => ({ ok, status:ok?200:422, json:async()=>body }) as Response;
 beforeEach(() => {
+  clearShopContext();
   mocks.session.mockReset().mockResolvedValue({mode:"tenant",user:{role:"owner"}});
   vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response(loaded)));
 });
-afterEach(() => {cleanup();vi.unstubAllGlobals();});
+afterEach(() => {cleanup();clearShopContext();vi.unstubAllGlobals();});
 describe("Ozon accounting", () => {
+  it("does not fetch or render primary Ozon figures for a verified secondary WB shop",async()=>{
+    const selected:ShopSession={role:'owner',selected_shop_id:0,shops:[{id:0,name:'Primary',verified_identity:null,snapshot_revision:null,active:true,can_write:true,allowed_actions:[]},{id:2,name:'WB second',verified_identity:'a'.repeat(64),snapshot_revision:1,active:true,can_write:true,allowed_actions:[]}],route_scopes:[]};
+    selectShop(selected,2);render(<OzonAccounting />);
+    expect(screen.getByText(/Учёт Ozon доступен в основном кабинете/)).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'Переключиться на основной магазин'})).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();expect(mocks.session).not.toHaveBeenCalled();expect(screen.queryByText('Товар')).not.toBeInTheDocument();
+  });
+  it("unmounts previously loaded primary figures when rendered in a secondary context",async()=>{
+    const {rerender}=render(<OzonAccounting />);await screen.findByText('Товар');
+    const before=vi.mocked(fetch).mock.calls.length;
+    selectShop({role:'owner',selected_shop_id:0,shops:[{id:0,name:'Primary',verified_identity:null,snapshot_revision:null,active:true,can_write:true,allowed_actions:[]},{id:2,name:'Second',verified_identity:'a'.repeat(64),snapshot_revision:1,active:true,can_write:true,allowed_actions:[]}],route_scopes:[]},2);
+    rerender(<OzonAccounting />);expect(screen.queryByText('Товар')).not.toBeInTheDocument();expect(screen.getByText(/Учёт Ozon доступен в основном кабинете/)).toBeInTheDocument();
+    await Promise.resolve();expect(fetch).toHaveBeenCalledTimes(before);
+  });
   it("never renders unknown profitability as zero and displays source completeness separately",async () => {
     render(<OzonAccounting />);
     expect(await screen.findByText(/Прибыль: не рассчитано/)).toBeInTheDocument();

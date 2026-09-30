@@ -252,7 +252,7 @@
   {
     "method": "POST",
     "path": "/api/v1/operations/reports/definitions",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "GET",
@@ -262,12 +262,12 @@
   {
     "method": "PATCH",
     "path": "/api/v1/operations/reports/definitions/{definition_id}",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "PATCH",
     "path": "/api/v1/operations/reports/definitions/{definition_id}/enabled",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "POST",
@@ -552,7 +552,7 @@
   {
     "method": "GET",
     "path": "/api/v1/settings/change-history",
-    "scope": "shop_local",
+    "scope": "tenant_shared",
     "query_scopes": {"kind": {"cost": "shop_local", "production_norm": "tenant_shared"}},
     "requires_kind": true
   },
@@ -684,17 +684,17 @@
   {
     "method": "GET",
     "path": "/api/v1/ozon-accounting/workspace",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "POST",
     "path": "/api/v1/ozon-accounting/sync",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "PUT",
     "path": "/api/v1/ozon-accounting/cost",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "GET",

@@ -72,3 +72,16 @@ it('accepts every actual primary registry route with server-compatible resource 
  }
  expect(f).toHaveBeenCalledTimes(s.route_scopes.length);
 });
+
+it('denies all Ozon routes for verified WB secondary shops before dispatch while primary remains compatible',async()=>{
+ const s=fixture();s.route_scopes=actualRegistry as ShopSession['route_scopes'];
+ const routes=s.route_scopes.filter(route=>route.path.startsWith('/api/v1/ozon-accounting/'));
+ expect(routes.length).toBeGreaterThanOrEqual(8);expect(routes.every(route=>route.scope==='forbidden')).toBe(true);
+ const f=vi.fn();vi.stubGlobal('fetch',f);selectShop(s,2);
+ for(const route of routes)await expect(scopedFetch(route.path,{method:route.method,...(route.method!=='GET'?{body:'{}'}:{})})).rejects.toThrow();
+ expect(f).not.toHaveBeenCalled();
+ selectShop(s,0);
+ f.mockImplementation(()=>Promise.resolve(new Response('{}',{headers:{'X-MH-Shop-ID':'0','X-MH-Resource-Scope':'tenant_shared'}})));
+ for(const route of routes)expect(await(await scopedFetch(route.path,{method:route.method,...(route.method!=='GET'?{body:'{}'}:{})})).json()).toEqual({});
+ expect(f).toHaveBeenCalledTimes(routes.length);
+});

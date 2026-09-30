@@ -1,4 +1,4 @@
-import { scopedFetch as fetch } from "./selected-shop";
+import { scopedFetch as fetch, currentShop, navigateToShop } from "./selected-shop";
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders, getDashboardSession } from "./data-source";
 import "./OzonAccounting.css";
@@ -17,6 +17,15 @@ async function request<T>(path: string, body?: unknown, method = "GET"): Promise
 }
 
 export function OzonAccounting() {
+  if ((currentShop()?.id ?? 0) !== 0) return <section className="panel ozon-accounting" aria-labelledby="ozon-accounting-title">
+    <h2 id="ozon-accounting-title">Учёт Ozon</h2>
+    <p>Учёт Ozon доступен в основном кабинете. У дополнительного WB-магазина нет подтверждённой привязки к продавцу Ozon.</p>
+    <button type="button" className="secondary-button" onClick={() => navigateToShop(0)}>Переключиться на основной магазин</button>
+  </section>;
+  return <PrimaryOzonAccounting />;
+}
+
+function PrimaryOzonAccounting() {
   const [start, setStart] = useState(() => previous(7));
   const [end, setEnd] = useState(() => previous(1));
   const [data, setData] = useState<Workspace | null>(null);
