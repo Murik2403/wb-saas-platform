@@ -60,7 +60,7 @@ class OzonLedgerTests(DbTestCase):
         snapshot["accruals"][0]["total_amount"]["currency"] = "CNY"
         import_snapshot(snapshot)
         result = workspace("2026-09-01","2026-09-02")
-        assert result["source_complete"] is True
+        assert result["source_complete"] is False
         assert result["accounting_complete"] is False
         assert result["profit_rub"] is None
         assert any("999" in blocker for blocker in result["blockers"])
@@ -91,7 +91,7 @@ class OzonLedgerTests(DbTestCase):
                 row={"accrual_id":2,"date":"2026-09-01","total_amount":{"amount":"100","currency":"RUB"},"accrued_category":category,"posting":posting}
                 import_snapshot(fixture_snapshot([row]))
                 result=workspace("2026-09-01","2026-09-02")
-                assert result["source_complete"] is True
+                assert result["source_complete"] is False
                 assert result["accounting_complete"] is False
                 assert result["profit_rub"] is None
                 assert result["estimate_after_known_cogs_rub"] is None
@@ -102,6 +102,10 @@ class Response:
     status_code = 200
     def __init__(self, body): self.body = body
     def json(self): return self.body
+    def iter_content(self,chunk_size):
+        import json
+        yield json.dumps(self.body).encode()
+    def close(self): pass
 class Session:
     def __init__(self, pages): self.pages = list(pages); self.calls = []
     def post(self, url, **kwargs):
@@ -132,3 +136,105 @@ def test_numeric_return_cursor_uses_last_row_identifier():
 def test_period_is_bounded_and_reversed_period_rejected():
     with pytest.raises(OzonAccountingError): checked_period("2026-08-01","2026-09-30")
     with pytest.raises(OzonAccountingError): checked_period("2026-09-02","2026-09-01")
+
+
+@pytest.mark.parametrize("cursor", [False, 0, None, [], {}, "x"*4097])
+def test_wrong_cursor_type_cannot_certify_terminal_page(cursor):
+    client=OzonAccountingClient("fake","fake",session=Session([{"accruals":[],"last_id":cursor}]))
+    with pytest.raises(OzonAccountingError):
+        client._pages("/v1/finance/accrual/by-day",{},rows="accruals",cursor="last_id")
+
+
+class RawResponse:
+    def __init__(self, raw, status=200): self.raw=raw;self.status_code=status;self.closed=False
+    def iter_content(self, chunk_size):
+        for i in range(0,len(self.raw),chunk_size): yield self.raw[i:i+chunk_size]
+    def close(self): self.closed=True
+
+
+class RawSession:
+    def __init__(self,response): self.response=response;self.kwargs=None
+    def post(self,url,**kwargs): self.kwargs=kwargs;return self.response
+
+
+def test_stream_preserves_decimal_lexeme_and_never_follows_credential_redirects():
+    response=RawResponse(b'{"amount":123456789.123456789,"count":2}')
+    session=RawSession(response);client=OzonAccountingClient("fake","fake",session=session)
+    result=client._post("/v1/finance/accrual/by-day",{})
+    assert result=={"amount":"123456789.123456789","count":2}
+    assert session.kwargs["allow_redirects"] is False and session.kwargs["stream"] is True
+    assert response.closed and len(client.page_receipts)==1
+    redirect=RawResponse(b'{}',302);client.session=RawSession(redirect)
+    with pytest.raises(OzonAccountingError,match="HTTP 302"): client._post("/test",{})
+    assert redirect.closed and len(client.page_receipts)==1
+
+
+@pytest.mark.parametrize("raw", [b'{"money":NaN}', b'[]', b'\xff', b'{broken', b' '* (2*1024*1024+1), b'['*2000+b']'*2000], ids=['nan','array','utf8','syntax','oversize','depth'])
+def test_malformed_or_oversize_stream_closes_without_receipt(raw):
+    response=RawResponse(raw);client=OzonAccountingClient("fake","fake",session=RawSession(response))
+    with pytest.raises(OzonAccountingError): client._post("/test",{})
+    assert response.closed and client.page_receipts==[]
+
+
+def test_aggregate_stream_budget_cannot_be_bypassed_by_small_pages():
+    response=RawResponse(b'{}');client=OzonAccountingClient("fake","fake",session=RawSession(response))
+    client.byte_budget=1
+    with pytest.raises(OzonAccountingError): client._post("/test",{})
+    assert response.closed and not client.page_receipts
+
+
+def empty_client_snapshot():
+    pages=[{"result":{"items":[],"last_id":""}}, {"items":[],"cursor":""},
+           {"postings":[],"has_next":False}, {"postings":[],"has_next":False},
+           {"returns":[],"has_next":False}, {"accrual_types":[]},
+           {"accruals":[],"last_id":""}, {"accruals":[],"last_id":""}]
+    return OzonAccountingClient("fake","fake",session=Session(pages)).snapshot("2026-09-01","2026-09-02")
+
+
+class OzonCollectionQualityTests(DbTestCase):
+    def test_completed_empty_reads_are_not_confirmed_zero_profit(self):
+        snapshot=empty_client_snapshot();import_snapshot(snapshot)
+        result=workspace("2026-09-01","2026-09-02")
+        assert result["source_collection_complete"] is True
+        assert result["source_complete"] is False and result["accounting_complete"] is False
+        assert result["financial_normalization_verified"] is False
+        assert result["net_accrual_rub"] is None and result["profit_rub"] is None
+        assert result["estimate_after_known_cogs_rub"] is None
+
+    def test_legacy_or_incomplete_day_proof_does_not_claim_collection(self):
+        for mutation in (lambda s:s.pop("collection_provenance"),
+                         lambda s:s["collection_provenance"].update(completed_days=["2026-09-01"]),
+                         lambda s:s["collection_provenance"].update(schema_version=True),
+                         lambda s:s["collection_provenance"].update(financial_normalization_verified=True)):
+            snapshot=empty_client_snapshot();mutation(snapshot);import_snapshot(snapshot)
+            assert workspace("2026-09-01","2026-09-02")["source_collection_complete"] is False
+
+    def test_partial_remote_failure_preserves_existing_window(self):
+        import_snapshot(fixture_snapshot())
+        pages=[{"result":{"items":[],"last_id":""}}, {"items":[],"cursor":""},
+               {"postings":[],"has_next":False}, {"postings":[],"has_next":False},
+               {"returns":[],"has_next":False}, {"accrual_types":[]},
+               {"accruals":[],"last_id":""}, {"accruals":[],"last_id":False}]
+        with pytest.raises(OzonAccountingError):
+            candidate=OzonAccountingClient("fake","fake",session=Session(pages)).snapshot("2026-09-01","2026-09-02")
+            import_snapshot(candidate)
+        assert workspace("2026-09-01","2026-09-02")["net_accrual_rub"]=="-12.34"
+
+
+def test_deadline_and_network_failure_are_sanitized_and_never_get_receipts(monkeypatch):
+    import requests
+    import ozon_accounting_client as module
+    response=RawResponse(b'{}');client=OzonAccountingClient("fake","secret-marker",session=RawSession(response))
+    client.deadline=0
+    with pytest.raises(OzonAccountingError): client._post("/test",{})
+    assert client.session.kwargs is None
+    class BrokenSession:
+        def post(self,*args,**kwargs): raise requests.RequestException("secret-marker untrusted response")
+    client=OzonAccountingClient("fake","secret-marker",session=BrokenSession())
+    with pytest.raises(OzonAccountingError) as error: client._post("/test",{})
+    assert "secret-marker" not in str(error.value) and not client.page_receipts
+    client=OzonAccountingClient("fake","fake",session=RawSession(response))
+    ticks=iter([1,301]);client.deadline=300
+    monkeypatch.setattr(module.time,"monotonic",lambda:next(ticks))
+    with pytest.raises(OzonAccountingError): client._post("/test",{})
+    assert response.closed and not client.page_receipts

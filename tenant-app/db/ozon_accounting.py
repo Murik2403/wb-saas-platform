@@ -1,6 +1,6 @@
 """Tenant-local Ozon ledger, isolated from WB sales and FIFO movements."""
 from __future__ import annotations
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from decimal import Decimal, InvalidOperation
 import json
 import hashlib
@@ -96,6 +96,34 @@ def save_cost_mapping(sku, mode, unit_cost=None, nm_id=None, chrt_id=0):
         conn.execute("INSERT INTO ozon_cost_mapping_history(sku,before_json,after_json,changed_at) VALUES (?,?,?,?)", (str(sku),canonical(prior) if prior else None,canonical(after),now))
 
 
+def _collection_verified(data, start, end):
+    """Collection receipts describe bounded reads, never monetary interpretation."""
+    proof = data.get("collection_provenance")
+    if not isinstance(proof, dict) or type(proof.get("schema_version")) is not int or proof["schema_version"] != 1:
+        return False
+    if proof.get("terminal_pages_checked") is not True or proof.get("financial_normalization_verified") is not False:
+        return False
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    if first > last or (last-first).days > 30:
+        return False
+    days = [(first+timedelta(days=i)).isoformat() for i in range((last-first).days+1)]
+    if proof.get("start_date") != start or proof.get("end_date") != end or proof.get("completed_days") != days:
+        return False
+    receipts = proof.get("page_receipts")
+    if not isinstance(receipts, list) or not 6+len(days) <= len(receipts) <= 250:
+        return False
+    total = 0
+    for receipt in receipts:
+        if not isinstance(receipt, dict) or type(receipt.get("response_bytes")) is not int or not 0 < receipt["response_bytes"] <= 2*1024*1024:
+            return False
+        total += receipt["response_bytes"]
+        if any(not isinstance(receipt.get(key), str) or len(receipt[key]) != 64 or any(c not in "0123456789abcdef" for c in receipt[key]) for key in ("request_fingerprint", "response_fingerprint")):
+            return False
+    if total > 16*1024*1024:
+        return False
+    return all(any(r.get("endpoint") == "/v1/finance/accrual/by-day" and r["request_fingerprint"] == hashlib.sha256(canonical({"date":day,"last_id":""}).encode()).hexdigest() for r in receipts) for day in days)
+
+
 def workspace(start, end):
     with connect() as conn:
         ensure_schema(conn)
@@ -108,6 +136,12 @@ def workspace(start, end):
     types = {str(row.get("id")): row for row in data["types"]}
     net = Decimal(0); cogs = Decimal(0); sales_units = 0; covered_units = 0
     unknown_types = set(); blockers = set(); fees = {}; unknown_categories = set()
+    collection_verified = _collection_verified(data, start, end)
+    blockers.add("Автоматическая денежная нормализация Ozon и сверка компонентов с источником не подтверждены.")
+    if not collection_verified:
+        blockers.add("Полнота чтения страниц каждого дня не подтверждена; повторите загрузку.")
+    if not data["accruals"]:
+        blockers.add("Источник не вернул начислений; это не подтверждение нулевой прибыли или отсутствия продаж.")
     if data.get("identical_row_occurrences"):
         blockers.add("В источнике есть одинаковые строки начислений: все сохранены, уникальность операций не подтверждена.")
     def walk(value):
@@ -173,4 +207,4 @@ def workspace(start, end):
     for row in data["products"]:
         sku = str(row.get("sku") or "")
         products.append({"sku": sku,"offer_id": str(row.get("offer_id") or ""),"product_id": row.get("product_id"),"stocks": stocks.get(str(row.get("product_id")), []),"cost_mapping": mappings.get(sku)})
-    return {"loaded": True,"source_complete": True,"accounting_complete": not blockers,"period": {"start_date": start,"end_date": end},"synced_at": saved["created_at"],"net_accrual_rub": str(net),"estimated_cogs_rub": str(cogs),"profit_rub": None,"estimate_after_known_cogs_rub": str(net-cogs) if covered_units == sales_units and not blockers else None,"sales_and_return_units": sales_units,"known_cost_units": covered_units,"exact_fifo_units": 0,"blockers": sorted(blockers),"products": products,"source_counts": {key: len(data[key]) for key in ("products","stocks","fbo","fbs","returns","accruals")},"fees": [{"type_id": key,"name": types.get(key,{}).get("description") or types.get(key,{}).get("name") or "Неизвестный сбор","amount_rub": str(value),"mapped": key in types} for key,value in sorted(fees.items())],"returns_scope": "Текущий реестр всех возвратов, не сумма возвратов выбранного периода."}
+    return {"loaded": True,"source_complete": False,"source_collection_complete": collection_verified,"financial_normalization_verified": False,"accounting_complete": False,"period": {"start_date": start,"end_date": end},"synced_at": saved["created_at"],"net_accrual_rub": str(net) if data["accruals"] else None,"estimated_cogs_rub": str(cogs),"profit_rub": None,"estimate_after_known_cogs_rub": str(net-cogs) if covered_units == sales_units and not blockers else None,"sales_and_return_units": sales_units,"known_cost_units": covered_units,"exact_fifo_units": 0,"blockers": sorted(blockers),"products": products,"source_counts": {key: len(data[key]) for key in ("products","stocks","fbo","fbs","returns","accruals")},"fees": [{"type_id": key,"name": types.get(key,{}).get("description") or types.get(key,{}).get("name") or "Неизвестный сбор","amount_rub": str(value),"mapped": key in types} for key,value in sorted(fees.items())],"returns_scope": "Текущий реестр всех возвратов, не сумма возвратов выбранного периода."}
