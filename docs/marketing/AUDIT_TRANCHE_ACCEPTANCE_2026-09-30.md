@@ -144,3 +144,22 @@ Cherry-pick 81de476 в release как 7076485: канонические слои
 - Свежая backup `marketshelper_manual_20260930_014923_418534.zip` независимо проверена; rollback `wb-tenant-mvvorokov-rollback-20260930-014923`. Четыре deployment probes, 17 read-only API/HTML/assets, cash и Ozon live-проверки прошли. Точный image/revision/healthy совпали, default tenant tag обновлён.
 - В авторизованном живом Finance видны оформленные поля и кнопка «Создать счёт», правильная подпись «Сумма со знаком, ₽». Desktop viewport 1280, document scrollWidth 1265; новых кошельков, партий и финансовых операций не создавали. Временный viewport override сброшен. Mobile acceptance отдельно не заявляется.
 - Новый allocator пока schema/domain; full shop switching, lifecycle, secondary bridge, ACL и UI продолжают разрабатываться. Старые primary операции пока не подключены к новому allocator. Нельзя трактовать этот release как завершённый общий склад.
+
+
+## Общий склад: возвраты и карантин — 1f6f00f
+
+- Production tenant: `1f6f00f307774e5d15b88c77b505bd6e34b0318a`; immutable image `sha256:b75af33511d0f273fc1ceb8c5e86cf1540c66065b76d5e92fb6b7f6c07bac3d5`. Основной тег указывает на этот образ.
+- 469 tenant-тестов + 8 subtests, 382 API-теста, 8 source-gate тестов; clean gate 18/18. UI в этом пакете не менялся (предыдущая приёмка 133 теста / build относится к тому же UI). Независимый reviewer принял source 62da5dc по 102 тестам.
+- Зашифрованная backup `marketshelper_manual_20260930_021239_036254.zip` независимо восстановлена перед заменой. Rollback `wb-tenant-mvvorokov-rollback-20260930-021238`.
+- Private restored clone: candidate/rollback API, денежные счета, CSV/переводы, Ozon sale/return/resale, integrity/FK приняты; перед old-image проверками восстановлен pre-business snapshot. 5 параллельных API вернули 200; память 544210944 из лимита 1610612736 байт, OOM false/restart0. Реальные денежные записи не создавались.
+- После deploy: 17 API/HTML/assets checks, OCI revision/healthy, live cash accounts и Ozon coverage приняты. Ozon loaded=false, автоматическое API-покрытие не заявлено.
+- Это ядро резервов/возвратов, ещё не полноценное подключение операционных экранов нескольких магазинов. После будущих shared-stock операций откат до старой логики требует восстановления проверенной базы с сохранением последующих реальных данных.
+
+## Привязка калькулятора к каталогу — live acceptance
+
+- Gateway `3785251cf7ae03166f41f8a47564c4ef65cff753` image `sha256:6d71cb56b6fedea8e373af75358e78a27d60bfdde450b74b5b9472360c58253f`; provisioner `0eb4746d06dcc9356ca95b26a7096efb014495c6` image `sha256:99fd4efe198af2b757ff3c2aa407e898bb349ea842ea3a1450cfb77aac4bab72`.
+- Provisioner approved pin обновлён на exact tenant 1f6f00f; fresh encrypted restore-verified backup `gateway-provisioner-0eb4746d06dc-1790734475209804087.sqlite3.enc`, rollback `wb-saas-provisioner-1-rollback-1790734476065327581`. Demo/tenant не пересоздавались этим pin update.
+- 103 provisioner-теста, 30 независимых reader/bridge тестов; active WAL private fixture 12 согласованных чтений. Docker proxy EXEC не расширялся; fixed-argv UID10001 read-only/network-none helper читает только ожидаемый volume и удаляется.
+- Рабочий браузер owner: каталог 37 товаров; выбран WB308044778; сохранён новый private сценарий `e5f06d55-77a8-40dc-91a6-7e3589bd0f78` «Проверка привязки SKU — вымышленные суммы»; повторное открытие показывает снимок привязки и те же 426 ₽, 35,5%, coverage1/9. Ручные суммы не объявлены фактическими; себестоимость рабочего товара не изменена.
+- Попытка save во время смены tenant image остановилась fail-closed, выбранный SKU сохранился в черновике. После verified pin update повтор успешен. Не привязанный сценарий вместо запрошенного не сохранялся.
+- Серверные exact UUID replay / identity / CSRF / membership / immutability gates покрыты тестами; повторный GET в браузере не выдается за повторный POST.
