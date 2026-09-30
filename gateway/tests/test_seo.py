@@ -188,6 +188,17 @@ class PageMetadataTests(unittest.TestCase):
         for field in ("calcStorage", "calcAcceptance", "calcReturns", "calcTax", "calcCapital"):
             self.assertIn(f'id="{field}"', calculator)
 
+    def test_calculator_limits_exclude_unentered_values_without_denying_available_fields(self) -> None:
+        html = self.client.get("/calculator").text
+        region = re.search(r'<section id="limits".*?</section>', html, re.S).group(0)
+        self.assertIn("не введённые возвраты, брак и потери", region)
+        self.assertIn("не введённый налог", region)
+        self.assertIn("отдельных полей", region)
+        self.assertIn("не подтверждает ваши суммы", region)
+        self.assertNotIn("только заполненные и подтверждённые данные", region)
+        self.assertNotIn("<li>возвраты, брак", region)
+        self.assertNotIn("<li>налоги и общие", region)
+
 
 class GuideAuthorshipTests(unittest.TestCase):
     """E-E-A-T: a guide without a visible author and date is an anonymous page.
