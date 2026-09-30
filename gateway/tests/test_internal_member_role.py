@@ -1,7 +1,9 @@
 """Actual HTTP acceptance of fresh tenant-scoped delegation role reads."""
+import asyncio
+import json
+from types import SimpleNamespace
 from unittest import mock
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import config
 import internal_routes
 from internal_auth import tenant_credential
@@ -26,16 +28,40 @@ class TenantMemberRoleTests(GatewayDbTestCase):
         self.db_patch = mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect))
         self.secret_patch.start(); self.db_patch.start()
         app = FastAPI(); app.include_router(internal_routes.router)
-        self.client = TestClient(app)
+        self.app = app
 
     def tearDown(self):
-        self.client.close()
         self.db_patch.stop(); self.secret_patch.stop()
         super().tearDown()
 
     def read(self, account=None, slug="synthetic-a", secret=None):
-        return self.client.post("/internal/tenant-member-role", json={"slug": slug, "account": str(account or self.owner)},
+        return self.post(json={"slug": slug, "account": str(account or self.owner)},
             headers={"X-Internal-Secret": secret or tenant_credential("synthetic-master-not-live", slug)})
+
+    def post(self, *, json, headers=None):
+        """Exercise real ASGI HTTP routing without a test-only transport dependency.
+
+        Production Gateway does not ship httpx/httpx2. No route handler or
+        authentication method is replaced; only the isolated DB/config fixture is supplied.
+        """
+        encoded = __import__('json').dumps(json).encode()
+        events = []
+        async def receive():
+            return {"type": "http.request", "body": encoded, "more_body": False}
+        async def send(message):
+            events.append(message)
+        scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+                 "method": "POST", "scheme": "http", "path": "/internal/tenant-member-role",
+                 "raw_path": b"/internal/tenant-member-role", "query_string": b"",
+                 "headers": [(b"host", b"127.0.0.1"), (b"content-type", b"application/json")]+
+                            [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()],
+                 "client": ("127.0.0.1", 10001), "server": ("127.0.0.1", 8000)}
+        asyncio.run(self.app(scope, receive, send))
+        started = next(event for event in events if event['type'] == 'http.response.start')
+        body = b''.join(event.get('body', b'') for event in events if event['type'] == 'http.response.body')
+        return SimpleNamespace(status_code=started['status'],
+                               headers={key.decode(): value.decode() for key, value in started['headers']},
+                               json=lambda: __import__('json').loads(body))
 
     def test_current_role_and_revocation_visible_without_cache(self):
         response = self.read()
@@ -73,10 +99,10 @@ class TenantMemberRoleTests(GatewayDbTestCase):
     def test_strict_account_and_tenant_dto(self):
         for account in (True, 1, "0", "01", "-1", "owner@example.com", "9223372036854775808"):
             with self.subTest(account=account):
-                response = self.client.post("/internal/tenant-member-role", json={"slug": "synthetic-a", "account": account})
+                response = self.post(json={"slug": "synthetic-a", "account": account})
                 self.assertEqual(response.status_code, 422)
         for payload in ({"slug": "../other", "account": "1"}, {"slug": "synthetic-a", "account": "1", "role": "owner"}):
-            self.assertEqual(self.client.post("/internal/tenant-member-role", json=payload).status_code, 422)
+            self.assertEqual(self.post(json=payload).status_code, 422)
 
     def test_unconfigured_secret_never_authenticates(self):
         with mock.patch.object(config, "INTERNAL_API_SECRET", ""):
