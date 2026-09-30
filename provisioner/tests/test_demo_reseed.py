@@ -226,3 +226,18 @@ def test_readonly_snapshot_preserves_uncheckpointed_wal(tmp_path):
         reader.close()
         namespace['scratch'].cleanup()
         writer.close()
+
+
+def test_demo_backup_restore_helpers_use_fixed_data_owner(monkeypatch, tmp_path):
+    client=Mock()
+    monkeypatch.setattr(app,'BACKUP_MOUNT',tmp_path)
+    monkeypatch.setattr(app,'BACKUP_ENCRYPTION_KEY','x'*40)
+    def tar(*args,**kwargs):
+        assert kwargs['user']=='10001:10001'
+        (tmp_path/'demo'/kwargs['command'][2].split('/')[-1]).write_bytes(b'fixture')
+    client.containers.run.side_effect=tar
+    monkeypatch.setattr(app,'encrypt_file',lambda src,dst,key:dst.write_bytes(b'encrypted'))
+    app._backup_volume('wb-tenant-data-demo','demo',14,client)
+    client.containers.run.side_effect=[b'',b'',b'ok']
+    app._restore_demo_backup('wb-tenant-data-demo','demo','.snapshot.tar.gz',client)
+    assert all(call.kwargs['user']=='10001:10001' for call in client.containers.run.call_args_list[-3:])

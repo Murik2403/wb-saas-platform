@@ -371,6 +371,7 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
     try:
         client.containers.run(
             BACKUP_HELPER_IMAGE,
+            **({"user": "10001:10001"} if backup_group == "demo" else {}),
             command=["tar", "czf", f"/backup/{backup_group}/{plain_name}", "-C", "/data", "."],
             volumes={
                 volume_name: {"bind": "/data", "mode": "ro"},
@@ -531,6 +532,7 @@ def _restore_demo_backup(volume_name: str, slug: str, verified_name: str, client
     # only this tenant DB's sidecars before unpacking the verified snapshot.
     client.containers.run(
         BACKUP_HELPER_IMAGE,
+        user="10001:10001",
         command=["rm", "-f", "/data/wb_dashboard.sqlite3-wal", "/data/wb_dashboard.sqlite3-shm", "/data/wb_dashboard.sqlite3-journal"],
         volumes={volume_name: {"bind": "/data", "mode": "rw"}},
         remove=True,
@@ -542,6 +544,7 @@ def _restore_demo_backup(volume_name: str, slug: str, verified_name: str, client
     )
     client.containers.run(
         BACKUP_HELPER_IMAGE,
+        user="10001:10001",
         command=["tar", "xzf", f"/backup/{slug}/{verified_name}", "-C", "/data"],
         volumes={
             volume_name: {"bind": "/data", "mode": "rw"},
