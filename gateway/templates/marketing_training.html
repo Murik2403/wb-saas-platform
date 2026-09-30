@@ -9,8 +9,9 @@
 </style>{% endblock %}
 {% block marketing_content %}
 <section class="mk-hero"><p class="mk-kicker">Обучение работе в кабинете</p><h1>Откройте нужный раздел и проверьте результат</h1>
-<p class="mk-lead">Короткие видео и текстовые шаги по 11 разделам MARKETSHELPER. Все цифры и операции в записи — учебные. Они не относятся к вашему магазину.</p>
+<p class="mk-lead">11 вводных уроков по разделам MARKETSHELPER: короткие видео и текстовые шаги для чтения экранов и проверки данных. Все цифры в записи — учебные. Они не относятся к вашему магазину.</p>
 <p>Видео без озвучки: инструкции показаны на экране и доступны текстом под каждым уроком. Перед действием проверьте выбранный магазин, период, данные и свои права.</p></section>
+<p>В записи внешние операции WB не выполняются. Уроки знакомят с разделами; они не заменяют подробный разбор выпуска, платежей, импорта и других операций на ваших данных.</p>
 {% if training_overview %}<section class="mk-section mk-card" aria-labelledby="overview-title"><h2 id="overview-title">Краткий обзор кабинета</h2>
 <video class="training-video" controls playsinline preload="none" aria-label="Краткий обзор кабинета на учебных данных"><source src="{{ training_overview.url }}" type="video/mp4">Ваш браузер не поддерживает видео. Используйте ссылку для скачивания.</video>
 <a href="{{ training_overview.url }}" download>Скачать обзор MP4</a></section>{% endif %}
