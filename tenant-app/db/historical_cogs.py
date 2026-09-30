@@ -110,7 +110,7 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
             expected_sign = 1 if event_type == "sale" else -1
             sign_is_valid = exact_value is not None and (exact_value >= 0 if event_type == "sale" else exact_value <= 0)
             if sign_is_valid:
-                cogs, cogs_source = exact_value, "manual_source_fifo" if reason=='shared_fifo_manual_source' else "exact_fifo"
+                cogs, cogs_source = exact_value, "manual_source_fifo" if status=='manual_source' else "exact_fifo"
             else:
                 cogs_source = "insufficient"
                 reason = "exact_fifo_cost_missing_or_wrong_sign"

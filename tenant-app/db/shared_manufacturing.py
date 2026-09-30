@@ -23,6 +23,8 @@ def consume(conn,movement_id,nm_id,chrt_id,quantity,document_date,source_key):
     from .fifo_finished_goods import _update_finished_layer_status
     if not conn.in_transaction:raise warehouse.WarehouseError('Производственное списание требует общей транзакции')
     quantity=warehouse.integer(quantity);day=warehouse.day(document_date)
+    from .finished_history_import import operation_guard
+    operation_guard(conn,nm_id,day)
     movement=conn.execute("SELECT * FROM inventory_movements WHERE id=? AND movement_type='production_receipt' AND status='applied'",(movement_id,)).fetchone()
     if not movement or movement['source_task_key']!=source_key or str(movement['movement_date'])[:10]!=day:
         raise warehouse.WarehouseScopeError('Списание связано только с подтверждённым документом производства')

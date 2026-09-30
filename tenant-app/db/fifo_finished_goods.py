@@ -31,10 +31,12 @@ def _baseline_product_cost(conn: sqlite3.Connection, nm_id: int) -> float:
 
 def _finished_layer_totals(conn: sqlite3.Connection, nm_id: int, location: str, chrt_id: int = 0) -> tuple[int, float]:
     column = _finished_location_column(location)
+    from .finished_history_import import register_valuation
+    register_valuation(conn)
     row = conn.execute(
         f"""
         SELECT COALESCE(SUM({column}),0) AS units,
-               COALESCE(SUM({column}*unit_cost_rub),0) AS amount
+               COALESCE(SUM(finished_location_amount(id,'{location}',{column},unit_cost_rub)),0) AS amount
           FROM finished_goods_cost_layers
          WHERE nm_id=? AND status<>'reversed' AND {column}>0
            AND chrt_id=?
@@ -202,6 +204,9 @@ def _move_finished_goods_fifo(
     from .shared_warehouse import managed, WarehouseScopeError
     if managed(conn,int(nm_id),int(chrt_id)):
         raise WarehouseScopeError('Общий SKU перемещается только центральным распределителем с shop identity')
+    from .finished_history_import import operation_guard
+    movement=conn.execute('SELECT movement_date FROM inventory_movements WHERE id=?',(movement_id,)).fetchone()
+    operation_guard(conn,nm_id,movement['movement_date'] if movement else None)
     qty = max(0, int(units or 0))
     if qty <= 0:
         return 0.0, []
@@ -240,7 +245,9 @@ def _move_finished_goods_fifo(
         take = min(available, remaining)
         if take <= 0:
             continue
-        amount = round(take * float(row["unit_cost_rub"] or 0), 2)
+        from .finished_history_import import physical_amount
+        imported_amount=physical_amount(conn,int(row["id"]),from_location,take)
+        amount = imported_amount if imported_amount is not None else round(take * float(row["unit_cost_rub"] or 0), 2)
         assignments = [f"{from_col}={from_col}-?"]
         params: list[Any] = [take]
         if to_col:
@@ -296,7 +303,25 @@ def _move_dispatch_allocation_to_wb(
         take = min(max(0, int(row["units"] or 0)), max(0, int(row["inbound_units"] or 0) - held_units(conn, int(row["layer_id"]), "inbound")), remaining)
         if take <= 0:
             continue
-        amount = round(take * float(row["unit_cost_rub"] or 0), 2)
+        from .finished_history_import import physical_amount
+        from .finished_history_import import operation_guard
+        layer_identity=conn.execute('SELECT nm_id FROM finished_goods_cost_layers WHERE id=?',(row['layer_id'],)).fetchone()
+        receipt_day=conn.execute('SELECT movement_date FROM inventory_movements WHERE id=?',(receipt_movement_id,)).fetchone()
+        operation_guard(conn,layer_identity['nm_id'],receipt_day['movement_date'] if receipt_day else None)
+        imported_amount=physical_amount(conn,int(row["layer_id"]),"inbound",int(row["inbound_units"]))
+        if imported_amount is not None:
+            from .finished_history_import import cents,part
+            movement=conn.execute('SELECT reference_movement_id FROM inventory_movements WHERE id=?',(receipt_movement_id,)).fetchone()
+            if not movement or movement['reference_movement_id']!=dispatch_movement_id:raise ValueError('CSV receipt requires its original dispatch document')
+            consumed=conn.execute("SELECT COALESCE(SUM(a.units),0) units,COALESCE(SUM(a.amount_rub),0) amount FROM finished_goods_fifo_allocations a JOIN inventory_movements m ON m.id=a.movement_id WHERE a.layer_id=? AND a.from_location='inbound' AND a.to_location='wb' AND a.status='applied' AND a.reversed_at IS NULL AND m.reference_movement_id=?",(row['layer_id'],dispatch_movement_id)).fetchone()
+            available_source=int(row['units'])-int(consumed['units'])
+            take=min(take,max(0,available_source))
+            if take<=0:continue
+            source_money=cents(row['amount_rub'])-cents(consumed['amount'])
+            amount_cents=part(source_money,take,available_source)
+            if source_money<0 or amount_cents>cents(imported_amount):raise ValueError('CSV dispatch cost lineage mismatch')
+            imported_amount=amount_cents/100
+        amount = imported_amount if imported_amount is not None else round(take * float(row["unit_cost_rub"] or 0), 2)
         conn.execute(
             "UPDATE finished_goods_cost_layers SET inbound_units=inbound_units-?,wb_units=wb_units+?,updated_at=? WHERE id=?",
             (take, take, now, int(row["layer_id"])),
@@ -492,6 +517,8 @@ def read_finished_goods_fifo_allocations(limit: int = 500) -> pd.DataFrame:
 def read_finished_goods_fifo_summary() -> pd.DataFrame:
     from .core import connect
     with connect() as conn:
+        from .finished_history_import import register_valuation
+        register_valuation(conn)
         return pd.read_sql_query(
             """
             WITH latest_stock AS (SELECT MAX(snapshot_at) AS snapshot_at FROM stocks),
@@ -501,11 +528,11 @@ def read_finished_goods_fifo_summary() -> pd.DataFrame:
             ), goods AS (
                 SELECT nm_id,
                        SUM(CASE WHEN status<>'reversed' THEN ready_units ELSE 0 END) AS ready_layer_units,
-                       SUM(CASE WHEN status<>'reversed' THEN ready_units*unit_cost_rub ELSE 0 END) AS ready_amount,
+                       SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'ready',ready_units,unit_cost_rub) ELSE 0 END) AS ready_amount,
                        SUM(CASE WHEN status<>'reversed' THEN inbound_units ELSE 0 END) AS inbound_layer_units,
-                       SUM(CASE WHEN status<>'reversed' THEN inbound_units*unit_cost_rub ELSE 0 END) AS inbound_amount,
+                       SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'inbound',inbound_units,unit_cost_rub) ELSE 0 END) AS inbound_amount,
                        SUM(CASE WHEN status<>'reversed' THEN wb_units ELSE 0 END) AS wb_layer_units,
-                       SUM(CASE WHEN status<>'reversed' THEN wb_units*unit_cost_rub ELSE 0 END) AS wb_amount,
+                       SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'wb',wb_units,unit_cost_rub) ELSE 0 END) AS wb_amount,
                        COUNT(CASE WHEN status='active' THEN 1 END) AS active_layers
                   FROM finished_goods_cost_layers GROUP BY nm_id
             ), ids AS (
@@ -544,6 +571,8 @@ def read_inventory_valuation() -> pd.DataFrame:
     """Current quantity/value snapshot using location-specific finished-goods FIFO where available."""
     from .core import connect
     with connect() as conn:
+        from .finished_history_import import register_valuation
+        register_valuation(conn)
         return pd.read_sql_query(
             """
             WITH latest_stock AS (
@@ -565,11 +594,11 @@ def read_inventory_valuation() -> pd.DataFrame:
             ), goods AS (
                 SELECT nm_id,
                        SUM(CASE WHEN status<>'reversed' THEN ready_units ELSE 0 END) AS ready_layer_units,
-                       SUM(CASE WHEN status<>'reversed' THEN ready_units*unit_cost_rub ELSE 0 END) AS ready_layer_amount,
+                       SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'ready',ready_units,unit_cost_rub) ELSE 0 END) AS ready_layer_amount,
                        SUM(CASE WHEN status<>'reversed' THEN inbound_units ELSE 0 END) AS inbound_layer_units,
-                       SUM(CASE WHEN status<>'reversed' THEN inbound_units*unit_cost_rub ELSE 0 END) AS inbound_layer_amount,
+                       SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'inbound',inbound_units,unit_cost_rub) ELSE 0 END) AS inbound_layer_amount,
                        SUM(CASE WHEN status<>'reversed' THEN wb_units ELSE 0 END) AS wb_layer_units,
-                       SUM(CASE WHEN status<>'reversed' THEN wb_units*unit_cost_rub ELSE 0 END) AS wb_layer_amount,
+                       SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'wb',wb_units,unit_cost_rub) ELSE 0 END) AS wb_layer_amount,
                        COUNT(CASE WHEN status='active' THEN 1 END) AS active_finished_layers
                   FROM finished_goods_cost_layers GROUP BY nm_id
             ), ids AS (

@@ -12,6 +12,8 @@ FIELDS = {
     "materials": ["source_id", "material_name", "unit"],
     "opening_materials": ["source_id", "material_name", "unit", "quantity", "unit_cost_rub", "source_date"],
 }
+from . import finished_history_import as finished_history
+FIELDS.update(finished_history.FIELDS)
 UNITS = {"м", "кг", "л", "шт"}
 
 def _json(value): return json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(",",":"),allow_nan=False)
@@ -25,11 +27,14 @@ def _schema(conn):
       kind TEXT NOT NULL, source_id TEXT NOT NULL, batch_key TEXT NOT NULL,
       entity_key TEXT NOT NULL, snapshot_json TEXT NOT NULL, PRIMARY KEY(kind,source_id))""")
 
+    conn.execute("CREATE TRIGGER IF NOT EXISTS migration_batches_no_replace BEFORE INSERT ON migration_import_batches WHEN EXISTS(SELECT 1 FROM migration_import_batches WHERE request_key=NEW.request_key OR content_hash=NEW.content_hash) BEGIN SELECT RAISE(ABORT,'Import history immutable'); END")
+    conn.execute("CREATE TRIGGER IF NOT EXISTS migration_sources_no_replace BEFORE INSERT ON migration_import_sources WHEN EXISTS(SELECT 1 FROM migration_import_sources WHERE kind=NEW.kind AND source_id=NEW.source_id) BEGIN SELECT RAISE(ABORT,'Import history immutable'); END")
     for table in ("migration_import_batches", "migration_import_sources"):
         for operation in ("UPDATE", "DELETE"):
             conn.execute(f"CREATE TRIGGER IF NOT EXISTS {table}_{operation.lower()}_immutable BEFORE {operation} ON {table} BEGIN SELECT RAISE(ABORT, 'Import history is immutable'); END")
 
 def parse_csv(kind, text, mapping):
+    if kind in finished_history.FIELDS:return finished_history.parse(kind,text,mapping)
     if kind not in FIELDS: raise ValueError("Неизвестный тип импорта")
     if len(text.encode("utf-8"))>1_000_000: raise ValueError("CSV больше 1 МБ")
     if "\x00" in text: raise ValueError("CSV содержит недопустимый символ")
@@ -77,6 +82,7 @@ def parse_csv(kind, text, mapping):
     return rows,errors
 
 def _preview(conn, kind, text, mapping):
+    if kind in finished_history.FIELDS:return finished_history.preview(conn,kind,text,mapping)
     rows,errors=parse_csv(kind,text,mapping)
     states=[]
     for item in rows:
@@ -113,6 +119,9 @@ def preview_import(kind,text,mapping):
 def confirm_import(kind,text,mapping,request_key,preview_fingerprint,actor=None):
     rows,errors=parse_csv(kind,text,mapping)
     if errors: raise ValueError("Исправьте ошибки CSV перед подтверждением")
+    if kind=='historical_documents':
+        from .core import ensure_financial_schema
+        ensure_financial_schema()
     content_hash=_hash({"kind":kind,"rows":rows})
     request_hash=_hash({"content":content_hash,"preview":preview_fingerprint})
     with connect() as conn:
@@ -127,9 +136,11 @@ def confirm_import(kind,text,mapping,request_key,preview_fingerprint,actor=None)
         if current["preview_fingerprint"]!=preview_fingerprint: raise ValueError("Данные изменились: повторите предпросмотр")
         if not current["can_confirm"]: raise ValueError("Импорт заблокирован ошибками; существующие данные не заменяются")
         now=datetime.now(timezone.utc).isoformat()
+        if kind in finished_history.FIELDS:finished_history.apply(conn,kind,rows,current["_plans"])
         for item in rows:
             row=item["data"]; key=item["entity_key"]
-            if kind=="products":
+            if kind in finished_history.FIELDS:pass
+            elif kind=="products":
                 conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,product_name,updated_at,raw_json) VALUES(?,?,?,?,?)",
                   (row["nm_id"],row["supplier_article"],row["product_name"],now,_json({"migration_source":row["source_id"],"sizes":[]})))
             elif kind=="materials":

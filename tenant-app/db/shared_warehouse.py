@@ -328,6 +328,8 @@ def register_item(nm_id,chrt_id,name,*,_conn=None):
         validate_catalog_identity(conn,nm_id,chrt_id,True)
         old=conn.execute('SELECT * FROM warehouse_items WHERE nm_id=? AND chrt_id=?',(nm_id,chrt_id)).fetchone()
         if old:return dict(old)
+        from .finished_history_import import central_setup_guard
+        central_setup_guard(conn,nm_id)
         item=str(uuid.uuid4());conn.execute('INSERT INTO warehouse_items(id,nm_id,chrt_id,name,created_at) VALUES(?,?,?,?,?)',(item,nm_id,chrt_id,text(name),now()))
         return dict(conn.execute('SELECT * FROM warehouse_items WHERE id=?',(item,)).fetchone())
 

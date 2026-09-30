@@ -501,7 +501,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # history and did not reverse COGS in the return's operation period.
         reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())
         financial['shared_fifo_manual_source_rows'] = int((reconciliation['reason']=='shared_fifo_manual_source').sum()) if not reconciliation.empty else 0
-        if financial['shared_fifo_manual_source_rows']:
+        financial['migration_manual_source_rows'] = int(reconciliation['reason'].str.startswith('migration_',na=False).sum()) if not reconciliation.empty else 0
+        if financial['shared_fifo_manual_source_rows'] or financial['migration_manual_source_rows']:
             financial['financial_period_complete'] = False
         _cogs_rows, cogs_by_nm, cogs_store = project_historical_cogs(reconciliation)
         financial["cost"] = float(cogs_store["cogs_rub"])

@@ -18,7 +18,7 @@ from .core import connect
 # Only source layers with a recorded production or procurement cost are accepted
 # as exact by this diagnostic. Opening/reconciliation/synthetic layers need their
 # provenance reviewed before they can support a financial FIFO scenario.
-_TRUSTED_LAYER_SOURCES = {"production", "production_wip", "procurement_product"}
+_TRUSTED_LAYER_SOURCES = {"migration_finished_opening", "production", "production_wip", "procurement_product"}
 _PLACEHOLDER_LAYER_SOURCES = {
     "synthetic_sale", "return_unmatched", "opening_wb", "opening_ready",
     "opening_inbound", "reconstruction_cost_pending",
@@ -164,6 +164,7 @@ def _reconcile(
         result["matched_units"] = units
         observed_total = 0.0
         all_exact = True
+        manual_opening = False
         reasons: list[str] = []
         sources: list[str] = []
         for event in matches:
@@ -209,6 +210,7 @@ def _reconcile(
                 continue
             event_sources = _source_summary(item.get("source_type") for item in event_allocations)
             sources.extend(event_sources)
+            manual_opening = manual_opening or "migration_finished_opening" in event_sources
             if any(source in _PLACEHOLDER_LAYER_SOURCES or source not in _TRUSTED_LAYER_SOURCES for source in event_sources):
                 all_exact = False
                 if any(source in _PLACEHOLDER_LAYER_SOURCES for source in event_sources):
@@ -227,7 +229,7 @@ def _reconcile(
         result["layer_sources"] = _source_summary(sources)
         if all_exact:
             result.update(
-                status="exact", reason="", eligible_fifo_cogs_rub=round(observed_total * sign, 2),
+                status="manual_source" if manual_opening else "exact", reason="migration_manual_source" if manual_opening else "", eligible_fifo_cogs_rub=round(observed_total * sign, 2),
                 observed_fifo_cost_rub=round(observed_total, 2),
             )
         else:
@@ -316,6 +318,8 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
         rows = _reconcile(financial_rows, fifo_events, allocation_rows, baseline_rates)
         from shared_warehouse_finance import apply_projection
         rows = apply_projection(conn,financial_rows,rows)
+        from .finished_history_import import project
+        rows = project(conn,financial_rows,rows)
     return pd.DataFrame(rows, columns=_COLUMNS)
 
 

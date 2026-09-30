@@ -28,6 +28,8 @@ FIFO_SYNC_GUARD_META_KEY = "finished_goods_fifo_sync_guard_v55"
 
 
 def _wb_fifo_reconciliation_context_with_conn(conn: sqlite3.Connection) -> dict[str, Any]:
+    from .finished_history_import import register_valuation
+    register_valuation(conn)
     """Diagnostic context for WB stock/FIFO reconciliation.
 
     WB stock snapshots can temporarily lose warehouse granularity and be returned as
@@ -65,7 +67,7 @@ def _wb_fifo_reconciliation_context_with_conn(conn: sqlite3.Connection) -> dict[
     fifo_row = conn.execute(
         """
         SELECT COALESCE(SUM(CASE WHEN status<>'reversed' THEN wb_units ELSE 0 END),0) AS units,
-               COALESCE(SUM(CASE WHEN status<>'reversed' THEN wb_units*unit_cost_rub ELSE 0 END),0) AS amount
+               COALESCE(SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'wb',wb_units,unit_cost_rub) ELSE 0 END),0) AS amount
           FROM finished_goods_cost_layers
         """
     ).fetchone()
@@ -231,6 +233,8 @@ def _wb_incident_label(warehouse_name: str) -> str:
     return ""
 
 def _read_wb_incident_reconciliation_with_conn(conn: sqlite3.Connection) -> pd.DataFrame:
+    from .finished_history_import import register_valuation
+    register_valuation(conn)
     """Per-SKU diagnostic model for possible external WB warehouse losses.
 
     The model starts from the last detailed stock snapshot, adds only explicitly
@@ -302,7 +306,7 @@ def _read_wb_incident_reconciliation_with_conn(conn: sqlite3.Connection) -> pd.D
         """
         SELECT nm_id,
                COALESCE(SUM(CASE WHEN status<>'reversed' THEN wb_units ELSE 0 END),0) AS fifo_wb_units,
-               COALESCE(SUM(CASE WHEN status<>'reversed' THEN wb_units*unit_cost_rub ELSE 0 END),0) AS fifo_wb_amount
+               COALESCE(SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'wb',wb_units,unit_cost_rub) ELSE 0 END),0) AS fifo_wb_amount
           FROM finished_goods_cost_layers GROUP BY nm_id
         """, conn,
     )
@@ -492,6 +496,8 @@ def read_wb_incident_reconciliation() -> pd.DataFrame:
         return _read_wb_incident_reconciliation_with_conn(conn)
 
 def _fifo_reconciliation_preview_with_conn(conn: sqlite3.Connection) -> pd.DataFrame:
+    from .finished_history_import import register_valuation
+    register_valuation(conn)
     """Return diagnostic physical-vs-layer differences for ready, inbound and WB balances.
 
     WB rows are diagnostic only. They are never automatically reconciled because
@@ -513,11 +519,11 @@ def _fifo_reconciliation_preview_with_conn(conn: sqlite3.Connection) -> pd.DataF
         ), goods AS (
             SELECT nm_id,
                    SUM(CASE WHEN status<>'reversed' THEN ready_units ELSE 0 END) AS ready_layer_units,
-                   SUM(CASE WHEN status<>'reversed' THEN ready_units*unit_cost_rub ELSE 0 END) AS ready_amount,
+                   SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'ready',ready_units,unit_cost_rub) ELSE 0 END) AS ready_amount,
                    SUM(CASE WHEN status<>'reversed' THEN inbound_units ELSE 0 END) AS inbound_layer_units,
-                   SUM(CASE WHEN status<>'reversed' THEN inbound_units*unit_cost_rub ELSE 0 END) AS inbound_amount,
+                   SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'inbound',inbound_units,unit_cost_rub) ELSE 0 END) AS inbound_amount,
                    SUM(CASE WHEN status<>'reversed' THEN wb_units ELSE 0 END) AS wb_layer_units,
-                   SUM(CASE WHEN status<>'reversed' THEN wb_units*unit_cost_rub ELSE 0 END) AS wb_amount
+                   SUM(CASE WHEN status<>'reversed' THEN finished_location_amount(id,'wb',wb_units,unit_cost_rub) ELSE 0 END) AS wb_amount
               FROM finished_goods_cost_layers GROUP BY nm_id
         ), ids AS (
             SELECT nm_id FROM products_catalog UNION SELECT nm_id FROM product_pipeline

@@ -38,4 +38,20 @@ describe('MigrationImport',()=>{
   expect(calls).toHaveLength(2);expect(calls[0][1]?.body).toEqual(calls[1][1]?.body);
   await waitFor(()=>expect(window.confirm).toHaveBeenCalledTimes(1));
  });
+ it('finished template separates original and remaining and is manual preview only',async()=>{
+  render(<MigrationImport role="owner" onRefresh={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.change(screen.getByLabelText('Тип импорта'),{target:{value:'finished_lots'}});
+  fireEvent.click(screen.getByRole('button',{name:'Заполнить пример шаблона'}));
+  expect((screen.getByLabelText('CSV: можно вставить текст') as HTMLTextAreaElement).value).toContain('original_units;remaining_units');
+  expect(screen.getByRole('note')).toHaveTextContent('Источник ручной: отчёт остаётся предварительным');
+  expect(fetch).not.toHaveBeenCalled();expect(screen.queryByRole('button',{name:'Подтвердить импорт'})).not.toBeInTheDocument();
+ });
+ it('history template retains negative returned revenue and positive return logistics with explicit sequence',()=>{
+  render(<MigrationImport role="manager" onRefresh={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.change(screen.getByLabelText('Тип импорта'),{target:{value:'historical_documents'}});
+  fireEvent.click(screen.getByRole('button',{name:'Заполнить пример шаблона'}));
+  const text=(screen.getByLabelText('CSV: можно вставить текст') as HTMLTextAreaElement).value;
+  expect(text).toContain('operation_date;sequence;event_type');expect(text).toContain('-100;-90;-10;5;0;0;0;0');
+  expect(screen.getByRole('note')).toHaveTextContent('одним полным файлом');
+ });
 });

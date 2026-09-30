@@ -230,6 +230,16 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
             try:
                 nm_id=int(row["nm_id"] or 0); article=str(row["supplier_article"] or ""); product=str(row["product_name"] or "")
                 chrt_id=_sales_raw_chrt_id(row["raw_json"])
+                from .finished_history_import import cutoff
+                imported_cutoff=cutoff(conn,nm_id)
+                if imported_cutoff:
+                    try:datetime.fromisoformat(str(row['sale_date'] or '')[:10])
+                    except ValueError:raise ValueError('CSV cutover: отсутствует дата продажи/возврата')
+                if imported_cutoff and str(row['sale_date'] or '')[:10]<imported_cutoff:
+                    _insert_sales_fifo_event(conn,row,'return' if int(row['is_return'] or 0) else 'sale','baseline',0,None,None,'CSV cutover: историческая физика уже отражена в начальном остатке')
+                    conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    result['processed']+=1
+                    continue
                 from .shared_warehouse import managed, WarehouseScopeError
                 if managed(conn,nm_id,chrt_id):
                     raise WarehouseScopeError('Продажа или возврат общего SKU требует явного магазина и центрального распределителя')
@@ -276,6 +286,8 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
                     if matched is not None:
                         matched_id=int(matched["id"])
                         fifo_cost,restored=_restore_return_to_original_layers(conn,movement_id,matched,1)
+                    if restored<1 and imported_cutoff:
+                        raise ValueError('CSV archive return unresolved: требуется отдельный подтверждённый документ, синтетический остаток запрещён')
                     if restored<1:
                         matched_rate=max(0.0,float(matched["unit_cost_rub"] or 0)) if matched is not None else 0.0
                         rate=matched_rate if matched_rate>0 else _baseline_product_cost(conn,nm_id)
