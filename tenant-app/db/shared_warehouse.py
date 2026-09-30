@@ -288,10 +288,9 @@ def transaction(supplied=None):
         yield connection
 
 
-def register_shop(shop_id,verified_identity,primary_accounts=()):
+def register_shop(shop_id,verified_identity,primary_accounts=(),*,_conn=None):
     shop_id=integer(shop_id,True);identity=text(verified_identity,200)
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE')
+    with transaction(_conn) as conn:
         old=conn.execute('SELECT * FROM warehouse_shops WHERE shop_id=?',(shop_id,)).fetchone()
         if old and old['identity']!=identity:raise WarehouseConflict('Нельзя заменить продавца в существующем магазине')
         duplicate=conn.execute('SELECT shop_id FROM warehouse_shops WHERE identity=?',(identity,)).fetchone()
@@ -320,10 +319,9 @@ def grant(shop_id,account,can_write,role):
         initialize(conn);conn.execute('BEGIN IMMEDIATE');access(conn,shop_id,None,'owner')
         conn.execute('INSERT INTO warehouse_shop_acl VALUES(?,?,?) ON CONFLICT(shop_id,account) DO UPDATE SET can_write=excluded.can_write',(shop_id,text(account,200),int(bool(can_write))))
 
-def register_item(nm_id,chrt_id,name):
+def register_item(nm_id,chrt_id,name,*,_conn=None):
     nm_id,chrt_id=integer(nm_id,maximum=2**53-1),integer(chrt_id,True,2**53-1)
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE')
+    with transaction(_conn) as conn:
         # Explicitly choose a production SKU, not a secondary seller nmID join.
         if not conn.execute('SELECT 1 FROM products_catalog WHERE nm_id=?',(nm_id,)).fetchone():raise WarehouseScopeError('Выберите существующий производственный товар')
         from .wip import validate_catalog_identity
@@ -333,10 +331,10 @@ def register_item(nm_id,chrt_id,name):
         item=str(uuid.uuid4());conn.execute('INSERT INTO warehouse_items(id,nm_id,chrt_id,name,created_at) VALUES(?,?,?,?,?)',(item,nm_id,chrt_id,text(name),now()))
         return dict(conn.execute('SELECT * FROM warehouse_items WHERE id=?',(item,)).fetchone())
 
-def map_sku(shop_id,external_nm_id,external_chrt_id,item_id,actor=None):
+def map_sku(shop_id,external_nm_id,external_chrt_id,item_id,actor=None,*,_conn=None):
     external_nm_id,external_chrt_id=integer(external_nm_id,maximum=2**53-1),integer(external_chrt_id,True,2**53-1)
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE');shop=access(conn,shop_id,actor,'owner')
+    with transaction(_conn) as conn:
+        shop=access(conn,shop_id,actor,'owner')
         if not conn.execute('SELECT 1 FROM warehouse_items WHERE id=?',(item_id,)).fetchone():raise WarehouseScopeError('Производственный SKU не найден')
         old=conn.execute('SELECT * FROM warehouse_mappings WHERE shop_id=? AND external_nm_id=? AND external_chrt_id=?',(shop_id,external_nm_id,external_chrt_id)).fetchone()
         if old:
@@ -423,6 +421,8 @@ def reserve(shop_id,nm_id,chrt_id,quantity,document_date,source_ref,request_key,
         return dict(conn.execute('SELECT * FROM warehouse_reservations WHERE id=?',(reservation,)).fetchone())
 
 def _receipt(conn,shop_id,identity,kind,source_ref,request_key,fingerprint,reservation,document_date,result,actor):
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='warehouse_setup_receipts'").fetchone() and conn.execute('SELECT 1 FROM warehouse_setup_receipts WHERE request_key=?',(request_key,)).fetchone():
+        raise WarehouseConflict('Ключ уже использован для настройки общего склада')
     document=str(uuid.uuid4())
     conn.execute('INSERT INTO warehouse_documents VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(document,request_key,fingerprint,shop_id,identity,source_ref,kind,reservation,document_date,encoded(result),now(),actor))
     conn.execute('INSERT INTO warehouse_events(document_id,event_json,created_at,actor) VALUES(?,?,?,?)',(document,encoded(dict(kind=kind,result=result)),now(),actor))

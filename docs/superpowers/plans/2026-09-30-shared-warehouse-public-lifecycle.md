@@ -137,3 +137,31 @@ shops remain owner-only until an explicit ACL grant. Current role restricts ever
 write and is rechecked before replay; a historic can_write grant never elevates a
 currently read-only role. Account membership revocation is enforced upstream on
 every request. No new unchecked user-controlled tenant/seller header is introduced.
+
+
+## Public physical adapter acceptance (scoped, not whole audit)
+
+The implemented fourteen routes and strict DTOs live in shared_warehouse_api.py.
+All are tenant_shared; URL shop must equal the selected header. Setup items require
+primary selection. Mapping and item confirms store immutable UUID/input/actor/shop
+receipts; exact lost-response replay rechecks active ACL/identity before returning
+original applied response, including after catalog revision changes. Changed UUID
+input and cross-setup/document UUID reuse fail closed. Primary binding is a
+natural-idempotent verified identity setup, accepts only an empty JSON object,
+returns refresh_session and requires a fresh session/full navigation afterwards.
+No generic transport identity guard is weakened for that null-to-hash transition.
+
+Workspace exposes an explicit needs_primary_binding state before activation,
+canonical items, verified selected catalog variants, mappings, reservations with
+joined external/canonical SKU labels, ownership, immutable decoded documents,
+and scoped holds. Lists are bounded (100 documents/reservations,500 catalog/items).
+Reserve/sale previews return fingerprints. Return preview executes the exact typed
+operation in a rollback transaction; it returns the computed allocations/cost but
+no invented fingerprint. Confirm uses exactly the reviewed Return body, UUID and
+reservation revision. Return preview is restricted to current writable roles.
+
+Independent review accepted setup WAL reader/immutable provenance and public
+physical lifecycle. Local full gates:474 tenant tests plus8 subtests,391 API tests.
+These are private source gates; actual native image/Nginx two-shop physical proof,
+frontend workflow, seller-tagged ingestion and primary/secondary P&L projection
+remain release dependencies. This stage does not close the entire audit.

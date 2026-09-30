@@ -8,6 +8,12 @@ ROLES = {"owner", "manager", "viewer", "technologist", "cutter", "seamstress", "
 def write_allowed(role: str, method: str, path: str) -> bool:
     if role not in ROLES:
         return False
+    if path.startswith("/api/v1/shared-warehouse"):
+        if role=="integration_reader":return False
+        if method in {"GET","HEAD","OPTIONS"}:return True
+        if path.endswith("/preview") and not path.endswith("/returns/preview"):return True
+        if path.endswith("/primary-binding") or path.endswith("/items") or "/mappings/" in path:return role=="owner"
+        return role in {"owner","manager","warehouse"}
     if method == "POST" and path == "/api/v1/cash-accounts/statements/preview":
         return role != "integration_reader"
     if method == "POST" and path == "/api/v1/production-workspace/workcenters/preview":
