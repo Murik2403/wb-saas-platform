@@ -1,0 +1,58 @@
+# Use only after verify_verified_runtime_base.py passes for an immutable base.
+ARG VERIFIED_TENANT_RUNTIME_BASE
+FROM node:22-alpine AS frontend-build
+
+WORKDIR /frontend
+ARG VITE_MH_API_BASE_URL=
+ARG VITE_MH_API_MODE=v1
+ENV VITE_MH_API_BASE_URL=$VITE_MH_API_BASE_URL \
+    VITE_MH_API_MODE=$VITE_MH_API_MODE
+COPY mh-redesign-lab/package.json mh-redesign-lab/package-lock.json ./
+RUN npm ci
+COPY mh-redesign-lab/index.html ./
+COPY mh-redesign-lab/public ./public
+COPY mh-redesign-lab/tsconfig.json mh-redesign-lab/tsconfig.node.json mh-redesign-lab/vite.config.ts ./
+COPY mh-redesign-lab/src ./src
+RUN npm run build
+
+FROM ${VERIFIED_TENANT_RUNTIME_BASE}
+WORKDIR /app/tenant-app
+
+COPY tenant-app/ ./
+# The redesign owns its additive API adapter; the Streamlit source tree remains
+# unchanged on disk and remains available for rollback.
+ARG REDESIGN_BUILD_ID=dev
+LABEL org.opencontainers.image.revision=$REDESIGN_BUILD_ID
+RUN printf '%s' "$REDESIGN_BUILD_ID" > /tmp/redesign-build-id
+COPY mh-redesign-lab/tenant-api/api_server.py ./api_server.py
+COPY mh-redesign-lab/tenant-api/integration_api.py ./integration_api.py
+COPY mh-redesign-lab/tenant-api/production_workspace_api.py mh-redesign-lab/tenant-api/manufacturing_costs_api.py mh-redesign-lab/tenant-api/production_permissions.py mh-redesign-lab/tenant-api/finance_csv.py ./
+COPY mh-redesign-lab/tenant-api/supply_planning_api.py mh-redesign-lab/tenant-api/cashflow_routes.py mh-redesign-lab/tenant-api/shop_workspaces_api.py ./
+COPY mh-redesign-lab/tenant-api/cash_accounts_routes.py ./cash_accounts_routes.py
+COPY mh-redesign-lab/tenant-api/shop_schedules_api.py ./shop_schedules_api.py
+COPY mh-redesign-lab/tenant-api/shop_context_api.py mh-redesign-lab/tenant-api/shop_dispatch.py mh-redesign-lab/tenant-api/shared_warehouse_api.py ./
+COPY mh-redesign-lab/tenant-api/dashboard_cache.py ./dashboard_cache.py
+COPY mh-redesign-lab/tenant-api/ozon_accounting_api.py ./ozon_accounting_api.py
+COPY mh-redesign-lab/tenant-api/migration_import_api.py ./migration_import_api.py
+COPY mh-redesign-lab/tenant-api/incident_workflow_api.py ./incident_workflow_api.py
+COPY mh-redesign-lab/tenant-api/sync_runner.py ./sync_runner.py
+COPY mh-redesign-lab/tenant-api/request_security.py ./request_security.py
+COPY mh-redesign-lab/tenant-api/action_plan_executor.py ./action_plan_executor.py
+COPY mh-redesign-lab/tenant-api/growth_activation.py ./growth_activation.py
+COPY mh-redesign-lab/tenant-api/growth_delivery.py ./growth_delivery.py
+COPY mh-redesign-lab/tenant-api/growth_outbox_worker.py ./growth_outbox_worker.py
+COPY mh-redesign-lab/tenant-api/store_expense_import.py ./store_expense_import.py
+RUN python -c "import shutil; from pathlib import Path; p=Path('/usr/share/nginx/html'); shutil.rmtree(p); p.mkdir()"
+COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
+COPY mh-redesign-lab/deploy/nginx.tenant-staging.conf /etc/nginx/conf.d/default.conf
+COPY mh-redesign-lab/deploy/tenant-staging-entrypoint.sh /usr/local/bin/tenant-staging-entrypoint
+
+RUN chmod +x /usr/local/bin/tenant-staging-entrypoint /app/tenant-app/docker-entrypoint.sh \
+    && mkdir -p /app/tenant-app/data
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=5 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/healthz', timeout=3)"
+
+EXPOSE 8501
+VOLUME ["/app/tenant-app/data"]
+ENTRYPOINT ["/usr/local/bin/tenant-staging-entrypoint"]
