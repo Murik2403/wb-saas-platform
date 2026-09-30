@@ -99,4 +99,13 @@ describe('MigrationImport',()=>{
   expect(text).toContain('operation_date;sequence;event_type');expect(text).toContain('-100;-90;-10;5;0;0;0;0');
   expect(screen.getByRole('note')).toHaveTextContent('одним полным файлом');
  });
+ it('shows server conversion provenance and unchanged amount without confirming the import',async()=>{
+  render(<MigrationImport role='owner' onRefresh={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.change(screen.getByLabelText('Тип импорта'),{target:{value:'opening_materials'}});fireEvent.click(screen.getByRole('button',{name:'Заполнить пример шаблона'}));
+  vi.mocked(fetch).mockResolvedValueOnce(response({...preview,rows:[{line:2,data:{source_id:'oil1',material_name:'Масло',unit:'л',quantity:1.5,unit_cost_rub:200,source_date:'2026-09-01',unit_conversion:{entered_quantity:'1500',entered_unit:'мл',entered_unit_price_rub:'0.2',conversion_factor:'0.001',base_quantity:'1.5',base_unit:'л',base_unit_price_rub:'200',source_total_rub:'300'}}}]}) as Response);
+  fireEvent.click(screen.getByRole('button',{name:'Проверить без записи'}));
+  const proof=await screen.findByRole('region',{name:'Перевод единиц перед переносом'});
+  expect(proof).toHaveTextContent('Строка 2: Масло');expect(proof).toHaveTextContent('1500 мл × 0.2 ₽/мл → 1.5 л × 200 ₽/л');expect(proof).toHaveTextContent('Сумма не меняется: 300 ₽');
+  expect(screen.getByRole('button',{name:'Подтвердить импорт'})).toBeDisabled();expect(fetch).toHaveBeenCalledTimes(1);
+ });
 });
