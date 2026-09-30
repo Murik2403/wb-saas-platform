@@ -17,6 +17,8 @@ from .core import connect
 
 
 def init_manufacturing_schema(conn: sqlite3.Connection) -> None:
+    from .shared_manufacturing import ensure_schema
+    ensure_schema(conn)
     # execute individually: executescript would commit the caller's migration.
     statements = [
         """CREATE TABLE IF NOT EXISTS manufacturing_boms (
@@ -539,11 +541,16 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
         if item.get("component_type") == "semi_finished":
             catalog = conn.execute("SELECT supplier_article,product_name FROM products_catalog WHERE nm_id=?",
                                    (int(item["nm_id"]),)).fetchone()
-            cost, allocations = _move_finished_goods_fifo(
-                conn,movement_id,int(item["nm_id"]),str(catalog["supplier_article"] or ""),
-                str(catalog["product_name"] or ""),int(item["required_units"]),"ready","out",
-                chrt_id=int(item["chrt_id"]),
-            )
+            from .shared_warehouse import managed
+            if managed(conn,int(item['nm_id']),int(item['chrt_id'])):
+                from .shared_manufacturing import consume
+                cost,allocations=consume(conn,movement_id,int(item['nm_id']),int(item['chrt_id']),int(item['required_units']),day,release_key)
+            else:
+                cost, allocations = _move_finished_goods_fifo(
+                    conn,movement_id,int(item["nm_id"]),str(catalog["supplier_article"] or ""),
+                    str(catalog["product_name"] or ""),int(item["required_units"]),"ready","out",
+                    chrt_id=int(item["chrt_id"]),
+                )
             conn.execute("UPDATE inventory_movements SET chrt_id=? WHERE id=?", (chrt_id, movement_id))
             from .production import _apply_pipeline_delta
             _apply_pipeline_delta(conn,int(item["nm_id"]),str(catalog["supplier_article"] or ""),
@@ -646,6 +653,8 @@ def _undo_manufacturing_conn(conn: sqlite3.Connection, movement_id: int) -> dict
                     if any(e["equipment_id"] == item["equipment_id"] for e in json.loads(later[0])):
                         raise ValueError("Сначала отмените более поздние выпуски на этом оборудовании")
             _reverse_finished_goods_source_layer(conn,movement_id)
+            from .shared_manufacturing import journal_reversal
+            journal_reversal(conn,movement_id)
             from .fifo_finished_goods import _reverse_finished_goods_allocations
             _reverse_finished_goods_allocations(conn,movement_id)
             _reverse_fifo_consumption(conn,movement_id)

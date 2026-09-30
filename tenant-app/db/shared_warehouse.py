@@ -40,6 +40,8 @@ def initialize(conn):
     if conn.in_transaction:raise WarehouseError('Инициализация схемы должна завершиться до начала бизнес-транзакции')
     from .incident_workflow import ensure_schema
     ensure_schema(conn)
+    from .shared_manufacturing import ensure_schema as ensure_manufacturing_inputs
+    ensure_manufacturing_inputs(conn)
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS warehouse_shops(
       shop_id INTEGER PRIMARY KEY CHECK(shop_id>=0), identity TEXT NOT NULL UNIQUE,
@@ -377,11 +379,13 @@ def _preview(conn,shop_id,nm_id,chrt_id,quantity,document_date,actor,role):
             raise WarehouseStockError('Исходная денежная основа партии неизвестна или повреждена')
         claimed=conn.execute("SELECT COALESCE(SUM(CASE WHEN status='allocated' THEN units ELSE 0 END),0) AS dispatched,COALESCE(SUM(cost_rub),0) AS amount FROM warehouse_reservation_layers WHERE layer_id=? AND status!='released'",(layer['id'],)).fetchone()
         basis=conn.execute('SELECT * FROM warehouse_ready_basis WHERE layer_id=?',(layer['id'],)).fetchone()
-        initial_units=int(layer['ready_units'])+claimed['dispatched']
+        from .shared_manufacturing import totals as manufacturing_totals
+        consumed_units,consumed_amount=manufacturing_totals(conn,layer['id'])
+        initial_units=int(layer['ready_units'])+claimed['dispatched']+consumed_units
         if initial_units>layer['original_units']:raise WarehouseConflict('Готовое количество превышает исходную подтверждённую партию')
         basis_amount=portion(layer['original_amount_rub'],initial_units,layer['original_units']) if not basis else basis['initial_ready_amount_rub']
         if basis and basis['initial_ready_units']!=initial_units:raise WarehouseConflict('Физический готовый запас изменён вне центрального распределителя')
-        remaining_amount=money(Decimal(str(basis_amount))-Decimal(str(claimed['amount'])))
+        remaining_amount=money(Decimal(str(basis_amount))-Decimal(str(claimed['amount']))-Decimal(str(consumed_amount)))
         if remaining_amount<0:raise WarehouseConflict('Исторические распределения превышают подтверждённую денежную основу партии')
         provenance={k:layer[k] for k in ('id','nm_id','chrt_id','source_type','source_ref','source_date','producer_release_id','unit_cost_rub')}
         chosen.append(dict(layer_id=layer['id'],units=take,cost_rub=portion(remaining_amount,take,unreserved),ready_basis_units=initial_units,ready_basis_amount_rub=basis_amount,provenance=provenance));remaining-=take
