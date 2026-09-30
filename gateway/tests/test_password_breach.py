@@ -43,8 +43,9 @@ class PwnedPasswordRangeTests(unittest.TestCase):
         self.assertGreater(captured["timeout"], 0)
 
     def test_returns_zero_when_suffix_is_absent(self):
-        with mock.patch("urllib.request.urlopen", return_value=_Response("ABC:1\r\n")):
+        with mock.patch("password_breach.urlopen", return_value=_Response("ABC:1\r\n")) as transport:
             self.assertEqual(password_breach.pwned_password_count("unique enough"), 0)
+        transport.assert_called_once()
 
     def test_transport_error_hides_password(self):
         password = "do-not-include-me"
