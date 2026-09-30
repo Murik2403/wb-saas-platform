@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.lock ./
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
-COPY app.py backup_crypto.py decrypt_backup.py demo_refresh.py ./
+COPY app.py backup_crypto.py decrypt_backup.py demo_refresh.py demo_recovery.py ./
 RUN groupadd --gid 10001 appgroup \
     && useradd --uid 10001 --gid appgroup --create-home --home-dir /app appuser \
     && chown -R appuser:appgroup /app

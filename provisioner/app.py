@@ -25,6 +25,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from backup_crypto import decrypt_file, encrypt_file
 from demo_refresh import DailyDemoRefresh
+from demo_recovery import DemoRecoveryJournal
 
 @asynccontextmanager
 async def _lifespan(_app):
@@ -75,6 +76,7 @@ def _wait_demo_health(client):
 
 def start_daily_demo():
     global _DEMO_DAILY, _DEMO_REFRESH_THREAD
+    _recover_demo_reseed()
     _DEMO_DAILY = DailyDemoRefresh(BACKUP_MOUNT / 'demo', _refresh_demo_and_healthcheck,
         enabled=os.environ.get('WB_SAAS_DEMO_DAILY_REFRESH', '0') == '1',
         hour=int(os.environ.get('WB_SAAS_DEMO_REFRESH_HOUR_MOSCOW', '3')))
@@ -585,6 +587,51 @@ def _start_demo_container(client: Any, slug: str) -> None:
     client.containers.run(**tenant_container_spec(slug, request, demo=True))
 
 
+def _recover_demo_reseed(client=None):
+    """Finish a journaled rollback before serving lifecycle requests after crash."""
+    journal = DemoRecoveryJournal(BACKUP_MOUNT/'demo')
+    state = journal.read()
+    if state is None:
+        return
+    client = client or _client()
+    original = client.containers.get(state['original_id'])
+    original.reload()
+    if state['phase']=='stopping':
+        if original.attrs.get('State',{}).get('Status')!='running':
+            original.start()
+        journal.clear()
+        return
+    if not BACKUP_ENCRYPTION_KEY:
+        raise RuntimeError('Demo recovery requires encrypted backup configuration')
+    try:
+        seed = client.containers.get('wb-tenant-demo-seed')
+    except Exception:
+        seed = None
+    if seed is not None:
+        seed.stop(timeout=15)
+        seed.remove(force=True)
+    try:
+        candidate = client.containers.get('wb-tenant-demo')
+    except Exception:
+        candidate = None
+    if candidate is not None and candidate.id!=original.id:
+        candidate.stop(timeout=15)
+        candidate.remove(force=True)
+    original.reload()
+    if original.attrs.get('State',{}).get('Status')=='running':
+        original.stop(timeout=15)
+    verified = _verify_demo_backup(state['archive'],'demo')
+    try:
+        _restore_demo_backup(_volume_name('demo'),'demo',verified,client)
+        if original.name!='wb-tenant-demo':
+            original.rename('wb-tenant-demo')
+        original.start()
+        _wait_demo_health(client)
+        journal.clear()
+    finally:
+        (BACKUP_MOUNT/'demo'/verified).unlink(missing_ok=True)
+
+
 @app.post("/v1/tenants/{slug}/upgrade")
 def upgrade_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
@@ -614,8 +661,10 @@ def reseed_demo() -> dict[str, str]:
     old = None
     stopped = False
     replaced = False
+    journal = DemoRecoveryJournal(BACKUP_MOUNT/'demo')
     try:
         client = _client()
+        _recover_demo_reseed(client)
         volume = _volume(client, slug)
         try:
             old = client.containers.get(_container_name(slug))
@@ -631,13 +680,16 @@ def reseed_demo() -> dict[str, str]:
         else:
             raise HTTPException(status_code=409, detail="A demo seed container is already present")
 
+        journal.write('stopping',old.id)
         old.stop(timeout=15)
         stopped = True
         try:
             backup = _backup_volume(volume.name, slug, 14, client)
             verified_name = _verify_demo_backup(str(backup["archive"]), slug)
+            journal.write('mutating',old.id,str(backup['archive']))
         except Exception:
             old.start()
+            journal.clear()
             stopped = False
             raise HTTPException(status_code=502, detail="Demo backup could not be verified; previous tenant restarted") from None
 
@@ -665,6 +717,7 @@ def reseed_demo() -> dict[str, str]:
                 stopped = False
                 raise HTTPException(status_code=502, detail="Demo seed failed; rollback verification failed and tenant remains stopped") from None
             old.start()
+            journal.clear()
             stopped = False
             raise HTTPException(status_code=502, detail="Demo seed failed validation; previous tenant restored") from None
 
@@ -676,6 +729,7 @@ def reseed_demo() -> dict[str, str]:
             try:
                 _restore_demo_backup(volume.name, slug, verified_name, client)
                 old.start()
+                journal.clear()
             except Exception:
                 stopped = False
                 raise HTTPException(status_code=502, detail="Demo replacement failed; rollback could not be verified") from None
@@ -691,6 +745,7 @@ def reseed_demo() -> dict[str, str]:
                 _restore_demo_backup(volume.name, slug, verified_name, client)
                 old.rename(_container_name(slug))
                 old.start()
+                journal.clear()
             except Exception:
                 stopped = False
                 raise HTTPException(status_code=502, detail="Demo recreate failed; rollback could not be verified") from None
@@ -698,6 +753,7 @@ def reseed_demo() -> dict[str, str]:
             replaced = False
             raise HTTPException(status_code=502, detail="Demo recreate failed; previous tenant restored") from None
         stopped = False
+        journal.clear()
         try:
             old.remove(force=True)
         except Exception:
@@ -706,11 +762,11 @@ def reseed_demo() -> dict[str, str]:
     except HTTPException:
         raise
     except Exception:
-        if old is not None and stopped:
-            try:
-                old.start()
-            except Exception:
-                pass
+        # Never restart a potentially half-seeded DB; durable recovery owns it.
+        try:
+            _recover_demo_reseed(client)
+        except Exception:
+            pass
         if replaced:
             raise HTTPException(status_code=502, detail="Demo reseed failed after replacement; check tenant recovery") from None
         raise HTTPException(status_code=502, detail="Demo reseed failed; previous tenant preserved") from None

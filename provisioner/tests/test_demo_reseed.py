@@ -14,10 +14,12 @@ import app
 class _Client:
     def __init__(self):
         self.old = Mock()
+        self.old.id = 'original-demo-id'
+        self.old.name = 'wb-tenant-demo'
         self.old.attrs = {"State": {"Status": "running"}}
         self.old_removed = False
         self.old_renamed = False
-        self.old.rename.side_effect = lambda name: setattr(self, 'old_renamed', name != 'wb-tenant-demo')
+        self.old.rename.side_effect = self._rename_old
         self.old.remove.side_effect = self._remove_old
         self.containers = Mock()
         self.containers.get.side_effect = self._get
@@ -25,7 +27,13 @@ class _Client:
     def _remove_old(self, *_args, **_kwargs):
         self.old_removed = True
 
+    def _rename_old(self,name):
+        self.old_renamed = name != 'wb-tenant-demo'
+        self.old.name = name
+
     def _get(self, name):
+        if name == self.old.id and not self.old_removed:
+            return self.old
         if name == "wb-tenant-demo" and not self.old_removed and not self.old_renamed:
             return self.old
         raise RuntimeError("not found")
@@ -122,7 +130,7 @@ def test_demo_reseed_recreate_failure_restores_snapshot_and_recreates_old(monkey
 def test_unhealthy_candidate_restores_original_before_backup_cleanup(monkeypatch, tmp_path):
     client, events = _prepared(monkeypatch, tmp_path)
     marker = tmp_path/'demo'/'.snapshot.verified.tar.gz'
-    marker.parent.mkdir()
+    marker.parent.mkdir(exist_ok=True)
     marker.write_bytes(b'verified')
     def unhealthy(_client):
         assert marker.exists()
@@ -147,6 +155,26 @@ def test_sqlite_helpers_override_tenant_entrypoint():
     app._restore_demo_backup('wb-tenant-data-demo','demo','.verified.tar.gz',client)
     args = client.containers.run.call_args.kwargs
     assert args['entrypoint'] == ['python3'] and args['command'][0] == '-c'
+
+
+@pytest.mark.parametrize('stage',['seed','health'])
+def test_process_interruption_journal_recovers_original_on_restart(monkeypatch,tmp_path,stage):
+    from demo_recovery import DemoRecoveryJournal
+    client,events = _prepared(monkeypatch,tmp_path)
+    if stage=='seed':
+        client.containers.run.side_effect=SystemExit('simulated process interruption')
+    else:
+        monkeypatch.setattr(app,'_wait_demo_health',Mock(side_effect=SystemExit('simulated process interruption')))
+    with pytest.raises(SystemExit):
+        app.reseed_demo()
+    journal=DemoRecoveryJournal(tmp_path/'demo')
+    assert journal.read()['phase']=='mutating'
+    client.old.remove.assert_not_called()
+    monkeypatch.setattr(app,'_wait_demo_health',Mock())
+    app._recover_demo_reseed(client)
+    assert journal.read() is None
+    assert client.old.name=='wb-tenant-demo'
+    client.old.start.assert_called_once()
 
 
 def test_verified_demo_backup_requires_valid_sqlite_database(tmp_path, monkeypatch):
