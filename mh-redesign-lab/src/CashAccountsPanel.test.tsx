@@ -27,9 +27,12 @@ describe('cash accounts',()=>{
     vi.mocked(cashAccountRequest).mockImplementation(async(path)=>{if(path.startsWith('?'))return report;if(path.endsWith('/preview'))return preview;if(path.endsWith('/confirm')&&tries++===0)throw new Error('Связь прервана');return {};});
     render(<CashAccountsPanel role="manager" start="2026-09-01" end="2026-09-20"/>);
     await screen.findAllByText('Банк · CNY');fireEvent.change(screen.getByLabelText('Выбранный счёт'),{target:{value:'2'}});
-    document.querySelectorAll('details').forEach(element=>element.open=true);fireEvent.click(screen.getByRole('button',{name:'Проверить выписку'}));await screen.findByRole('checkbox');fireEvent.click(screen.getByRole('checkbox'));
-    document.querySelectorAll('details').forEach(element=>element.open=true);fireEvent.click(screen.getByRole('button',{name:'Подтвердить импорт'}));await screen.findAllByText('Связь прервана');
-    document.querySelectorAll('details').forEach(element=>element.open=true);fireEvent.click(screen.getByRole('button',{name:'Подтвердить импорт'}));
+    document.querySelectorAll('details').forEach(element=>element.open=true);fireEvent.click(screen.getByRole('button',{name:'Проверить выписку'}));
+    const confirm=await screen.findByRole('button',{name:'Подтвердить импорт'});
+    expect(screen.getByText('bank-id')).toBeInTheDocument();
+    await waitFor(()=>expect(screen.getByRole('checkbox')).not.toBeDisabled());fireEvent.click(screen.getByRole('checkbox'));
+    await waitFor(()=>expect(confirm).not.toBeDisabled());fireEvent.click(confirm);await screen.findAllByText('Связь прервана');
+    await waitFor(()=>expect(confirm).not.toBeDisabled());fireEvent.click(confirm);
     await waitFor(()=>expect(vi.mocked(cashAccountRequest).mock.calls.filter(([path])=>path.endsWith('/confirm'))).toHaveLength(2));
     const calls=vi.mocked(cashAccountRequest).mock.calls.filter(([path])=>path.endsWith('/confirm'));
     expect(calls[0][2]).toEqual(calls[1][2]);
