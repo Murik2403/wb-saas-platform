@@ -7,7 +7,7 @@ type Material = { material_name: string; unit: string };
 type Layer = Material & { id: number; remaining_quantity: number; unit_cost_rub: number };
 type Product = { nm_id: number; chrt_id?: number; variant_label?: string; barcodes?: string; product_name: string; supplier_article?: string };
 type Equipment = { id: number; name: string; resource_unit: "units" | "hours"; resource_quantity: number; consumed_resource: number; rate_per_resource_unit: number };
-type BomComponent = { component_type?: "raw_material" | "semi_finished"; material_name?: string; nm_id?: number; chrt_id?: number; component_bom_version_id?: number; quantity_per_unit: number; unit: string; allocations?: Array<{ layer_id: number; units: number; amount_rub: number; source_release_id?: number | null; source_release_key?: string | null; source_bom_version_id?: number | null; source_bom_version_mismatch?: boolean | null; source_provenance?: string }> };
+type BomComponent = { component_type?: "raw_material" | "semi_finished"; material_name?: string; nm_id?: number; chrt_id?: number; component_bom_version_id?: number; quantity_per_unit: number; unit: string; entered_quantity_per_unit?: string; entered_unit?: string; conversion_factor?: string; normalized_quantity_per_unit?: string; allocations?: Array<{ layer_id: number; units: number; amount_rub: number; source_release_id?: number | null; source_release_key?: string | null; source_bom_version_id?: number | null; source_bom_version_mismatch?: boolean | null; source_provenance?: string }> };
 type Bom = { id: number; nm_id: number; chrt_id?: number; version: number; note?: string; materials?: BomComponent[]; operations?: Array<{ name: string; rate_per_unit: number }>; packaging_per_unit?: number; other_per_unit?: number };
 type RecordRow = Record<string, unknown>;
 export type ManufacturingCostsData = {
@@ -16,8 +16,9 @@ export type ManufacturingCostsData = {
   semi_finished_stock?: Array<{ id: number; nm_id: number; chrt_id: number; ready_units: number; unit_cost_rub: number; source_date?: string | null }>;
   allowed_actions?: string[];
 };
-type MaterialInput = { component_type: "raw_material" | "semi_finished"; material_name: string; product: string; quantity: string };
+type MaterialInput = { component_type: "raw_material" | "semi_finished"; material_name: string; product: string; quantity: string; unit?: string };
 type OperationInput = { name: string; rate: string; equipment_id: string; usage: string };
+export const materialEntryUnits = (base: string): string[] => [ ["г", "кг"], ["мл", "л"], ["мм", "см", "м"] ].find((family) => family.includes(base)) ?? [base];
 const endpoint = "/api/v1/manufacturing-costs";
 const rub = (value: unknown) => Number(value ?? 0).toLocaleString("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 2 });
 const today = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
@@ -208,27 +209,28 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
             }
             const material = data.materials.find((row) => row.material_name === item.material_name);
             if (!material) throw new Error("Выберите материал из справочника.");
-            return { material_name: material.material_name, unit: material.unit, quantity_per_unit: quantity };
+            return { material_name: material.material_name, unit: item.unit || material.unit, quantity_per_unit: quantity };
           }),
           operations: operations.map((item) => { if (!item.name.trim()) throw new Error("Укажите название операции."); return { name: item.name.trim(), rate_per_unit: number(item.rate, "Расценка", { money: true }), ...(item.equipment_id ? { equipment_id: number(item.equipment_id, "Оборудование", { integer: true, positive: true }), equipment_usage_per_unit: number(item.usage, "Расход ресурса", { positive: true }) } : {}) }; }),
           packaging_per_unit: number(packaging, "Упаковка", { money: true }), other_per_unit: number(other, "Прочие затраты", { money: true }), note: bomNote.trim(),
         };
       }, "Новая версия состава изделия сохранена.", () => setBomNote(""))}>
         <fieldset disabled={disabled || !permitted("boms") || !data.products.length}><legend>Состав изделия — новая версия</legend>
-          <p>Расход указывается на одну продаваемую единицу. Сохранение создаёт новую версию; прежние выпуски сохраняют свою себестоимость.</p>
+          <p>Расход указывается на одну продаваемую единицу. Единицу нормы можно выбрать в той же размерности: г/кг, мл/л, мм/см/м. Сервер переводит норму в единицу справочника без округления (от 0,001, до 6 знаков). Перевод массы в объём, рулонов или упаковок не выполняется. Сохранение создаёт новую версию; прежние выпуски сохраняют свою себестоимость.</p>
           {!data.products.length ? <p>Сначала добавьте товары в справочник.</p> : null}
           <ProductSelect label="Товар и вариант для состава изделия" products={data.products} value={bomProduct} onChange={setBomProduct} variantAware />
           {components.map((item, index) => { const material = data.materials.find((row) => row.material_name === item.material_name); const target = selectedProduct(data.products, bomProduct, true); const child = selectedProduct(data.products, item.product, true); const blocker = target && child ? routeBlocker(data.boms, data.products, target, child) : null; return <div className="mfg-row" key={index}>
-            <Field label={`Тип компонента ${index + 1}`}><select value={item.component_type} onChange={(event) => updateComponent(index, { component_type: event.target.value as MaterialInput["component_type"], material_name: "", product: "" })}><option value="raw_material">Сырьё / материал</option><option value="semi_finished">Полуфабрикат</option></select></Field>
+            <Field label={`Тип компонента ${index + 1}`}><select value={item.component_type} onChange={(event) => updateComponent(index, { component_type: event.target.value as MaterialInput["component_type"], material_name: "", product: "", unit: "" })}><option value="raw_material">Сырьё / материал</option><option value="semi_finished">Полуфабрикат</option></select></Field>
             {item.component_type === "semi_finished" ? <>
               <Field label={`Полуфабрикат ${index + 1}`}><select required value={item.product} onChange={(event) => updateComponent(index, { product: event.target.value })}><option value="">Выберите SKU и вариант</option>{data.products.map((candidate) => { const reason = target ? routeBlocker(data.boms, data.products, target, candidate) : !applicableBoms(data.boms, candidate).length ? "Сначала сохраните состав" : null; return <option key={`${candidate.nm_id}:${candidate.chrt_id ?? 0}`} value={productValue(candidate, true)} disabled={Boolean(reason)}>{candidate.product_name || `WB ${candidate.nm_id}`} · WB {candidate.nm_id}{Number(candidate.chrt_id ?? 0) > 0 ? ` · ${candidate.variant_label || `вариант ${candidate.chrt_id}`}` : ""}{reason ? ` — ${reason}` : ""}</option>; })}</select></Field>
               <Decimal label={`Расход полуфабриката ${index + 1}, шт/изделие`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
               {blocker && <p className="mfg-error" role="status">{blocker}</p>}
               {!target && <p role="status">Сначала выберите товар, для которого сохраняется состав.</p>}
             </> : <>
-              <Field label={`Материал ${index + 1}`}><select required value={item.material_name} onChange={(event) => updateComponent(index, { material_name: event.target.value })}><option value="">Выберите материал</option>{data.materials.map((row) => <option key={row.material_name} value={row.material_name}>{row.material_name} ({row.unit})</option>)}</select></Field>
+              <Field label={`Материал ${index + 1}`}><select required value={item.material_name} onChange={(event) => updateComponent(index, { material_name: event.target.value, unit: "" })}><option value="">Выберите материал</option>{data.materials.map((row) => <option key={row.material_name} value={row.material_name}>{row.material_name} ({row.unit})</option>)}</select></Field>
               {!data.materials.length && <p role="status">Сырьё недоступно: добавьте материал в справочник или переключите тип компонента на полуфабрикат.</p>}
-              <Decimal label={`Расход материала ${index + 1}${material ? `, ${material.unit}` : ""}`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
+              {material && <Field label={`Единица нормы материала ${index + 1}`}><select value={item.unit || material.unit} onChange={(event) => updateComponent(index, { unit: event.target.value })}>{materialEntryUnits(material.unit).map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>}
+              <Decimal label={`Расход материала ${index + 1}${material ? `, ${item.unit || material.unit}` : ""}`} value={item.quantity} onChange={(quantity) => updateComponent(index, { quantity })} />
             </>}
             <button type="button" disabled={components.length === 1} onClick={() => setComponents((items) => items.filter((_, i) => i !== index))} aria-label={`Удалить компонент ${index + 1}`}>Удалить</button>
           </div>; })}
@@ -245,7 +247,7 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
           <div className="mfg-row"><Decimal label="Упаковка, ₽/ед." value={packaging} onChange={setPackaging} /><Decimal label="Прочие затраты, ₽/ед." value={other} onChange={setOther} /></div>
           <Field label="Примечание к версии"><input value={bomNote} onChange={(event) => setBomNote(event.target.value)} /></Field>
           <button className="primary-button" type="submit" disabled={disabled || !permitted("boms") || bomRouteBlocked}>Сохранить новую версию</button>
-          {data.boms.filter((item) => { const product = selectedProduct(data.products, bomProduct, true); return !product || (item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === Number(product.chrt_id ?? 0)); }).map((item) => <details key={item.id}><summary>WB {item.nm_id}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · версия {item.version}{item.note ? ` · ${item.note}` : ""}</summary><ul>{item.materials?.map((component, index) => <li key={`${component.component_type ?? "raw"}:${component.material_name ?? component.nm_id}:${index}`}>{component.component_type === "semi_finished" ? `Полуфабрикат WB ${component.nm_id}${component.chrt_id ? ` · вариант ${component.chrt_id}` : ""} · состав v${component.component_bom_version_id}` : `${component.material_name}: ${component.quantity_per_unit} ${component.unit}/изделие`}</li>)}{item.operations?.map((operation, index) => <li key={index}>{operation.name}: {rub(operation.rate_per_unit)}/изделие</li>)}</ul><p>Упаковка: {rub(item.packaging_per_unit)}/изделие. Прочие: {rub(item.other_per_unit)}/изделие.</p></details>)}
+          {data.boms.filter((item) => { const product = selectedProduct(data.products, bomProduct, true); return !product || (item.nm_id === product.nm_id && Number(item.chrt_id ?? 0) === Number(product.chrt_id ?? 0)); }).map((item) => <details key={item.id}><summary>WB {item.nm_id}{Number(item.chrt_id ?? 0) > 0 ? ` · вариант ${item.chrt_id}` : ""} · версия {item.version}{item.note ? ` · ${item.note}` : ""}</summary><ul>{item.materials?.map((component, index) => <li key={`${component.component_type ?? "raw"}:${component.material_name ?? component.nm_id}:${index}`}>{component.component_type === "semi_finished" ? `Полуфабрикат WB ${component.nm_id}${component.chrt_id ? ` · вариант ${component.chrt_id}` : ""} · состав v${component.component_bom_version_id}` : `${component.material_name}: ${component.entered_quantity_per_unit && component.entered_unit ? `${component.entered_quantity_per_unit} ${component.entered_unit} = ` : ""}${component.normalized_quantity_per_unit ?? component.quantity_per_unit} ${component.unit}/изделие`}</li>)}{item.operations?.map((operation, index) => <li key={index}>{operation.name}: {rub(operation.rate_per_unit)}/изделие</li>)}</ul><p>Упаковка: {rub(item.packaging_per_unit)}/изделие. Прочие: {rub(item.other_per_unit)}/изделие.</p></details>)}
         </fieldset>
       </form>
 

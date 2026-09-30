@@ -48,6 +48,22 @@ def bom_payload(**changes):
     return {"nm_id": 123, "materials": [{"material_name": "Ткань", "quantity_per_unit": 2, "unit": "м²"}], "operations": [], "packaging_per_unit": 1.25, "other_per_unit": 0, "note": "Тестовая версия", **changes}
 
 
+def test_bom_converts_grams_to_catalog_kg_and_http_release_consumes_base(client):
+    with core.connect() as conn:
+        conn.execute("UPDATE material_inventory_color SET unit='кг' WHERE material_key='ткань'")
+    bom=post(client,"/boms",bom_payload(materials=[{"material_name":"Ткань","quantity_per_unit":125,"unit":"г"}],packaging_per_unit=0))
+    assert bom['materials'][0]['quantity_per_unit']==0.125
+    assert bom['materials'][0]['entered_unit']=='г'
+    assert bom['materials'][0]['unit']=='кг'
+    release=post(client,"/releases",{"nm_id":123,"quantity":4,"production_date":"2026-09-23","source_key":"converted-http","bom_version_id":bom['id']})
+    assert release['material_cost_rub']==5.25
+    with core.connect() as conn:
+        assert conn.execute("SELECT partial_meters FROM material_inventory_color WHERE material_key='ткань'").fetchone()[0]==19.5
+    denied=client.post(PREFIX+'/boms',json=bom_payload(materials=[{"material_name":"Ткань","quantity_per_unit":1,"unit":"л"}]))
+    assert denied.status_code==422
+    assert len(client.get(PREFIX).json()['boms'])==1
+
+
 def test_complete_http_cost_flow_and_readback(client):
     asset = post(client, "/equipment", {"name": "Швейная машина", "acquisition_cost_rub": 1000, "salvage_value_rub": 100, "resource_quantity": 90, "resource_unit": "hours"})
     bom = post(client, "/boms", bom_payload(operations=[{"name": "Пошив", "rate_per_unit": 3, "equipment_id": asset["id"], "equipment_usage_per_unit": 0.5}]))

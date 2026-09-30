@@ -295,10 +295,10 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
         visited_route_depths: dict[tuple[int, int, int | None], int] = {}
         for item in materials:
             quantity = _number(item.get("quantity_per_unit"), "Норма", positive=True)
-            if round(quantity, 6) < 0.001:
-                raise ValueError("Норма должна быть >= 0.001")
             component_type = str(item.get("component_type") or "raw_material")
             if component_type == "semi_finished":
+                if round(quantity, 6) < 0.001:
+                    raise ValueError("Норма должна быть >= 0.001")
                 if item.get("material_name") or item.get("material_key"):
                     raise ValueError("Полуфабрикат нельзя одновременно задать как сырьё")
                 component_nm_id = _integer(item.get("nm_id"), "Артикул полуфабриката")
@@ -339,11 +339,12 @@ def save_bom_version(nm_id: int, materials: list[dict], operations: list[dict] |
             if row is None:
                 raise ValueError(f"Материал «{name}» отсутствует в справочнике")
             unit = str(row["unit"] or "м")
-            if item.get("unit", unit) != unit:
-                raise ValueError(f"Единица материала «{name}» должна быть {unit}")
+            from .material_units import normalize_material_quantity
+            provenance = normalize_material_quantity(item["quantity_per_unit"], item.get("unit") or unit, unit)
+            quantity = float(provenance["normalized_quantity_per_unit"])
             keys.add(identity)
             components.append({"component_type":"raw_material","material_key":key,
-                               "material_name":row["material_name"],"quantity_per_unit":quantity,"unit":unit})
+                               "material_name":row["material_name"],"quantity_per_unit":quantity,"unit":unit,**provenance})
         for item in operations or []:
             name = _text(item.get("name"), "Операция")
             if name.casefold() in names:

@@ -14,6 +14,43 @@ from .base import DbTestCase
 
 
 class ManufacturingTests(DbTestCase):
+    def test_volume_length_and_inverse_conversion_release_fifo_in_base_units(self):
+        for index,(base,entered,amount,canonical) in enumerate([('л','мл',250,0.25),('м','см',25,0.25),('г','кг',0.0005,0.5)]):
+            name=f'Материал {index}'
+            self.seed(name,base,2,100)
+            bom=m.save_bom_version(123,[{'material_name':name,'quantity_per_unit':amount,'unit':entered}])
+            release=self.release(key=f'conversion-{index}',quantity=2,bom_version_id=bom['id'])
+            self.assertEqual(bom['materials'][0]['quantity_per_unit'],canonical)
+            self.assertEqual(release['material_cost_rub'],canonical*200)
+            self.assertEqual(self.physical(name),2-canonical*2)
+
+    def test_converted_bom_consumes_catalog_fifo_and_keeps_old_recipe_snapshot(self):
+        self.seed('Нить','кг',2,100)
+        old=m.save_bom_version(123,[{'material_name':'Нить','quantity_per_unit':0.25,'unit':'кг'}])
+        bom=m.save_bom_version(123,[{'material_name':'Нить','quantity_per_unit':125,'unit':'г'}])
+        component=bom['materials'][0]
+        self.assertEqual(component['quantity_per_unit'],0.125)
+        self.assertEqual(component['unit'],'кг')
+        self.assertEqual(component['entered_quantity_per_unit'],'125')
+        self.assertEqual(component['entered_unit'],'г')
+        self.assertEqual(component['conversion_factor'],'0.001')
+        release=self.release(quantity=4,bom_version_id=bom['id'])
+        self.assertEqual(release['material_cost_rub'],50)
+        self.assertEqual(self.physical('Нить'),1.5)
+        self.assertEqual(m.list_bom_versions(123)[1],old)
+        self.assertEqual(self.release(quantity=4,bom_version_id=bom['id'])['posted'],0)
+        self.assertEqual(self.physical('Нить'),1.5)
+
+    def test_base_bounds_apply_after_conversion_and_incompatible_save_is_atomic(self):
+        self.seed('Нить','г',20,2)
+        bom=m.save_bom_version(123,[{'material_name':'Нить','quantity_per_unit':0.0005,'unit':'кг'}])
+        self.assertEqual(bom['materials'][0]['quantity_per_unit'],0.5)
+        for unit,qty in [('л',1),('кг',0.000000001),('кг',1000000000000)]:
+            with self.assertRaises(ValueError):
+                m.save_bom_version(123,[{'material_name':'Нить','quantity_per_unit':qty,'unit':unit}])
+        self.assertEqual(len(m.list_bom_versions(123)),1)
+        self.assertEqual(self.physical('Нить'),20)
+
     def seed(self, name="Ткань", unit="м", quantity=20, rate=10, source_suffix=""):
         with connect() as conn:
             self.set_material_physical_stock(conn,name.casefold(),name,partial_meters=quantity,roll_length=1)

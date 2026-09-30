@@ -25,6 +25,27 @@ async function fillLabor() {
 }
 
 describe("manufacturing cost input", () => {
+  it("offers only same-dimension units and submits entered grams while displaying stored base provenance", async () => {
+    fetchMock.mockImplementation(async () => json({ ...data,
+      materials: [{ material_name: "Нить", unit: "кг" }, { material_name: "Клей", unit: "л" }],
+      boms: [{ id: 1, nm_id: 123, version: 1, materials: [{ material_name: "Нить", unit: "кг", quantity_per_unit: 0.125, entered_quantity_per_unit: "125", entered_unit: "г", conversion_factor: "0.001", normalized_quantity_per_unit: "0.125" }] }],
+    }));
+    await open();
+    expect(screen.getByText("Нить: 125 г = 0.125 кг/изделие")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Товар и вариант для состава изделия"), "123");
+    await userEvent.selectOptions(screen.getByLabelText("Материал 1"), "Нить");
+    const units=screen.getByLabelText("Единица нормы материала 1");
+    expect([...units.querySelectorAll("option")].map(o=>o.value)).toEqual(["г","кг"]);
+    await userEvent.selectOptions(units,"г");
+    await userEvent.clear(screen.getByLabelText("Расход материала 1, г"));
+    await userEvent.type(screen.getByLabelText("Расход материала 1, г"),"125");
+    await userEvent.click(screen.getByRole("button",{name:"Сохранить новую версию"}));
+    await screen.findByText("Новая версия состава изделия сохранена.");
+    expect(JSON.parse(writes()[0][1]?.body as string).materials[0]).toEqual({material_name:"Нить",unit:"г",quantity_per_unit:125});
+    await userEvent.selectOptions(screen.getByLabelText("Материал 1"),"Клей");
+    expect(screen.getByLabelText("Единица нормы материала 1")).toHaveValue("л");
+    expect([...screen.getByLabelText("Единица нормы материала 1").querySelectorAll("option")].map(o=>o.value)).toEqual(["мл","л"]);
+  });
   it("blocks a nested release when same-variant stock is insufficient", async () => {
     const nested: ManufacturingCostsData = { ...data, boms: [{ id: 1, nm_id: 123, version: 1, materials: [{ component_type: "semi_finished", nm_id: 222, chrt_id: 501, component_bom_version_id: 9, quantity_per_unit: 2, unit: "шт" }] }], semi_finished_stock: [{ id: 7, nm_id: 222, chrt_id: 502, ready_units: 100, unit_cost_rub: 10 }] };
     fetchMock.mockImplementation(async () => json(nested));
