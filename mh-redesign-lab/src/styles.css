@@ -971,6 +971,22 @@ summary:focus-visible,
   gap: 0.75rem;
 }
 
+@media (min-width: 1101px) {
+  .finance-hero + .finance-period-status + .metrics-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .finance-movement-panel .ledger-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .finance-movement-panel .ledger-row {
+    min-height: 3rem;
+    padding: 0.5rem 0.625rem;
+  }
+}
+
 .metric-card {
   min-height: 9.25rem;
   border: 1px solid var(--line);

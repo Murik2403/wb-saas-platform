@@ -88,4 +88,24 @@ describe("CashflowPanel",()=>{
     await waitFor(()=>expect(createCashEntry).toHaveBeenCalledTimes(2));
     expect(vi.mocked(createCashEntry).mock.calls[1][0]).toEqual(vi.mocked(createCashEntry).mock.calls[0][0]);
   });
+  it("discloses compact cash journal without losing payment drafts, actions or visible balances",async()=>{
+    vi.mocked(getCashflow).mockResolvedValue({...report,opening_confirmed:false,items:[{id:7,kind:"movement",direction:"outflow",status:"planned",planned_date:"2026-09-10",actual_date:null,amount_minor:48750,amount:"37.5",currency:"CNY",exchange_rate:"13",category:"procurement",reference:"PO-1"}]});
+    render(<CashflowPanel role="manager" compact/>);
+    expect(await screen.findByText("712,50 ₽")).toBeVisible();
+    expect(screen.getByText(/Начальный остаток не подтверждён/)).toBeVisible();
+    const disclosure=screen.getByText("Денежные операции и история").closest("details")!;
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(screen.getByText(/PO-1/)).not.toBeVisible();
+    expect(screen.getByRole("button",{name:"Оплачено / получено"})).not.toBeVisible();
+    fireEvent.click(disclosure.querySelector("summary")!);
+    expect(screen.getByText(/PO-1/)).toBeVisible();
+    expect(screen.getByText(/37\.5 CNY × 13/)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Дата оплаты операции 7"),{target:{value:"2026-09-15"}});
+    fireEvent.click(disclosure.querySelector("summary")!);
+    expect(screen.getByText(/PO-1/)).not.toBeVisible();
+    fireEvent.click(disclosure.querySelector("summary")!);
+    expect(screen.getByLabelText("Дата оплаты операции 7")).toHaveValue("2026-09-15");
+    fireEvent.click(screen.getByRole("button",{name:"Оплачено / получено"}));
+    await waitFor(()=>expect(changeCashEntry).toHaveBeenCalledWith(7,"actual","2026-09-15"));
+  });
 });

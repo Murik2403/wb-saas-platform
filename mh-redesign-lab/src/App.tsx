@@ -1862,7 +1862,7 @@ export function FinanceView({
       </> : null}
       <ManagementPnlSummary period={period} />
       {cashflow}
-      <section className="work-section" aria-label="Денежное движение">
+      <section className="work-section finance-movement-panel" aria-label="Денежное движение">
         <SectionHeader kicker="P&L" title="Денежное движение">
           <DashboardPeriodControl period={period} setPeriod={setPeriod} />
         </SectionHeader>
