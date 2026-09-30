@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {notifyShopDataUpdated} from './shop-data-updated';
+import {ImportedSharedBasis} from './ImportedSharedBasis';
 import {SharedWarehouseFinance} from './SharedWarehouseFinance';
 import {API_BASE_URL,apiHeaders} from './data-source';
 import {bindPrimaryWarehouse,currentShop,navigateToShop} from './selected-shop';
@@ -81,7 +82,7 @@ export function SharedWarehouse(){
     {['return','quarantine','hold_release'].includes(action)&&<label>Подтверждение партии / основание<textarea value={proof} onChange={event=>setProof(event.target.value)} maxLength={500}/></label>}
     <button type="submit" disabled={busy}>{busy?'Проверяем…':['mapping','reserve','sale','return'].includes(action)?'Проверить движение':'Сохранить движение'}</button>
     {preview&&preview.identity===inputIdentity&&<div role="status"><strong>Предварительная проверка</strong><p>{labels[action]} · {quantity} ед. · {source||'Соответствие товара'}</p>{preview.result.missing_units!==undefined&&<p>Недостаёт: {preview.result.missing_units} ед.</p>}<p>Дата: {date} · магазин: {shop?.name} · {action==='return'?(disposition==='quarantine'?'Возврат в карантин':'Возврат в доступный остаток'):action==='quarantine'?(location==='wb'?'На WB':'В пути'):''}</p><p>{['mapping','reserve'].includes(action)?`WB ${product.replace(':',', вариант ')}`:selectedReservation?`WB ${selectedReservation.external_nm_id}, вариант ${selectedReservation.external_chrt_id}`:''}</p>{preview.result.cost_rub!==undefined&&<p>Учтённая стоимость: {preview.result.cost_rub} ₽</p>}{(preview.result.layers??preview.result.allocations)?.map(row=><p key={row.layer_id}>Партия {row.layer_id}: {row.units} ед. · {row.cost_rub} ₽</p>)}<button type="button" disabled={busy||Number(preview.result.missing_units??0)>0} onClick={()=>void run(true)}>Подтвердить проверенное движение</button></div>}
-   </form>}<SharedWarehouseFinance workspace={data}/>
+   </form>}<ImportedSharedBasis workspace={data} onRefresh={refresh}/><SharedWarehouseFinance workspace={data}/>
   </>}
  </section>;
 }

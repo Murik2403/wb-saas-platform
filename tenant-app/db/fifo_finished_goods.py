@@ -298,6 +298,8 @@ def _move_dispatch_allocation_to_wb(
     allocations: list[dict[str, float]] = []
     now = datetime.now().isoformat(timespec="seconds")
     for row in rows:
+        from .imported_shared_basis import local_guard
+        local_guard(conn,row['layer_id'])
         if remaining <= 0:
             break
         take = min(max(0, int(row["units"] or 0)), max(0, int(row["inbound_units"] or 0) - held_units(conn, int(row["layer_id"]), "inbound")), remaining)
@@ -351,6 +353,12 @@ def _reverse_finished_goods_allocations(conn: sqlite3.Connection, movement_id: i
         """,
         (int(movement_id),),
     ).fetchall()
+    from .imported_shared_basis import transferred,local_guard
+    for row in rows:
+        if transferred(conn,row['layer_id']):
+            # Only immutable exact typed manufacture reversal may restore input.
+            typed=conn.execute("SELECT 1 FROM warehouse_manufacturing_inputs WHERE movement_id=? AND layer_id=? AND kind='reverse' AND units=? AND ABS(amount_rub-?)<0.001",(movement_id,row['layer_id'],row['units'],row['amount_rub'])).fetchone()
+            if not typed:local_guard(conn,row['layer_id'])
     now = datetime.now().isoformat(timespec="seconds")
     for row in rows:
         from_loc = str(row["from_location"] or "")

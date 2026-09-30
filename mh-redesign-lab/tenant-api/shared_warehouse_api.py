@@ -203,3 +203,22 @@ def release_operation(shop_id,hold_id,body,account,role,request_key):
 @router.post('/{shop_id}/holds/{hold_id}/release')
 def release(shop_id:int,hold_id:UUID,body:HoldRelease,request:Request):
     return checked(release_operation,shop_id,hold_id,body,*target(request,shop_id),key(request))
+
+
+class ImportedBasis(Input):
+    nm_id:StrictInt=Field(gt=0,le=2**53-1)
+    reason:str=Field(min_length=3,max_length=500)
+class ImportedBasisConfirm(ImportedBasis):
+    fingerprint:str=Field(pattern=r'^[0-9a-f]{64}$')
+
+@router.post('/imported-basis/preview')
+def imported_basis_preview(body:ImportedBasis,request:Request):
+    if shop_context.selector(request.headers)!=0:raise HTTPException(409,'Откройте основной магазин для передачи готовых партий')
+    import imported_shared_basis as transfer
+    return checked(transfer.preview,body.nm_id,body.reason,*actor(request))
+
+@router.post('/imported-basis/confirm')
+def imported_basis_confirm(body:ImportedBasisConfirm,request:Request):
+    if shop_context.selector(request.headers)!=0:raise HTTPException(409,'Откройте основной магазин для передачи готовых партий')
+    import imported_shared_basis as transfer
+    return checked(transfer.confirm,body.nm_id,body.reason,body.fingerprint,*actor(request),key(request))

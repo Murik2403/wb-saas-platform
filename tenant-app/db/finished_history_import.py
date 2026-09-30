@@ -201,6 +201,9 @@ def project(c,financial_rows,rows):
 
 def physical_amount(c,layer_id,location,quantity):
  """Imported physical basis in integer cents, including active moves/returns/reversals."""
+ from .imported_shared_basis import location_amount
+ central=location_amount(c,layer_id,location,quantity)
+ if central is not None:return central
  layer=c.execute('SELECT * FROM finished_goods_cost_layers WHERE id=?',(layer_id,)).fetchone()
  if not layer or layer['source_type']!='migration_finished_opening':return None
  lot=c.execute('SELECT * FROM migration_finished_lots WHERE source_id=?',(layer['source_ref'][len('csv:0:'):],)).fetchone()
@@ -217,6 +220,8 @@ def physical_amount(c,layer_id,location,quantity):
 
 
 def central_setup_guard(c,nm_id):
+ from .imported_shared_basis import sku_transferred
+ if sku_transferred(c,nm_id):return
  if not exists(c,'migration_finished_lots'):return
  lots=c.execute('SELECT * FROM migration_finished_lots WHERE nm_id=?',(nm_id,)).fetchall()
  if not lots:return

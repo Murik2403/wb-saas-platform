@@ -1,0 +1,20 @@
+import {useRef,useState} from 'react';
+import {currentShop} from './selected-shop';
+import {WarehouseSubmission,warehouseRequest,type WarehouseWorkspace} from './shared-warehouse';
+import {notifyShopDataUpdated} from './shop-data-updated';
+type Preview={nm_id:number;reason:string;fingerprint:string;total_units:number;total_cents:number;variants:Array<{chrt_id:number;variant_label:string}>;layers:Array<{layer_id:number;chrt_id:number;ready_units:number;ready_cents:number;source_ref:string}>};
+export function ImportedSharedBasis({workspace,onRefresh}:{workspace:WarehouseWorkspace;onRefresh:()=>Promise<void>}){
+ const [nm,setNm]=useState(''),[reason,setReason]=useState(''),[preview,setPreview]=useState<{identity:string;value:Preview}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const lock=useRef(false),submission=useRef(new WarehouseSubmission());const shop=currentShop();
+ if(shop?.id!==0||!workspace.can_configure||workspace.needs_primary_binding)return null;
+ const products=workspace.products.filter((row,index,rows)=>rows.findIndex(other=>other.nm_id===row.nm_id)===index);
+ const identity=JSON.stringify([nm,reason]);
+ const change=()=>{setPreview(null);setError('');setMessage('');submission.current.clear();};
+ async function check(){if(lock.current)return;lock.current=true;setBusy(true);setError('');setMessage('');try{const value=await warehouseRequest<Preview>('/imported-basis/preview',{nm_id:Number(nm),reason});setPreview({identity,value});}catch(e){setPreview(null);setError(e instanceof Error?e.message:'Не удалось проверить партии');}finally{lock.current=false;setBusy(false);}}
+ async function confirm(){if(lock.current||!preview||preview.identity!==identity)return;lock.current=true;setBusy(true);setError('');try{const body={nm_id:preview.value.nm_id,reason:preview.value.reason,fingerprint:preview.value.fingerprint};const request=submission.current.snapshot('/imported-basis/confirm',body);await warehouseRequest('/imported-basis/confirm',request.body,request.key);notifyShopDataUpdated(shop!);submission.current.clear();setPreview(null);setMessage('Импортированные партии переданы общему складу. Количество и стоимость сохранены.');await onRefresh();}catch(e){setError(e instanceof Error?e.message:'Не удалось подтвердить переход');}finally{lock.current=false;setBusy(false);}}
+ return <details><summary>Передать импортированные партии общему складу</summary><p>Поддерживается только готовый остаток основного магазина без карантина и действующих локальных движений. Все варианты товара переходят вместе. История и стоимость сохраняются; новых продаж, расходов или поступлений не создаётся. После подтверждения используйте движения общего склада. Обратный переход этим действием не выполняется.</p>
+ <fieldset disabled={busy}><legend>Проверка исходных партий</legend><label>Импортированный товар<select value={nm} onChange={e=>{setNm(e.target.value);change();}}><option value="">Выберите товар</option>{products.map(p=><option key={p.nm_id} value={p.nm_id}>{p.product_name} · WB {p.nm_id}</option>)}</select></label><label>Основание перехода<textarea value={reason} maxLength={500} onChange={e=>{setReason(e.target.value);change();}}/></label><button type="button" disabled={!nm||reason.trim().length<3} onClick={()=>void check()}>Проверить передачу без движения остатков</button></fieldset>
+ {error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
+ {preview&&preview.identity===identity&&<div role="status"><h4>Проверенная денежная основа</h4><p>WB {preview.value.nm_id}: {preview.value.total_units} ед. · {(preview.value.total_cents/100).toFixed(2)} ₽. Источник ручной, отчёт остаётся предварительным.</p><p>Варианты: {preview.value.variants.map(v=>`${v.variant_label||'Вариант'} (${v.chrt_id})`).join(', ')}</p>{preview.value.layers.map(l=><p key={l.layer_id}>Партия {l.layer_id} · {l.source_ref}: {l.ready_units} ед. · {(l.ready_cents/100).toFixed(2)} ₽</p>)}<button type="button" disabled={busy} onClick={()=>void confirm()}>Подтвердить переход в общий склад</button></div>}
+ </details>;
+}

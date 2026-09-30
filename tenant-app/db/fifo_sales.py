@@ -183,6 +183,8 @@ def _restore_return_to_original_layers(
     ).fetchall()
     remaining=max(0,int(units or 0)); total=0.0; restored=0; now=datetime.now().isoformat(timespec="seconds")
     for allocation in allocations:
+        from .imported_shared_basis import local_guard
+        local_guard(conn,allocation['layer_id'])
         if remaining<=0: break
         take=min(remaining,max(0,int(allocation["units"] or 0)))
         if take<=0: continue
