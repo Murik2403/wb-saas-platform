@@ -34,3 +34,20 @@ def test_rendered_public_form_retains_shared_keyboard_indicator(template):
 def test_marketing_links_use_the_shared_focus_role():
     css=(TEMPLATES/'marketing_base.html').read_text(encoding='utf-8')
     assert 'outline:3px solid var(--focus)' in css
+
+
+@pytest.mark.parametrize('template',['login.html','register.html','forgot_password.html','reset_password.html'])
+@pytest.mark.parametrize('error',[None,'Synthetic error <script>neverexecute</script>'])
+def test_auth_error_is_escaped_and_describes_its_form(template,error):
+    env=Environment(loader=FileSystemLoader(TEMPLATES),autoescape=select_autoescape(['html']))
+    env.globals.update(site_base_url=lambda:'https://synthetic.invalid',analytics_available=lambda:False,analytics_consent=lambda request:'unset',public_metrika_counter=lambda request:'')
+    html=env.get_template(template).render(request=SimpleNamespace(url=SimpleNamespace(path='/synthetic')),error=error,csrf_token='synthetic-only',submitted=False,trial_days=14)
+    if error:
+        assert html.count('id="form-error"')==1
+        assert 'role="alert"' in html
+        assert 'aria-describedby="form-error"' in html
+        assert '&lt;script&gt;neverexecute&lt;/script&gt;' in html
+        assert '<script>neverexecute</script>' not in html
+    else:
+        assert 'id="form-error"' not in html
+        assert 'aria-describedby="form-error"' not in html

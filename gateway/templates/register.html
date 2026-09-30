@@ -5,8 +5,8 @@
 {% block content %}
 <h1>Создать аккаунт</h1>
 <p class="subtitle">Подтвердите email по ссылке из письма — затем мы подготовим ваш кабинет. Пробный период на {{ trial_days }} дней начнётся, когда кабинет будет готов. Карта не нужна.</p>
-{% if error %}<div class="error">{{ error }}</div>{% endif %}
-<form method="post" action="/register">
+{% if error %}<div class="error" id="form-error" role="alert">{{ error }}</div>{% endif %}
+<form{% if error %} aria-describedby="form-error"{% endif %} method="post" action="/register">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="invite" value="{{ invite or '' }}">
   <label for="email">Email</label>
