@@ -6,9 +6,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 import config
+from training_materials import create_training_media_router, training_context
 
 
 MARKETING_PAGES = (
+    ("/training", "marketing_training.html", "Обучение работе в кабинете", "Учебные видео и инструкции по всем разделам MARKETSHELPER: товары, склад, финансы, производство и настройки. Примеры на вымышленных данных."),
     ("/updates", "marketing_updates.html", "Обновления сервиса — MARKETSHELPER", "Выпущенные изменения MARKETSHELPER: учёт партий, перенос данных, движение денег и проверка источников себестоимости."),
     ("/calculator", "marketing_calculator_page.html", "Калькулятор маржи WB по девяти статьям расходов — MARKETSHELPER", "Рассчитайте результат на единицу по закупке или производству, комиссии, логистике, хранению, рекламе, упаковке, браку и налогам. Браузерный калькулятор, CSV и ссылка без регистрации."),
     ("/dlya-proizvoditeley-wb", "marketing_producers.html", "Учёт производства для продавцов Wildberries", "Сырьё, выпуск партии и себестоимость: рабочий сценарий для собственного и контрактного производства на Wildberries."),
@@ -82,6 +84,7 @@ def llms_txt(base_url: str) -> str:
 def create_marketing_router(templates: Jinja2Templates) -> APIRouter:
     """Reuse the gateway's configured template environment and privacy policy."""
     router = APIRouter()
+    router.include_router(create_training_media_router())
 
     def endpoint_for(path: str, template_name: str, title: str, description: str):
         published, modified = GUIDE_DATES.get(path, (None, None))
@@ -101,6 +104,7 @@ def create_marketing_router(templates: Jinja2Templates) -> APIRouter:
                 "price_rub": config.SUBSCRIPTION_PRICE_RUB,
                 "period_days": config.BILLING_PERIOD_DAYS,
                 "demo_url": config.tenant_url("demo"),
+                **(training_context() if path == "/training" else {}),
             })
         return page
 
