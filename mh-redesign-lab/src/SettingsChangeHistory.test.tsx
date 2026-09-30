@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {currentShop} from "./selected-shop";
+vi.mock("./selected-shop",()=>({currentShop:vi.fn(()=>null)}));
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { getSettingsChangeHistory, type SettingsChangeHistoryItem } from "./data-source";
 
@@ -97,4 +99,13 @@ describe("SettingsChangeHistory", () => {
     rerender(<SettingsChangeHistory refreshKey={1} />);
     await waitFor(() => expect(history).toHaveBeenLastCalledWith({ limit: 25, offset: 0 }));
   });
+});
+
+it("opens secondary settings with explicit cost scope without manual filtering",async()=>{
+ vi.mocked(currentShop).mockReturnValue({id:2,name:'Secondary',active:true,can_write:true,verified_identity:'a'.repeat(64),snapshot_revision:1,allowed_actions:[]});history.mockReturnValue(page());
+ render(<SettingsChangeHistory/>);await screen.findByText("120 ₽ → 145,5 ₽");
+ expect(history.mock.calls[0][0]).toMatchObject({kind:'cost'});expect(screen.queryByRole('option',{name:'Все изменения'})).not.toBeInTheDocument();
+ expect(screen.getByText(/Нормы производства общие/)).toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText('Тип изменения'),{target:{value:'production_norm'}});fireEvent.click(screen.getByText('Применить фильтры'));
+ await waitFor(()=>expect(history.mock.calls.at(-1)![0]).toMatchObject({kind:'production_norm'}));
 });

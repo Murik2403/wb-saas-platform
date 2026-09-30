@@ -1,6 +1,8 @@
 /** Selected-shop transport. Context is validated before UI mounting. */
 export type SelectedShop = {id:number;name:string;verified_identity:string|null;active:boolean;snapshot_revision:number|null;can_write:boolean;snapshot_available?:boolean;allowed_actions:string[]};
-export type ShopSession = {shops:SelectedShop[];role:string;selected_shop_id:number;route_scopes:Array<{method:string;path:string;scope:"shop_local"|"tenant_shared"|"forbidden";action?:string;can_write?:boolean}>};
+type ResourceScope="shop_local"|"tenant_shared"|"forbidden";
+export type ShopRoute={method:string;path:string;scope:ResourceScope;action?:string;can_write?:boolean;query_scopes?:Record<string,Record<string,ResourceScope>>;requires_kind?:boolean};
+export type ShopSession = {shops:SelectedShop[];role:string;selected_shop_id:number;route_scopes:ShopRoute[]};
 let selected:SelectedShop|null=null;
 let session:ShopSession|null=null;
 let epoch=0;
@@ -33,7 +35,9 @@ export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Pro
  headers.set('X-MH-Shop-ID',String(shop.id));
  if(writes&&!shop.can_write)throw new Error('Магазин доступен только для просмотра');
  const route=session.route_scopes.find(r=>r.method===method&&routeMatches(r.path,path));
- if(shop.id!==0&&(!route||route.scope==='forbidden'))throw new Error('Раздел не поддерживает выбранный магазин');
+ const resolvedScope=route?resolveScope(route,url,shop.id!==0):undefined;
+ const expectedScope=shop.id===0&&resolvedScope==='forbidden'?'tenant_shared':resolvedScope;
+ if(shop.id!==0&&(!route||expectedScope==='forbidden'))throw new Error('Раздел не поддерживает выбранный магазин');
  if(writes&&shop.id!==0&&(route?.can_write===false||!shop.allowed_actions.includes(method+' '+(route?.path??path))))throw new Error('Действие недоступно для выбранного магазина');
  let replayIdentity:string|null=null;
  if(writes){
@@ -53,13 +57,13 @@ export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Pro
   let revisionChanged=false;
   if(response.ok&&shop.id===0){
    const responseId=response.headers.get('X-MH-Shop-ID'),identity=response.headers.get('X-MH-Shop-Identity'),scope=response.headers.get('X-MH-Resource-Scope');
-   if((responseId!==null&&responseId!=='0')||(identity!==null&&identity!==shop.verified_identity)||(scope!==null&&(route?scope!==route.scope:!['shop_local','tenant_shared'].includes(scope))))throw new Error('Источник ответа не соответствует выбранному магазину');
+   if((responseId!==null&&responseId!=='0')||(identity!==null&&identity!==shop.verified_identity)||(scope!==null&&(route?scope!==expectedScope:!['shop_local','tenant_shared'].includes(scope))))throw new Error('Источник ответа не соответствует выбранному магазину');
   }
   if(response.ok&&shop.id!==0){
    const revision=response.headers.get('X-MH-Shop-Revision');
    const validRevision=revision!==null&&/^(0|[1-9][0-9]*)$/.test(revision)&&Number.isSafeInteger(Number(revision))&&Number(revision)>=Number(shop.snapshot_revision);
    revisionChanged=validRevision&&Number(revision)!==shop.snapshot_revision;
-   if(response.headers.get('X-MH-Shop-ID')!==String(shop.id)||response.headers.get('X-MH-Shop-Identity')!==shop.verified_identity||!validRevision||!isFingerprint(response.headers.get('X-MH-Shop-Fingerprint'))||response.headers.get('X-MH-Resource-Scope')!==route?.scope)throw new Error('Источник ответа не соответствует выбранному магазину');
+   if(response.headers.get('X-MH-Shop-ID')!==String(shop.id)||response.headers.get('X-MH-Shop-Identity')!==shop.verified_identity||!validRevision||!isFingerprint(response.headers.get('X-MH-Shop-Fingerprint'))||response.headers.get('X-MH-Resource-Scope')!==expectedScope)throw new Error('Источник ответа не соответствует выбранному магазину');
   }
   
   // Guard body decoding too: a resolved fetch is not yet a consumed response.
@@ -71,6 +75,31 @@ export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Pro
   }});
   return guard(response);
  }finally{controllers.delete(controller);init.signal?.removeEventListener('abort',abort);}
+}
+
+export function shopReadTimeout(path:string,timeoutMs:number){
+ if(!selected||selected.id===0||!session)return timeoutMs;
+ const url=new URL(path,window.location.origin);
+ const route=session.route_scopes.find(r=>r.method==='GET'&&routeMatches(r.path,url.pathname.replace(/^\/tenant-api/,'')));
+ return route&&resolveScope(route,url,true)==='shop_local'?Math.max(timeoutMs,95000):timeoutMs;
+}
+
+function resolveScope(route:ShopRoute,url:URL,strict:boolean):ResourceScope{
+ let scope=route.scope;
+ if(route.requires_kind&&!url.searchParams.has('kind')){if(strict)throw new Error('Укажите вид истории выбранного магазина');return 'forbidden';}
+ for(const [key,choices] of Object.entries(route.query_scopes??{})){
+  const values=url.searchParams.getAll(key);
+  if(values.length!==1||!Object.prototype.hasOwnProperty.call(choices,values[0])){if(strict)throw new Error('Вид истории магазина не подтверждён');return 'forbidden';}
+  scope=choices[values[0]];
+ }
+ return scope;
+}
+function validQueryScopes(route:ShopRoute){
+ if(route.requires_kind!==undefined&&typeof route.requires_kind!=='boolean')return false;
+ if(route.query_scopes===undefined)return route.requires_kind!==true;
+ if(!route.query_scopes||typeof route.query_scopes!=='object'||Array.isArray(route.query_scopes))return false;
+ if(route.requires_kind&&!Object.prototype.hasOwnProperty.call(route.query_scopes,'kind'))return false;
+ return Object.entries(route.query_scopes).every(([key,choices])=>/^[a-z_]+$/.test(key)&&!!choices&&typeof choices==='object'&&!Array.isArray(choices)&&Object.keys(choices).length>0&&Object.values(choices).every(scope=>['shop_local','tenant_shared','forbidden'].includes(scope)));
 }
 
 function isFingerprint(value:unknown):value is string{return typeof value==='string'&&/^[0-9a-f]{64}$/.test(value);}
@@ -87,7 +116,7 @@ export function validateShopSession(raw:unknown):ShopSession{
   if(!Number.isSafeInteger(s.id)||s.id<0||ids.has(s.id)||typeof s.name!=='string'||!s.name||typeof s.active!=='boolean'||typeof s.can_write!=='boolean'||!Array.isArray(s.allowed_actions)||!s.allowed_actions.every(a=>typeof a==='string')||(s.snapshot_revision!==null&&(!Number.isSafeInteger(s.snapshot_revision)||s.snapshot_revision<0))||(s.verified_identity!==null&&!isFingerprint(s.verified_identity))||(s.id!==0&&(!isFingerprint(s.verified_identity)||s.snapshot_revision===null)))throw new Error('Контекст магазинов недоступен');
   ids.add(s.id);
  }
- if(!ids.has(0)||!ids.has(data.selected_shop_id)||data.route_scopes.some(r=>!r||typeof r.method!=='string'||!r.path?.startsWith('/api/v1/')||!['shop_local','tenant_shared','forbidden'].includes(r.scope)))throw new Error('Контекст магазинов недоступен');
+ if(!ids.has(0)||!ids.has(data.selected_shop_id)||data.route_scopes.some(r=>!r||typeof r.method!=='string'||!(typeof r.path==='string'&&(r.path.startsWith('/api/v1/')||['/api/overview','/api/today','/api/products','/api/ads','/healthz','/_stcore/health'].includes(r.path)))||(!['shop_local','tenant_shared','forbidden'].includes(r.scope)||!validQueryScopes(r))))throw new Error('Контекст магазинов недоступен');
  return data;
 }
 

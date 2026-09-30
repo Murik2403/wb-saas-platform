@@ -1,0 +1,7 @@
+# Selected-shop query-aware response scope
+
+Follow-up from accepted4d783ff. Backend session route metadata query_scopes:{kind:{cost:shop_local,production_norm:tenant_shared}}, requires_kind:true for GETsettings/change-history. Resolve exact kind before dispatch and compare response resource scope against resolved expectation, not staticroute. Secondary absent/duplicate/invalidkind failsbeforeHTTP. Validate registry metadata (strictboolean/object/scopes); primary retains legacy fallback forinvalid/missingkind and servervalidation. Preserve all existing capturedcontext/UUID/late-response guards. Regression costacceptedlocal/normacceptedshared/foreignscopeinvalidselectorrejected, fullUIbuild and independentreview. No unrelatedglobal UI edits ordeployment.
+
+Agreed root/backend90s total queue+child budget: fetchJson only verified secondary shop_local GET receives95s minimum, tenant_shared/forbidden/primary unchanged. Query-aware kind scope applies to timeout too. Preserve external abort/switch and timer until async body consumed; no automatic mutation retry. Native candidate queue acceptance separate from unit coverage.
+
+Independent review found actual session registry legacy paths and primary forbidden normalization: allow exactoverview/today/products/ads/health paths only; forbidden applies secondary only and maps primarysuccess tenant_shared exactlyasbackend. Primary combined history withoutkind retains tenant_shared. Test fixture copies actualbackendregistry, exercises allprimaryroutes+query-scopes; secondarydefaultcost excludesambiguousAll.

@@ -1,4 +1,4 @@
-import { scopedFetch as fetch } from "./selected-shop";
+import { scopedFetch as fetch, shopReadTimeout } from "./selected-shop";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActionRecommendation,
@@ -1604,9 +1604,10 @@ async function fetchJson<T>(path: string, signal: AbortSignal, timeoutMs = 20000
   const timeoutId = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, timeoutMs);
+  }, shopReadTimeout(path, timeoutMs));
   const abort = () => controller.abort();
   signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) controller.abort();
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -1628,7 +1629,7 @@ async function fetchJson<T>(path: string, signal: AbortSignal, timeoutMs = 20000
       throw new Error(`${path}: HTTP ${response.status}`);
     }
 
-    return response.json() as Promise<T>;
+    return await response.json() as T;
   } catch (error) {
     if (timedOut) {
       throw new Error(`${path}: timeout`);

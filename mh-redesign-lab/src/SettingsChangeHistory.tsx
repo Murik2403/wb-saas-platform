@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { RefreshCw } from "lucide-react";
 import { getSettingsChangeHistory, type SettingsChangeHistoryItem, type SettingsChangeKind } from "./data-source";
 import "./SettingsChangeHistory.css";
+import {currentShop} from "./selected-shop";
 
 const pageSize = 25;
 
@@ -77,9 +78,10 @@ function visibleFields(item: SettingsChangeHistoryItem): Array<{ key: string; la
 }
 
 export function SettingsChangeHistory({ refreshKey: externalRefreshKey = 0 }: { refreshKey?: number }) {
-  const [kindDraft, setKindDraft] = useState<"" | SettingsChangeKind>("");
+  const secondary=(currentShop()?.id??0)!==0;
+  const [kindDraft, setKindDraft] = useState<"" | SettingsChangeKind>(secondary?"cost":"");
   const [nmIdDraft, setNmIdDraft] = useState("");
-  const [kind, setKind] = useState<SettingsChangeKind | undefined>();
+  const [kind, setKind] = useState<SettingsChangeKind | undefined>(secondary?"cost":undefined);
   const [nmId, setNmId] = useState<number | undefined>();
   const [offset, setOffset] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -133,10 +135,11 @@ export function SettingsChangeHistory({ refreshKey: externalRefreshKey = 0 }: { 
         <RefreshCw size={16} /> Обновить историю
       </button>
     </div>
+    {secondary&&<p className="settings-history-note">Себестоимость относится к выбранному магазину. Нормы производства общие для всех магазинов.</p>}
     <p className="settings-history-note">История ведётся с момента включения учёта. Более ранние изменения не восстанавливаются.</p>
     <form className="settings-history-filters" onSubmit={applyFilters}>
       <label><span>Тип изменения</span><select aria-label="Тип изменения" value={kindDraft} onChange={(event) => setKindDraft(event.target.value as "" | SettingsChangeKind)}>
-        <option value="">Все изменения</option><option value="cost">Себестоимость</option><option value="production_norm">Нормы производства</option>
+        {!secondary&&<option value="">Все изменения</option>}<option value="cost">Себестоимость</option><option value="production_norm">Нормы производства</option>
       </select></label>
       <label><span>Артикул WB</span><input aria-label="Артикул WB" inputMode="numeric" pattern="[0-9]*" value={nmIdDraft} onChange={(event) => setNmIdDraft(event.target.value)} placeholder="Все товары" /></label>
       <button className="secondary-button" type="submit">Применить фильтры</button>
