@@ -786,7 +786,7 @@ app.include_router(ozon_accounting_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
 dashboard_response_cache = DashboardResponseCache()
 context_response_cache = DashboardResponseCache()
-dashboard_data_cache = DashboardResponseCache(ttl_seconds=30.0, max_entries=8)
+dashboard_data_cache = DashboardResponseCache(ttl_seconds=30.0, max_entries=1, release_before_build=True)
 wb_cost_response_cache = DashboardResponseCache(ttl_seconds=10.0)
 _wb_paid_storage_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wb-paid-storage")
 _wb_paid_storage_lock = Lock()
@@ -912,7 +912,12 @@ def jobs_status():
 def _build_ctx() -> dict:
     from copy import deepcopy
     today = datetime.now(ZoneInfo("Europe/Moscow")).date().isoformat()
-    return deepcopy(context_response_cache.get_or_build(today, _build_ctx_uncached))
+    ctx = deepcopy(context_response_cache.get_or_build(today, _build_ctx_uncached))
+    # compute_today copies frames before editing; retain only the shared,
+    # read-only snapshot instead of duplicating every DataFrame per screen.
+    if "today_msk" in ctx:
+        ctx["data"] = _build_dashboard_cached(ctx["today_msk"], ctx["today_msk"])
+    return ctx
 
 
 def _build_ctx_uncached() -> dict:
@@ -920,7 +925,6 @@ def _build_ctx_uncached() -> dict:
     today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
     sync_info = last_sync()
     backup_info = latest_backup()
-    data = _build_dashboard_cached(today_msk, today_msk)
     return {
         "settings": settings,
         "token_exists": bool(get_token()),
@@ -929,7 +933,6 @@ def _build_ctx_uncached() -> dict:
         "period": "Сегодня",
         "start": today_msk,
         "end": today_msk,
-        "data": data,
         "today_msk": today_msk,
     }
 

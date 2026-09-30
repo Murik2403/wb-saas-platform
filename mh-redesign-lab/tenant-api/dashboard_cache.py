@@ -15,13 +15,14 @@ T = TypeVar("T")
 class DashboardResponseCache:
     """Cache compact response payloads and serialize expensive cache misses."""
 
-    def __init__(self, ttl_seconds: float = 20.0, max_entries: int = 128) -> None:
+    def __init__(self, ttl_seconds: float = 20.0, max_entries: int = 128, *, release_before_build: bool = False) -> None:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be positive")
         if max_entries <= 0:
             raise ValueError("max_entries must be positive")
         self._ttl_seconds = ttl_seconds
         self._max_entries = int(max_entries)
+        self._release_before_build = release_before_build
         self._values: OrderedDict[str, tuple[float, object]] = OrderedDict()
         self._lock = Lock()
         self._build_lock = Lock()
@@ -41,6 +42,10 @@ class DashboardResponseCache:
                 if cached is not None:
                     return cached  # type: ignore[return-value]
                 generation = self._generation
+                if self._release_before_build:
+                    # Heavy snapshots must not overlap with the next period's
+                    # transient DataFrames. Consumer references stay valid.
+                    self._values.clear()
 
             value = builder()
             with self._lock:
