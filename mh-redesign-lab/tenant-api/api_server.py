@@ -769,6 +769,8 @@ from incident_workflow_api import router as incident_workflow_router
 app.include_router(incident_workflow_router)
 
 app.include_router(cashflow_router)
+from cash_accounts_routes import router as cash_accounts_router
+app.include_router(cash_accounts_router)
 from migration_import_api import router as migration_import_router
 app.include_router(migration_import_router)
 from production_workspace_api import router as production_workspace_router
@@ -820,7 +822,7 @@ async def invalidate_after_write(request, call_next):
     tenant_role = headers.get("x-tenant-role", "owner").lower()
     if tenant_role not in ROLES:
         return JSONResponse(status_code=403, content={"detail": "Роль пользователя не распознана"})
-    safe_supply_preview = request.method == "POST" and request.url.path in {"/api/v1/supply-planning/preview", "/api/v1/migration-import/preview"}
+    safe_supply_preview = request.method == "POST" and request.url.path in {"/api/v1/supply-planning/preview", "/api/v1/migration-import/preview", "/api/v1/cash-accounts/statements/preview"}
     if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"} and not safe_supply_preview:
         return JSONResponse(status_code=403, content={"detail": "Роль наблюдателя доступна только для просмотра"})
     if not write_allowed(tenant_role, request.method, request.url.path):

@@ -8,6 +8,8 @@ ROLES = {"owner", "manager", "viewer", "technologist", "cutter", "seamstress", "
 def write_allowed(role: str, method: str, path: str) -> bool:
     if role not in ROLES:
         return False
+    if method == "POST" and path == "/api/v1/cash-accounts/statements/preview":
+        return role != "integration_reader"
     if method == "POST" and path == "/api/v1/production-workspace/workcenters/preview":
         return role != "integration_reader"
     if method == "POST" and path in {"/api/v1/production-workspace/workcenters/centers", "/api/v1/production-workspace/workcenters/norms"}:

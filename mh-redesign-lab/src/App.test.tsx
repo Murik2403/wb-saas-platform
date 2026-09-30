@@ -690,3 +690,4 @@ describe("explicit reasons for settings edits", () => {
     await waitFor(()=>expect(source.updateProductionNorms).toHaveBeenCalledWith([expect.objectContaining({nm_id:100,material_per_unit:2})],"Уточнение раскроя"));
   });
 });
+vi.mock("./CashAccountsPanel",()=>({CashAccountsPanel:()=>null}));

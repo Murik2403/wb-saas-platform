@@ -1,3 +1,4 @@
+import { CashAccountsPanel } from "./CashAccountsPanel";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { changeCashEntry, createCashEntry, getCashflow, type CashReport } from "./cashflow-source";
 import "./CashflowPanel.css";
@@ -56,6 +57,8 @@ export function CashflowPanel({role}: {role: string}) {
     <h2 id="cashflow-title">Движение денег и платёжный календарь</h2>
     <p>Учитываются только внесённые вами денежные операции. Выручка и прибыль WB не означают поступление на счёт. Закупки и расходы из других разделов автоматически сюда не добавляются: внесите оплату один раз и укажите ссылку или номер документа.</p>
     <div className="cashflow-controls"><label>Начало периода<input aria-label="Начало периода ДДС" type="date" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Конец периода<input aria-label="Конец периода ДДС" type="date" value={end} onChange={event=>setEnd(event.target.value)}/></label><button type="button" className="secondary-button" disabled={loading} onClick={()=>setRefresh(value=>value+1)}>Обновить календарь</button></div>
+    <CashAccountsPanel role={role} start={start} end={end}/>
+    <h3>Исторический журнал — рублёвая оценка</h3>
     {error?<p role="alert">{error}</p>:null}{loading?<p role="status">Загрузка движения денег…</p>:null}
     {report?<><p>{report.opening_confirmed?"Начальный остаток подтверждён пользователем.":"Начальный остаток не подтверждён: показано движение внесённых сумм, а не баланс банковского счёта."}</p>{report.period_before_opening?<p role="alert">Период начинается раньше начального остатка. Выберите период с даты остатка.</p>:null}
       {!report.period_before_opening?<div className="cash-grid"><div className="stat"><span>Остаток на начало</span><strong>{money(report.opening_balance_minor)}</strong></div><div className="stat"><span>Поступления фактически</span><strong>{money(report.actual_inflow_minor)}</strong></div><div className="stat"><span>Выплаты фактически</span><strong>{money(report.actual_outflow_minor)}</strong></div><div className="stat"><span>Остаток по факту</span><strong>{money(report.actual_closing_minor)}</strong></div><div className="stat"><span>Остаток с планами</span><strong>{money(report.forecast_closing_minor)}</strong></div></div>:null}

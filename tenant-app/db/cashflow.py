@@ -27,7 +27,7 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_entry(payload, actor=None):
+def validate_entry(payload):
     data = dict(payload)
     if data["kind"] not in {"opening","movement"} or data["direction"] not in {"inflow","outflow"} or data["status"] not in {"planned","actual"}:
         raise ValueError("Недопустимый тип, направление или статус операции")
@@ -50,26 +50,43 @@ def create_entry(payload, actor=None):
     if (data["kind"] == "opening") != (data["category"] == "opening"):
         raise ValueError("Статья начального остатка требует соответствующего типа записи")
     encoded = json.dumps(data, sort_keys=True, ensure_ascii=False)
+    return data, amount, rate, minor, encoded
+
+
+def create_entry(payload, actor=None):
+    data, amount, rate, minor, encoded = validate_entry(payload)
     with connect() as conn:
         initialize(conn)
         conn.execute("BEGIN IMMEDIATE")
-        old = conn.execute("SELECT * FROM cash_entries WHERE request_key=?", (data["request_key"],)).fetchone()
-        if old:
-            if old["payload_json"] != encoded: raise ValueError("Ключ операции уже использован для других данных")
-            return dict(old)
-        if data["kind"] == "opening" and conn.execute("SELECT 1 FROM cash_entries WHERE kind='opening' AND status!='cancelled'").fetchone():
+        return _insert(conn, data, amount, rate, minor, encoded, actor)
+
+
+def _insert(conn, data, amount, rate, minor, encoded, actor, account_id=None):
+    old = conn.execute("SELECT * FROM cash_entries WHERE request_key=?", (data["request_key"],)).fetchone()
+    if old:
+        if old["payload_json"] != encoded: raise ValueError("Ключ операции уже использован для других данных")
+        if account_id is None and conn.execute("SELECT 1 FROM sqlite_master WHERE name='cash_account_entries'").fetchone() and conn.execute("SELECT 1 FROM cash_account_entries WHERE entry_id=? AND account_id!=1",(old['id'],)).fetchone():
+            raise ValueError("Ключ относится к операции отдельного счёта")
+        return dict(old)
+    if data["kind"] == "opening" and account_id is None:
+        has_accounts = conn.execute("SELECT 1 FROM sqlite_master WHERE name='cash_account_entries'").fetchone()
+        scope = " AND NOT EXISTS(SELECT 1 FROM cash_account_entries m WHERE m.entry_id=cash_entries.id AND m.account_id!=1)" if has_accounts else ""
+        if conn.execute("SELECT 1 FROM cash_entries WHERE kind='opening' AND status!='cancelled'"+scope).fetchone():
             raise ValueError("Сначала отмените предыдущий начальный остаток")
-        cursor = conn.execute("""INSERT INTO cash_entries(request_key,payload_json,kind,direction,planned_date,actual_date,
-          amount_minor,currency,amount,exchange_rate,category,reference,status,created_at,actor)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (data["request_key"], encoded, data["kind"], data["direction"],
-          data["planned_date"], data.get("actual_date"), minor, data["currency"], str(amount), str(rate),
-          data["category"], data["reference"], data["status"], _now(), actor))
-        conn.execute("INSERT INTO cash_entry_events(entry_id,status,actual_date,changed_at,actor) VALUES(?,?,?,?,?)",
-                     (cursor.lastrowid, data["status"], data.get("actual_date"), _now(), actor))
-        return dict(conn.execute("SELECT * FROM cash_entries WHERE id=?", (cursor.lastrowid,)).fetchone())
+    cursor = conn.execute("""INSERT INTO cash_entries(request_key,payload_json,kind,direction,planned_date,actual_date,
+      amount_minor,currency,amount,exchange_rate,category,reference,status,created_at,actor)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (data["request_key"], encoded, data["kind"], data["direction"],
+      data["planned_date"], data.get("actual_date"), minor, data["currency"], str(amount), str(rate),
+      data["category"], data["reference"], data["status"], _now(), actor))
+    conn.execute("INSERT INTO cash_entry_events(entry_id,status,actual_date,changed_at,actor) VALUES(?,?,?,?,?)",
+                 (cursor.lastrowid, data["status"], data.get("actual_date"), _now(), actor))
+    return dict(conn.execute("SELECT * FROM cash_entries WHERE id=?", (cursor.lastrowid,)).fetchone())
 
 
 def change_status(entry_id, status, actual_date=None, actor=None):
+    from .cash_accounts import grouped_status
+    paired = grouped_status(entry_id, status, actual_date, actor)
+    if paired is not None: return paired
     if status not in {"actual", "cancelled"}: raise ValueError("Недопустимый статус")
     if status == "actual": actual_date = date.fromisoformat(str(actual_date)).isoformat()
     elif actual_date: raise ValueError("Дата платежа для отмены не требуется")
@@ -92,8 +109,11 @@ def cash_report(start, end):
     if start > end: raise ValueError("Начало периода позже окончания")
     with connect() as conn:
         initialize(conn)
-        rows = [dict(row) for row in conn.execute("SELECT * FROM cash_entries ORDER BY planned_date,id")]
-        events = [dict(row) for row in conn.execute("SELECT * FROM cash_entry_events ORDER BY id")]
+        has_accounts = conn.execute("SELECT 1 FROM sqlite_master WHERE name='cash_account_entries'").fetchone()
+        scope = " WHERE NOT EXISTS(SELECT 1 FROM cash_account_entries m WHERE m.entry_id=cash_entries.id AND m.account_id!=1)" if has_accounts else ""
+        rows = [dict(row) for row in conn.execute("SELECT * FROM cash_entries"+scope+" ORDER BY planned_date,id")]
+        ids = {row["id"] for row in rows}
+        events = [dict(row) for row in conn.execute("SELECT * FROM cash_entry_events ORDER BY id") if row["entry_id"] in ids]
     active = [row for row in rows if row["status"] != "cancelled"]
     anchor = next((r for r in active if r["kind"] == "opening"), None)
     anchor_date = anchor["planned_date"] if anchor else None

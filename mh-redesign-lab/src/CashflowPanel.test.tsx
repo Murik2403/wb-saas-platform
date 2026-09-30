@@ -3,6 +3,7 @@ import {fireEvent,render,screen,waitFor} from "@testing-library/react";
 import {CashflowPanel} from "./CashflowPanel";
 import {getCashflow,createCashEntry,changeCashEntry,type CashReport} from "./cashflow-source";
 vi.mock("./cashflow-source",()=>({getCashflow:vi.fn(),createCashEntry:vi.fn(),changeCashEntry:vi.fn()}));
+vi.mock("./CashAccountsPanel",()=>({CashAccountsPanel:()=>null}));
 const report: CashReport={items:[],events:[],opening_balance_minor:100000,actual_closing_minor:120000,forecast_closing_minor:71250,actual_inflow_minor:20000,actual_outflow_minor:0,overdue_planned_minor:0,opening_confirmed:true,period_before_opening:false,daily:[]};
 describe("CashflowPanel",()=>{
   beforeEach(()=>{vi.resetAllMocks();vi.mocked(getCashflow).mockResolvedValue(report);});
