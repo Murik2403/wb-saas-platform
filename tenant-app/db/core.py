@@ -31,6 +31,9 @@ def connect():
         yield conn
         conn.commit()
     except sqlite3.IntegrityError as exc:
+        if "SHARED_WAREHOUSE:" in str(exc):
+            from .shared_warehouse import WarehouseStockError
+            raise WarehouseStockError('Изменение слоя нарушает резерв, принадлежность магазина или историю') from exc
         if "QUARANTINE:" in str(exc):
             raise ValueError("QUARANTINE: движение заблокировано карантином; сначала снимите резерв инцидента.") from exc
         raise

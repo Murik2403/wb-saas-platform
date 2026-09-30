@@ -332,10 +332,15 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
     for hold in holds:
         reserved[hold["layer_id"]] = reserved.get(hold["layer_id"], 0) + int(hold["units"])
     for layer in intermediate_layers:
+        from .shared_warehouse import reserved_units
         physical = int(layer["ready_units"])
         layer["physical_ready_units"] = physical
         layer["quarantined_ready_units"] = reserved.get(layer["id"], 0)
-        layer["ready_units"] = max(0, physical - layer["quarantined_ready_units"])
+        layer["shop_reserved_ready_units"] = reserved_units(conn,layer["id"])
+        layer["ready_units"] = max(0, physical - layer["quarantined_ready_units"]-layer["shop_reserved_ready_units"])
+    shared_revision=[]
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='warehouse_reservations'").fetchone():
+        shared_revision=[tuple(r) for r in conn.execute('SELECT id,shop_id,item_id,status,revision,fingerprint FROM warehouse_reservations ORDER BY id')]
     # A hashable source revision lets confirm detect writes to otherwise unchanged selected fields too.
     revisions = {
         "tasks": [tuple(r) for r in conn.execute("SELECT task_key,task_date,nm_id,chrt_id,planned_units,actual_units,status,updated_at FROM execution_tasks WHERE task_date BETWEEN ? AND ? ORDER BY task_key", (start_date, end_date)).fetchall()],
@@ -344,6 +349,7 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
         "orders": [tuple(r) for r in po_rows],
         "fifo": [tuple(r) for r in fifo_inventory],
         "ready_quarantine": {"holds": holds, "revision": hold_revision},
+        "shared_reservations": shared_revision,
     }
     return {"start_date": start_date, "end_date": end_date, "tasks": tasks, "variants": variants, "boms": boms, "inventory": inventory, "fifo_inventory": fifo_inventory, "open_orders": [dict(r) for r in po_rows], "suppliers": suppliers, "catalog_identities": catalog_identities, "intermediate_layers": intermediate_layers, "revisions": revisions}
 

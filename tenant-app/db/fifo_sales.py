@@ -230,6 +230,9 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
             try:
                 nm_id=int(row["nm_id"] or 0); article=str(row["supplier_article"] or ""); product=str(row["product_name"] or "")
                 chrt_id=_sales_raw_chrt_id(row["raw_json"])
+                from .shared_warehouse import managed, WarehouseScopeError
+                if managed(conn,nm_id,chrt_id):
+                    raise WarehouseScopeError('Продажа или возврат общего SKU требует явного магазина и центрального распределителя')
                 event_type="return" if int(row["is_return"] or 0)==1 else "sale"
                 source_key=str(row["id"])
                 event_key=f"sales_fifo:{source_key}"
@@ -249,6 +252,9 @@ def process_sales_fifo_events(limit: int=5000) -> dict[str,Any]:
                     try:
                         fifo_cost,_=_move_finished_goods_fifo(conn,movement_id,nm_id,article,product,1,"wb",None,chrt_id)
                     except ValueError as fifo_exc:
+                        from .shared_warehouse import WarehouseError
+                        if isinstance(fifo_exc,WarehouseError):
+                            raise
                         if "COST_PENDING:" in str(fifo_exc):
                             raise
                         # A sale can arrive before a matching stock/receipt event. Preserve COGS with a synthetic

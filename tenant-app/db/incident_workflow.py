@@ -91,6 +91,8 @@ def hold(case_id,layer_id,location,units,request_key,actor):
         layer=conn.execute('SELECT * FROM finished_goods_cost_layers WHERE id=?',(layer_id,)).fetchone()
         if not layer or layer['status']=='reversed':raise ValueError('FIFO-слой не найден.')
         reserved=held_units(conn,layer_id,location)
+        from .shared_warehouse import allocated_units
+        reserved+=allocated_units(conn,layer_id,location)
         if int(layer[LOCATIONS[location]])-reserved<units:raise ValueError('Недостаточно свободных единиц в выбранном FIFO-слое.')
         cur=conn.execute("INSERT INTO incident_holds(case_id,layer_id,location,units,request_key,status,actor,created_at) VALUES(?,?,?,?,?,'held',?,?)",(case_id,layer_id,location,units,request_key,actor,now()))
         identifier=int(cur.lastrowid);journal(conn,case_id,'quarantine',{'hold_id':identifier,'layer_id':layer_id,'location':location,'units':units},actor)
@@ -119,7 +121,9 @@ def workspace(case_id):
         for layer in layers:
             for location,column in LOCATIONS.items():
                 layer['held_'+location+'_units']=held_units(conn,layer['id'],location)
-                layer['available_'+location+'_units']=max(0,layer[column]-layer['held_'+location+'_units'])
+                from .shared_warehouse import allocated_units
+                layer['allocated_'+location+'_units']=allocated_units(conn,layer['id'],location)
+                layer['available_'+location+'_units']=max(0,layer[column]-layer['held_'+location+'_units']-layer['allocated_'+location+'_units'])
         return {'details':{**(dict(details) if details else {'assignee':'','deadline':None,'outcome':''}),'status':case['status']},'history':rows('SELECT * FROM (SELECT * FROM incident_workflow_history WHERE case_id=? ORDER BY id DESC LIMIT 500) ORDER BY id',(case_id,)),'history_count':conn.execute('SELECT COUNT(*) FROM incident_workflow_history WHERE case_id=?',(case_id,)).fetchone()[0],'evidence':rows('SELECT id,filename,media_type,sha256,length(content) AS size,actor,created_at FROM incident_evidence WHERE case_id=? ORDER BY id',(case_id,)),'holds':rows('SELECT h.*,l.nm_id,l.chrt_id FROM incident_holds h JOIN finished_goods_cost_layers l ON l.id=h.layer_id WHERE h.case_id=? ORDER BY (h.status="held") DESC,h.id DESC LIMIT 500',(case_id,)),'layers':layers}
 
 def evidence(case_id,evidence_id):

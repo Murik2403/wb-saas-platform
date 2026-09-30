@@ -83,6 +83,9 @@ def _create_finished_goods_layer(
     note: str = "",
     chrt_id: int = 0,
 ) -> int:
+    from .shared_warehouse import managed, WarehouseScopeError
+    if managed(conn,int(nm_id),int(chrt_id)) and (source_type in {'synthetic_sale','return_unmatched','reconstruction_cost_pending'} or str(source_type).startswith('opening_')):
+        raise WarehouseScopeError('Для общего SKU запрещено синтетическое физическое восстановление')
     qty = max(0, int(units or 0))
     if qty <= 0:
         raise ValueError("Нельзя создать нулевой слой готовой продукции.")
@@ -196,6 +199,9 @@ def _move_finished_goods_fifo(
     to_location: str | None,
     chrt_id: int = 0,
 ) -> tuple[float, list[dict[str, float]]]:
+    from .shared_warehouse import managed, WarehouseScopeError
+    if managed(conn,int(nm_id),int(chrt_id)):
+        raise WarehouseScopeError('Общий SKU перемещается только центральным распределителем с shop identity')
     qty = max(0, int(units or 0))
     if qty <= 0:
         return 0.0, []

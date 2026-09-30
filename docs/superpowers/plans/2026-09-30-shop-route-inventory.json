@@ -1,0 +1,3305 @@
+{
+  "base": "c37c6aa",
+  "route_count": 170,
+  "note": "Source inventory only; no dispatcher allowlist until each scope is reviewed.",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "health",
+      "line": 865,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "legacy_health",
+      "line": 871,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/_stcore/health",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "legacy_health",
+      "line": 871,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/session",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_session",
+      "line": 877,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "os.getenv",
+        "request.headers.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/jobs",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "jobs_status",
+      "line": 894,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(entry / 'cmdline').read_bytes",
+        "(entry / 'cmdline').read_bytes().replace",
+        "(entry / 'cmdline').read_bytes().replace(b'\\x00', b' ').decode",
+        "Path",
+        "app.get",
+        "entry.name.isdigit",
+        "local_jobs.status",
+        "os.environ.get",
+        "proc_root.exists",
+        "proc_root.iterdir"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sync",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "start_tenant_sync",
+      "line": 956,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "get_token",
+        "is_sync_running",
+        "sync_runner.start"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sync/status",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_tenant_sync_status",
+      "line": 968,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "is_sync_running",
+        "json_safe",
+        "last_sync",
+        "record.get",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sync/ads",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "start_ads_sync",
+      "line": 975,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_clear_dashboard_caches",
+        "app.post",
+        "context_response_cache.clear",
+        "get_token",
+        "is_sync_running",
+        "sync_ads_only",
+        "sync_runner.start"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sync/finance",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "start_finance_sync",
+      "line": 1048,
+      "scope": "architecture-review-required",
+      "calls": [
+        "FinanceSyncInput",
+        "HTTPException",
+        "_clear_dashboard_caches",
+        "app.post",
+        "context_response_cache.clear",
+        "get_token",
+        "int",
+        "is_sync_running",
+        "max",
+        "min",
+        "sync_finances",
+        "sync_runner.start"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/products/prices",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_wb_product_prices",
+      "line": 1065,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token).get_product_prices",
+        "app.get",
+        "get_token",
+        "json_safe",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/products/prices/upload",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "upload_wb_product_prices",
+      "line": 1076,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ValueError",
+        "WBAPI",
+        "WBAPI(token, timeout=20).upload_product_prices",
+        "ZoneInfo",
+        "_init_redesign_schema",
+        "app.post",
+        "conn.execute",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace(tzinfo=None).isoformat",
+        "get_token",
+        "good.model_dump",
+        "int",
+        "isinstance",
+        "json_safe",
+        "len",
+        "result.get",
+        "sqlite3.connect",
+        "str",
+        "upload_data.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/products/prices/uploads/{upload_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_wb_price_upload_status",
+      "line": 1099,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token, timeout=15).get_price_upload_status",
+        "ZoneInfo",
+        "_init_redesign_schema",
+        "app.get",
+        "bool",
+        "conn.execute",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace(tzinfo=None).isoformat",
+        "get_token",
+        "json_safe",
+        "result.get",
+        "sqlite3.connect",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/products/prices/uploads",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_wb_price_uploads",
+      "line": 1117,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_init_redesign_schema",
+        "app.get",
+        "conn.execute",
+        "conn.execute('SELECT wb_upload_id, goods_count, status, error, created_at, updated_at FROM redesign_price_uploads ORDER BY id DESC LIMIT 20').fetchall",
+        "dict",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sync/sections",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "sync_sections",
+      "line": 1126,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "conn.execute",
+        "conn.execute('SELECT finished_at, details FROM sync_log WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1000').fetchall",
+        "re.search",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sync/history",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_tenant_sync_history",
+      "line": 1142,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "conn.execute",
+        "conn.execute('SELECT id, started_at, finished_at, status, details FROM sync_log ORDER BY id DESC LIMIT 14').fetchall",
+        "dict",
+        "json_safe",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/data-status",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_data_status",
+      "line": 1153,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(datetime.now(ZoneInfo('Europe/Moscow')) - updated).total_seconds",
+        "ZoneInfo",
+        "any",
+        "app.get",
+        "bool",
+        "conn.execute",
+        "conn.execute(\"SELECT 1 FROM sqlite_master WHERE name='costs'\").fetchone",
+        "conn.execute(\"SELECT 1 FROM sqlite_master WHERE name='material_inventory_color'\").fetchone",
+        "conn.execute(\"SELECT 1 FROM sqlite_master WHERE name='production_settings'\").fetchone",
+        "conn.execute(\"SELECT 1 FROM sqlite_master WHERE name='products_catalog'\").fetchone",
+        "conn.execute(\"SELECT finished_at, status, details FROM sync_log WHERE status IN ('success', 'partial') AND finished_at IS NOT NULL AND COALESCE(details, '') NOT LIKE 'scope: ads%' ORDER BY id DESC LIMIT 1\").fetchone",
+        "conn.execute('SELECT 1 FROM material_inventory_color WHERE balance_known=1 LIMIT 1').fetchone",
+        "conn.execute('SELECT 1 FROM production_settings WHERE enabled=1 LIMIT 1').fetchone",
+        "conn.execute('SELECT COUNT(*) FROM costs WHERE cost_per_wb_unit > 0').fetchone",
+        "conn.execute('SELECT COUNT(*) FROM products_catalog p WHERE NOT EXISTS (SELECT 1 FROM costs c WHERE c.nm_id=p.nm_id AND c.cost_per_wb_unit>0)').fetchone",
+        "datetime.fromisoformat",
+        "datetime.now",
+        "get_token",
+        "int",
+        "load_settings",
+        "load_settings().get",
+        "max",
+        "re.search",
+        "row[0].replace",
+        "sqlite3.connect",
+        "sync_sections",
+        "updated.isoformat",
+        "updated.replace"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/today",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_today",
+      "line": 1188,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_build_ctx",
+        "_dashboard_response",
+        "app.get",
+        "compute_today",
+        "json_safe",
+        "table_count"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/overview",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_overview",
+      "line": 1200,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "PERIOD_LABELS.get",
+        "Query",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "_dashboard_response",
+        "app.get",
+        "compute_overview",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "json_safe",
+        "previous_window",
+        "resolve_window",
+        "table_count",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/products",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_products",
+      "line": 1249,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "PERIOD_LABELS.get",
+        "Query",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "_dashboard_response",
+        "app.get",
+        "compute_products",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "json_safe",
+        "resolve_window",
+        "table_count",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/growth/activation",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_growth_activation",
+      "line": 1293,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "activation_summary",
+        "app.get",
+        "background_tasks.add_task",
+        "bool",
+        "get_token"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/growth/first-report",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_first_growth_report",
+      "line": 1328,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "_build_first_report",
+        "app.get"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/growth/report-viewed",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "record_growth_report_viewed",
+      "line": 1333,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_build_first_report",
+        "app.post",
+        "background_tasks.add_task",
+        "datetime.now",
+        "datetime.now(timezone.utc).isoformat",
+        "record_first_value",
+        "request.headers.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/products/cards",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_product_cards",
+      "line": 1348,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token, timeout=30).get_product_cards",
+        "_customer_quality_error",
+        "app.get",
+        "cards.append",
+        "get_token",
+        "isinstance",
+        "json_safe",
+        "len",
+        "photo.get",
+        "photo.strip",
+        "photo_urls.append",
+        "row.get",
+        "value.strip"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/products/cards/{nm_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_wb_product_card",
+      "line": 1407,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_card_nm_id",
+        "_wb_write_client",
+        "app.patch",
+        "client.get_product_cards",
+        "client.update_product_card",
+        "dict",
+        "json_safe",
+        "next",
+        "payload.model_dump",
+        "str",
+        "updated.update"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/products/cards/{nm_id}/media",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "save_wb_product_media",
+      "line": 1433,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_wb_write_client",
+        "_wb_write_client().save_product_media",
+        "any",
+        "app.post",
+        "json_safe",
+        "len",
+        "str",
+        "url.lower",
+        "url.lower().startswith",
+        "url.strip"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/ads",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_ads",
+      "line": 1454,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "PERIOD_LABELS.get",
+        "Query",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "_dashboard_response",
+        "app.get",
+        "compute_ads",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "json_safe",
+        "resolve_window",
+        "table_count",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/today",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_today",
+      "line": 1492,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_dashboard_response",
+        "_product_inventory",
+        "_revenue_trend_days",
+        "_revenue_trend_hours",
+        "_today_dashboard",
+        "_today_metrics",
+        "app.get",
+        "json_safe",
+        "today.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/finance",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_finance",
+      "line": 1511,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "PERIOD_LABELS.get",
+        "Query",
+        "WBAPI",
+        "WBAPI(token).get_balance",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "_dashboard_response",
+        "app.get",
+        "data.financial_products.head",
+        "data.financial_products.head(200).to_dict",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "f.get",
+        "fifo_cogs.to_dict",
+        "float",
+        "get_token",
+        "json_safe",
+        "read_financial_fifo_reconciliation",
+        "read_sales_fifo_cogs",
+        "resolve_window",
+        "summarize_financial_fifo_reconciliation",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/finance/fifo-reconciliation",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_finance_fifo_reconciliation_rows",
+      "line": 1570,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "ZoneInfo",
+        "app.get",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "int",
+        "json_safe",
+        "len",
+        "project_historical_cogs",
+        "read_financial_fifo_reconciliation",
+        "read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat()).reset_index",
+        "resolve_window",
+        "rows['event_type'].isin",
+        "selected.reindex",
+        "selected.reindex(columns=columns).to_dict",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/finance/export",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "export_finance_workbook",
+      "line": 1615,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "Response",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "app.get",
+        "build_finance_csv",
+        "build_finance_excel",
+        "build_reconciliation",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "f.get",
+        "pd.DataFrame",
+        "pd.to_datetime",
+        "read_table",
+        "resolve_window",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/finance/wb-costs",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_wb_cost_reports",
+      "line": 1785,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "ZoneInfo",
+        "_compact_wb_cost_rows",
+        "_start_wb_cost_job",
+        "_start_wb_paid_storage_job",
+        "_wb_cost_error",
+        "app.get",
+        "callable",
+        "client.get_deductions",
+        "client.get_measurement_penalties",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "end.isoformat",
+        "errors.append",
+        "get_token",
+        "getattr",
+        "hash",
+        "isinstance",
+        "job.get",
+        "json_safe",
+        "paid_storage_getter",
+        "resolve_window",
+        "start.isoformat",
+        "str",
+        "wb_cost_response_cache.get_or_build"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/customer-quality",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_customer_quality",
+      "line": 1842,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(datetime.now(ZoneInfo('Europe/Moscow')).date() - timedelta(days=30)).isoformat",
+        "HTTPException",
+        "WBAPI",
+        "ZoneInfo",
+        "_customer_quality_error",
+        "app.get",
+        "client.get_goods_returns",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat",
+        "errors.append",
+        "get_token",
+        "getter",
+        "isinstance",
+        "json_safe",
+        "monotonic",
+        "timedelta"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customer-quality/feedbacks/answer",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "answer_customer_feedback",
+      "line": 1879,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token).answer_feedback",
+        "app.post",
+        "get_token",
+        "json_safe",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customer-quality/questions/answer",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "answer_customer_question",
+      "line": 1888,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token).answer_question",
+        "app.post",
+        "get_token",
+        "json_safe",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customer-quality/returns/process",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "process_customer_return",
+      "line": 1897,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token).process_return_claim",
+        "app.post",
+        "get_token",
+        "json_safe",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customer-quality/chats/message",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "send_customer_chat_message",
+      "line": 1906,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token).send_seller_message",
+        "app.post",
+        "get_token",
+        "json_safe",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/action-plan/items",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_action_plan_items",
+      "line": 1915,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_init_redesign_schema",
+        "_plan_row",
+        "app.get",
+        "conn.execute",
+        "conn.execute('SELECT * FROM redesign_action_plan ORDER BY created_at DESC').fetchall",
+        "json_safe",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/action-plan/items",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_action_plan_item",
+      "line": 1924,
+      "scope": "architecture-review-required",
+      "calls": [
+        "ZoneInfo",
+        "_init_redesign_schema",
+        "_plan_row",
+        "app.post",
+        "conn.execute",
+        "conn.execute('SELECT * FROM redesign_action_plan WHERE id = ?', (item_id,)).fetchone",
+        "conn.execute('SELECT * FROM redesign_action_plan\\n                   WHERE source_action_id = ?\\n                   ORDER BY created_at DESC, id DESC\\n                   LIMIT 1', (payload.source_action_id,)).fetchone",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace(tzinfo=None).isoformat",
+        "json.dumps",
+        "json_safe",
+        "sqlite3.connect",
+        "str"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/action-plan/items/{item_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_action_plan_item",
+      "line": 1957,
+      "scope": "architecture-review-required",
+      "calls": [
+        "', '.join",
+        "HTTPException",
+        "ZoneInfo",
+        "_init_redesign_schema",
+        "_plan_row",
+        "app.patch",
+        "assignments.append",
+        "changes.get",
+        "changes.values",
+        "conn.execute",
+        "conn.execute('SELECT * FROM redesign_action_plan WHERE id = ?', (item_id,)).fetchone",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace",
+        "datetime.now(ZoneInfo('Europe/Moscow')).replace(tzinfo=None).isoformat",
+        "history.append",
+        "json.dumps",
+        "json.loads",
+        "json_safe",
+        "list",
+        "payload.model_dump",
+        "sqlite3.connect",
+        "str",
+        "str(changes.get('result') or current['result'] or '').strip",
+        "values.append",
+        "values.extend"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/procurement",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_procurement_operation",
+      "line": 1999,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "create_procurement_order",
+        "date.today",
+        "datetime.now",
+        "datetime.now().isoformat",
+        "item.model_dump",
+        "payload.supplier_name.strip",
+        "pd.DataFrame",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/procurement",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_procurement_operations",
+      "line": 2023,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "json_safe",
+        "read_procurement_items",
+        "read_procurement_movements",
+        "read_procurement_orders",
+        "read_procurement_payments"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/operations/procurement/{order_id}/status",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_procurement_status",
+      "line": 2034,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "float",
+        "order.get",
+        "orders['id'].eq",
+        "pd.DataFrame",
+        "read_procurement_orders",
+        "str",
+        "update_procurement_order"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/procurement/{order_id}/payments",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_procurement_payment",
+      "line": 2048,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "date.today",
+        "record_procurement_payment",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/production/shift",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_production_shift",
+      "line": 2057,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "any",
+        "app.post",
+        "conn.execute",
+        "conn.execute(\"\\n                    SELECT p.nm_id,p.supplier_article,COALESCE(c.product_name,'') AS product_name\\n                      FROM production_settings p\\n                      LEFT JOIN products_catalog c ON c.nm_id=p.nm_id\\n                     WHERE LOWER(TRIM(COALESCE(p.supplier_article,'')))=LOWER(TRIM(?))\\n                     LIMIT 1\\n                    \", (article,)).fetchone",
+        "int",
+        "item.get",
+        "len",
+        "pd.DataFrame",
+        "rows.append",
+        "save_execution_tasks",
+        "sqlite3.connect",
+        "str",
+        "str(item.get('product_name') or '').strip",
+        "str(item.get('supplier_article') or '').strip",
+        "task.model_dump"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/production/execution",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_production_execution",
+      "line": 2100,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "json_safe",
+        "read_table",
+        "task_types.isin",
+        "tasks.loc[task_types.isin({'production', 'производство'})].copy",
+        "tasks.loc[~tasks['status'].astype(str).str.strip().str.casefold().eq('закрыто')].copy",
+        "tasks['status'].astype",
+        "tasks['status'].astype(str).str.strip",
+        "tasks['status'].astype(str).str.strip().str.casefold",
+        "tasks['status'].astype(str).str.strip().str.casefold().eq",
+        "tasks['task_type'].astype",
+        "tasks['task_type'].astype(str).str.strip",
+        "tasks['task_type'].astype(str).str.strip().str.casefold"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/production/execution",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "save_production_execution",
+      "line": 2110,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "any",
+        "app.post",
+        "len",
+        "pd.DataFrame",
+        "save_execution_tasks",
+        "str",
+        "task.model_dump"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/production/execution/{task_date}/close",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "close_production_execution",
+      "line": 2123,
+      "scope": "architecture-review-required",
+      "calls": [
+        "'; '.join",
+        "HTTPException",
+        "app.post",
+        "close_production_shift",
+        "json_safe",
+        "result.get",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/supply/{order_id}/receipt",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "post_supply_receipt",
+      "line": 2131,
+      "scope": "architecture-review-required",
+      "calls": [
+        "'; '.join",
+        "HTTPException",
+        "all",
+        "app.post",
+        "conn.execute",
+        "conn.execute('SELECT id FROM procurement_items WHERE order_id=? AND quantity > posted_quantity ORDER BY id LIMIT 1', (order_id,)).fetchone",
+        "int",
+        "item.get",
+        "item.model_dump",
+        "pd.DataFrame",
+        "post_procurement_receipt",
+        "result.get",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/reports/pdf",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "download_report_pdf",
+      "line": 2152,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "Response",
+        "app.get",
+        "build_report_pdf",
+        "date.today",
+        "str",
+        "timedelta"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/reports",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_report_operations",
+      "line": 2178,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(DB_PATH.parent / 'reports').resolve",
+        "Path",
+        "Path(str(run.get('file_path') or '')).resolve",
+        "ReportStore",
+        "app.get",
+        "bool",
+        "json.loads",
+        "json_safe",
+        "len",
+        "path.is_file",
+        "run.get",
+        "store.list_definitions",
+        "store.list_runs",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/reports/definitions",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_report_definition",
+      "line": 2193,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ReportStore",
+        "any",
+        "app.post",
+        "int",
+        "payload.name.strip",
+        "payload.schedule_time.split",
+        "range",
+        "store.add_definition"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/reports/delivery",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "report_delivery_status",
+      "line": 2223,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "delivery.get_delivery_status"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/operations/reports/definitions/{definition_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_report_definition",
+      "line": 2228,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ReportStore",
+        "any",
+        "app.patch",
+        "int",
+        "payload.name.strip",
+        "payload.schedule_time.split",
+        "range",
+        "store.update_definition"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/operations/reports/definitions/{definition_id}/enabled",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "toggle_report_definition",
+      "line": 2256,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ReportStore",
+        "app.patch",
+        "store.set_enabled"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/reports/telegram/link-code",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "report_telegram_link_code",
+      "line": 2266,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "delivery.get_delivery_status",
+        "delivery.request_telegram_link_code",
+        "status.get",
+        "str",
+        "str(status.get('telegram_bot_username') or '').lstrip"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/reports/definitions/{definition_id}/generate",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "generate_report_definition",
+      "line": 2278,
+      "scope": "architecture-review-required",
+      "calls": [
+        "ReportStore",
+        "_report_definition",
+        "app.post",
+        "bool",
+        "definition.get",
+        "store.enqueue_run"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/reports/quick",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "generate_quick_report",
+      "line": 2289,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ReportStore",
+        "any",
+        "app.post",
+        "int",
+        "max",
+        "min",
+        "payload.name.strip",
+        "store.add_definition",
+        "store.enqueue_run",
+        "store.set_enabled"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/operations/reports/definitions/{definition_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "delete_report_definition",
+      "line": 2307,
+      "scope": "architecture-review-required",
+      "calls": [
+        "ReportStore",
+        "_report_definition",
+        "app.delete",
+        "store.delete_definition"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/reports/runs/{run_id}/download",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "download_saved_report",
+      "line": 2315,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(DB_PATH.parent / 'reports').resolve",
+        "HTTPException",
+        "Path",
+        "Path(str(run['file_path'])).resolve",
+        "ReportStore",
+        "Response",
+        "app.get",
+        "int",
+        "next",
+        "path.is_file",
+        "path.read_bytes",
+        "run.get",
+        "store.list_runs",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/incidents",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_wb_incidents",
+      "line": 2328,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "json_safe",
+        "read_wb_incident_cases",
+        "wb_incident_financial_summary"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/incidents",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_wb_incident",
+      "line": 2333,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "create_wb_incident_case",
+        "payload.incident_date.isoformat",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/incidents/{case_id}/compensations",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "add_wb_incident_compensation",
+      "line": 2342,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "payload.compensation_date.isoformat",
+        "record_wb_incident_compensation",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/incidents/{case_id}/loss",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "apply_incident_loss",
+      "line": 2351,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "apply_wb_incident_loss",
+        "json_safe",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/stock",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_stock",
+      "line": 2361,
+      "scope": "architecture-review-required",
+      "calls": [
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "_dashboard_response",
+        "_product_inventory",
+        "_stock_coverage",
+        "_today_dashboard",
+        "app.get",
+        "data.kpi.get",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "float",
+        "int",
+        "json_safe",
+        "len",
+        "procurement.get",
+        "round",
+        "str",
+        "sum",
+        "timedelta",
+        "today.get",
+        "today.get('tabs', {}).get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/stock/seller-warehouses",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_seller_warehouse_stock",
+      "line": 2422,
+      "scope": "architecture-review-required",
+      "calls": [
+        "WBAPI",
+        "_catalog_chrt_ids",
+        "_dashboard_response",
+        "_wb_cost_error",
+        "app.get",
+        "bool",
+        "client.get_seller_warehouse_inventory",
+        "client.get_seller_warehouses",
+        "get_token",
+        "int",
+        "item.get",
+        "json_safe",
+        "output.append",
+        "str",
+        "sum",
+        "warehouse.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/analytics",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_analytics",
+      "line": 2500,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "WBAPI",
+        "WBAPI(token).get_sales_funnel_products",
+        "ZoneInfo",
+        "_dashboard_response",
+        "_sales_funnel_summary",
+        "_wb_cost_error",
+        "app.get",
+        "bool",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "day.isoformat",
+        "float",
+        "frame.dropna",
+        "frame.get",
+        "frame.groupby",
+        "get_token",
+        "group['quantity'].sum",
+        "history.append",
+        "int",
+        "json_safe",
+        "len",
+        "pd.to_datetime",
+        "pd.to_numeric",
+        "pd.to_numeric(frame.get('quantity', 0), errors='coerce').fillna",
+        "read_table",
+        "resolve_window",
+        "round",
+        "sorted",
+        "stocks.copy",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fifo/reconciliation",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_fifo_reconciliation",
+      "line": 2546,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "fifo_reconciliation_status",
+        "finished_goods_fifo_guard_status",
+        "json_safe",
+        "last_sync",
+        "preview_finished_goods_reconciliation",
+        "read_fifo_reconciliation_runs",
+        "str",
+        "sync_state.get",
+        "wb_fifo_reconciliation_context"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fifo/reconciliation/runs/{run_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_fifo_reconciliation_run",
+      "line": 2563,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "json_safe",
+        "read_fifo_reconciliation_lines"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fifo/reconciliation/apply",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "apply_fifo_reconciliation",
+      "line": 2568,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "apply_finished_goods_reconciliation",
+        "bool",
+        "finished_goods_fifo_guard_status",
+        "guard.get",
+        "json_safe",
+        "last_sync",
+        "payload.note.strip",
+        "str",
+        "sync_state.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/ads",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_ads",
+      "line": 2584,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "PERIOD_LABELS.get",
+        "Query",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "_dashboard_response",
+        "app.get",
+        "compute_ads",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "json_safe",
+        "payload.get",
+        "resolve_window",
+        "table_count",
+        "window_end.isoformat",
+        "window_start.isoformat"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/production",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_production",
+      "line": 2622,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_dashboard_response",
+        "_production_material_covered",
+        "_production_panels",
+        "_records",
+        "_today_dashboard",
+        "app.get",
+        "execution.loc[task_types.isin({'production', 'производство'})].copy",
+        "execution.loc[~execution['status'].astype(str).str.strip().str.casefold().eq('закрыто')].copy",
+        "execution['status'].astype",
+        "execution['status'].astype(str).str.strip",
+        "execution['status'].astype(str).str.strip().str.casefold",
+        "execution['status'].astype(str).str.strip().str.casefold().eq",
+        "execution['task_type'].astype",
+        "execution['task_type'].astype(str).str.strip",
+        "execution['task_type'].astype(str).str.strip().str.casefold",
+        "int",
+        "json_safe",
+        "len",
+        "material.get",
+        "read_table",
+        "shift.get",
+        "str",
+        "str(task.get('status') or '').strip",
+        "str(task.get('status') or '').strip().casefold",
+        "sum",
+        "task.get",
+        "task_types.isin",
+        "today.get",
+        "today.get('tabs', {}).get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/supply",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_supply",
+      "line": 2665,
+      "scope": "architecture-review-required",
+      "calls": [
+        "WBAPI",
+        "_customer_quality_error",
+        "_dashboard_response",
+        "_records",
+        "_today_dashboard",
+        "app.get",
+        "client.get_acceptance_coefficients",
+        "client.get_fbs_new_orders",
+        "client.get_fbs_supplies",
+        "client.get_transit_tariffs",
+        "get_token",
+        "json_safe",
+        "len",
+        "procurement.get",
+        "read_procurement_orders",
+        "read_suppliers",
+        "today.get",
+        "today.get('tabs', {}).get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/supply/fbs/{supply_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_fbs_supply_details",
+      "line": 2717,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "WBAPI",
+        "WBAPI(token, timeout=15).get_fbs_supply_details",
+        "_customer_quality_error",
+        "_fbs_supply_id",
+        "app.get",
+        "get_token",
+        "json_safe"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/supply/fbs/{supply_id}/barcode",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_fbs_supply_barcode",
+      "line": 2729,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "WBAPI",
+        "WBAPI(token, timeout=15).get_fbs_supply_barcode",
+        "_customer_quality_error",
+        "_fbs_supply_id",
+        "app.get",
+        "get_token",
+        "json_safe"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/suppliers",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_suppliers",
+      "line": 2743,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "json_safe",
+        "read_suppliers"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/suppliers",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "upsert_supplier",
+      "line": 2748,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_records",
+        "app.post",
+        "data.pop",
+        "int",
+        "item.get",
+        "json_safe",
+        "next",
+        "payload.model_dump",
+        "read_suppliers",
+        "save_supplier",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/assistant",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_assistant",
+      "line": 2760,
+      "scope": "architecture-review-required",
+      "calls": [
+        "AgentStore",
+        "_unique_agent_candidates",
+        "app.get",
+        "get_token",
+        "json_safe",
+        "len",
+        "load_settings",
+        "row.get",
+        "row['marketplace'].upper",
+        "settings.get",
+        "store.list_candidates"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/control/data-quality",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_data_quality_control",
+      "line": 2776,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "bool",
+        "build_data_quality_overview",
+        "finished_goods_fifo_guard_status",
+        "get_token",
+        "json_safe",
+        "last_sync",
+        "latest_backup",
+        "load_settings",
+        "str",
+        "sync_info.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/operations/backups",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_tenant_backups",
+      "line": 2789,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "json_safe",
+        "last_sync",
+        "list_backups"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/operations/backups",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_tenant_backup",
+      "line": 2794,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "create_backup",
+        "json_safe",
+        "latest_backup",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_redesign_settings",
+      "line": 2803,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "bool",
+        "get_ozon_credentials",
+        "get_token",
+        "int",
+        "load_settings",
+        "settings.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/wb-token",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_wb_token_status",
+      "line": 2809,
+      "scope": "architecture-review-required",
+      "calls": [
+        "WBAPI",
+        "WBAPI(token).token_scope_info",
+        "app.get",
+        "bool",
+        "get_token",
+        "getattr",
+        "getattr(WBAPI, 'TOKEN_SCOPES', {}).values",
+        "info.get",
+        "list",
+        "str"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_redesign_settings",
+      "line": 2823,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "changes.items",
+        "get_redesign_settings",
+        "load_settings",
+        "payload.model_dump",
+        "save_settings"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/wb-token",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "connect_wb_token",
+      "line": 2837,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "RuntimeError",
+        "WBAPI",
+        "app.post",
+        "bool",
+        "client.test_statistics",
+        "client.token_scope_info",
+        "datetime.now",
+        "datetime.now(timezone.utc).isoformat",
+        "datetime.now(timezone.utc).timestamp",
+        "getattr",
+        "getattr(WBAPI, 'TOKEN_SCOPES', {}).values",
+        "hasattr",
+        "int",
+        "isinstance",
+        "list",
+        "payload.token.strip",
+        "record_growth_event",
+        "save_token",
+        "scope_info.get",
+        "scopes.append",
+        "str"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/settings/wb-token",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "disconnect_wb_token",
+      "line": 2881,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.delete",
+        "delete_token"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/ozon",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "connect_ozon_credentials",
+      "line": 2889,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "save_ozon_credentials"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/settings/ozon",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "disconnect_ozon_credentials",
+      "line": 2898,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.delete",
+        "delete_ozon_credentials"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/material-inventory",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_material_inventory_settings",
+      "line": 2904,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "get_fifo_opening_rate",
+        "json_safe",
+        "read_material_fifo_summary",
+        "read_table"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings/material-inventory",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_material_inventory",
+      "line": 2920,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "get_material_inventory_settings",
+        "item.material_name.strip",
+        "item.model_dump",
+        "json_safe",
+        "len",
+        "name.casefold",
+        "pd.DataFrame",
+        "rows.append",
+        "save_material_inventory",
+        "seen.add",
+        "set",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fifo/materials/initialize",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "initialize_material_fifo_layers",
+      "line": 2948,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_records",
+        "app.post",
+        "get_fifo_opening_rate",
+        "initialize_material_fifo",
+        "json_safe",
+        "read_material_fifo_summary",
+        "set_fifo_opening_rate",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/product-costs",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_product_costs",
+      "line": 2960,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "catalog[catalog_columns].copy",
+        "cost_rows.drop",
+        "costs[cost_columns].copy",
+        "json_safe",
+        "pd.DataFrame",
+        "pd.to_numeric",
+        "pd.to_numeric(rows['cost_per_wb_unit'], errors='coerce').fillna",
+        "pd.to_numeric(rows['nm_id'], errors='coerce').fillna",
+        "pd.to_numeric(rows['nm_id'], errors='coerce').fillna(0).astype",
+        "read_table",
+        "rows.merge",
+        "rows.sort_values",
+        "rows[rows['nm_id'] > 0].drop_duplicates",
+        "{'supplier_article': '', 'product_name': '', 'cost_per_wb_unit': 0.0, 'note': '', 'updated_at': ''}.items"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/manual-expenses",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_manual_expenses",
+      "line": 2996,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "app.get",
+        "bool",
+        "item.get",
+        "read_manual_expenses"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/manual-expenses",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_manual_expense",
+      "line": 3010,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "payload.period_end.isoformat",
+        "payload.period_start.isoformat",
+        "save_manual_expense",
+        "str"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings/manual-expenses/{expense_id}/inclusion",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_manual_expense_inclusion",
+      "line": 3029,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "set_manual_expense_inclusion",
+        "str"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/settings/manual-expenses/{expense_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "remove_manual_expense",
+      "line": 3040,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.delete",
+        "delete_manual_expense"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/store-expenses",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_manual_store_expenses",
+      "line": 3047,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.get",
+        "bool",
+        "item.get",
+        "read_manual_store_expenses"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/store-expenses",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_manual_store_expense",
+      "line": 3057,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "payload.period_end.isoformat",
+        "payload.period_start.isoformat",
+        "save_manual_store_expense",
+        "str"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings/store-expenses/{expense_id}/inclusion",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_manual_store_expense_inclusion",
+      "line": 3072,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "set_manual_store_expense_inclusion",
+        "str"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/settings/store-expenses/{expense_id}",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "remove_manual_store_expense",
+      "line": 3083,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.delete",
+        "delete_manual_store_expense"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/store-expense-templates",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_recurring_store_expense_templates",
+      "line": 3090,
+      "scope": "architecture-review-required",
+      "calls": [
+        "app.get",
+        "bool",
+        "item.get",
+        "list_recurring_store_expense_templates"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/store-expense-templates",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "create_recurring_store_expense_template_route",
+      "line": 3098,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "create_recurring_store_expense_template",
+        "str"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings/store-expense-templates/{template_id}/active",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_recurring_store_expense_template_active",
+      "line": 3110,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "set_recurring_store_expense_template_active"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/store-expense-templates/generate",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "generate_recurring_store_expense_templates",
+      "line": 3119,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "generate_recurring_store_expenses",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/store-expenses/import/preview",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "preview_store_expense_import",
+      "line": 3127,
+      "scope": "architecture-review-required",
+      "calls": [
+        "File",
+        "HTTPException",
+        "app.post",
+        "file.read",
+        "hashlib.sha256",
+        "hashlib.sha256(content).hexdigest",
+        "len",
+        "parse_store_expense_csv",
+        "row.items",
+        "save_store_expense_import_preview",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/store-expenses/import/{batch_id}/confirm",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "confirm_store_expense_import_route",
+      "line": 3147,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "confirm_store_expense_import",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/management-economics",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_management_economics",
+      "line": 3157,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "_build_dashboard_cached",
+        "app.get",
+        "bool",
+        "date.fromisoformat",
+        "end.isoformat",
+        "expense.get",
+        "float",
+        "getattr",
+        "json_safe",
+        "max",
+        "min",
+        "next",
+        "number",
+        "observed_source_amounts",
+        "overlap_metrics",
+        "pd.DataFrame",
+        "pd.notna",
+        "pd.to_numeric",
+        "product.iloc[0].to_dict",
+        "product_numbers",
+        "read_coverage",
+        "read_manual_expenses",
+        "round",
+        "row.get",
+        "rows.append",
+        "start.isoformat",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/management-pnl",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_management_pnl",
+      "line": 3266,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "Query",
+        "ZoneInfo",
+        "_build_dashboard_cached",
+        "app.get",
+        "bool",
+        "date.fromisoformat",
+        "datetime.now",
+        "datetime.now(ZoneInfo('Europe/Moscow')).date",
+        "end.isoformat",
+        "excluded_items.append",
+        "expense.get",
+        "financial.get",
+        "float",
+        "getattr",
+        "ids.items",
+        "included_items.append",
+        "int",
+        "item.get",
+        "json_safe",
+        "max",
+        "min",
+        "numbers_by_product",
+        "numeric_column",
+        "numeric_column(products, 'Выкупы по цене покупателя', 'Выручка').sum",
+        "numeric_column(products, 'Продано нетто', 'Продажи, шт', 'Продажи', 'Количество').sum",
+        "pd.DataFrame",
+        "pd.Series",
+        "pd.isna",
+        "pd.notna",
+        "pd.to_numeric",
+        "pd.to_numeric(frame[name], errors='coerce').fillna",
+        "read_manual_expenses",
+        "read_manual_store_expenses",
+        "resolve_window",
+        "result.get",
+        "round",
+        "source_metrics.get",
+        "start.isoformat",
+        "str",
+        "str(expense.get('source') or '').strip",
+        "str(expense.get('source') or '').strip().lower",
+        "sum",
+        "total_expenses.extend",
+        "unknown_items.append"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings/product-costs",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_product_costs",
+      "line": 3413,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.patch",
+        "item.note.strip",
+        "item.supplier_article.strip",
+        "len",
+        "pd.DataFrame",
+        "request.headers.get",
+        "rows.append",
+        "save_costs",
+        "seen.add",
+        "set"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/production-norms",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_production_norms",
+      "line": 3439,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_records",
+        "app.get",
+        "catalog[['nm_id', 'product_name']].drop_duplicates",
+        "inventory.iterrows",
+        "json_safe",
+        "pd.to_numeric",
+        "pd.to_numeric(rows['enabled'], errors='coerce').fillna",
+        "pd.to_numeric(rows['enabled'], errors='coerce').fillna(0).astype",
+        "pd.to_numeric(rows['material_per_unit'], errors='coerce').fillna",
+        "pd.to_numeric(rows['min_batch'], errors='coerce').fillna",
+        "pd.to_numeric(rows['min_batch'], errors='coerce').fillna(1).astype",
+        "pd.to_numeric(rows['nm_id'], errors='coerce').fillna",
+        "pd.to_numeric(rows['nm_id'], errors='coerce').fillna(0).astype",
+        "pd.to_numeric(rows['pack_size'], errors='coerce').fillna",
+        "pd.to_numeric(rows['pack_size'], errors='coerce').fillna(1).astype",
+        "read_table",
+        "row.get",
+        "rows.merge",
+        "rows.sort_values",
+        "rows['material_name'].fillna",
+        "rows['material_name'].fillna('').map",
+        "settings[columns].copy",
+        "str",
+        "str(name).strip",
+        "str(name).strip().casefold",
+        "str(row['material_name']).strip",
+        "str(row['material_name']).strip().casefold",
+        "units.get",
+        "{'nm_id', 'product_name'}.issubset",
+        "{'supplier_article': '', 'product_name': '', 'enabled': 0, 'material_per_unit': 0.0, 'min_batch': 1, 'pack_size': 1, 'blank_type': '', 'material_name': ''}.items"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings/production-norms",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "update_production_norms",
+      "line": 3482,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "any",
+        "app.patch",
+        "append_settings_change",
+        "conn.execute",
+        "conn.execute('SELECT * FROM production_settings WHERE nm_id=?', (item.nm_id,)).fetchone",
+        "int",
+        "len",
+        "request.headers.get",
+        "required.issubset",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/change-history",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_settings_change_history",
+      "line": 3513,
+      "scope": "architecture-review-required",
+      "calls": [
+        "' AND '.join",
+        "Query",
+        "app.get",
+        "clauses.append",
+        "conn.execute",
+        "conn.execute('SELECT * FROM settings_change_history' + where + ' ORDER BY id DESC LIMIT ? OFFSET ?', [*params, limit, offset]).fetchall",
+        "conn.execute('SELECT COUNT(*) FROM settings_change_history' + where, params).fetchone",
+        "json.loads",
+        "params.append",
+        "sqlite3.connect"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent/candidates",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "list_agent_candidates",
+      "line": 3536,
+      "scope": "architecture-review-required",
+      "calls": [
+        "AgentStore",
+        "Query",
+        "_unique_agent_candidates",
+        "app.get",
+        "json_safe",
+        "store.list_candidates"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/refresh",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "refresh_agent_recommendations",
+      "line": 3545,
+      "scope": "architecture-review-required",
+      "calls": [
+        "AdRules",
+        "AgentStore",
+        "HTTPException",
+        "PriceRules",
+        "WBAgentClient",
+        "_close_stale_agent_duplicates",
+        "_unique_agent_candidates",
+        "ad_agent.evaluate",
+        "app.post",
+        "get_token",
+        "len",
+        "price_agent.evaluate",
+        "store.list_candidates",
+        "warnings.append",
+        "wb_cost_lookup"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/candidates/{candidate_id}/decision",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "decide_agent_candidate",
+      "line": 3570,
+      "scope": "architecture-review-required",
+      "calls": [
+        "AgentStore",
+        "HTTPException",
+        "OzonAgentClient",
+        "WBAgentClient",
+        "_close_stale_agent_duplicates",
+        "app.post",
+        "get_ozon_credentials",
+        "get_token",
+        "int",
+        "module.apply_candidate",
+        "store.list_candidates",
+        "store.record_decision",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/reports",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_dashboard_reports",
+      "line": 3605,
+      "scope": "architecture-review-required",
+      "calls": [
+        "ReportStore",
+        "app.get",
+        "backup.get",
+        "json_safe",
+        "latest_backup",
+        "len",
+        "row.get",
+        "store.list_definitions",
+        "store.list_runs"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings/expense-coverage",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "get_expense_article_coverage",
+      "line": 3634,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "app.get",
+        "end.isoformat",
+        "get_management_economics",
+        "request.headers.get",
+        "request.headers.get('x-tenant-role', 'owner').lower",
+        "start.isoformat"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/settings/expense-coverage",
+      "file": "mh-redesign-lab/tenant-api/api_server.py",
+      "function": "save_expense_article_coverage",
+      "line": 3640,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "app.post",
+        "get_management_economics",
+        "request.headers.get",
+        "save_attestation",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/incident-workflow/{case_id}",
+      "file": "mh-redesign-lab/tenant-api/incident_workflow_api.py",
+      "function": "workspace",
+      "line": 40,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "router.get"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/incident-workflow/{case_id}/details",
+      "file": "mh-redesign-lab/tenant-api/incident_workflow_api.py",
+      "function": "details",
+      "line": 42,
+      "scope": "architecture-review-required",
+      "calls": [
+        "actor",
+        "call",
+        "payload.deadline.isoformat",
+        "router.put"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/incident-workflow/{case_id}/evidence",
+      "file": "mh-redesign-lab/tenant-api/incident_workflow_api.py",
+      "function": "evidence",
+      "line": 46,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "actor",
+        "base64.b64decode",
+        "call",
+        "router.post"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/incident-workflow/{case_id}/evidence/{evidence_id}",
+      "file": "mh-redesign-lab/tenant-api/incident_workflow_api.py",
+      "function": "download",
+      "line": 52,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Response",
+        "bytes",
+        "call",
+        "quote",
+        "router.get"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/incident-workflow/{case_id}/holds",
+      "file": "mh-redesign-lab/tenant-api/incident_workflow_api.py",
+      "function": "hold",
+      "line": 56,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "actor",
+        "call",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/incident-workflow/{case_id}/holds/{hold_id}/release",
+      "file": "mh-redesign-lab/tenant-api/incident_workflow_api.py",
+      "function": "release",
+      "line": 61,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "actor",
+        "call",
+        "router.post"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integration/products",
+      "file": "mh-redesign-lab/tenant-api/integration_api.py",
+      "function": "products",
+      "line": 17,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "page",
+        "router.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integration/materials",
+      "file": "mh-redesign-lab/tenant-api/integration_api.py",
+      "function": "materials",
+      "line": 22,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "page",
+        "router.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integration/releases",
+      "file": "mh-redesign-lab/tenant-api/integration_api.py",
+      "function": "releases",
+      "line": 27,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "page",
+        "router.get"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/manufacturing-costs/boms",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "save_bom",
+      "line": 91,
+      "scope": "architecture-review-required",
+      "calls": [
+        "invoke",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/manufacturing-costs/equipment",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "save_equipment",
+      "line": 96,
+      "scope": "architecture-review-required",
+      "calls": [
+        "invoke",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/manufacturing-costs/piecework",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "save_piecework",
+      "line": 101,
+      "scope": "architecture-review-required",
+      "calls": [
+        "invoke",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/manufacturing-costs/defects",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "save_defect",
+      "line": 106,
+      "scope": "architecture-review-required",
+      "calls": [
+        "invoke",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/manufacturing-costs/releases",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "save_release",
+      "line": 111,
+      "scope": "architecture-review-required",
+      "calls": [
+        "invoke",
+        "router.post"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/manufacturing-costs",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "workspace",
+      "line": 116,
+      "scope": "architecture-review-required",
+      "calls": [
+        "', '.join",
+        "allowed_actions.append",
+        "catalog.to_dict",
+        "int",
+        "isinstance",
+        "json.loads",
+        "json_safe",
+        "layers.loc[layers['ready_units'] > 0, ['id', 'nm_id', 'chrt_id', 'ready_units', 'unit_cost_rub', 'source_date']].to_dict",
+        "list",
+        "products.append",
+        "raw.get",
+        "read_finished_goods_cost_layers",
+        "read_table",
+        "request.headers.get",
+        "request.headers.get('x-tenant-role', 'owner').lower",
+        "router.get",
+        "row.get",
+        "size.get",
+        "store.list_bom_versions",
+        "store.list_equipment",
+        "store.list_manufacturing_releases",
+        "store.list_material_catalog",
+        "store.list_material_defects",
+        "store.list_material_layers",
+        "store.list_piecework",
+        "str",
+        "str(size.get('techSize') or size.get('wbSize') or '').strip",
+        "variants.append",
+        "write_allowed",
+        "{'nm_id', 'product_name'}.issubset",
+        "{(p['nm_id'], p['chrt_id']): p for p in products}.values"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/manufacturing-costs/movements/{movement_id}/reverse",
+      "file": "mh-redesign-lab/tenant-api/manufacturing_costs_api.py",
+      "function": "reverse",
+      "line": 167,
+      "scope": "architecture-review-required",
+      "calls": [
+        "'; '.join",
+        "HTTPException",
+        "conn.execute",
+        "conn.execute('SELECT id FROM manufacturing_releases WHERE movement_id=? UNION ALL SELECT id FROM manufacturing_defects WHERE movement_id=?', (movement_id, movement_id)).fetchone",
+        "connect",
+        "json_safe",
+        "result.get",
+        "router.post",
+        "str",
+        "undo_inventory_movement"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/migration-import/preview",
+      "file": "mh-redesign-lab/tenant-api/migration_import_api.py",
+      "function": "preview",
+      "line": 19,
+      "scope": "architecture-review-required",
+      "calls": [
+        "invoke",
+        "preview_import",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/migration-import/confirm",
+      "file": "mh-redesign-lab/tenant-api/migration_import_api.py",
+      "function": "confirm",
+      "line": 21,
+      "scope": "architecture-review-required",
+      "calls": [
+        "confirm_import",
+        "invoke",
+        "request.headers.get",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/migration-import/history",
+      "file": "mh-redesign-lab/tenant-api/migration_import_api.py",
+      "function": "history",
+      "line": 24,
+      "scope": "architecture-review-required",
+      "calls": [
+        "import_history",
+        "router.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ozon-accounting/workspace",
+      "file": "mh-redesign-lab/tenant-api/ozon_accounting_api.py",
+      "function": "read_workspace",
+      "line": 36,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "bool",
+        "checked_period",
+        "end_date.isoformat",
+        "get_ozon_credentials",
+        "router.get",
+        "start_date.isoformat",
+        "str",
+        "workspace"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ozon-accounting/sync",
+      "file": "mh-redesign-lab/tenant-api/ozon_accounting_api.py",
+      "function": "sync",
+      "line": 47,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "OzonAccountingClient",
+        "allow_write",
+        "checked_period",
+        "client.snapshot",
+        "get_ozon_credentials",
+        "import_snapshot",
+        "isinstance",
+        "payload.end_date.isoformat",
+        "payload.start_date.isoformat",
+        "router.post",
+        "str",
+        "sync_lock.acquire",
+        "sync_lock.release",
+        "workspace"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/ozon-accounting/cost",
+      "file": "mh-redesign-lab/tenant-api/ozon_accounting_api.py",
+      "function": "save_cost",
+      "line": 71,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "allow_write",
+        "router.put",
+        "save_cost_mapping",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production-workspace",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "workspace",
+      "line": 108,
+      "scope": "architecture-review-required",
+      "calls": [
+        "Query",
+        "_capacity",
+        "any",
+        "batch.get",
+        "bool",
+        "calendar.append",
+        "conn.execute",
+        "connect",
+        "current.isoformat",
+        "current.weekday",
+        "date.today",
+        "dict",
+        "end.isoformat",
+        "int",
+        "isinstance",
+        "json.loads",
+        "json_safe",
+        "m.get",
+        "max",
+        "p.get",
+        "product.get",
+        "product.pop",
+        "product_labels.get",
+        "range",
+        "raw.get",
+        "read_wip_blank_allocations",
+        "read_wip_blank_allocations(100).to_dict",
+        "read_wip_blank_batches",
+        "read_wip_blank_batches().to_dict",
+        "read_wip_blank_summary",
+        "read_wip_blank_summary().to_dict",
+        "request.headers.get",
+        "request.headers.get('x-tenant-role', '').lower",
+        "router.get",
+        "size.get",
+        "start.isoformat",
+        "str",
+        "str(size.get('techSize') or size.get('wbSize') or size.get('origName') or '').strip",
+        "str(t['status']).casefold",
+        "sum",
+        "timedelta",
+        "units.get",
+        "variant_products.extend",
+        "variants.append",
+        "wip_module_status"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/wip/issue",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "issue",
+      "line": 187,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_result",
+        "abs",
+        "conn.execute",
+        "conn.execute('SELECT * FROM material_inventory_color WHERE material_key=?', (payload.material_name.casefold(),)).fetchone",
+        "conn.execute('SELECT * FROM wip_blank_batches WHERE batch_key=?', (key,)).fetchone",
+        "conn.execute('SELECT material_name,blank_type FROM production_settings WHERE nm_id=? AND enabled=1', (payload.nm_id,)).fetchone",
+        "conn.execute('SELECT nm_id,chrt_id FROM execution_tasks WHERE task_key=?', (payload.task_key,)).fetchone",
+        "connect",
+        "int",
+        "issue_wip_material",
+        "json_safe",
+        "payload.batch_date.isoformat",
+        "payload.blank_type.strip",
+        "payload.blank_type.strip().casefold",
+        "payload.material_name.casefold",
+        "payload.material_name.strip",
+        "payload.material_name.strip().casefold",
+        "round",
+        "router.post",
+        "saved_blank.casefold",
+        "saved_material.casefold",
+        "str",
+        "str(setting['blank_type'] or '').strip",
+        "str(setting['material_name'] or '').strip",
+        "validate_catalog_identity"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/wip/{batch_id}/complete",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "complete",
+      "line": 231,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_batch",
+        "_result",
+        "complete_wip_blank_batch",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/wip/{batch_id}/reverse",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "reverse",
+      "line": 239,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_batch",
+        "result.get",
+        "router.post",
+        "undo_inventory_movement"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/wip/package",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "package",
+      "line": 251,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_result",
+        "conn.execute",
+        "conn.execute(\"SELECT * FROM inventory_movements WHERE source_task_key=? AND movement_type='production_receipt_wip' AND reversed_at IS NULL\", (key,)).fetchone",
+        "connect",
+        "payload.packaging_date.isoformat",
+        "post_manual_wip_packaging",
+        "router.post"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/production-workspace/capacity",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "save_capacity",
+      "line": 261,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_capacity",
+        "payload.model_dump",
+        "router.put",
+        "save_production_capacity"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production-workspace/workcenters",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "workcenter_view",
+      "line": 317,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(start or date.today()).isoformat",
+        "Query",
+        "_workcenter_authorize",
+        "_workcenter_error",
+        "bool",
+        "centers_db.loading",
+        "centers_db.snapshot",
+        "conn.execute",
+        "connect",
+        "date.today",
+        "dict",
+        "request.headers.get",
+        "request.headers.get('x-tenant-role', 'owner').lower",
+        "router.get"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/workcenters/centers",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "workcenter_save",
+      "line": 329,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_workcenter_authorize",
+        "_workcenter_error",
+        "centers_db.save_center",
+        "conn.execute",
+        "connect",
+        "payload.model_dump",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/workcenters/norms",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "workcenter_norm",
+      "line": 339,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_workcenter_authorize",
+        "_workcenter_error",
+        "centers_db.save_norm",
+        "conn.execute",
+        "connect",
+        "payload.model_dump",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/workcenters/preview",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "workcenter_preview",
+      "line": 349,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_workcenter_authorize",
+        "_workcenter_error",
+        "centers_db.preview",
+        "centers_db.snapshot",
+        "conn.execute",
+        "connect",
+        "payload.change.model_dump",
+        "payload.start.isoformat",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production-workspace/workcenters/confirm",
+      "file": "mh-redesign-lab/tenant-api/production_workspace_api.py",
+      "function": "workcenter_confirm",
+      "line": 359,
+      "scope": "architecture-review-required",
+      "calls": [
+        "_workcenter_authorize",
+        "_workcenter_error",
+        "centers_db.confirm",
+        "conn.execute",
+        "connect",
+        "payload.change.model_dump",
+        "payload.start.isoformat",
+        "request.headers.get",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/shop-workspaces",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "listing",
+      "line": 28,
+      "scope": "architecture-review-required",
+      "calls": [
+        "request.headers.get",
+        "router.get",
+        "shops.listing"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/shop-workspaces",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "create",
+      "line": 33,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ValueError",
+        "WBAPI",
+        "client.test_statistics",
+        "get_token",
+        "isinstance",
+        "request.headers.get",
+        "router.post",
+        "shops.account_identity",
+        "shops.create",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/shop-workspaces/{shop_id}/connection",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "reconnect",
+      "line": 48,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "ValueError",
+        "WBAPI",
+        "WBAPI(payload.token).test_statistics",
+        "request.headers.get",
+        "router.post",
+        "shops.account_identity",
+        "shops.reconnect",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/shop-workspaces/consolidated/report",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "consolidated",
+      "line": 58,
+      "scope": "architecture-review-required",
+      "calls": [
+        "(r['financial'] or {}).get",
+        "HTTPException",
+        "ValueError",
+        "all",
+        "bool",
+        "build_dashboard",
+        "end.isoformat",
+        "execute",
+        "float",
+        "int",
+        "json_safe",
+        "last_sync",
+        "min",
+        "monotonic",
+        "r.get",
+        "router.get",
+        "rows.append",
+        "shops.listing",
+        "start.isoformat",
+        "sum",
+        "sync_status.get"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/shop-workspaces/{shop_id}/report",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "report",
+      "line": 82,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "end.isoformat",
+        "router.get",
+        "start.isoformat"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/shop-workspaces/{shop_id}/sync",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "sync",
+      "line": 85,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "date.today",
+        "end.isoformat",
+        "router.post",
+        "start.isoformat",
+        "timedelta"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/shop-workspaces/{shop_id}/cost",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "cost",
+      "line": 90,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "date.today",
+        "end.isoformat",
+        "payload.model_dump",
+        "request.headers.get",
+        "router.patch",
+        "start.isoformat",
+        "timedelta"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/shop-workspaces/{shop_id}/deactivate",
+      "file": "mh-redesign-lab/tenant-api/shop_workspaces_api.py",
+      "function": "deactivate",
+      "line": 95,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "request.headers.get",
+        "router.post",
+        "shops.deactivate",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/supply-planning/preview",
+      "file": "mh-redesign-lab/tenant-api/supply_planning_api.py",
+      "function": "preview",
+      "line": 59,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_read_preview",
+        "conn.execute",
+        "connect",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/supply-planning/confirm",
+      "file": "mh-redesign-lab/tenant-api/supply_planning_api.py",
+      "function": "confirm",
+      "line": 72,
+      "scope": "architecture-review-required",
+      "calls": [
+        "HTTPException",
+        "_read_preview",
+        "confirm_supply_plan",
+        "conn.execute",
+        "connect",
+        "edit.model_dump",
+        "hashlib.sha256",
+        "hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest",
+        "json.dumps",
+        "json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode",
+        "payload.model_dump",
+        "result.pop",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cashflow",
+      "file": "mh-redesign-lab/tenant-api/cashflow_routes.py",
+      "function": "report",
+      "line": 34,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_report",
+        "router.get"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cashflow/entries",
+      "file": "mh-redesign-lab/tenant-api/cashflow_routes.py",
+      "function": "create",
+      "line": 38,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "create_entry",
+        "payload.model_dump",
+        "request.headers.get",
+        "router.post"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/cashflow/entries/{entry_id}",
+      "file": "mh-redesign-lab/tenant-api/cashflow_routes.py",
+      "function": "update",
+      "line": 42,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "change_status",
+        "request.headers.get",
+        "router.patch"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cash-accounts",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "report",
+      "line": 39,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_accounts.report",
+        "router.get"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cash-accounts",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "create",
+      "line": 41,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_accounts.create_account",
+        "request.headers.get",
+        "router.post"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/cash-accounts/{account_id}",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "archive",
+      "line": 43,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_accounts.archive_account",
+        "router.patch"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cash-accounts/{account_id}/entries",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "entry",
+      "line": 45,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_accounts.create_entry",
+        "payload.model_dump",
+        "request.headers.get",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cash-accounts/transfers",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "transfer",
+      "line": 47,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_accounts.transfer",
+        "payload.model_dump",
+        "request.headers.get",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cash-accounts/statements/preview",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "preview",
+      "line": 49,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_statement.preview",
+        "router.post"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cash-accounts/statements/confirm",
+      "file": "mh-redesign-lab/tenant-api/cash_accounts_routes.py",
+      "function": "confirm",
+      "line": 51,
+      "scope": "architecture-review-required",
+      "calls": [
+        "call",
+        "cash_statement.confirm",
+        "request.headers.get",
+        "router.post"
+      ]
+    }
+  ]
+}

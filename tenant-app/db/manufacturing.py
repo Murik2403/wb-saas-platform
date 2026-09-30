@@ -484,12 +484,15 @@ def _post_release_conn(conn, *, nm_id, quantity, production_date, source_key,
             if not float(needed).is_integer():
                 raise ValueError("Количество полуфабриката должно быть целым")
             needed_units = int(needed)
-            available = conn.execute(
-                "SELECT COALESCE(SUM(ready_units),0) FROM finished_goods_cost_layers "
+            layers = conn.execute(
+                "SELECT id,ready_units FROM finished_goods_cost_layers "
                 "WHERE nm_id=? AND chrt_id=? AND status<>'reversed' AND ready_units>0 "
                 "AND (source_date IS NULL OR source_date<=?)",
                 (int(item["nm_id"]),int(item["chrt_id"]),day),
-            ).fetchone()[0]
+            ).fetchall()
+            from .incident_workflow import held_units
+            from .shared_warehouse import reserved_units
+            available=sum(max(0,int(layer['ready_units'])-held_units(conn,layer['id'],'ready')-reserved_units(conn,layer['id'])) for layer in layers)
             if int(available or 0) < needed_units:
                 raise ValueError(f"Недостаточно FIFO-полуфабрикатов {item['nm_id']} / {item['chrt_id']}")
             components.append({**item,"quantity":needed,"required_units":needed_units})
