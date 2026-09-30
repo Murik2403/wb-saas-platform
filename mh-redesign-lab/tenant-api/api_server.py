@@ -806,6 +806,11 @@ _wb_paid_storage_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix
 _wb_paid_storage_lock = Lock()
 _wb_paid_storage_jobs: dict[str, dict[str, object]] = {}
 _wb_cost_jobs: dict[str, dict[str, object]] = {}
+_finance_balance_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wb-finance-balance")
+_finance_balance_lock = Lock()
+_finance_balance_cache: tuple[str, float, dict] | None = None
+_finance_balance_last_attempt: tuple[str, float] | None = None
+_finance_balance_refreshing: set[str] = set()
 customer_quality_cache: tuple[float, dict] | None = None
 sync_runner = SyncRunner()
 
@@ -820,6 +825,54 @@ def _build_dashboard_cached(start: date, end: date):
     """
     key = f"{id(build_dashboard)}:{start.isoformat()}:{end.isoformat()}"
     return dashboard_data_cache.get_or_build(key, lambda: build_dashboard(start, end))
+
+
+class _FinanceBalanceAPI(WBAPI):
+    """Disable WB backoff retries only for the optional background balance."""
+
+    def _request(self, method: str, url: str, **kwargs):
+        kwargs["retry_safe"] = False
+        return super()._request(method, url, **kwargs)
+
+
+def _refresh_finance_balance(token_key: str, token: str) -> None:
+    """Keep network calls out of finance report calculation."""
+    global _finance_balance_cache, _finance_balance_last_attempt
+    with _finance_balance_lock:
+        _finance_balance_last_attempt = (token_key, monotonic())
+    try:
+        balance = _FinanceBalanceAPI(token, timeout=5).get_balance()
+        if isinstance(balance, dict):
+            with _finance_balance_lock:
+                _finance_balance_cache = (token_key, monotonic(), dict(balance))
+    except Exception:
+        # An unavailable balance must not discard the last successful snapshot.
+        pass
+    finally:
+        with _finance_balance_lock:
+            _finance_balance_refreshing.discard(token_key)
+
+
+def _finance_balance_snapshot() -> dict:
+    """Return the last balance immediately; refresh at most every five minutes."""
+    token = get_token()
+    if not token:
+        return {}
+    token_key = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = monotonic()
+    with _finance_balance_lock:
+        cached = _finance_balance_cache
+        balance = cached[2] if cached and cached[0] == token_key else {}
+        is_fresh = bool(cached and cached[0] == token_key and now - cached[1] < 300)
+        attempted = _finance_balance_last_attempt
+        cooling_down = bool(attempted and attempted[0] == token_key and now - attempted[1] < 300)
+        if not is_fresh and not cooling_down and token_key not in _finance_balance_refreshing:
+            _finance_balance_refreshing.add(token_key)
+            try:
+                _finance_balance_executor.submit(_refresh_finance_balance, token_key, token)
+            except RuntimeError:
+                _finance_balance_refreshing.discard(token_key)
+        return dict(balance)
 
 
 def _clear_dashboard_caches() -> None:
@@ -1554,13 +1607,7 @@ def get_dashboard_finance(
             ("Реклама", -f.get("financial_ad_spend", 0)),
             ("Себестоимость", -f.get("cost", 0)),
         ]
-        balance = {}
-        token = get_token()
-        if token:
-            try:
-                balance = WBAPI(token).get_balance()
-            except Exception:
-                balance = {}
+        balance = _finance_balance_snapshot()
         return json_safe({
             "period": {"label": PERIOD_LABELS.get(period, period), "start": window_start.isoformat(), "end": window_end.isoformat()},
             "financial": f,
