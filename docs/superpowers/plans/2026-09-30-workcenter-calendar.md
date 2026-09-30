@@ -13,3 +13,5 @@
 Verified: tenant330 plus8 subtests; full API334 (21 new real-database workcenter cases); frontend102 (2 new explicit-confirmation/read-only cases) and production build. Calendar reports only explicitly assigned operations, and warns about configured operations without assignments. Missing norms keep loading incomplete rather than treating it as zero. Assignments overlay dates and are not an automatic optimizer or a rewrite of original production facts.
 
 Inherited source-gate caveat: committed base6760c90 lacks Docker COPY for ozon_accounting_api.py. Root already has its independent Docker fix in progress; this scoped workcenter branch deliberately does not include those unrelated dirty changes. Workcenter uses the already-copied production_workspace_api.py and db/ package. Parent must rerun source/image gates after integration and deploy.
+
+SQL replacement follow-up: guard BEFORE INSERT for existing history primary key or request id, since SQLite INSERT OR REPLACE bypasses delete triggers with recursive triggers disabled. Two regressions preserve original journal row under both conflicts.

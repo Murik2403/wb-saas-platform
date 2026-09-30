@@ -149,3 +149,20 @@ def test_history_migration_preserves_legacy_records_without_fabricating_actor():
  assert c.execute('SELECT request_id,actor_role,created_at,actor FROM production_workcenter_history').fetchone()==('legacy','manager','2026-09-01T12:00:00',None)
  with pytest.raises(sqlite3.IntegrityError,match='immutable'):c.execute('DELETE FROM production_workcenter_history')
  c.close()
+
+
+@pytest.mark.parametrize("reuse", ["id", "request_id"])
+def test_history_cannot_be_replaced_even_with_recursive_triggers_disabled(client,reuse):
+ import sqlite3
+ setup(client);p=payload();r=client.post(P+'/preview',json=p).json()
+ client.post(P+'/confirm',json=dict(**p,preview_fingerprint=r['preview_fingerprint'],request_id=str(uuid4())))
+ with core.connect() as c:
+  c.execute('PRAGMA recursive_triggers=OFF')
+  before=dict(c.execute('SELECT * FROM production_workcenter_history').fetchone())
+  changed=dict(before,actor='forged')
+  if reuse=='id':changed['request_id']=str(uuid4())
+  else:changed['id']+=100
+  columns=list(changed)
+  with pytest.raises(sqlite3.IntegrityError,match='immutable'):
+   c.execute('INSERT OR REPLACE INTO production_workcenter_history ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[changed[k] for k in columns])
+  assert dict(c.execute('SELECT * FROM production_workcenter_history').fetchone())==before

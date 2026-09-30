@@ -19,6 +19,7 @@ def init_workcenter_schema(conn):
  if "actor" not in columns:conn.execute("ALTER TABLE production_workcenter_history ADD COLUMN actor TEXT")
  for operation in ("UPDATE","DELETE"):
   conn.execute(f"CREATE TRIGGER IF NOT EXISTS workcenter_history_{operation.lower()}_immutable BEFORE {operation} ON production_workcenter_history BEGIN SELECT RAISE(ABORT, 'Workcenter history is immutable'); END")
+ conn.execute("CREATE TRIGGER IF NOT EXISTS workcenter_history_insert_immutable BEFORE INSERT ON production_workcenter_history WHEN EXISTS (SELECT 1 FROM production_workcenter_history WHERE id=NEW.id OR request_id=NEW.request_id) BEGIN SELECT RAISE(ABORT, 'Workcenter history is immutable'); END")
 
 def positive(value,limit):
  if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not 0<value<=limit: raise ValueError("Укажите конечное положительное число в допустимом диапазоне")
