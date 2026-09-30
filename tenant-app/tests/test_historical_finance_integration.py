@@ -36,7 +36,7 @@ class HistoricalFinanceIntegrationTests(DbTestCase):
             "stocks": empty.copy(), "costs": pd.DataFrame([{"nm_id": 123, "cost_per_wb_unit": 999.0}]),
             "products_catalog": pd.DataFrame([{"nm_id": 123, "supplier_article": "A", "product_name": "Item"}]),
         }
-        with patch("calculations.read_table", side_effect=lambda name: tables[name].copy()), \
+        with patch("calculations.read_table", side_effect=lambda name, **kwargs: tables[name].copy()), \
              patch("calculations.read_financial", return_value=finance), \
              patch("calculations.read_financial_fifo_reconciliation", return_value=reconciliation):
             result = build_dashboard(date(2026, 9, 10), date(2026, 9, 12))

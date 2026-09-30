@@ -1345,12 +1345,20 @@ def _int(value: Any, default: int = 0) -> int:
 def _dump(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
-def read_table(name: str) -> pd.DataFrame:
+def _table_projection(conn, name: str, *, omit_raw: bool = False) -> str:
+    """Opt-in numerical/dashboard projection; ordinary readers retain raw data."""
+    if not omit_raw:
+        return "*"
+    columns = [row[1] for row in conn.execute(f'PRAGMA table_info("{name}")') if row[1] != "raw_json"]
+    return ",".join('"' + column.replace('"', '""') + '"' for column in columns)
+
+
+def read_table(name: str, *, omit_raw: bool = False) -> pd.DataFrame:
     allowed = {"orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "financial_report", "production_settings", "material_inventory", "material_inventory_color", "product_pipeline", "production_capacity", "execution_tasks", "inventory_movements", "procurement_orders", "procurement_items", "suppliers", "procurement_payments", "material_cost_layers", "material_fifo_consumptions", "production_cost_batches", "wip_blank_batches", "wip_blank_allocations", "sync_log"}
     if name not in allowed:
         raise ValueError("Недопустимая таблица")
     with connect() as conn:
-        return pd.read_sql_query(f"SELECT * FROM {name}", conn)
+        return pd.read_sql_query(f"SELECT {_table_projection(conn, name, omit_raw=omit_raw)} FROM {name}", conn)
 
 def table_count(name: str) -> int:
     allowed = {"orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "production_settings", "material_inventory", "material_inventory_color", "product_pipeline", "production_capacity", "execution_tasks", "inventory_movements", "procurement_orders", "procurement_items", "suppliers", "procurement_payments", "material_cost_layers", "material_fifo_consumptions", "production_cost_batches", "wip_blank_batches", "wip_blank_allocations"}

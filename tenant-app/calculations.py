@@ -127,13 +127,13 @@ def _recommended_action(row: pd.Series) -> str:
     return "Поддерживать продажи и контролировать запас"
 
 def build_dashboard(start: date, end: date) -> DashboardData:
-    orders = _prepare_dates(read_table("orders"), "order_date")
-    sales = _prepare_dates(read_table("sales"), "sale_date")
-    ads_all = _prepare_dates(read_table("ads_daily"), "day")
-    stocks = read_table("stocks")
-    costs = read_table("costs")
-    catalog = read_table("products_catalog")
-    financial_df = read_financial()
+    orders = _prepare_dates(read_table("orders", omit_raw=True), "order_date")
+    sales = _prepare_dates(read_table("sales", omit_raw=True), "sale_date")
+    ads_all = _prepare_dates(read_table("ads_daily", omit_raw=True), "day")
+    stocks = read_table("stocks", omit_raw=True)
+    costs = read_table("costs", omit_raw=True)
+    catalog = read_table("products_catalog", omit_raw=True)
+    financial_df = read_financial(omit_raw=True)
 
     if not orders.empty:
         orders = orders[(orders["day"] >= start) & (orders["day"] <= end)]

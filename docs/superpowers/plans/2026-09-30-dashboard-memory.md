@@ -8,3 +8,5 @@ Observed: production tenant API was killed after Sept 1–19 prewarm followed by
 4. Provide a private-container stress probe requiring network none, Traefik disabled and exact 1.5 GiB. Prewarm Sept 1–19 then load production/30d overview/today/finance/manufacturing concurrently; record actual memory usage, process exit/restart/OOM status. Parent runs before/after on restored backup fixtures, builds/deploys after gates.
 
 No memory-limit increase, production writes, altered accounting rules, or broad table-reader change. Full-table dashboard transient allocation remains a measured risk; report exact clone results before acceptance.
+
+Transient-allocation follow-up: Dashboard calculations never read raw_json. Add opt-in SQL projection removing that column for dashboard table/financial reads only; preserve ordinary readers and all typed monetary/date columns. Verify large synthetic source payload memory reduction and full DashboardData numerical/frame parity against ordinary readers. No source payload is deleted from SQLite.

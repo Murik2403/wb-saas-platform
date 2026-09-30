@@ -314,8 +314,8 @@ def upsert_financial(rows: Iterable[dict[str, Any]]) -> int:
         conn.executemany(sql, values)
     return len(payload)
 
-def read_financial() -> pd.DataFrame:
-    from .core import connect, ensure_financial_schema
+def read_financial(*, omit_raw: bool = False) -> pd.DataFrame:
+    from .core import connect, ensure_financial_schema, _table_projection
     ensure_financial_schema()
     with connect() as conn:
-        return pd.read_sql_query("SELECT * FROM financial_report", conn)
+        return pd.read_sql_query(f"SELECT {_table_projection(conn, 'financial_report', omit_raw=omit_raw)} FROM financial_report", conn)
