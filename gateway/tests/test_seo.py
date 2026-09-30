@@ -167,6 +167,27 @@ class PageMetadataTests(unittest.TestCase):
                     self.assertIn(question["name"], html)
                     self.assertIn(question["acceptedAnswer"]["text"], html)
 
+    def test_shared_calculator_faq_matches_rendered_coverage_and_capital_semantics(self) -> None:
+        answers = []
+        for path in ("/sebestoimost-wb", "/calculator"):
+            with self.subTest(path=path):
+                html = self.client.get(path).text
+                blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+                faq = next(json.loads(block) for block in blocks if '"@type": "FAQPage"' in block)
+                answer = next(question["acceptedAnswer"]["text"] for question in faq["mainEntity"]
+                              if question["name"] == "Калькулятор на сайте показывает чистую прибыль?")
+                self.assertIn(f"<p>{answer}", html)
+                self.assertNotIn("в такой расчёт полностью не входят", html)
+                for phrase in ("хранению", "приёмке", "возвратам", "введённому налогу",
+                               "Не введённые расходы", "не означает автоматическое",
+                               "капитал показан отдельно и не вычитается", "не подтверждённая"):
+                    self.assertIn(phrase, answer)
+                answers.append(answer)
+        self.assertEqual(answers[0], answers[1])
+        calculator = self.client.get("/calculator").text
+        for field in ("calcStorage", "calcAcceptance", "calcReturns", "calcTax", "calcCapital"):
+            self.assertIn(f'id="{field}"', calculator)
+
 
 class GuideAuthorshipTests(unittest.TestCase):
     """E-E-A-T: a guide without a visible author and date is an anonymous page.
