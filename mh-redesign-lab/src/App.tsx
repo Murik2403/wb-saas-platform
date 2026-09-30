@@ -1093,7 +1093,7 @@ function App() {
         ) : null}
 
         {activeNav === "finance" ? (
-          <><FinanceView cashflow={<CashflowPanel role={session?.user.role ?? "viewer"} />}
+          <><FinanceView cashflow={<CashflowPanel compact role={session?.user.role ?? "viewer"} />}
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
@@ -1413,7 +1413,7 @@ function PlanDrawer({
 
 function DataBanner({ connection }: { connection: DashboardViewModel["connection"] }) {
   return (
-    <div className={cx("data-banner", connection.mode)}>
+    <div className={cx("data-banner", "connection-banner", connection.mode)}>
       <AlertTriangle size={16} />
       <span>{connection.label}</span>
       <p>{connection.detail}</p>
@@ -1947,9 +1947,9 @@ export function FinanceView({
           </section> : null}
           <FinanceFifoDetailTable period={period} />
       </details>
-      <ShopWorkspaces />
-      <OzonAccounting />
-      <PriceScenarios />
+      <details className="cabinet-disclosure"><summary>Магазины WB</summary><ShopWorkspaces /></details>
+      <details className="cabinet-disclosure"><summary>Учёт Ozon</summary><OzonAccounting /></details>
+      <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><PriceScenarios /></details>
     </div>
   );
 }

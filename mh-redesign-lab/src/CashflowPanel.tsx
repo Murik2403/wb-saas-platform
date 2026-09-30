@@ -7,7 +7,7 @@ const money = (minor: number) => `${new Intl.NumberFormat("ru-RU", {minimumFract
 const categories: Record<string, string> = {marketplace_payout:"Выплата маркетплейса",procurement:"Оплата закупки",salary:"Зарплата",tax:"Налог",rent:"Аренда",advertising:"Реклама",other:"Другое",opening:"Начальный остаток"};
 const statuses: Record<string,string> = {planned:"Запланировано",actual:"Фактически",cancelled:"Отменено"};
 
-export function CashflowPanel({role}: {role: string}) {
+export function CashflowPanel({role, compact = false}: {role: string; compact?: boolean}) {
   const canWrite = role === "owner" || role === "manager";
   const [start,setStart] = useState(() => `${today().slice(0,7)}-01`);
   const [end,setEnd] = useState(today);
@@ -57,7 +57,7 @@ export function CashflowPanel({role}: {role: string}) {
     <h2 id="cashflow-title">Движение денег и платёжный календарь</h2>
     <p>Учитываются только внесённые вами денежные операции. Выручка и прибыль WB не означают поступление на счёт. Закупки и расходы из других разделов автоматически сюда не добавляются: внесите оплату один раз и укажите ссылку или номер документа.</p>
     <div className="cashflow-controls"><label>Начало периода<input aria-label="Начало периода ДДС" type="date" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Конец периода<input aria-label="Конец периода ДДС" type="date" value={end} onChange={event=>setEnd(event.target.value)}/></label><button type="button" className="secondary-button" disabled={loading} onClick={()=>setRefresh(value=>value+1)}>Обновить календарь</button></div>
-    <CashAccountsPanel role={role} start={start} end={end}/>
+    <details className="cabinet-disclosure" open={compact ? undefined : true}><summary>Счета, кошельки и выписки</summary><CashAccountsPanel role={role} start={start} end={end}/></details>
     <h3>Исторический журнал — рублёвая оценка</h3>
     {error?<p role="alert">{error}</p>:null}{loading?<p role="status">Загрузка движения денег…</p>:null}
     {report?<><p>{report.opening_confirmed?"Начальный остаток подтверждён пользователем.":"Начальный остаток не подтверждён: показано движение внесённых сумм, а не баланс банковского счёта."}</p>{report.period_before_opening?<p role="alert">Период начинается раньше начального остатка. Выберите период с даты остатка.</p>:null}
@@ -68,7 +68,7 @@ export function CashflowPanel({role}: {role: string}) {
       <details><summary>История подтверждений и отмен</summary><ul>{report.events.map(item=><li key={item.id}>Операция №{item.entry_id}: {statuses[item.status]} · {item.changed_at} {item.actor?`· ${item.actor}`:""}</li>)}</ul></details>
       {!report.period_before_opening?<details><summary>Остатки по дням</summary><ul>{report.daily.map(day=><li key={day.date}>{day.date}: факт {money(day.actual_balance_minor)}, с планами {money(day.forecast_balance_minor)}</li>)}</ul></details>:null}
     </>:null}
-    {canWrite?<form onSubmit={event=>void submit(event)} onChange={()=>{pendingBody.current=null;requestKey.current=null;}}><fieldset disabled={busy}><legend>Добавить денежную операцию</legend><div className="cashflow-controls">
+    {canWrite?<details className="cabinet-disclosure" open={compact ? undefined : true}><summary>Добавить денежную операцию</summary><form onSubmit={event=>void submit(event)} onChange={()=>{pendingBody.current=null;requestKey.current=null;}}><fieldset disabled={busy}><legend>Добавить денежную операцию</legend><div className="cashflow-controls">
       <label>Тип записи<select value={kind} onChange={event=>setKind(event.target.value)}><option value="movement">Движение денег</option><option value="opening">Начальный остаток</option></select></label>
       <label>Направление<select name="direction"><option value="inflow">Поступление / положительный остаток</option><option value="outflow">Выплата / отрицательный остаток</option></select></label>
       {kind!=="opening"?<label>Статус<select value={status} onChange={event=>setStatus(event.target.value)}><option value="planned">Запланировано</option><option value="actual">Фактически</option></select></label>:null}
@@ -78,6 +78,6 @@ export function CashflowPanel({role}: {role: string}) {
       {currency!=="RUB"?<label>Рублей за единицу валюты<input name="rate" inputMode="decimal" required pattern="[0-9]+([.,][0-9]{1,8})?"/></label>:null}
       {kind!=="opening"?<label>Статья<select name="category">{Object.entries(categories).filter(([key])=>key!=="opening").map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>:null}
       <label>Номер документа / основание<input name="reference" maxLength={300}/></label><button className="primary-button" type="submit">{busy?"Сохраняется…":"Добавить операцию"}</button>
-    </div>{kind==="opening"?<p>Остаток непосредственно перед началом указанной даты. Операции раньше этой даты не прибавляются повторно.</p>:null}</fieldset></form>:<p>Доступ только для чтения. Записывать денежные операции могут владелец и менеджер.</p>}
+    </div>{kind==="opening"?<p>Остаток непосредственно перед началом указанной даты. Операции раньше этой даты не прибавляются повторно.</p>:null}</fieldset></form></details>:<p>Доступ только для чтения. Записывать денежные операции могут владелец и менеджер.</p>}
   </section>;
 }

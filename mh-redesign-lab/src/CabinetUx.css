@@ -4,7 +4,7 @@
 .topbar-actions > button, .topbar-actions .session-chip { width: 42px; min-width: 42px; height: 42px; padding: 8px; justify-content: center; }
 .topbar-actions > button > span, .topbar-actions .session-chip > span:not(.session-avatar), .topbar-actions .session-chip small, .topbar-actions .session-chip > svg { display: none; }
 .topbar-actions { gap: 8px; }
-.workspace > .data-banner:not(.stale) { display: none; }
+.workspace > .connection-banner { display: none; }
 .cabinet-disclosure, .finance-cost-review { border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
 .cabinet-disclosure > summary, .finance-cost-review > summary { cursor: pointer; font-weight: 700; padding-block: 4px; }
 .cabinet-disclosure > summary:focus-visible, .finance-cost-review > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
@@ -23,7 +23,7 @@
   .topbar { grid-template-columns: 42px minmax(0,1fr); }
   .topbar .search-shell { grid-column: 1 / -1; grid-row: 2; }
   .topbar .topbar-actions { grid-column: 1 / -1; grid-row: 3; justify-content: flex-end; }
-  .workspace > .data-banner:not(.stale) { display: flex; }
+  .workspace > .connection-banner { display: flex; }
   .side-status { display: none; }
   .topbar-title h1 { font-size: 1.1rem; }
 }
