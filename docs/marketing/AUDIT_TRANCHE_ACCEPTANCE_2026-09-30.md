@@ -135,3 +135,12 @@ Runtime revision: `8a34de29eac3211d6ebc9afc75003a7534b2ccc8`.
 ### Общий склад магазинов — только первый этап source
 
 Cherry-pick 81de476 в release как 7076485: канонические слои, резервы, provenance и инварианты. Публичное переключение всех операций, документы продажи/возврата, ACL/context и атомарный secondary bridge ещё разрабатываются. Наличие этого schema/domain этапа не означает закрытую многомагазинность.
+
+### Финансовые формы и первый этап allocator — production принят, 04:49 МСК
+
+- Tenant revision `a1c3016a0554e55b6ce02212fd0d7bed832dd8f9`, image `mh-tenant:a1c3016`, immutable `sha256:18145b3dcd195917b9935b32a8f9fb1c3d72b17003775df838003ae27ec82bad`.
+- 454 tenant-теста + 8 subtests, 382 API-теста, 133 UI-теста, TypeScript/Vite build и clean gate 18/18 прошли. Reviewer независимо подтвердил отсутствие изменений запросов, денежных формул и обработчиков в полировке UI.
+- Проверенная восстановленная копия: лимит 1.5 GiB, peak 539779072 bytes, OOM=false/restart0, пять параллельных API 200; синтетические cash/CSV/transfer и Ozon sale/return/resale сценарии прошли. Перед old-image API восстановлена исходная приватная база; production неизменён rehearsal-прогоном.
+- Свежая backup `marketshelper_manual_20260930_014923_418534.zip` независимо проверена; rollback `wb-tenant-mvvorokov-rollback-20260930-014923`. Четыре deployment probes, 17 read-only API/HTML/assets, cash и Ozon live-проверки прошли. Точный image/revision/healthy совпали, default tenant tag обновлён.
+- В авторизованном живом Finance видны оформленные поля и кнопка «Создать счёт», правильная подпись «Сумма со знаком, ₽». Desktop viewport 1280, document scrollWidth 1265; новых кошельков, партий и финансовых операций не создавали. Временный viewport override сброшен. Mobile acceptance отдельно не заявляется.
+- Новый allocator пока schema/domain; full shop switching, lifecycle, secondary bridge, ACL и UI продолжают разрабатываться. Старые primary операции пока не подключены к новому allocator. Нельзя трактовать этот release как завершённый общий склад.
