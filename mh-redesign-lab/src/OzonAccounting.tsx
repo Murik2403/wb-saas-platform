@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders, getDashboardSession } from "./data-source";
 import "./OzonAccounting.css";

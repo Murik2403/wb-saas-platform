@@ -1,3 +1,4 @@
+vi.mock("./ShopContextBoundary",()=>({ShopContextBoundary:({children}:{children:unknown})=>children}));
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";

@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import { API_BASE_URL, apiHeaders } from "./data-source";
 export type CashEntry = {
   id: number; kind: "opening" | "movement"; direction: "inflow" | "outflow";

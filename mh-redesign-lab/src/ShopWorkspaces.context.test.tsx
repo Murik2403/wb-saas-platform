@@ -1,0 +1,7 @@
+import {afterEach,it,expect,vi} from 'vitest';
+import {render,screen,cleanup} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {ShopWorkspaces} from './ShopWorkspaces';
+import {selectShop,clearShopContext} from './selected-shop';
+afterEach(()=>{cleanup();clearShopContext();vi.unstubAllGlobals();});
+it('explicit card target cannot issue writes with primary revision; requires context navigation',async()=>{selectShop({role:'owner',selected_shop_id:0,shops:[{id:0,name:'Primary',active:true,verified_identity:null,snapshot_revision:null,can_write:true,allowed_actions:[]},{id:2,name:'Other',active:true,verified_identity:'a'.repeat(64),snapshot_revision:5,can_write:true,allowed_actions:[]}],route_scopes:[]},0);const f=vi.fn().mockResolvedValue(new Response(JSON.stringify({items:[{id:2,name:'Other',active:true,synced_at:null}],can_write:true,can_manage:false})));vi.stubGlobal('fetch',f);render(<ShopWorkspaces/>);await screen.findByRole('option',{name:'Other'});await userEvent.selectOptions(screen.getByLabelText('Дополнительный магазин'),'2');expect(screen.getByRole('button',{name:'Открыть выбранный магазин в кабинете'})).toBeInTheDocument();expect(screen.queryByRole('button',{name:'Загрузить историю за 30 дней'})).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Открыть отчёт магазина'})).not.toBeInTheDocument();expect(f).toHaveBeenCalledTimes(1);});

@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders } from "./data-source";
 type Center={id:number;name:string;daily_minutes:number;workdays_json:string;revision:number};

@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import {useRef,useState} from "react";
 import {API_BASE_URL,apiHeaders} from "./data-source";
 import "./MigrationImport.css";

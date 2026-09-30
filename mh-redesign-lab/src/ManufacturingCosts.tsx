@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { API_BASE_URL, apiHeaders } from "./data-source";
 import "./ManufacturingCosts.css";

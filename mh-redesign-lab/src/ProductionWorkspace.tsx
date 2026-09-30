@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { API_BASE_URL, apiHeaders } from "./data-source";

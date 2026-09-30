@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders } from "./data-source";
 type Report = { loaded: boolean; sale_revenue_rub?:string; return_revenue_rub?:string; totals: Record<string,string>; historical_cogs_rub: string|null; result_after_fifo_rub: string|null; unknown_cost_units: number; components_reconciled: boolean; projection_revision: number|null; note: string; cost_lots?:Array<{external_lot_id:string;sku:string;received_at:string;quantity:number;unit_cost_rub:string;document_ref:string}>; lines: Array<{external_event_id:string; kind:string; sku:string; accrued_at:string; movement_at?:string;document_ref?:string;quantity?:number;return_of?:string;source_total_rub:string; historical_cost?:{errors:string[];known_cogs_rub?:string;unknown_units?:number;allocations?:Array<{lot_ref:string;quantity?:number;original_units?:number;allocated_cost_rub?:string|null}>}|null}> };

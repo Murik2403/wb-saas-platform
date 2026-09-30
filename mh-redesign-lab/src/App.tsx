@@ -1,3 +1,5 @@
+import { downloadScoped } from "./selected-shop";
+import { ShopContextBoundary } from "./ShopContextBoundary";
 import { IncidentWorkflow } from "./IncidentWorkflow";
 import { WorkcenterCalendar } from "./WorkcenterCalendar";
 import { ProductionWorkspace } from "./ProductionWorkspace";
@@ -1794,6 +1796,9 @@ function FinanceView({
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
 }) {
+  const [exportError,setExportError] = useState("");
+  const [exportBusy,setExportBusy] = useState(false);
+  const exportFinance=async(format:"xlsx"|"csv")=>{setExportBusy(true);setExportError("");try{await downloadScoped(financeExportUrl(period,format),`marketshelper-finance.${format}`);}catch(reason){setExportError(reason instanceof Error?reason.message:"Экспорт выбранного магазина недоступен");}finally{setExportBusy(false);}};
   const financeCoverage = financeReport.complete
     ? { label: "период закрыт", className: "status-pill good", note: "Все даты выбранного периода покрыты реализацией WB." }
     : !financeReport.lastDate
@@ -1817,11 +1822,12 @@ function FinanceView({
             <Plus size={17} />
               <span>В отчет</span>
             </button>
-            <a className="secondary-button" href={financeExportUrl(period)} download>
+            <button className="secondary-button" type="button" disabled={exportBusy} onClick={()=>void exportFinance("xlsx")}>
               <Download size={17} />
               <span>Скачать XLSX</span>
-            </a>
-            <a className="secondary-button" href={financeExportUrl(period, "csv")} download><Download size={17} /><span>Скачать CSV</span></a>
+            </button>
+            <button className="secondary-button" type="button" disabled={exportBusy} onClick={()=>void exportFinance("csv")}><Download size={17} /><span>Скачать CSV</span></button>
+            {exportError&&<p role="alert">{exportError}</p>}
         </div>
       </section>
 
@@ -4174,4 +4180,4 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: Tone }) {
   return <span className={cx("status-pill", tone)}>{children}</span>;
 }
 
-export default App;
+export default function SelectedShopApp(){return <ShopContextBoundary><App /></ShopContextBoundary>;}

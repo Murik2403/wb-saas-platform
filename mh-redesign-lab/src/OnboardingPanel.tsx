@@ -1,3 +1,4 @@
+import { shopViewUrl } from "./selected-shop";
 import { useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { getActivationSummary, getFirstGrowthReport, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport, type ProductCostSetting, type TenantSyncRun } from "./data-source";
@@ -46,7 +47,7 @@ function FirstReportCard({ report, onRecorded }: { report: FirstGrowthReport; on
     <p className="form-hint">{report.limitation}</p>
     {saved ? <p role="status">Первый результат сохранён. Дальше можно настроить регулярные отчёты.</p> : null}
     {error ? <div role="status"><p>{error}</p><button className="ghost-button" type="button" onClick={() => setRetry((value) => value + 1)}>Повторить сохранение</button></div> : null}
-    <a className="ghost-button" href="?view=reports">Настроить регулярные отчёты</a>
+    <a className="ghost-button" href={shopViewUrl("reports")}>Настроить регулярные отчёты</a>
   </section>;
 }
 

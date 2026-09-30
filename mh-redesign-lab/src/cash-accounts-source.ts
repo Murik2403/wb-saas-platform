@@ -1,3 +1,4 @@
+import { scopedFetch as fetch } from "./selected-shop";
 import {API_BASE_URL,apiHeaders} from './data-source';
 import type {CashEntry} from './cashflow-source';
 export type CashAccount={id:number;name:string;currency:string;active:number;revision:number;legacy:number;opening_minor:number;actual_closing_minor:number;forecast_closing_minor:number;opening_confirmed:boolean;period_before_opening:boolean;overdue_minor:number;daily:Array<{date:string;actual_minor:number;forecast_minor:number}>;items:Array<CashEntry & {native_minor:number;source_kind:string;bank_reference?:string;bank_external_id?:string}>};
