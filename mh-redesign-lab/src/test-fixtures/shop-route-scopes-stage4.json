@@ -553,7 +553,12 @@
     "method": "GET",
     "path": "/api/v1/settings/change-history",
     "scope": "tenant_shared",
-    "query_scopes": {"kind": {"cost": "shop_local", "production_norm": "tenant_shared"}},
+    "query_scopes": {
+      "kind": {
+        "cost": "shop_local",
+        "production_norm": "tenant_shared"
+      }
+    },
     "requires_kind": true
   },
   {
@@ -885,5 +890,90 @@
     "method": "POST",
     "path": "/api/v1/ozon-accounting/cost-lots",
     "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shared-warehouse/{shop_id}/workspace",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/primary-binding",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/items",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/mappings/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/mappings/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/reserve/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/reserve/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/reservations/{reservation_id}/transition",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/reservations/{reservation_id}/sale/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/reservations/{reservation_id}/sale/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/returns/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/returns/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/quarantine/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/holds/{hold_id}/release",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shared-warehouse/{shop_id}/financial-source",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/financial-bindings/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/financial-bindings/confirm",
+    "scope": "tenant_shared"
   }
 ]

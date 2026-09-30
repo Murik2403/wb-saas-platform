@@ -33,8 +33,9 @@ export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Pro
  const headers=new Headers(init.headers);
  const given=headers.get('X-MH-Shop-ID');if(given!==null&&given!==String(shop.id))throw new Error('Магазин запроса не совпадает с выбранным');
  headers.set('X-MH-Shop-ID',String(shop.id));
- if(writes&&!shop.can_write)throw new Error('Магазин доступен только для просмотра');
  const route=session.route_scopes.find(r=>r.method===method&&routeMatches(r.path,path));
+ const explicitWrite=route?.can_write===true&&shop.allowed_actions.includes(method+' '+route.path);
+ if(writes&&!shop.can_write&&!explicitWrite)throw new Error('Магазин доступен только для просмотра');
  const resolvedScope=route?resolveScope(route,url,shop.id!==0):undefined;
  const expectedScope=shop.id===0&&resolvedScope==='forbidden'?'tenant_shared':resolvedScope;
  if(shop.id!==0&&(!route||expectedScope==='forbidden'))throw new Error('Раздел не поддерживает выбранный магазин');
@@ -131,4 +132,23 @@ export function shopViewUrl(view:string){const url=new URL(window.location.href)
 export function navigateToShop(id:number){
  if(!session)throw new Error('Контекст магазина не подтверждён');
  selectShop(session,id);const url=new URL(window.location.href);url.searchParams.set('shop',String(id));clearShopContext();window.location.replace(url.toString());
+}
+
+/** Only this bootstrap may change an unbound primary identity. All ordinary responses remain strict. */
+export async function bindPrimaryWarehouse(base:string,headers:Record<string,string>){
+ if(!selected||!session||selected.id!==0||session.role!=='owner'||selected.verified_identity!==null)throw new Error('Подтвердите основной магазин под владельцем');
+ const version=epoch;
+ try{
+ const fixed=new URL(base+'/api/v1/shared-warehouse/primary-binding',window.location.origin);
+ if(fixed.origin!==window.location.origin)throw new Error('Недопустимый адрес кабинета');
+ const response=await globalThis.fetch(fixed,{method:'POST',headers:{...headers,'Content-Type':'application/json','X-MH-Shop-ID':'0','X-MH-Request-Key':crypto.randomUUID()},body:'{}'});stillCurrent(version);
+ const value=await response.json();stillCurrent(version);
+ if(!response.ok||response.headers.get('X-MH-Shop-ID')!=='0'||response.headers.get('X-MH-Resource-Scope')!=='tenant_shared'||value?.shop_id!==0||value?.refresh_session!==true||!isFingerprint(value?.verified_identity)||response.headers.get('X-MH-Shop-Identity')!==value.verified_identity)throw new Error('Основной магазин не подтверждён; обновите страницу');
+ const freshResponse=await globalThis.fetch(base+'/api/v1/shop-context/session',{headers:{...headers,'X-MH-Shop-ID':'0'}});stillCurrent(version);
+ if(!freshResponse.ok||freshResponse.headers.get('X-MH-Shop-ID')!=='0'||freshResponse.headers.get('X-MH-Shop-Identity')!==value.verified_identity)throw new Error('Обновите страницу для подтверждения магазина');
+ const fresh=validateShopSession(await freshResponse.json());stillCurrent(version);
+ const primary=fresh.shops.find(shop=>shop.id===0);
+ if(fresh.role!=='owner'||fresh.selected_shop_id!==0||!primary?.active||primary.verified_identity!==value.verified_identity)throw new Error('Контекст основного магазина изменился; обновите страницу');
+ clearShopContext();window.location.replace(window.location.href);
+ }catch(reason){if(epoch===version)clearShopContext();throw reason;}
 }

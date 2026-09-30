@@ -161,7 +161,7 @@ export type FinanceFifoDetailRow = {
   reason: string;
   eligibleCostRub: number | null;
   observedCostRub: number | null;
-  cogsSource: "exact_fifo" | "current_cost_estimate" | "insufficient" | "excluded";
+  cogsSource: "exact_fifo" | "manual_source_fifo" | "current_cost_estimate" | "insufficient" | "excluded";
   cogsRub: number;
   layerSources: string[];
 };
@@ -1558,7 +1558,7 @@ export async function getFinanceFifoReconciliationPage(
     reason: String(row.reason ?? ""),
     eligibleCostRub: typeof row.eligible_fifo_cogs_rub === "number" ? row.eligible_fifo_cogs_rub : null,
     observedCostRub: typeof row.observed_fifo_cost_rub === "number" ? row.observed_fifo_cost_rub : null,
-    cogsSource: row.cogs_source === "exact_fifo" || row.cogs_source === "current_cost_estimate" || row.cogs_source === "insufficient" ? row.cogs_source : "excluded",
+    cogsSource: row.cogs_source === "exact_fifo" || row.cogs_source === "manual_source_fifo" || row.cogs_source === "current_cost_estimate" || row.cogs_source === "insufficient" ? row.cogs_source : "excluded",
     cogsRub: Number(row.cogs_rub ?? 0),
     layerSources: Array.isArray(row.layer_sources) ? row.layer_sources.map(String) : [],
   }));
