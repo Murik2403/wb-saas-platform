@@ -97,3 +97,24 @@ def test_second_norm_journal_failure_rolls_back_entire_batch(client):
     rows = client.get("/api/v1/settings/production-norms").json()["items"]
     assert [r["material_per_unit"] for r in rows] == [2, 2]
     assert history(client)["total"] == 2
+
+
+@pytest.mark.parametrize("path",["product-costs","production-norms"])
+def test_reason_saved_with_actual_change_and_actor(client,path):
+    seed()
+    item={"nm_id":100,"cost_per_wb_unit":22} if path=="product-costs" else norm(value=3)
+    payload={"items":[item],"reason":"  Уточнение по документу закупки  "}
+    headers={"x-tenant-role":"owner","x-tenant-account":"42"}
+    assert client.patch('/api/v1/settings/'+path,json=payload,headers=headers).status_code==200
+    event=history(client)['items'][0]
+    assert event['reason']=='Уточнение по документу закупки' and event['actor']=='42'
+    before=history(client)['total']
+    assert client.patch('/api/v1/settings/'+path,json={**payload,'reason':'Другой текст без изменения'},headers=headers).status_code==200
+    assert history(client)['total']==before
+    assert client.patch('/api/v1/settings/'+path,json={**payload,'reason':'x'*1001},headers=headers).status_code==422
+    assert history(client)['total']==before
+
+
+def test_legacy_changes_have_no_invented_reason(client):
+    seed()
+    assert history(client)['items'][0]['reason'] is None

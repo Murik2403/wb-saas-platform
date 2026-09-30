@@ -665,3 +665,28 @@ describe("custom dashboard date range", () => {
     expect(applied.searchParams.get("end")).toBe("2026-09-24");
   });
 });
+
+
+describe("explicit reasons for settings edits", () => {
+  it("sends cost reason separately from product note", async () => {
+    window.history.replaceState({}, "", "/?view=settings");
+    const source = await import("./data-source");
+    vi.mocked(source.getProductCostSettings).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Тест",cost_per_wb_unit:10,note:"Примечание товара",updated_at:""}]});
+    const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    await user.click(await screen.findByRole("button",{name:"Изменить себестоимость: Тест"}));
+    await user.type(screen.getByLabelText("Причина изменения"),"Новая закупочная цена");
+    const value=screen.getByLabelText("Себестоимость одной единицы, ₽");await user.clear(value);await user.type(value,"15");
+    await user.click(screen.getByRole("button",{name:/^Сохранить$/}));
+    await waitFor(()=>expect(source.updateProductCostSettings).toHaveBeenCalledWith([expect.objectContaining({nm_id:100,cost_per_wb_unit:15,note:"Примечание товара"})],"Новая закупочная цена"));
+  });
+  it("sends norm reason through the dialog wrapper", async () => {
+    window.history.replaceState({}, "", "/?view=settings");
+    const source=await import("./data-source");
+    vi.mocked(source.getProductionNorms).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Тест",enabled:1,material_per_unit:2,min_batch:1,pack_size:1,blank_type:"",material_unit:"м"}]});
+    const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    await user.click(await screen.findByRole("button",{name:"Изменить норму"}));
+    await user.type(screen.getByLabelText("Причина изменения"),"Уточнение раскроя");
+    await user.click(screen.getByRole("button",{name:"Сохранить норму"}));
+    await waitFor(()=>expect(source.updateProductionNorms).toHaveBeenCalledWith([expect.objectContaining({nm_id:100,material_per_unit:2})],"Уточнение раскроя"));
+  });
+});

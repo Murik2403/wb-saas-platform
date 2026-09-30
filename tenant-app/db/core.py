@@ -128,7 +128,8 @@ def init_db() -> None:
                 after_json TEXT NOT NULL,
                 changed_at TEXT NOT NULL,
                 source TEXT NOT NULL,
-                actor TEXT
+                actor TEXT,
+                reason TEXT CHECK(reason IS NULL OR length(reason)<=1000)
             );
             CREATE INDEX IF NOT EXISTS idx_settings_history_kind_nm_time
                 ON settings_change_history(kind,nm_id,changed_at,id);
@@ -807,6 +808,10 @@ def init_db() -> None:
             );
             """
         )
+
+        history_columns = {row[1] for row in conn.execute("PRAGMA table_info(settings_change_history)")}
+        if "reason" not in history_columns:
+            conn.execute("ALTER TABLE settings_change_history ADD COLUMN reason TEXT CHECK(reason IS NULL OR length(reason)<=1000)")
 
         # Manual expenses were originally all subtracted from management profit.
         # Existing rows cannot be assumed to be additional to WB/ad/COGS data,

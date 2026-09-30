@@ -15,6 +15,7 @@ const entry: SettingsChangeHistoryItem = {
   changed_at: "2026-09-30T12:30:00+03:00",
   source: "tenant_api",
   actor: "owner@example.test",
+  reason: "Новая закупочная цена",
 };
 
 function page(items = [entry], total = items.length, offset = 0) {
@@ -32,6 +33,7 @@ describe("SettingsChangeHistory", () => {
     expect(screen.getByText("120 ₽ → 145,5 ₽")).toBeInTheDocument();
     expect(screen.getByText("OLD → NEW")).toBeInTheDocument();
     expect(document.querySelector(".settings-history-meta")).toHaveTextContent("owner@example.test");
+    expect(screen.getByText("Причина: Новая закупочная цена")).toBeInTheDocument();
     expect(screen.getByText(/30 сент\. 2026/)).toBeInTheDocument();
     expect(screen.getByText(/История ведётся с момента включения учёта/)).toBeInTheDocument();
   });

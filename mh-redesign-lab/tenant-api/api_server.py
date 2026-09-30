@@ -235,6 +235,7 @@ class ProductCostInput(BaseModel):
 
 class ProductCostsUpdateInput(BaseModel):
     items: list[ProductCostInput]
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 class ManualExpenseInput(BaseModel):
@@ -289,6 +290,7 @@ class ProductionNormInput(BaseModel):
 
 class ProductionNormsUpdateInput(BaseModel):
     items: list[ProductionNormInput]
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 class MaterialInventoryInput(BaseModel):
@@ -3420,7 +3422,7 @@ def update_product_costs(payload: ProductCostsUpdateInput, request: Request) -> 
             "cost_per_wb_unit": item.cost_per_wb_unit,
             "note": item.note.strip(),
         })
-    save_costs(pd.DataFrame(rows), source="tenant_api", actor=request.headers.get("x-tenant-account"))
+    save_costs(pd.DataFrame(rows), source="tenant_api", actor=request.headers.get("x-tenant-account"), reason=payload.reason)
     return {"saved": len(rows)}
 
 
@@ -3494,7 +3496,7 @@ def update_production_norms(payload: ProductionNormsUpdateInput, request: Reques
                          (item.material_per_unit, item.min_batch, item.pack_size, int(item.enabled), item.nm_id))
             after = conn.execute("SELECT * FROM production_settings WHERE nm_id=?", (item.nm_id,)).fetchone()
             append_settings_change(conn, kind="production_norm", nm_id=item.nm_id, before=before_rows[item.nm_id], after=after,
-                                   source="tenant_api", actor=request.headers.get("x-tenant-account"))
+                                   source="tenant_api", actor=request.headers.get("x-tenant-account"), reason=payload.reason)
     return {"saved": len(payload.items)}
 
 
@@ -3517,7 +3519,7 @@ def get_settings_change_history(kind: str | None = Query(None, pattern="^(cost|p
         rows = conn.execute("SELECT * FROM settings_change_history" + where + " ORDER BY id DESC LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
     items = [{"id": row["id"], "kind": row["kind"], "nm_id": row["nm_id"],
               "before": json.loads(row["before_json"]) if row["before_json"] is not None else None,
-              "after": json.loads(row["after_json"]), "changed_at": row["changed_at"], "source": row["source"], "actor": row["actor"]} for row in rows]
+              "after": json.loads(row["after_json"]), "changed_at": row["changed_at"], "source": row["source"], "actor": row["actor"], "reason": row["reason"]} for row in rows]
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 

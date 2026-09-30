@@ -34,8 +34,11 @@ def append_settings_change(
     conn: sqlite3.Connection, *, kind: str, nm_id: int,
     before: Mapping[str, Any] | sqlite3.Row | None,
     after: Mapping[str, Any] | sqlite3.Row | None,
-    source: str, actor: str | None = None,
+    source: str, actor: str | None = None, reason: str | None = None,
 ) -> bool:
+    if reason is not None and (not isinstance(reason, str) or len(reason)>1000):
+        raise ValueError("Причина изменения должна быть текстом до 1000 символов.")
+    reason = reason.strip() or None if reason is not None else None
     before = normalized_snapshot(kind, before)
     after = normalized_snapshot(kind, after)
     if before == after:
@@ -43,8 +46,8 @@ def append_settings_change(
     if after is None or int(nm_id) <= 0:
         raise ValueError("Invalid settings change")
     conn.execute(
-        "INSERT INTO settings_change_history(kind,nm_id,before_json,after_json,changed_at,source,actor) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO settings_change_history(kind,nm_id,before_json,after_json,changed_at,source,actor,reason) VALUES(?,?,?,?,?,?,?,?)",
         (kind, int(nm_id), json.dumps(before, ensure_ascii=False, sort_keys=True) if before is not None else None,
-         json.dumps(after, ensure_ascii=False, sort_keys=True), datetime.now(timezone.utc).isoformat(timespec="microseconds"), source, actor or None),
+         json.dumps(after, ensure_ascii=False, sort_keys=True), datetime.now(timezone.utc).isoformat(timespec="microseconds"), source, actor or None, reason),
     )
     return True

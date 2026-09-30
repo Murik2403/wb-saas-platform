@@ -16,7 +16,7 @@ from config import DB_PATH
 from .core import connect
 
 
-def save_production_settings(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None) -> None:
+def save_production_settings(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None, reason: str | None = None) -> None:
     from .core import connect
     required = {"nm_id", "enabled", "material_per_unit", "target_days", "min_batch"}
     if not required.issubset(df.columns):
@@ -66,7 +66,7 @@ def save_production_settings(df: pd.DataFrame, *, source: str = "legacy", actor:
                 row,
             )
             after = conn.execute("SELECT * FROM production_settings WHERE nm_id=?", (row[0],)).fetchone()
-            append_settings_change(conn, kind="production_norm", nm_id=row[0], before=before, after=after, source=source, actor=actor)
+            append_settings_change(conn, kind="production_norm", nm_id=row[0], before=before, after=after, source=source, actor=actor, reason=reason)
 
 # Sentinel roll_length for materials tracked as a plain running quantity (no
 # fixed-size packaging) -- see ui_helpers.py's NO_PACKAGE_ROLL_LENGTH for the

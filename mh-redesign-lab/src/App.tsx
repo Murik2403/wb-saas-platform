@@ -2371,10 +2371,10 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     }
   };
 
-  const saveCost = async (item: ProductCostSetting) => {
+  const saveCost = async (item: ProductCostSetting, reason?: string) => {
     setBusy("cost");
     try {
-      await updateProductCostSettings([item]);
+      await updateProductCostSettings([item], reason);
       setMessage(`Себестоимость для «${item.product_name || item.supplier_article || item.nm_id}» сохранена`);
       setHistoryRefreshKey((value) => value + 1);
       const costData = await getProductCostSettings();
@@ -2431,10 +2431,10 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     finally { setBusy(null); }
   };
 
-  const saveNorm = async (item: ProductionNorm) => {
+  const saveNorm = async (item: ProductionNorm, reason?: string) => {
     setBusy("cost");
     try {
-      await updateProductionNorms([{ nm_id: item.nm_id, material_per_unit: item.material_per_unit, min_batch: item.min_batch, pack_size: item.pack_size, enabled: item.enabled }]);
+      await updateProductionNorms([{ nm_id: item.nm_id, material_per_unit: item.material_per_unit, min_batch: item.min_batch, pack_size: item.pack_size, enabled: item.enabled }], reason);
       setProductionNorms((rows) => rows.map((row) => row.nm_id === item.nm_id ? item : row));
       setHistoryRefreshKey((value) => value + 1);
       setMessage(`Норма для «${item.supplier_article || item.nm_id}» сохранена`);
@@ -2575,8 +2575,8 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
       <SettingsChangeHistory refreshKey={historyRefreshKey} />
-      {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item) => { void saveCost(item).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
-      {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item) => { void saveNorm(item); }} /> : null}
+      {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item, reason) => { void saveCost(item, reason).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
+      {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item, reason) => { void saveNorm(item, reason); }} /> : null}
     </div>
   );
 }
@@ -4041,25 +4041,28 @@ function ProductCostDialog({
   busy: boolean;
   item: ProductCostSetting;
   onClose: () => void;
-  onSubmit: (item: ProductCostSetting) => void;
+  onSubmit: (item: ProductCostSetting, reason?: string) => void;
 }) {
+  const [reason, setReason] = useState("");
   const [cost, setCost] = useState(String(item.cost_per_wb_unit));
   const [note, setNote] = useState(item.note);
   const title = item.product_name || item.supplier_article || `WB ${item.nm_id}`;
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="cost-dialog-title">
       <div className="drawer-header"><div><span className="eyebrow">экономика</span><h2 id="cost-dialog-title">Себестоимость товара</h2><p>{title} · WB {item.nm_id}</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
-      <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, cost_per_wb_unit: Number(cost), note }); }}>
+      <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, cost_per_wb_unit: Number(cost), note }, reason); }}>
         <label>Себестоимость одной единицы, ₽<input autoFocus min="0" required step="0.01" type="number" value={cost} onChange={(event) => setCost(event.target.value)} /></label>
         <label>Примечание<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Необязательно" /></label>
         <p className="plan-empty">Изменение применяется к расчёту маржи и прибыли. Исторические FIFO-слои не меняются.</p>
+        <label>Причина изменения<textarea value={reason} maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder="Например, новая закупочная цена или уточнение расхода. Необязательно." /></label>
         <div className="operation-actions"><button className="ghost-button" disabled={busy} type="button" onClick={onClose}>Отмена</button><button className="primary-button" disabled={busy} type="submit"><CheckCircle2 size={16} />{busy ? "Сохраняем" : "Сохранить"}</button></div>
       </form>
     </section>
   </div>;
 }
 
-function ProductionNormDialog({ busy, item, onClose, onSubmit }: { busy: boolean; item: ProductionNorm; onClose: () => void; onSubmit: (item: ProductionNorm) => void }) {
+function ProductionNormDialog({ busy, item, onClose, onSubmit }: { busy: boolean; item: ProductionNorm; onClose: () => void; onSubmit: (item: ProductionNorm, reason?: string) => void }) {
+  const [reason, setReason] = useState("");
   const [material, setMaterial] = useState(String(item.material_per_unit));
   const [batch, setBatch] = useState(String(item.min_batch));
   const [pack, setPack] = useState(String(item.pack_size));
@@ -4067,11 +4070,12 @@ function ProductionNormDialog({ busy, item, onClose, onSubmit }: { busy: boolean
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="norm-dialog-title">
       <div className="drawer-header"><div><span className="eyebrow">производство</span><h2 id="norm-dialog-title">Норма материала</h2><p>{item.product_name || item.supplier_article} · WB {item.nm_id}</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
-      <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, material_per_unit: Number(material), min_batch: Number(batch), pack_size: Number(pack), enabled: enabled ? 1 : 0 }); }}>
+      <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, material_per_unit: Number(material), min_batch: Number(batch), pack_size: Number(pack), enabled: enabled ? 1 : 0 }, reason); }}>
         <label>Расход на комплект, {item.material_unit || "ед."}<input required min="0" step="0.001" type="number" value={material} onChange={(event) => setMaterial(event.target.value)} /></label>
         <label>Минимальная партия, комплектов<input required min="1" step="1" type="number" value={batch} onChange={(event) => setBatch(event.target.value)} /></label>
         <label>Штук в комплекте<input required min="1" step="1" type="number" value={pack} onChange={(event) => setPack(event.target.value)} /></label>
         <label className="checkbox-field"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> Использовать в производственном плане</label>
+        <label>Причина изменения<textarea value={reason} maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder="Например, новая закупочная цена или уточнение расхода. Необязательно." /></label>
         <div className="operation-actions"><button className="ghost-button" disabled={busy} type="button" onClick={onClose}>Отмена</button><button className="primary-button" disabled={busy} type="submit"><CheckCircle2 size={16} />{busy ? "Сохраняем" : "Сохранить норму"}</button></div>
       </form>
     </section>

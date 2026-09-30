@@ -184,7 +184,7 @@ export type TenantSettings = { sync_interval_minutes: number; initial_history_da
 export type WBTokenConnection = { connected: boolean; scopes: string[]; missing_scopes: string[]; scope_metadata_available?: boolean; read_only?: boolean; expires_at?: number | null };
 export type ProductCostSetting = { nm_id: number; supplier_article: string; product_name: string; cost_per_wb_unit: number; note: string; updated_at: string };
 export type SettingsChangeKind = "cost" | "production_norm";
-export type SettingsChangeHistoryItem = { id: number; kind: SettingsChangeKind; nm_id: number; before: Record<string, unknown> | null; after: Record<string, unknown>; changed_at: string; source: string | null; actor: string | null };
+export type SettingsChangeHistoryItem = { id: number; kind: SettingsChangeKind; nm_id: number; before: Record<string, unknown> | null; after: Record<string, unknown>; changed_at: string; source: string | null; actor: string | null; reason?: string | null };
 export type SettingsChangeHistoryPage = { items: SettingsChangeHistoryItem[]; total: number; limit: number; offset: number };
 export type SettingsChangeHistoryQuery = { kind?: SettingsChangeKind; nm_id?: number; limit?: number; offset?: number };
 export type ManualExpense = { id: number; nm_id: number; article: string; amount_rub: number; allocation_basis: "per_unit" | "total" | "revenue_pct"; source: "manual" | "import"; period_start: string; period_end: string; note: string; include_in_management_result: boolean; created_at: string; updated_at: string };
@@ -1066,8 +1066,8 @@ export async function getProductionNorms(): Promise<{ items: ProductionNorm[] }>
   return response.json() as Promise<{ items: ProductionNorm[] }>;
 }
 
-export function updateProductionNorms(items: Array<Pick<ProductionNorm, "nm_id" | "material_per_unit" | "min_batch" | "pack_size" | "enabled">>): Promise<{ saved: number }> {
-  return patchOperation("/api/v1/settings/production-norms", { items });
+export function updateProductionNorms(items: Array<Pick<ProductionNorm, "nm_id" | "material_per_unit" | "min_batch" | "pack_size" | "enabled">>, reason?: string): Promise<{ saved: number }> {
+  return patchOperation("/api/v1/settings/production-norms", { items, ...(reason?.trim() ? { reason: reason.trim() } : {}) });
 }
 
 export async function getMaterialInventory(): Promise<MaterialInventoryData> {
@@ -1084,8 +1084,8 @@ export function initializeMaterialFifo(openingRateRubM: number): Promise<{ resul
   return postOperation("/api/v1/fifo/materials/initialize", { opening_rate_rub_m: openingRateRubM });
 }
 
-export function updateProductCostSettings(items: Array<Pick<ProductCostSetting, "nm_id" | "supplier_article" | "cost_per_wb_unit" | "note">>): Promise<{ saved: number }> {
-  return patchOperation("/api/v1/settings/product-costs", { items });
+export function updateProductCostSettings(items: Array<Pick<ProductCostSetting, "nm_id" | "supplier_article" | "cost_per_wb_unit" | "note">>, reason?: string): Promise<{ saved: number }> {
+  return patchOperation("/api/v1/settings/product-costs", { items, ...(reason?.trim() ? { reason: reason.trim() } : {}) });
 }
 
 export function updateProcurementStatus(orderId: number, status: string): Promise<{ id: number; status: string }> {

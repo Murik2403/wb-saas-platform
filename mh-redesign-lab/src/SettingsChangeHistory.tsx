@@ -157,6 +157,7 @@ export function SettingsChangeHistory({ refreshKey: externalRefreshKey = 0 }: { 
             {fields.length ? <dl className="settings-history-values">{fields.map((field) => <div key={field.key}>
               <dt>{field.label}</dt><dd>{item.before === null ? <><span className="settings-history-created">Создано значение</span><strong>{field.after}</strong></> : <><span>{field.before} → {field.after}</span></>}</dd>
             </div>)}</dl> : <p className="plan-empty">Нет отображаемых изменений.</p>}
+            <p className="settings-history-reason">Причина: {item.reason || "не указана"}</p>
             {(item.source || item.actor) && <p className="settings-history-meta">{item.source ? <>Источник: {sourceLabel(item.source)}</> : null}{item.source && item.actor ? " · " : null}{item.actor ? <>Кто изменил: {item.actor}</> : null}</p>}
           </li>;
         })}

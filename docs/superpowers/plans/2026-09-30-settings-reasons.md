@@ -1,0 +1,3 @@
+# Explicit reasons in settings history — 2026-09-30
+
+Scope FULL audit §5: add optional explicit human reason (max 1000 characters) for manual cost/norm changes. Retain batch API compatibility and existing before/after, actor, no-op and rollback semantics. Add nullable checked SQLite column through additive idempotent legacy migration; historical rows remain null and append-only triggers stay in place. Reason is separate from product notes and never copied from notes or inferred. UI cost/norm edit fields and history display; optional reason in client request. Verify real legacy migration, Unicode/bounds, actor, no-op, atomic rollback and display. No manufacturing or production state changes. Root deploys integration after checks.

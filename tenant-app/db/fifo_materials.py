@@ -642,7 +642,7 @@ def apply_forecast_costs(df: pd.DataFrame, *, source: str = "legacy", actor: str
             applied += 1
     return applied
 
-def save_costs(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None) -> None:
+def save_costs(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = None, reason: str | None = None) -> None:
     from .core import connect
     required = {"nm_id", "cost_per_wb_unit"}
     if not required.issubset(df.columns):
@@ -679,4 +679,4 @@ def save_costs(df: pd.DataFrame, *, source: str = "legacy", actor: str | None = 
                 row,
             )
             after = conn.execute("SELECT * FROM costs WHERE nm_id=?", (row[0],)).fetchone()
-            append_settings_change(conn, kind="cost", nm_id=row[0], before=before, after=after, source=source, actor=actor)
+            append_settings_change(conn, kind="cost", nm_id=row[0], before=before, after=after, source=source, actor=actor, reason=reason)

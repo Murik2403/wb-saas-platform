@@ -183,7 +183,7 @@ class SettingsHistoryTests(DbTestCase):
         self.costs()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             with connect() as conn:
-                conn.execute("INSERT OR REPLACE INTO settings_change_history SELECT id,kind,nm_id,before_json,after_json,changed_at,'bad',actor FROM settings_change_history")
+                conn.execute("INSERT OR REPLACE INTO settings_change_history(id,kind,nm_id,before_json,after_json,changed_at,source,actor) SELECT id,kind,nm_id,before_json,after_json,changed_at,'bad',actor FROM settings_change_history")
         self.assertEqual(self.events()[0]["source"], "legacy")
 
     def test_confirmed_zero_packaging_survives_forecast_refresh(self):
@@ -212,3 +212,37 @@ class SettingsHistoryTests(DbTestCase):
         self.assertEqual(event["source"], "forecast_refresh")
         self.assertEqual(json.loads(event["before_json"])["packaging_cost_rub"], 0)
         self.assertEqual(json.loads(event["after_json"])["packaging_cost_rub"], 12)
+
+
+    def test_explicit_reason_unicode_noop_and_bounded_rollback(self):
+        self.costs(source="tenant_api",actor="42",reason="  Новая закупочная цена  ")
+        self.costs(10,reason="Причина сама по себе не меняет стоимость")
+        self.assertEqual(len(self.events()),1)
+        self.assertEqual(self.events()[0]["reason"],"Новая закупочная цена")
+        self.assertEqual(self.events()[0]["actor"],"42")
+        with self.assertRaises(ValueError):self.costs(20,reason="x"*1001)
+        with connect() as conn:self.assertEqual(conn.execute("SELECT cost_per_wb_unit FROM costs WHERE nm_id=100").fetchone()[0],10)
+        self.assertEqual(len(self.events()),1)
+        self.norms(reason="Уточнили раскрой")
+        self.assertEqual(self.events()[-1]["reason"],"Уточнили раскрой")
+
+    def test_real_legacy_history_migration_preserves_rows_and_immutability(self):
+        with connect() as conn:
+            conn.execute("DROP TABLE settings_change_history")
+            conn.execute("CREATE TABLE settings_change_history(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,nm_id INTEGER NOT NULL,before_json TEXT,after_json TEXT NOT NULL,changed_at TEXT NOT NULL,source TEXT NOT NULL,actor TEXT)")
+            conn.execute("INSERT INTO settings_change_history VALUES(7,'cost',100,NULL,'{}','2026-09-01','legacy','old-account')")
+        init_db();init_db()
+        events=self.events();self.assertEqual(len(events),1);self.assertEqual(events[0]["id"],7)
+        self.assertIsNone(events[0]["reason"]);self.assertEqual(events[0]["actor"],"old-account")
+        self.costs(12,reason="Новая цена")
+        self.assertEqual(self.events()[-1]["reason"],"Новая цена")
+        with self.assertRaises(sqlite3.IntegrityError):
+            with connect() as conn:conn.execute("UPDATE settings_change_history SET reason='подмена' WHERE id=7")
+
+    def test_reason_journal_failure_rolls_back_before_after_change(self):
+        self.costs(10,reason="Начальное значение")
+        with connect() as conn:
+            conn.execute("CREATE TRIGGER reason_fail BEFORE INSERT ON settings_change_history WHEN NEW.reason='fail' BEGIN SELECT RAISE(ABORT,'fail'); END")
+        with self.assertRaises(sqlite3.IntegrityError):self.costs(20,reason="fail")
+        self.assertEqual(len(self.events()),1)
+        with connect() as conn:self.assertEqual(conn.execute("SELECT cost_per_wb_unit FROM costs WHERE nm_id=100").fetchone()[0],10)
