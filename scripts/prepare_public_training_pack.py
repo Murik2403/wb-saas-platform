@@ -29,6 +29,9 @@ def main():
         assert float(proof['duration_seconds'])==item['duration'],'Duration mismatch'
         copies.append((item['slug'],source,digest,len(body)))
         caption_path=source.with_name('captions-ru.vtt')
+        assert not caption_path.is_symlink(),'Subtitle symlinks are not public materials'
+        caption_path=caption_path.resolve(strict=True)
+        assert caption_path.is_relative_to(args.course_manifest.resolve().parent),'Outside course subtitles'
         assert caption_path.is_file() and caption_path.read_text(encoding='utf-8').startswith('WEBVTT'),'Missing subtitles'
         caption_body=caption_path.read_bytes(); caption_digest=hashlib.sha256(caption_body).hexdigest()
         captions[item['slug']]=(caption_path,caption_digest,len(caption_body))
