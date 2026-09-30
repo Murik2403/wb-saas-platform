@@ -248,7 +248,7 @@ def _reconcile(
     return output
 
 
-def read_financial_fifo_reconciliation(date_from: str, date_to: str) -> pd.DataFrame:
+def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_local_fifo:bool=True) -> pd.DataFrame:
     """Return read-only financial-operation to FIFO diagnostics for an operation-date range."""
     start = date.fromisoformat(str(date_from))
     end_exclusive = date.fromisoformat(str(date_to)) + timedelta(days=1)
@@ -281,7 +281,7 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str) -> pd.DataF
             # Fetch only event keys represented by this financial window. A
             # whole-history scan per SKU grows with a tenant's lifetime and
             # can exceed SQLite's bound-parameter limit for allocations.
-            for nm_id, srids in relevant_srids.items():
+            for nm_id, srids in (relevant_srids.items() if allow_local_fifo else ()):
                 for srid_chunk in _chunks(sorted(srids)):
                     srid_placeholders = ",".join("?" for _ in srid_chunk)
                     fifo_events.extend(dict(row) for row in conn.execute(

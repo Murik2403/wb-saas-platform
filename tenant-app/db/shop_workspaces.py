@@ -38,21 +38,28 @@ def _decipher(value: str) -> str:
     except (InvalidToken, ValueError) as exc:
         raise ValueError("Не удалось открыть подключение магазина") from exc
 
-def create(name: str, token: str, account_identity: str) -> int:
+def create(name: str, token: str, account_identity: str,*,register_warehouse:bool=False) -> int:
     name, token, account_identity = name.strip(), token.strip(), account_identity.strip()
     if not name or len(name)>120 or not token or not account_identity or len(account_identity)>200:
         raise ValueError("Название и подтверждённое подключение магазина обязательны")
     initialize()
+    if register_warehouse:
+        from . import shared_warehouse as warehouse
+        with connect() as c:warehouse.initialize(c)
     encrypted = _cipher(token)
     with connect() as c:
         c.execute('BEGIN IMMEDIATE')
         if c.execute('SELECT 1 FROM shop_workspaces WHERE account_identity=?',(account_identity,)).fetchone():
             raise ValueError("Этот магазин уже подключён")
+        if register_warehouse and c.execute('SELECT 1 FROM warehouse_shops WHERE identity=?',(account_identity,)).fetchone():
+            raise ValueError('Этот продавец уже зарегистрирован, включая основной магазин')
         if c.execute('SELECT COUNT(*) FROM shop_workspaces').fetchone()[0]>=MAX_SHOPS:
             raise ValueError('Достигнут предел: пять дополнительных магазинов')
         result=c.execute('INSERT INTO shop_workspaces(name,account_identity,credential_cipher,updated_at) VALUES(?,?,?,?)',
                          (name,account_identity,encrypted,datetime.now(timezone.utc).isoformat()))
-        return int(result.lastrowid)
+        shop_id=int(result.lastrowid)
+        if register_warehouse:c.execute('INSERT INTO warehouse_shops(shop_id,identity,created_at) VALUES(?,?,?)',(shop_id,account_identity,datetime.now(timezone.utc).isoformat()))
+        return shop_id
 
 def listing() -> list[dict]:
     initialize()

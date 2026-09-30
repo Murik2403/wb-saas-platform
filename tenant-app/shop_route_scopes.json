@@ -1,0 +1,889 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/health",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/healthz",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/_stcore/health",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/session",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/jobs",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sync",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sync/status",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sync/ads",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sync/finance",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/products/prices",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/products/prices/upload",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/products/prices/uploads/{upload_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/products/prices/uploads",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sync/sections",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sync/history",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/data-status",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/today",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/overview",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/products",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/growth/activation",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/growth/first-report",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/growth/report-viewed",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/products/cards",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/products/cards/{nm_id}",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/products/cards/{nm_id}/media",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/ads",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/today",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/finance",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/finance/fifo-reconciliation",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/finance/export",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/finance/wb-costs",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/customer-quality",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/customer-quality/feedbacks/answer",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/customer-quality/questions/answer",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/customer-quality/returns/process",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/customer-quality/chats/message",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/action-plan/items",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/action-plan/items",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/action-plan/items/{item_id}",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/procurement",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/procurement",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/operations/procurement/{order_id}/status",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/procurement/{order_id}/payments",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/production/shift",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/production/execution",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/production/execution",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/production/execution/{task_date}/close",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/supply/{order_id}/receipt",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/reports/pdf",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/reports",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/reports/definitions",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/reports/delivery",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/operations/reports/definitions/{definition_id}",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/operations/reports/definitions/{definition_id}/enabled",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/reports/telegram/link-code",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/reports/definitions/{definition_id}/generate",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/reports/quick",
+    "scope": "shop_local"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/operations/reports/definitions/{definition_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/reports/runs/{run_id}/download",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/incidents",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/incidents",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/incidents/{case_id}/compensations",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/incidents/{case_id}/loss",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/stock",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/stock/seller-warehouses",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/analytics",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/fifo/reconciliation",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/fifo/reconciliation/runs/{run_id}",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/fifo/reconciliation/apply",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/ads",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/production",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/supply",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/supply/fbs/{supply_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/supply/fbs/{supply_id}/barcode",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/suppliers",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/suppliers",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/assistant",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/control/data-quality",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/backups",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/operations/backups",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/wb-token",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/wb-token",
+    "scope": "forbidden"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/settings/wb-token",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/ozon",
+    "scope": "forbidden"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/settings/ozon",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/material-inventory",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings/material-inventory",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/fifo/materials/initialize",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/product-costs",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/manual-expenses",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/manual-expenses",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings/manual-expenses/{expense_id}/inclusion",
+    "scope": "shop_local"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/settings/manual-expenses/{expense_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/store-expenses",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/store-expenses",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings/store-expenses/{expense_id}/inclusion",
+    "scope": "shop_local"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/settings/store-expenses/{expense_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/store-expense-templates",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/store-expense-templates",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings/store-expense-templates/{template_id}/active",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/store-expense-templates/generate",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/store-expenses/import/preview",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/store-expenses/import/{batch_id}/confirm",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/management-economics",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/management-pnl",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings/product-costs",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/production-norms",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/settings/production-norms",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/change-history",
+    "scope": "tenant_shared",
+    "query_scopes": {"kind": {"cost": "shop_local", "production_norm": "tenant_shared"}},
+    "requires_kind": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agent/candidates",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agent/refresh",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agent/candidates/{candidate_id}/decision",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/reports",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/expense-coverage",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/settings/expense-coverage",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/incident-workflow/{case_id}",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/incident-workflow/{case_id}/details",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/incident-workflow/{case_id}/evidence",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/incident-workflow/{case_id}/evidence/{evidence_id}",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/incident-workflow/{case_id}/holds",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/incident-workflow/{case_id}/holds/{hold_id}/release",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/integration/products",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/integration/materials",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/integration/releases",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/manufacturing-costs/boms",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/manufacturing-costs/equipment",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/manufacturing-costs/piecework",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/manufacturing-costs/defects",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/manufacturing-costs/releases",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/manufacturing-costs",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/manufacturing-costs/movements/{movement_id}/reverse",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/migration-import/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/migration-import/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/migration-import/history",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/workspace",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/sync",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/ozon-accounting/cost",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/production-workspace",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/wip/issue",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/wip/{batch_id}/complete",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/wip/{batch_id}/reverse",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/wip/package",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/production-workspace/capacity",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/production-workspace/workcenters",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/workcenters/centers",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/workcenters/norms",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/workcenters/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production-workspace/workcenters/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shop-workspaces",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shop-workspaces",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shop-workspaces/{shop_id}/connection",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shop-workspaces/consolidated/report",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shop-workspaces/{shop_id}/report",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shop-workspaces/{shop_id}/sync",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/shop-workspaces/{shop_id}/cost",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shop-workspaces/{shop_id}/deactivate",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/supply-planning/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/supply-planning/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cashflow",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cashflow/entries",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/cashflow/entries/{entry_id}",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cash-accounts",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cash-accounts",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/cash-accounts/{account_id}",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cash-accounts/{account_id}/entries",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cash-accounts/transfers",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cash-accounts/statements/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cash-accounts/statements/confirm",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shop-context/session",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shop-context/{shop_id}/access",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/pnl",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/movements/template",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/movements/preview",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/movements/confirm",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/cost-lots",
+    "scope": "forbidden"
+  }
+]

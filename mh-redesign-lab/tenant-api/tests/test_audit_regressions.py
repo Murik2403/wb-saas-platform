@@ -42,8 +42,8 @@ def test_successful_write_invalidates_dashboard(monkeypatch):
     api.dashboard_response_cache.get_or_build("audit", lambda: "old")
     async def call_next(request):
         api.update_product_costs(api.ProductCostsUpdateInput(items=[api.ProductCostInput(nm_id=123, cost_per_wb_unit=45)]), SimpleNamespace(headers={}))
-        return SimpleNamespace(status_code=200)
-    response = asyncio.run(api.invalidate_after_write(SimpleNamespace(method="PATCH", url=SimpleNamespace(path="/api/v1/settings/product-costs", scheme="http")), call_next))
+        return SimpleNamespace(status_code=200,headers={})
+    response = asyncio.run(api.invalidate_after_write(SimpleNamespace(method="PATCH", headers={},url=SimpleNamespace(path="/api/v1/settings/product-costs", scheme="http",query="")), call_next))
     assert response.status_code == 200
     assert api.dashboard_response_cache.get_or_build("audit", lambda: "new") == "new"
 

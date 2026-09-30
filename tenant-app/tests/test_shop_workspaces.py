@@ -9,6 +9,43 @@ import db.core as core
 from db import shop_workspaces as shops
 from shop_workspace_service import execute,prepare,_worker_slot
 
+def test_parallel_read_queue_serializes_one_worker_and_writes_failfast(database,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event,Lock
+    import shop_workspace_service as service
+    entered=Event();release=Event();lock=Lock();active=0;peak=0
+    def fake(*args,**kwargs):
+        nonlocal active,peak
+        with lock:active+=1;peak=max(peak,active)
+        entered.set();assert release.wait(5)
+        with lock:active-=1
+        return {'ok':True}
+    monkeypatch.setattr(service,'_execute',fake)
+    with ThreadPoolExecutor(3) as pool:
+        first=pool.submit(prepare,1,'request','2026-09-01','2026-09-02',request={'method':'GET'})
+        assert entered.wait(5)
+        second=pool.submit(prepare,1,'request','2026-09-01','2026-09-02',request={'method':'GET'})
+        with pytest.raises(ValueError):prepare(1,'request','2026-09-01','2026-09-02',request={'method':'PATCH'})
+        release.set()
+        assert first.result()['ok'] and second.result()['ok']
+    assert peak==1
+
+def test_exact_read_cache_revision_actor_isolation_and_total_deadline(database,monkeypatch):
+    import shop_workspace_service as service
+    shop=shops.create('One','token','identity');calls=[]
+    def fake(*args,**kwargs):
+        calls.append(kwargs['_timeout'])
+        return {'base_revision':len(calls),'identity':'identity','snapshot':None,'response':{'status':200,'body':'','content_type':'application/json'},'source_errors':[]}
+    monkeypatch.setattr(service,'_execute',fake)
+    common={'request':{'method':'GET','path':'/api/v1/dashboard/overview','query':'','body':''},'actor':'one','role':'owner'}
+    first=prepare(shop,'request','2026-09-01','2026-09-02',_timeout=2,**common)
+    assert prepare(shop,'request','2026-09-01','2026-09-02',_timeout=2,**common)==first
+    assert len(calls)==1 and 0<calls[0]<=2
+    prepare(shop,'request','2026-09-01','2026-09-02',_timeout=2,**dict(common,actor='two'))
+    with core.connect() as conn:conn.execute('UPDATE shop_workspaces SET revision=revision+1 WHERE id=?',(shop,))
+    prepare(shop,'request','2026-09-01','2026-09-02',_timeout=2,**common)
+    assert len(calls)==3
+
 @pytest.fixture
 def database(tmp_path,monkeypatch):
     monkeypatch.setattr(core,'DB_PATH',tmp_path/'main.sqlite3')
@@ -66,7 +103,7 @@ def test_capacity_and_invalid_range(database):
     shop=shops.create('One','token','identity')
     assert _worker_slot.acquire(False)
     try:
-        with pytest.raises(ValueError,match='обрабатывается'):execute(shop,'report','2026-09-01','2026-09-02')
+        with pytest.raises(ValueError,match='обрабатывается'):execute(shop,'cost','2026-09-01','2026-09-02',cost={})
     finally:_worker_slot.release()
     with pytest.raises(ValueError,match='раньше'):execute(shop,'report','2026-09-03','2026-09-01')
 

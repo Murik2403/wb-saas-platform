@@ -783,6 +783,8 @@ app.include_router(integration_router)
 app.include_router(supply_planning_router)
 from shop_workspaces_api import router as shop_workspaces_router
 app.include_router(shop_workspaces_router)
+from shop_context_api import router as shop_context_router
+app.include_router(shop_context_router)
 from ozon_accounting_api import router as ozon_accounting_router
 app.include_router(ozon_accounting_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("MH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()])
@@ -832,7 +834,8 @@ async def invalidate_after_write(request, call_next):
             return JSONResponse(status_code=403, content={"detail": "Запрос с постороннего сайта запрещён"})
     if IS_DEMO and request.method not in {"GET", "HEAD", "OPTIONS"} and not safe_supply_preview:
         return JSONResponse(status_code=403, content={"detail": "Демо доступно только для просмотра"})
-    response = await call_next(request)
+    from shop_dispatch import dispatch as dispatch_shop_request
+    response = await dispatch_shop_request(request, call_next)
     if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400:
         _clear_dashboard_caches()
         context_response_cache.clear()

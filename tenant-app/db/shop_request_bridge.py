@@ -47,7 +47,7 @@ def _actor(account,role):
 
 def _scope(conn,shop_id,identity,account,role,write=True):
     account=_actor(account,role)
-    record=conn.execute('SELECT * FROM shop_workspaces WHERE id=? AND active=1',(shop_id,)).fetchone()
+    record=conn.execute('SELECT id,account_identity,revision,active FROM shop_workspaces WHERE id=? AND active=1',(shop_id,)).fetchone()
     if not record or record['account_identity']!=identity:
         raise warehouse.WarehouseScopeError('Магазин или продавец недоступен')
     scope=warehouse.access(conn,shop_id,account,role,write)
@@ -66,7 +66,7 @@ def _result(conn,row,record):
     result=json.loads(row['result_json'])
     return {'result':result,'bridge':{'applied_revision':row['applied_revision'],
       'current_revision':record['revision'],'shop_id':row['shop_id'],
-      'identity':row['identity'],'current_fingerprint':hashlib.sha256(record['database_snapshot'] or b'').hexdigest()}}
+      'identity':row['identity'],'current_fingerprint':warehouse.digest({'identity':record['account_identity'],'revision':record['revision']})}}
 
 def replay(shop_id,identity,base_revision,request_key,request,account,role):
     """Recover lost success without executing a child or physical action twice."""
@@ -126,5 +126,5 @@ def commit(shop_id,identity,base_revision,request_key,request,account,role,*,sna
         conn.execute('INSERT INTO shop_request_receipts VALUES(?,?,?,?,?,?,?,?,?)',
                      (key,shop_id,identity,base_revision,base_revision+1,expected,result_json,warehouse.now(),account))
         receipt=conn.execute('SELECT * FROM shop_request_receipts WHERE request_key=?',(key,)).fetchone()
-        current=conn.execute('SELECT * FROM shop_workspaces WHERE id=?',(shop_id,)).fetchone()
+        current=conn.execute('SELECT id,account_identity,revision,active FROM shop_workspaces WHERE id=?',(shop_id,)).fetchone()
         return _result(conn,receipt,current)

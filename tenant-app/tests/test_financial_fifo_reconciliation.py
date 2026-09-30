@@ -92,6 +92,16 @@ class FinancialFifoReconciliationTests(DbTestCase):
         self.assertEqual(row["matched_units"], 2)
         self.assertAlmostEqual(row["eligible_fifo_cogs_rub"], 175.0)
 
+    def test_child_local_fifo_cannot_claim_canonical_exact_cost(self) -> None:
+        self._finance(1,operation_date='2026-06-02',sale_date='2026-06-01',quantity=1)
+        self._event('legacy-child',cost=80.0)
+        with connect() as conn:conn.execute('INSERT INTO costs(nm_id,cost_per_wb_unit) VALUES(?,25)',(self.NM_ID,))
+        result=read_financial_fifo_reconciliation('2026-06-02','2026-06-02',allow_local_fifo=False)
+        self.assertNotEqual(result.iloc[0]['status'],'exact')
+        self.assertEqual(summarize_financial_fifo_reconciliation(result)['exact_fifo_cogs_rub'],0)
+        # Historical provenance is retained, merely excluded from this projection.
+        with connect() as conn:self.assertEqual(conn.execute('SELECT COUNT(*) FROM sales_fifo_events').fetchone()[0],1)
+
     def test_return_uses_negative_cost_in_financial_operation_period(self) -> None:
         sale_event_id = self._event("S1", cost=80.0)
         self._event("R1", kind="return", cost=80.0, matched_sale_event_id=sale_event_id)

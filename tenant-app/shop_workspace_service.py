@@ -1,24 +1,72 @@
 from __future__ import annotations
 import json,os,sqlite3,subprocess,sys,tempfile
-from contextlib import closing
+import hashlib
+from collections import OrderedDict
+from contextlib import closing,contextmanager
 from threading import BoundedSemaphore
 from pathlib import Path
 from datetime import date
+from time import monotonic
 import config
 from db import shop_workspaces as shops
 _worker_slot=BoundedSemaphore(1)
+_reader_queue=BoundedSemaphore(8)
+_read_cache=OrderedDict()
+_read_cache_bytes=0
+
+def cached_prepare(shop_id,action,start,end,timeout,kwargs):
+    """Five-second, eight-MiB cache keyed by frozen shop and exact read context.
+
+    Called only while owning the single worker slot. The HTTP dispatcher still
+    verifies ACL, seller identity and revision before and after every response.
+    """
+    global _read_cache_bytes
+    reading=action=='request' and kwargs.get('request',{}).get('method')=='GET'
+    key=None
+    if reading:
+        from db.core import connect
+        with connect() as conn:
+            row=conn.execute('SELECT account_identity,revision FROM shop_workspaces WHERE id=? AND active=1',(shop_id,)).fetchone() if conn.execute("SELECT 1 FROM sqlite_master WHERE name='shop_workspaces'").fetchone() else None
+        if row:
+            key=hashlib.sha256(json.dumps([shop_id,row['account_identity'],row['revision'],start,end,kwargs],sort_keys=True,allow_nan=False).encode()).hexdigest()
+        now=monotonic()
+        for old in list(_read_cache):
+            if _read_cache[old][0]<=now:
+                _,encoded=_read_cache.pop(old);_read_cache_bytes-=len(encoded)
+        if key in _read_cache:return json.loads(_read_cache[key][1])
+    result=_execute(shop_id,action,start,end,_timeout=timeout,_prepare=True,**kwargs)
+    if key and result.get('response',{}).get('status',500)<400:
+        encoded=json.dumps(result,allow_nan=False).encode()
+        if len(encoded)<=1024*1024:
+            while _read_cache and (len(_read_cache)>=8 or _read_cache_bytes+len(encoded)>8*1024*1024):
+                _,(_,removed)=_read_cache.popitem(last=False);_read_cache_bytes-=len(removed)
+            _read_cache[key]=(monotonic()+5,encoded);_read_cache_bytes+=len(encoded)
+    return result
+
+@contextmanager
+def worker_slot(action,kwargs,deadline):
+    reading=action=='report' or (action=='request' and kwargs.get('request',{}).get('method') in {'GET','HEAD','OPTIONS'})
+    queued=False;acquired=False
+    try:
+        if reading:
+            queued=_reader_queue.acquire(blocking=False)
+            if not queued:raise ValueError('Очередь чтения магазина заполнена. Повторите позже')
+            acquired=_worker_slot.acquire(timeout=max(0,deadline-monotonic()))
+        else:acquired=_worker_slot.acquire(blocking=False)
+        if not acquired:raise ValueError('Другой магазин уже обрабатывается. Повторите позже')
+        yield
+    finally:
+        if acquired:_worker_slot.release()
+        if queued:_reader_queue.release()
 
 def execute(shop_id:int,action:str,start:str,end:str,*,_timeout:int|None=None,**kwargs)->dict:
-    if not _worker_slot.acquire(blocking=False):
-        raise ValueError('Другой магазин уже обрабатывается. Повторите позже')
-    try:return _execute(shop_id,action,start,end,_timeout=_timeout,**kwargs)
-    finally:_worker_slot.release()
+    deadline=monotonic()+(_timeout or (600 if action=='sync' else 90))
+    with worker_slot(action,kwargs,deadline):return _execute(shop_id,action,start,end,_timeout=max(.001,deadline-monotonic()),**kwargs)
 
 def prepare(shop_id:int,action:str,start:str,end:str,*,_timeout:int|None=None,**kwargs)->dict:
     """Run a private child without committing any main snapshot or warehouse fact."""
-    if not _worker_slot.acquire(blocking=False):raise ValueError('Другой магазин уже обрабатывается. Повторите позже')
-    try:return _execute(shop_id,action,start,end,_timeout=_timeout,_prepare=True,**kwargs)
-    finally:_worker_slot.release()
+    deadline=monotonic()+(_timeout or (600 if action=='sync' else 90))
+    with worker_slot(action,kwargs,deadline):return cached_prepare(shop_id,action,start,end,max(.001,deadline-monotonic()),kwargs)
 
 def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|None=None,_prepare:bool=False,**kwargs) -> dict:
     if date.fromisoformat(end)<date.fromisoformat(start):raise ValueError('Конец периода раньше начала')
@@ -29,9 +77,9 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
         database=root/'wb_dashboard.sqlite3'
         if state['snapshot']:
             database.write_bytes(state['snapshot'])
-        env=dict(os.environ,WB_SAAS_DATA_DIR=str(root),SHOP_RESULT_PATH=str(root/'result.json'),WB_SAAS_TENANT_SLUG='shop-worker')
-        for name in ('WB_SAAS_INTERNAL_API_URL','WB_SAAS_INTERNAL_API_SECRET','WB_SAAS_BILLING_URL','WB_SAAS_LOGOUT_URL'):
-            env.pop(name,None)
+        env={key:value for key,value in os.environ.items() if key.upper() in {
+          'PATH','SYSTEMROOT','WINDIR','TEMP','TMP','LANG','LC_ALL','LD_LIBRARY_PATH','SSL_CERT_FILE','SSL_CERT_DIR'}}
+        env.update(WB_SAAS_DATA_DIR=str(root),SHOP_RESULT_PATH=str(root/'result.json'),WB_SAAS_TENANT_SLUG='shop-worker')
         payload={**kwargs,'token':state['token'],'action':action,'start':start,'end':end,'source_errors':state['source_errors']}
         try:
             result=subprocess.run([sys.executable,str(Path(__file__).with_name('shop_workspace_worker.py'))],
@@ -42,7 +90,8 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
             raise ValueError('Не удалось обработать магазин; прежние данные сохранены. Проверьте подключение и доступ к API')
         report=json.loads((root/'result.json').read_text(encoding='utf-8'))
         prepared_snapshot=None
-        if action!='report':
+        snapshot_required=action!='report' and not (action=='request' and kwargs['request']['method'] in {'GET','HEAD','OPTIONS'})
+        if snapshot_required:
             snapshot=root/'snapshot.sqlite3'
             with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(snapshot)) as target:
                 source.backup(target)
