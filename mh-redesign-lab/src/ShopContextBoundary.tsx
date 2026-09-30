@@ -1,5 +1,6 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {clearShopContext,requireShopContext,selectShop,validateShopSession,type ShopSession} from './selected-shop';
+import './ShopContextBoundary.css';
 
 export function ShopContextBoundary({children,navigate=(url:string)=>window.location.replace(url)}:{children:ReactNode;navigate?:(url:string)=>void}){
  const [session,setSession]=useState<ShopSession|null>(null),[id,setId]=useState<number|null>(null),[error,setError]=useState(''),[attempt,setAttempt]=useState(0);
@@ -24,10 +25,10 @@ export function ShopContextBoundary({children,navigate=(url:string)=>window.loca
   try{selectShop(session!,next);const url=new URL(window.location.href);url.searchParams.set('shop',String(next));clearShopContext();setSession(null);setId(null);setError('');navigate(url.toString());}
   catch(reason){clearShopContext();setError(reason instanceof Error?reason.message:'Магазин недоступен');}
  }
- return <><section className="panel" aria-label="Контекст выбранного магазина">
+ return <><section className="panel shop-context-bar" aria-label="Контекст выбранного магазина">
   <label>Магазин кабинета <select aria-label="Магазин кабинета" value={id} onChange={e=>change(Number(e.target.value))}>{session.shops.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-  <p>Выбран: <strong>{shop.name}</strong>. {shop.can_write?'Действия доступны в пределах ваших прав.':'Только просмотр.'}</p>
-  <p>Сырьё, физический склад, производство и денежные счета общие для кабинета. Выбор магазина не создаёт их копию; доступ определяется разделом.</p>
+  <p className="shop-context-access">{shop.can_write?'Действия доступны в пределах ваших прав.':'Только просмотр.'}</p>
+  <details className="shop-context-help"><summary>Что общее для магазинов</summary><p>Сырьё, физический склад, производство и денежные счета общие для кабинета. Выбор магазина не создаёт их копию; доступ определяется разделом.</p></details>
   {shop.id!==0&&shop.snapshot_available===false&&<p>История этого магазина ещё не загружена. Данные основного магазина не подставляются.</p>}
   {shop.id!==0&&<p>Поддерживаются только разделы выбранного магазина. Остальные запросы заблокированы без переключения на основной магазин.</p>}
  </section><div key={`${shop.id}:${shop.verified_identity??'primary'}:${shop.snapshot_revision??'primary'}`}>{children}</div></>;

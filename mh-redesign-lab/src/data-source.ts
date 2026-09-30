@@ -2679,16 +2679,9 @@ function compactActionLabel(value: unknown, fallback: string): string {
   if (normalized.includes("резервн") || normalized.includes("копи")) {
     return "Создать копию";
   }
-  if (raw.length <= 28) {
-    return raw;
-  }
-
-  const firstClause = raw.split(";")[0]?.trim();
-  if (firstClause && firstClause.length <= 28) {
-    return firstClause;
-  }
-
-  return `${raw.slice(0, 25).trim()}...`;
+  // This instruction is also the main signal's heading. Keep its meaning intact;
+  // the layout can wrap long text instead of deleting the rest of the action.
+  return raw;
 }
 
 export type ExpenseCoverage = {

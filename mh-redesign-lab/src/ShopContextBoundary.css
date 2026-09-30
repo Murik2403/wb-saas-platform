@@ -1,0 +1,35 @@
+.panel.shop-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem 1rem;
+  padding: .65rem 1rem;
+  border-radius: 0;
+  font-size: .82rem;
+  line-height: 1.4;
+}
+.shop-context-bar label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6rem;
+  color: var(--muted);
+}
+.shop-context-bar select {
+  max-width: 100%;
+  padding: .4rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.shop-context-bar p { margin: 0; }
+.shop-context-access { color: var(--muted); }
+.shop-context-help { margin-left: auto; max-width: 44rem; }
+.shop-context-help summary { cursor: pointer; color: var(--teal); }
+.shop-context-help[open] p { margin-top: .5rem; }
+.hero-strip[aria-label="Главный сигнал"] h2 { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .shop-context-help { margin-left: 0; }
+}
