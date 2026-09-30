@@ -1,3 +1,6 @@
+import { secondaryActions } from "./CabinetSupplementary";
+import { plural, cabinetDate, cabinetText, checkPriority, wbAvailabilityMessage } from "./cabinet-copy";
+import { SettingsWorkspace } from "./SettingsWorkspace";
 import {createDialogFocusScope,useDialogFocus} from './dialog-focus';
 import { downloadScoped, currentShop } from "./selected-shop";
 import {fifoReasonLabel} from './fifo-reason';
@@ -905,7 +908,7 @@ function App() {
           ))}
         </nav>
 
-        <div className={cx("side-status", dashboard.connection.mode)}>
+        <div className={cx("side-status", dashboard.connection.mode)} role="status">
           <div className="status-dot" />
           <div>
             <p>{dashboard.connection.label}</p>
@@ -961,9 +964,9 @@ function App() {
           </div>
 
           <div className="topbar-actions">
-            {installPrompt ? <button className="secondary-button install-button" type="button" onClick={() => void installApp()}><Download size={17} /><span>Установить</span></button> : null}
+            {installPrompt ? <button className="secondary-button install-button" aria-label="Установить приложение" title="Установить приложение" type="button" onClick={() => void installApp()}><Download size={17} /><span>Установить</span></button> : null}
             <button
-              className="secondary-button home-button"
+              className="secondary-button home-button" aria-label="На главную" title="На главную"
               type="button"
               onClick={() => {
                 setMobileMenuOpen(false);
@@ -977,7 +980,7 @@ function App() {
               className="plan-counter"
               type="button"
               onClick={() => setPlanOpen(true)}
-              aria-label="Открыть план задач"
+              aria-label="Открыть план задач" title="Открыть план задач"
             >
               <CheckCircle2 size={16} />
               <span>{activePlanItems.length ? `План ${activePlanItems.length}` : "План задач"}</span>
@@ -987,7 +990,7 @@ function App() {
                 <button
                   className="session-chip"
                   type="button"
-                  aria-label={`Текущий аккаунт: ${session.tenant.name}`}
+                  title={`Аккаунт: ${session.tenant.name}`} aria-label={`Текущий аккаунт: ${session.tenant.name}`}
                   aria-expanded={sessionMenuOpen}
                   onClick={() => setSessionMenuOpen((open) => !open)}
                 >
@@ -1017,7 +1020,7 @@ function App() {
               </div>
             ) : null}
             <button
-              className={cx("primary-button", dashboard.refreshing && "is-refreshing")}
+              aria-label={dashboard.refreshing ? "Обновляем данные" : "Обновить данные"} title="Обновить данные" className={cx("primary-button", dashboard.refreshing && "is-refreshing")}
               type="button"
               disabled={dashboard.refreshing}
               onClick={() => void handleRefresh()}
@@ -1090,7 +1093,7 @@ function App() {
         ) : null}
 
         {activeNav === "finance" ? (
-          <><CashflowPanel role={session?.user.role ?? "viewer"} /><FinanceView
+          <><FinanceView cashflow={<CashflowPanel role={session?.user.role ?? "viewer"} />}
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
@@ -1179,7 +1182,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <><MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} /><SettingsViewV2 onSynced={dashboard.refresh} /></>) : null}
+        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <SettingsViewV2 sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} />} />) : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">
@@ -1441,7 +1444,7 @@ function ActionDetailDialog({
   );
 }
 
-function TodayView({
+export function TodayView({
   actions,
   chartBars,
   chartBarsWeek,
@@ -1464,6 +1467,8 @@ function TodayView({
 }) {
   const hasTopAction = Boolean(topAction);
   const [showAllActions, setShowAllActions] = useState(false);
+  const remainingActions = secondaryActions(actions, topAction);
+  const heroInQueue = remainingActions.length !== actions.length;
   const heroTitle = topAction?.owner ?? "Активных сигналов нет";
   const heroDescription = topAction
     ? `${topAction.issue}${topAction.impact ? `. Потенциальный эффект: ${topAction.impact}.` : ""}`
@@ -1471,6 +1476,7 @@ function TodayView({
 
   return (
     <div className="workspace-view">
+      <MetricGrid metrics={todayMetrics} onMetricClick={(metric) => onAction(metric.label, metric.label)} />
       <section className="hero-strip" aria-label="Главный сигнал">
         <div>
           <div className="eyebrow">
@@ -1494,8 +1500,6 @@ function TodayView({
         )}
       </section>
 
-      <MetricGrid metrics={todayMetrics} onMetricClick={(metric) => onAction(metric.label, metric.label)} />
-
       <div className="content-grid">
         <section className="work-section" id="stock-reorder-plan">
           <SectionHeader kicker="Очередь решений" title="Что требует действия">
@@ -1505,19 +1509,20 @@ function TodayView({
             </span>
           </SectionHeader>
 
+          {heroInQueue && !showAllActions ? <p className="form-hint">Главное действие показано выше. Остальные — в очереди ниже.</p> : null}
           <div className="action-list">
-            {(showAllActions ? actions : actions.slice(0, 3)).map((item) => (
+            {(showAllActions ? actions : remainingActions.slice(0, 3)).map((item) => (
               <ActionRow item={item} key={item.id} onAction={onAction} />
             ))}
           </div>
-          {actions.length > 3 ? <button className="action-more-button" type="button" onClick={() => setShowAllActions((value) => !value)}>
-            {showAllActions ? "Свернуть очередь" : `Показать ещё ${actions.length - 3}`}
+          {(remainingActions.length > 3 || heroInQueue) ? <button className="action-more-button" type="button" onClick={() => setShowAllActions((value) => !value)}>
+            {showAllActions ? "Свернуть очередь" : `Показать всю очередь · ${actions.length}`}
           </button> : null}
         </section>
 
         <aside className="insight-column">
           <RevenuePanel chartBars={chartBars} chartBarsWeek={chartBarsWeek} period={period} setPeriod={setPeriod} />
-          <ProductionPanel hasData={false} onOpen={() => onAction("Партия", "следующая партия")} />
+          <button className="ghost-button" type="button" onClick={() => onAction("Партия", "следующая партия")}>Открыть производство</button>
         </aside>
       </div>
 
@@ -1538,7 +1543,7 @@ function StockIncidentsPanel() {
   const submitLoss = async (form: HTMLFormElement) => { const values = new FormData(form); setBusy(true); setError(null); try { await applyIncidentLoss(Number(values.get("case_id")), { nm_id: Number(values.get("nm_id")), units: Number(values.get("units")), note: String(values.get("note")), confirmed: values.get("confirmed") === "on" }); form.reset(); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Проведение утраты заблокировано"); } finally { setBusy(false); } };
   const summary = data?.summary;
   const today = new Date().toISOString().slice(0, 10);
-  return <section className="work-section"><SectionHeader kicker="WB" title="Инциденты и компенсации"><AlertTriangle size={18} /></SectionHeader>{error ? <p className="operation-error">{error}</p> : null}<div className="metrics-grid incident-metrics"><MetricCard metric={{label:"Подтверждённая утрата",value:`${summary?.confirmed_loss_units ?? 0} ед.`,delta:"FIFO-слои",detail:"учтённые строки",tone:"warn"}}/><MetricCard metric={{label:"Компенсации",value:`${Math.round(summary?.compensation_rub ?? 0).toLocaleString("ru-RU")} ₽`,delta:"WB",detail:"зачисленные суммы",tone:"good"}}/><MetricCard metric={{label:"Непокрытая утрата",value:`${Math.round(summary?.unrecovered_loss_rub ?? 0).toLocaleString("ru-RU")} ₽`,delta:"контроль",detail:"после компенсаций",tone:"danger"}}/></div><div className="content-grid"><form className="settings-form" onSubmit={(event)=>{event.preventDefault();void submitCase(event.currentTarget);}}><strong>Новый инцидент</strong><input name="incident_name" required placeholder="Название инцидента"/><input name="incident_date" required type="date" defaultValue={today}/><input name="warehouse_label" placeholder="Склад WB"/><input name="document_ref" placeholder="Документ / основание"/><input name="note" placeholder="Примечание"/><button className="secondary-button" disabled={busy} type="submit">Создать карточку</button></form><form className="settings-form" onSubmit={(event)=>{event.preventDefault();void submitCompensation(event.currentTarget);}}><strong>Компенсация WB</strong><select className="filter-select" name="case_id" required>{data?.cases.map((item)=><option key={String(item.id)} value={String(item.id)}>#{String(item.id)} · {String(item.incident_name)}</option>)}</select><input name="amount_rub" min="0.01" required step="0.01" type="number" placeholder="Сумма, ₽"/><input name="compensation_date" required type="date" defaultValue={today}/><input name="source_ref" required placeholder="Документ компенсации"/><input name="note" placeholder="Примечание"/><button className="secondary-button" disabled={busy || !data?.cases.length} type="submit">Записать компенсацию</button></form></div>{data?.cases.length ? <div className="product-economics-table"><div className="control-head"><span>Дата</span><span>Инцидент</span><span>Склад</span><span>Статус</span><span>Результат</span></div>{data.cases.map((item) => <div className="control-row" key={String(item.id)}><span>{String(item.incident_date ?? "—")}</span><strong>{String(item.incident_name ?? "")}</strong><span>{String(item.warehouse_label ?? "—")}</span><StatusPill tone={String(item.status) === "closed" ? "good" : "warn"}>{String(item.status ?? "open")}</StatusPill><span>{Math.round(Number(item.incident_result_rub ?? 0)).toLocaleString("ru-RU")} ₽</span></div>)}</div> : <p className="plan-empty">Карточек инцидентов WB пока нет</p>}</section>;
+  return <section className="work-section"><SectionHeader kicker="WB" title="Инциденты и компенсации"><AlertTriangle size={18} /></SectionHeader>{error ? <p className="operation-error">{error}</p> : null}<div className="metrics-grid incident-metrics"><MetricCard metric={{label:"Подтверждённая утрата",value:`${summary?.confirmed_loss_units ?? 0} ед.`,delta:"FIFO-слои",detail:"учтённые строки",tone:"warn"}}/><MetricCard metric={{label:"Компенсации",value:`${Math.round(summary?.compensation_rub ?? 0).toLocaleString("ru-RU")} ₽`,delta:"WB",detail:"зачисленные суммы",tone:"good"}}/><MetricCard metric={{label:"Непокрытая утрата",value:`${Math.round(summary?.unrecovered_loss_rub ?? 0).toLocaleString("ru-RU")} ₽`,delta:"контроль",detail:"после компенсаций",tone:"danger"}}/></div><details className="cabinet-disclosure"><summary>Создать инцидент или записать компенсацию</summary><div className="content-grid"><form className="settings-form" onSubmit={(event)=>{event.preventDefault();void submitCase(event.currentTarget);}}><strong>Новый инцидент</strong><input name="incident_name" required placeholder="Название инцидента"/><input name="incident_date" required type="date" defaultValue={today}/><input name="warehouse_label" placeholder="Склад WB"/><input name="document_ref" placeholder="Документ / основание"/><input name="note" placeholder="Примечание"/><button className="secondary-button" disabled={busy} type="submit">Создать карточку</button></form><form className="settings-form" onSubmit={(event)=>{event.preventDefault();void submitCompensation(event.currentTarget);}}><strong>Компенсация WB</strong><select className="filter-select" name="case_id" required>{data?.cases.map((item)=><option key={String(item.id)} value={String(item.id)}>#{String(item.id)} · {String(item.incident_name)}</option>)}</select><input name="amount_rub" min="0.01" required step="0.01" type="number" placeholder="Сумма, ₽"/><input name="compensation_date" required type="date" defaultValue={today}/><input name="source_ref" required placeholder="Документ компенсации"/><input name="note" placeholder="Примечание"/><button className="secondary-button" disabled={busy || !data?.cases.length} type="submit">Записать компенсацию</button></form></div></details>{data?.cases.length ? <div className="product-economics-table"><div className="control-head"><span>Дата</span><span>Инцидент</span><span>Склад</span><span>Статус</span><span>Результат</span></div>{data.cases.map((item) => <div className="control-row" key={String(item.id)}><span>{String(item.incident_date ?? "—")}</span><strong>{String(item.incident_name ?? "")}</strong><span>{String(item.warehouse_label ?? "—")}</span><StatusPill tone={String(item.status) === "closed" ? "good" : "warn"}>{String(item.status ?? "open")}</StatusPill><span>{Math.round(Number(item.incident_result_rub ?? 0)).toLocaleString("ru-RU")} ₽</span></div>)}</div> : <p className="plan-empty">Карточек инцидентов WB пока нет</p>}</section>;
 }
 
 function StockIncidentsPanelV2() {
@@ -1554,7 +1559,7 @@ function StockIncidentsPanelV2() {
   return <section className="work-section">
     <SectionHeader kicker="WB" title="Инциденты и компенсации"><AlertTriangle size={18} /></SectionHeader>
     {message ? <p className="operation-error" role="status">{message}</p> : null}
-    <div className="incident-forms">
+    <details className="cabinet-disclosure"><summary>Создать инцидент или записать компенсацию</summary><div className="incident-forms">
       <form className="incident-form" onSubmit={(event) => { event.preventDefault(); const values = new FormData(event.currentTarget); void submit(event.currentTarget, () => createIncidentCase({ incident_name: String(values.get("name")), incident_date: String(values.get("date")), warehouse_label: String(values.get("warehouse")), document_ref: String(values.get("document")), note: String(values.get("note")) })); }}>
         <h3>Новый инцидент</h3>
         <label><span>Название</span><input name="name" required placeholder="Например: недостача на складе" /></label>
@@ -1584,7 +1589,7 @@ function StockIncidentsPanelV2() {
           <button className="primary-button" disabled={busy} type="submit"><ShieldCheck size={16} /><span>Провести утрату</span></button>
         </form>
       </> : <p className="incident-empty">Сначала создайте карточку инцидента. После этого здесь станут доступны компенсация WB и подтверждённая утрата.</p>}
-    </div>
+    </div></details>
     {cases.length ? <div className="incident-history-list">{cases.map((item) => <article className="incident-history-card" key={String(item.id)}><div className="incident-history-heading"><div><span>{String(item.incident_date ?? "—")}</span><strong>{String(item.incident_name ?? "Без названия")}</strong></div><StatusPill tone={String(item.status) === "closed" ? "good" : "warn"}>{String(item.status ?? "open")}</StatusPill></div><div className="incident-history-meta"><span>Склад WB<strong>{String(item.warehouse_label ?? "не указан")}</strong></span><span>Результат<strong>{Math.round(Number(item.incident_result_rub ?? 0)).toLocaleString("ru-RU")} ₽</strong></span></div></article>)}</div> : null}
   </section>;
 }
@@ -1789,8 +1794,9 @@ function AdsView({
   );
 }
 
-function FinanceView({
+export function FinanceView({
   cashWindows,
+  cashflow,
   expenseSplit,
   financeLedger,
   financeReport,
@@ -1799,6 +1805,7 @@ function FinanceView({
   period,
   setPeriod,
 }: {
+  cashflow?: ReactNode;
   cashWindows: Array<{ label: string; value: string; detail: string }>;
   expenseSplit: ExpenseSplit[];
   financeLedger: FinanceLedgerItem[];
@@ -1843,11 +1850,54 @@ function FinanceView({
         </div>
       </section>
 
+      <div className="finance-period-status">
+        <span className={financeCoverage.className}>{financeCoverage.label}</span>
+        <p className="form-hint finance-coverage-note">{financeCoverage.note}</p>
+      </div>
       <MetricGrid metrics={financeMetrics} onMetricClick={(metric) => onAction("Отчет", metric.label)} />
+      {financeReport.balance !== undefined && financeReport.balance > 0 ? <div className="cash-grid finance-balance-grid"><div className="stat"><span>Баланс WB</span><strong>{Math.round(financeReport.balance).toLocaleString("ru-RU")} ₽</strong><small>текущий баланс продавца</small></div><div className="stat"><span>К выводу</span><strong>{Math.round(financeReport.forWithdraw ?? 0).toLocaleString("ru-RU")} ₽</strong><small>по данным Finance API</small></div></div> : null}
+
+      {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <>
+        {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
+      </> : null}
       <ManagementPnlSummary period={period} />
-      <ShopWorkspaces />
-      <OzonAccounting />
-      <PriceScenarios />
+      {cashflow}
+      <section className="work-section" aria-label="Денежное движение">
+        <SectionHeader kicker="P&L" title="Денежное движение">
+          <DashboardPeriodControl period={period} setPeriod={setPeriod} />
+        </SectionHeader>
+          {financeLedger.length ? <div className="ledger-list">
+            {financeLedger.map((item) => <FinanceLedgerRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
+          </div> : <p className="plan-empty">Нет данных о движении денег</p>}
+      </section>
+      <div className="content-grid finance-expenses-grid" aria-label="Расходы и их структура">
+          <section className="panel finance-expenses-panel">
+            <SectionHeader compact kicker="WB реализация" title="Статьи расходов">
+            </SectionHeader>
+            {financeReport.wbCosts ? <div className="finance-wb-details"><h4>Дополнительная аналитика WB</h4><p className="form-hint">Расшифровка удержаний; не прибавляется повторно к расходам финансового отчёта.</p>{financeReport.wbCosts.errors.map((error) => <p className={financeReport.wbCosts?.status === "processing" ? "form-hint" : "operation-error"} key={error}>{error}</p>)}<p>Подмены: {financeReport.wbCosts.deductions.toLocaleString("ru-RU")} ₽ · Габариты: {financeReport.wbCosts.measurementPenalties.toLocaleString("ru-RU")} ₽ · Платное хранение: {financeReport.wbCosts.paidStorage.toLocaleString("ru-RU")} ₽{financeReport.wbCosts.status === "processing" ? " · расчёт продолжается" : ""}</p></div> : null}
+            {financeReport.rows.length ? <div className="ledger-list">{financeReport.rows.map((row) => <FinanceLedgerRow key={row.label} item={{ label: row.label, amount: `${Math.round(row.amount).toLocaleString("ru-RU")} ₽`, detail: "финансовый отчёт WB", tone: row.amount < 0 ? "warn" : "good" }} onOpen={() => onAction("Отчет", row.label)} />)}</div> : <p className="plan-empty">Финансовый отчёт WB ещё не загружен</p>}
+            {financeReport.lastDate ? <small className="muted">Последняя дата реализации: {financeReport.lastDate}{financeReport.calculationEnd ? ` · расчёт до ${financeReport.calculationEnd}` : ""}{financeReport.lagDays ? ` · отставание ${Math.round(financeReport.lagDays)} дн.` : ""}</small> : null}
+          </section>
+        <aside className="insight-column">
+          <section className="panel">
+            <SectionHeader compact kicker="Структура" title="Доля расходов">
+              <WalletCards size={20} />
+            </SectionHeader>
+            {expenseSplit.length ? <div className="split-list">
+              {expenseSplit.map((item) => <SplitRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
+            </div> : <p className="plan-empty">Нет данных о структуре расходов</p>}
+          </section>
+
+        </aside>
+      </div>
+          <section className="panel">
+            <SectionHeader compact kicker="Контроль" title="Кассовые окна">
+              <button className="icon-button" type="button" aria-label="Сформировать финансовый отчёт" onClick={() => onAction("Отчет", "финансы")}><ShieldCheck size={20} /></button>
+            </SectionHeader>
+            {cashWindows.length ? <div className="cash-grid">{cashWindows.map((item) => <button className="stat detail-trigger" type="button" key={item.label} onClick={() => onAction("Отчет", item.label)}><span>{item.label}</span><strong>{item.value}</strong><small>{item.detail}</small></button>)}</div> : <p className="plan-empty">Нет загруженных финансовых операций</p>}
+          </section>
+      <details className="panel finance-cost-review" aria-label="Проверка себестоимости">
+        <summary><h3>Проверка себестоимости</h3><span className="form-hint">Источники стоимости, сверка партий и подробные строки</span></summary>
       {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <section className={`panel finance-cogs-evidence ${financeReport.cogsEvidence.complete ? "" : "finance-cogs-incomplete"}`} aria-label="Покрытие себестоимости в прибыли">
         <SectionHeader compact kicker="Себестоимость в P&L" title={financeReport.cogsEvidence.complete ? "Себестоимость подтверждена или оценена полностью" : "В прибыли есть строки без себестоимости"}>
           <PackageCheck size={18} />
@@ -1857,23 +1907,13 @@ function FinanceView({
           <div className="stat"><span>Оценка по текущей себестоимости</span><strong>{Math.round(financeReport.cogsEvidence.currentEstimateRub).toLocaleString("ru-RU")} ₽</strong><small>{financeReport.cogsEvidence.estimatedUnits.toLocaleString("ru-RU")} ед. · оценка не является историческим FIFO</small></div>
           <div className="stat"><span>Без подтверждённой ставки</span><strong>{financeReport.cogsEvidence.insufficientUnits.toLocaleString("ru-RU")} ед.</strong><small>{financeReport.cogsEvidence.totalUnits.toLocaleString("ru-RU")} ед. продаж и возвратов в периоде</small></div>
         </div>
-        {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
-      </section> : null}
-      {financeReport.balance !== undefined && financeReport.balance > 0 ? <div className="cash-grid finance-balance-grid"><div className="stat"><span>Баланс WB</span><strong>{Math.round(financeReport.balance).toLocaleString("ru-RU")} ₽</strong><small>текущий баланс продавца</small></div><div className="stat"><span>К выводу</span><strong>{Math.round(financeReport.forWithdraw ?? 0).toLocaleString("ru-RU")} ₽</strong><small>по данным Finance API</small></div></div> : null}
 
-      <div className="content-grid">
-        <section className="work-section">
-          <SectionHeader kicker="P&L" title="Денежное движение">
-            <DashboardPeriodControl period={period} setPeriod={setPeriod} />
-          </SectionHeader>
-          {financeLedger.length ? <div className="ledger-list">
-            {financeLedger.map((item) => <FinanceLedgerRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
-          </div> : <p className="plan-empty">Нет данных о движении денег</p>}
+      </section> : null}
           {financeReport.fifoPeriodBasis === "sale_date" ? <section className="panel finance-fifo-panel" aria-label="Сверка FIFO-себестоимости продаж">
             <SectionHeader compact kicker="Себестоимость партий" title="Сверка FIFO по дате продажи">
               <PackageCheck size={18} />
             </SectionHeader>
-            <p className="form-hint">Отдельная оценка по датам продаж и возвратов. Она не включена в прибыль выше: финансовый отчёт WB использует даты реализации, а возвраты могут относиться к другому периоду. FIFO-журнал может содержать начальные остатки и временные слои с базовой ставкой, поэтому сумму нельзя считать полностью фактической себестоимостью.</p>
+            <p className="form-hint">Отдельная оценка по датам продаж и возвратов. Она не включена в прибыль выше: финансовый отчёт WB использует даты реализации, а возвраты могут относиться к другому периоду. В журнале могут быть начальные остатки и временные оценки по стоимости из настроек товара, поэтому сумму нельзя считать полностью фактической себестоимостью.</p>
             {financeReport.fifoCosts?.length ? (() => {
               const rows = financeReport.fifoCosts;
               const totalEvents = rows.reduce((sum, row) => sum + row.totalEvents, 0);
@@ -1895,46 +1935,21 @@ function FinanceView({
             <SectionHeader compact kicker="Финансовые операции WB" title="Сводка качества FIFO-сопоставления">
               <PackageCheck size={18} />
             </SectionHeader>
-            <p className="form-hint">Строки сгруппированы по дате финансовой операции. Точная себестоимость сверяется по rrd_id, nm_id, srid, типу операции, количеству и подтверждённым производственным или закупочным слоям. Подтверждённые строки уже включены в P&L; остальные строки учтены по текущей себестоимости как оценка или отмечены как неполные.</p>
+            <p className="form-hint">Строки сгруппированы по дате финансовой операции. Точная себестоимость проверяется по данным продажи или возврата, количеству товара и подтверждённым производственным или закупочным партиям. Подтверждённые строки уже включены в P&L; остальные строки учтены по текущей себестоимости как оценка или отмечены как неполные.</p>
             {financeReport.fifoReconciliation.saleReturnRows ? <>
               <div className="cash-grid finance-fifo-summary">
                 <div className="stat"><span>Точно сопоставлено</span><strong>{financeReport.fifoReconciliation.exactRows.toLocaleString("ru-RU")} / {financeReport.fifoReconciliation.saleReturnRows.toLocaleString("ru-RU")}</strong><small>{Math.round(financeReport.fifoReconciliation.exactRows / financeReport.fifoReconciliation.saleReturnRows * 100)}% финансовых строк</small></div>
                 <div className="stat"><span>Покрытие по количеству</span><strong>{financeReport.fifoReconciliation.exactUnits.toLocaleString("ru-RU")} / {financeReport.fifoReconciliation.saleReturnUnits.toLocaleString("ru-RU")} ед.</strong><small>{financeReport.fifoReconciliation.exactUnitCoveragePercent.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}% единиц продаж и возвратов</small></div>
                 <div className="stat"><span>Подтверждённая FIFO-себестоимость</span><strong>{Math.round(financeReport.fifoReconciliation.exactFifoCogs).toLocaleString("ru-RU")} ₽</strong><small>Только точно сопоставленные строки, возвраты со знаком минус</small></div>
               </div>
-              <p className="form-hint">Требуют проверки: {Object.entries(financeReport.fifoReconciliation.statusCounts).filter(([status]) => status !== "exact").map(([status, count]) => `${status} — ${count}`).join(" · ") || "нет"}</p>
+              <p className="form-hint">Требуют проверки: {Object.entries(financeReport.fifoReconciliation.statusCounts).filter(([status]) => status !== "exact").map(([status, count]) => `${({ unmatched: "нет связанной продажи", ambiguous: "несколько возможных соответствий", synthetic: "временная оценка", baseline: "оценка по настройкам" } as Record<string, string>)[status] ?? "другая причина"} — ${count}`).join(" · ") || "нет"}</p>
             </> : <p className="plan-empty">В выбранном периоде нет финансовых строк продаж или возвратов.</p>}
           </section> : null}
           <FinanceFifoDetailTable period={period} />
-          <section className="panel finance-expenses-panel">
-            <SectionHeader compact kicker="WB реализация" title="Статьи расходов">
-              <span className={financeCoverage.className}>{financeCoverage.label}</span>
-            </SectionHeader>
-            <p className="form-hint finance-coverage-note">{financeCoverage.note}</p>
-            {financeReport.wbCosts ? <div className="finance-wb-details"><h4>Дополнительная аналитика WB</h4><p className="form-hint">Расшифровка удержаний; не прибавляется повторно к расходам финансового отчёта.</p>{financeReport.wbCosts.errors.map((error) => <p className={financeReport.wbCosts?.status === "processing" ? "form-hint" : "operation-error"} key={error}>{error}</p>)}<p>Подмены: {financeReport.wbCosts.deductions.toLocaleString("ru-RU")} ₽ · Габариты: {financeReport.wbCosts.measurementPenalties.toLocaleString("ru-RU")} ₽ · Платное хранение: {financeReport.wbCosts.paidStorage.toLocaleString("ru-RU")} ₽{financeReport.wbCosts.status === "processing" ? " · расчёт продолжается" : ""}</p></div> : null}
-            {financeReport.rows.length ? <div className="ledger-list">{financeReport.rows.map((row) => <FinanceLedgerRow key={row.label} item={{ label: row.label, amount: `${Math.round(row.amount).toLocaleString("ru-RU")} ₽`, detail: "финансовый отчёт WB", tone: row.amount < 0 ? "warn" : "good" }} onOpen={() => onAction("Отчет", row.label)} />)}</div> : <p className="plan-empty">Финансовый отчёт WB ещё не загружен</p>}
-            {financeReport.lastDate ? <small className="muted">Последняя дата реализации: {financeReport.lastDate}{financeReport.calculationEnd ? ` · расчёт до ${financeReport.calculationEnd}` : ""}{financeReport.lagDays ? ` · отставание ${Math.round(financeReport.lagDays)} дн.` : ""}</small> : null}
-          </section>
-        </section>
-
-        <aside className="insight-column">
-          <section className="panel">
-            <SectionHeader compact kicker="Структура" title="Доля расходов">
-              <WalletCards size={20} />
-            </SectionHeader>
-            {expenseSplit.length ? <div className="split-list">
-              {expenseSplit.map((item) => <SplitRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
-            </div> : <p className="plan-empty">Нет данных о структуре расходов</p>}
-          </section>
-
-          <section className="panel">
-            <SectionHeader compact kicker="Контроль" title="Кассовые окна">
-              <button className="icon-button" type="button" aria-label="Сформировать финансовый отчёт" onClick={() => onAction("Отчет", "финансы")}><ShieldCheck size={20} /></button>
-            </SectionHeader>
-            {cashWindows.length ? <div className="cash-grid">{cashWindows.map((item) => <button className="stat detail-trigger" type="button" key={item.label} onClick={() => onAction("Отчет", item.label)}><span>{item.label}</span><strong>{item.value}</strong><small>{item.detail}</small></button>)}</div> : <p className="plan-empty">Нет загруженных финансовых операций</p>}
-          </section>
-        </aside>
-      </div>
+      </details>
+      <ShopWorkspaces />
+      <OzonAccounting />
+      <PriceScenarios />
     </div>
   );
 }
@@ -1990,7 +2005,7 @@ function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
           {open ? "Свернуть" : "Показать строки"}
         </button>
       </div>
-      <p className="form-hint">Сверка по rrd_id, периоду, SKU и SRID. Столбец «Учтено в P&amp;L» показывает точный FIFO, оценку по текущей ставке или строки без подтверждённой себестоимости.</p>
+      <p className="form-hint">Проверьте стоимость каждой продажи и возврата. Столбец «Учтено в P&amp;L» показывает стоимость подтверждённой партии, оценку по текущей ставке или отсутствие подтверждённой себестоимости. Идентификаторы операций доступны в раскрытой таблице.</p>
       {open ? <div>
         {loading ? <p role="status" className="plan-empty">Загружаю FIFO-сверку…</p> : null}
         {error ? <div className="operation-error" role="alert"><p>Не удалось загрузить строки: {error}</p><button className="secondary-button" type="button" onClick={() => setReloadVersion((version) => version + 1)}>Повторить</button></div> : null}
@@ -2121,13 +2136,14 @@ function ProductsView({
   };
   return (
     <div className="workspace-view">
-      {customerQuality?.errors?.length ? <p className="operation-error" role="status">Часть данных WB недоступна: {customerQuality.errors.join(" · ")}</p> : null}
+      {(customerQuality?.errors?.length || productCardErrors.length || productPriceErrors.length) ? <p className="data-banner stale" role="status">{wbAvailabilityMessage([...(customerQuality?.errors ?? []), ...productCardErrors, ...productPriceErrors])}</p> : null}
       <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и чистая маржинальность по каждому артикулу WB.</p></div></section>
       <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good" }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn" }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good" }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info" }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
+      <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
       <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label>{visible.length ? <div className="product-economics-cards">{visible.map((item) => { const marginPct = Number.isFinite(item.marginPct ?? NaN) ? (item.marginPct ?? 0) : item.revenue > 0 ? (item.margin / item.revenue) * 100 : 0; return <button className="product-economics-card detail-trigger" key={item.nmId} type="button" onClick={() => onOpenProduct(item)}><div className="product-economics-card-heading"><div><strong>{item.product}</strong><span>{item.article || item.nmId}</span></div><strong>{marginPct.toFixed(1)}%</strong></div><div className="product-economics-card-metrics"><span>Расчётная прибыль<strong>{Math.round(item.margin).toLocaleString("ru-RU")} ₽</strong></span><span>ДРР<strong>{item.drr.toFixed(1)}%</strong></span><span>Запас<strong>{`${item.stock.toLocaleString("ru-RU")} шт.`}{item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}</strong></span></div></button>; })}</div> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
-      <section className="work-section"><SectionHeader kicker="Контент WB" title="Карточки и медиа"><PackageCheck size={18} /></SectionHeader>{productCardErrors.length ? <div className="data-banner stale" role="status">Карточки WB недоступны: {productCardErrors.join(" · ")}</div> : null}{productCards.length ? <div className="product-card-grid">{productCards.slice(0, 12).map((card) => <button className="product-card-preview detail-trigger" type="button" key={card.nmId} onClick={() => setEditingCard(card)}><div className="product-card-image">{card.photos[0] ? <img src={card.photos[0]} alt="" loading="lazy" /> : <PackageCheck size={24} />}</div><div><strong>{card.title}</strong><span>{card.vendorCode || `WB ${card.nmId}`}</span><small>{[card.brand, card.subject].filter(Boolean).join(" · ") || "Карточка WB"} · {card.sizes} размеров</small></div></button>)}</div> : <p className="plan-empty">{productCardErrors.length ? "После исправления доступа обновите раздел." : "Карточек WB пока нет."}</p>}</section>
+      <section className="work-section"><SectionHeader kicker="Контент WB" title="Карточки и медиа"><PackageCheck size={18} /></SectionHeader>{productCards.length ? <div className="product-card-grid">{productCards.slice(0, 12).map((card) => <button className="product-card-preview detail-trigger" type="button" key={card.nmId} onClick={() => setEditingCard(card)}><div className="product-card-image">{card.photos[0] ? <img src={card.photos[0]} alt="" loading="lazy" /> : <PackageCheck size={24} />}</div><div><strong>{card.title}</strong><span>{card.vendorCode || `WB ${card.nmId}`}</span><small>{[card.brand, card.subject].filter(Boolean).join(" · ") || "Карточка WB"} · {card.sizes} размеров</small></div></button>)}</div> : <p className="plan-empty">{productCardErrors.length ? "После исправления доступа обновите раздел." : "Карточек WB пока нет."}</p>}</section>
       {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
-      <section className="work-section"><SectionHeader kicker="WB API" title="Качество магазина"><button className="icon-button" type="button" aria-label="Обновить данные качества магазина" title="Обновить данные качества магазина" onClick={() => void onRefresh()}><RefreshCw size={17} /></button><div className="cash-grid"><div className="stat"><span>Рейтинг продавца</span><strong>{rating ? rating.toFixed(2) : "—"}</strong><small>{String(customerQuality?.rating?.feedbackCount ?? 0)} отзывов</small></div><div className="stat"><span>Карантин цен</span><strong>{quarantineCount}</strong><small>товаров требуют проверки</small></div><div className="stat"><span>Возвраты</span><strong>{returnCount}</strong><small>активных обращений WB</small></div><div className="stat"><span>Чаты</span><strong>{chatCount}</strong><small>диалогов с покупателями</small></div></div></SectionHeader><div className="action-list">{(customerQuality?.feedbacks ?? []).slice(0, 3).map((item, index) => <article className="automation-row" key={String(item.id ?? index)}><div><strong>Отзыв · {String(item.nmId ?? "WB")}</strong><span>{String(item.text ?? item.productName ?? "Без текста")}</span></div><button className="ghost-button" type="button" onClick={async () => { const text = await askText("Ответ на отзыв", "Спасибо за обратную связь!"); if (!text) return; try { await answerCustomerFeedback(String(item.id ?? ""), text); await notifyUser("Ответ отправлен в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Ответ не отправлен"); } }}>Ответить</button></article>)}{(customerQuality?.questions ?? []).slice(0, 2).map((item, index) => <article className="automation-row" key={`q-${String(item.id ?? index)}`}><div><strong>Вопрос · {String(item.nmId ?? "WB")}</strong><span>{String(item.text ?? "Без текста")}</span></div><button className="ghost-button" type="button" onClick={async () => { const text = await askText("Ответ на вопрос", "Спасибо за вопрос! Сейчас уточним информацию."); if (!text) return; try { await answerCustomerQuestion(String(item.id ?? ""), text); await notifyUser("Ответ отправлен в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Ответ не отправлен"); } }}>Ответить</button></article>)}{(customerQuality?.chats ?? []).slice(0, 3).map((item, index) => { const replySign = String(item.replySign ?? item.reply_sign ?? ""); return <article className="automation-row" key={`chat-${String(item.chatId ?? item.id ?? index)}`}><div><strong>Чат · {String(item.nmId ?? item.subject ?? "WB")}</strong><span>{String((item.lastMessage as Record<string, unknown> | undefined)?.text ?? item.lastMessage ?? item.message ?? item.title ?? "Диалог с покупателем")}</span></div><button className="ghost-button" type="button" disabled={!replySign} title={replySign ? "Ответить покупателю" : "WB не передал подпись чата"} onClick={async () => { if (!replySign) return; const text = await askText("Сообщение покупателю"); if (!text?.trim()) return; try { await sendCustomerChatMessage(replySign, text); await notifyUser("Сообщение отправлено в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Сообщение не отправлено"); } }}>Ответить</button></article>; })}<div className="return-claims-list">{visibleReturns.map((item, index) => <article className="automation-row" key={`r-${String(item.id ?? index)}`}><div><strong>Возврат · {String(item.nm_id ?? item.nmId ?? "WB")}</strong><span>{String(item.user_comment ?? item.comment ?? "Заявка покупателя")}</span></div><div className="procurement-order-actions"><button className="ghost-button" type="button" onClick={async () => { if (!await askConfirm("Одобрить возврат и отправить решение в WB?")) return; try { await processCustomerReturn(String(item.id ?? ""), "approve"); await notifyUser("Возврат одобрен"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Возврат не обработан"); } }}>Одобрить</button><button className="secondary-button" type="button" onClick={async () => { if (!await askConfirm("Отклонить возврат? Решение будет отправлено в WB.")) return; try { await processCustomerReturn(String(item.id ?? ""), "reject"); await notifyUser("Возврат отклонён"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Возврат не обработан"); } }}>Отклонить</button></div></article>)}</div></div></section><section className="work-section"><SectionHeader kicker="WB API" title="Цены и скидки"><button className="primary-button" type="button" disabled={priceSubmitting || !!priceUploadId} onClick={() => void submitPrices()}>Отправить изменения в WB</button></SectionHeader>{productPriceErrors.length ? <div className="data-banner stale" role="status">Цены WB недоступны: {productPriceErrors.join(" · ")}</div> : null}{priceMessage ? <p className="operation-error" role="status">{priceMessage}</p> : null}{priceUploadStatus ? <p className="form-hint" role="status">Статус загрузки WB: {priceUploadStatus}</p> : null}{priceResults.filter((row) => row.errorText).map((row, index) => <p className="operation-error" key={index}>WB {String(row.nmID)}: {String(row.errorText)}</p>)}{visiblePrices.length ? <div className="product-price-table">{visiblePrices.map((item) => { const draft = priceDrafts[item.nmId] ?? { price: item.price, discount: item.discount }; return <div className="product-price-row" key={item.nmId}><strong>{item.vendorCode}</strong><span>WB {item.nmId}</span>{item.errorText ? <StatusPill tone="danger">{item.errorText}</StatusPill> : item.status !== undefined ? <StatusPill tone={item.status === 0 ? "good" : "info"}>{item.status === 0 ? "принято WB" : `статус WB ${item.status}`}</StatusPill> : null}<label>Цена<input type="number" min="0" value={draft.price} onChange={(event) => setPriceDrafts((rows) => ({ ...rows, [item.nmId]: { ...draft, price: Number(event.target.value) } }))} /></label><label>Скидка %<input type="number" min="0" max="99" value={draft.discount} onChange={(event) => setPriceDrafts((rows) => ({ ...rows, [item.nmId]: { ...draft, discount: Number(event.target.value) } }))} /></label><span>После скидки<strong>{Math.round(draft.price * (1 - draft.discount / 100)).toLocaleString("ru-RU")} ₽</strong></span></div>; })}</div> : <p className="plan-empty">{productPriceErrors.length ? "После исправления доступа обновите раздел." : "Цены WB пока не загружены или токен не имеет категории «Цены и скидки»."}</p>} {priceUploadHistory.length ? <div className="price-upload-history"><h3>История загрузок</h3>{priceUploadHistory.slice(0, 10).map((item) => <div className="automation-row" key={`${item.wb_upload_id}-${item.created_at}`}><div><strong>WB загрузка №{item.wb_upload_id}</strong><span>{item.goods_count} SKU · {item.created_at}</span></div><StatusPill tone={item.status.toLowerCase().includes("ошиб") ? "danger" : item.status.toLowerCase().includes("заверш") ? "good" : "info"}>{item.status}</StatusPill></div>)}</div> : null}</section>
+      <section className="work-section"><SectionHeader kicker="WB API" title="Качество магазина"><button className="icon-button" type="button" aria-label="Обновить данные качества магазина" title="Обновить данные качества магазина" onClick={() => void onRefresh()}><RefreshCw size={17} /></button><div className="cash-grid"><div className="stat"><span>Рейтинг продавца</span><strong>{rating ? rating.toFixed(2) : "—"}</strong><small>{String(customerQuality?.rating?.feedbackCount ?? 0)} отзывов</small></div><div className="stat"><span>Карантин цен</span><strong>{quarantineCount}</strong><small>товаров требуют проверки</small></div><div className="stat"><span>Возвраты</span><strong>{returnCount}</strong><small>активных обращений WB</small></div><div className="stat"><span>Чаты</span><strong>{chatCount}</strong><small>диалогов с покупателями</small></div></div></SectionHeader><div className="action-list">{(customerQuality?.feedbacks ?? []).slice(0, 3).map((item, index) => <article className="automation-row" key={String(item.id ?? index)}><div><strong>Отзыв · {String(item.nmId ?? "WB")}</strong><span>{String(item.text ?? item.productName ?? "Без текста")}</span></div><button className="ghost-button" type="button" onClick={async () => { const text = await askText("Ответ на отзыв", "Спасибо за обратную связь!"); if (!text) return; try { await answerCustomerFeedback(String(item.id ?? ""), text); await notifyUser("Ответ отправлен в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Ответ не отправлен"); } }}>Ответить</button></article>)}{(customerQuality?.questions ?? []).slice(0, 2).map((item, index) => <article className="automation-row" key={`q-${String(item.id ?? index)}`}><div><strong>Вопрос · {String(item.nmId ?? "WB")}</strong><span>{String(item.text ?? "Без текста")}</span></div><button className="ghost-button" type="button" onClick={async () => { const text = await askText("Ответ на вопрос", "Спасибо за вопрос! Сейчас уточним информацию."); if (!text) return; try { await answerCustomerQuestion(String(item.id ?? ""), text); await notifyUser("Ответ отправлен в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Ответ не отправлен"); } }}>Ответить</button></article>)}{(customerQuality?.chats ?? []).slice(0, 3).map((item, index) => { const replySign = String(item.replySign ?? item.reply_sign ?? ""); return <article className="automation-row" key={`chat-${String(item.chatId ?? item.id ?? index)}`}><div><strong>Чат · {String(item.nmId ?? item.subject ?? "WB")}</strong><span>{String((item.lastMessage as Record<string, unknown> | undefined)?.text ?? item.lastMessage ?? item.message ?? item.title ?? "Диалог с покупателем")}</span></div><button className="ghost-button" type="button" disabled={!replySign} title={replySign ? "Ответить покупателю" : "WB не передал подпись чата"} onClick={async () => { if (!replySign) return; const text = await askText("Сообщение покупателю"); if (!text?.trim()) return; try { await sendCustomerChatMessage(replySign, text); await notifyUser("Сообщение отправлено в WB"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Сообщение не отправлено"); } }}>Ответить</button></article>; })}<div className="return-claims-list">{visibleReturns.map((item, index) => <article className="automation-row" key={`r-${String(item.id ?? index)}`}><div><strong>Возврат · {String(item.nm_id ?? item.nmId ?? "WB")}</strong><span>{String(item.user_comment ?? item.comment ?? "Заявка покупателя")}</span></div><div className="procurement-order-actions"><button className="ghost-button" type="button" onClick={async () => { if (!await askConfirm("Одобрить возврат и отправить решение в WB?")) return; try { await processCustomerReturn(String(item.id ?? ""), "approve"); await notifyUser("Возврат одобрен"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Возврат не обработан"); } }}>Одобрить</button><button className="secondary-button" type="button" onClick={async () => { if (!await askConfirm("Отклонить возврат? Решение будет отправлено в WB.")) return; try { await processCustomerReturn(String(item.id ?? ""), "reject"); await notifyUser("Возврат отклонён"); } catch (error) { await notifyUser(error instanceof Error ? error.message : "Возврат не обработан"); } }}>Отклонить</button></div></article>)}</div></div></section><section className="work-section"><SectionHeader kicker="WB API" title="Цены и скидки"><button className="primary-button" type="button" disabled={priceSubmitting || !!priceUploadId} onClick={() => void submitPrices()}>Отправить изменения в WB</button></SectionHeader>{priceMessage ? <p className="operation-error" role="status">{priceMessage}</p> : null}{priceUploadStatus ? <p className="form-hint" role="status">Статус загрузки WB: {priceUploadStatus}</p> : null}{priceResults.filter((row) => row.errorText).map((row, index) => <p className="operation-error" key={index}>WB {String(row.nmID)}: {String(row.errorText)}</p>)}{visiblePrices.length ? <div className="product-price-table">{visiblePrices.map((item) => { const draft = priceDrafts[item.nmId] ?? { price: item.price, discount: item.discount }; return <div className="product-price-row" key={item.nmId}><strong>{item.vendorCode}</strong><span>WB {item.nmId}</span>{item.errorText ? <StatusPill tone="danger">{item.errorText}</StatusPill> : item.status !== undefined ? <StatusPill tone={item.status === 0 ? "good" : "info"}>{item.status === 0 ? "принято WB" : `статус WB ${item.status}`}</StatusPill> : null}<label>Цена<input type="number" min="0" value={draft.price} onChange={(event) => setPriceDrafts((rows) => ({ ...rows, [item.nmId]: { ...draft, price: Number(event.target.value) } }))} /></label><label>Скидка %<input type="number" min="0" max="99" value={draft.discount} onChange={(event) => setPriceDrafts((rows) => ({ ...rows, [item.nmId]: { ...draft, discount: Number(event.target.value) } }))} /></label><span>После скидки<strong>{Math.round(draft.price * (1 - draft.discount / 100)).toLocaleString("ru-RU")} ₽</strong></span></div>; })}</div> : <p className="plan-empty">{productPriceErrors.length ? "После исправления доступа обновите раздел." : "Цены WB пока не загружены или токен не имеет категории «Цены и скидки»."}</p>} {priceUploadHistory.length ? <div className="price-upload-history"><h3>История загрузок</h3>{priceUploadHistory.slice(0, 10).map((item) => <div className="automation-row" key={`${item.wb_upload_id}-${item.created_at}`}><div><strong>WB загрузка №{item.wb_upload_id}</strong><span>{item.goods_count} SKU · {item.created_at}</span></div><StatusPill tone={item.status.toLowerCase().includes("ошиб") ? "danger" : item.status.toLowerCase().includes("заверш") ? "good" : "info"}>{item.status}</StatusPill></div>)}</div> : null}</section>
     </div>
   );
 }
@@ -2227,15 +2243,19 @@ function ControlView({
 }) {
   if (!data) return <div className="workspace-view"><section className="work-section"><p className="plan-empty">Проверки качества данных загружаются.</p></section></div>;
   const summary = data.summary;
-  const checks = data.checks;
+  const checks = [...data.checks].sort((a,b) => checkPriority(a.Статус)-checkPriority(b.Статус));
+  const actionableChecks = checks.filter(row => checkPriority(row.Статус) !== 3);
+  const readyChecks = checks.filter(row => checkPriority(row.Статус) === 3);
   const score = Number(summary.score ?? 0);
   const tone: Tone = Number(summary.critical ?? 0) > 0 ? "danger" : Number(summary.warnings ?? 0) > 0 ? "warn" : "good";
-  const checkTone = (status: string): Tone => status.includes("Крит") ? "danger" : status.includes("Вним") ? "warn" : "good";
+  const checkTone = (status: string): Tone => checkPriority(status) === 0 ? "danger" : checkPriority(status) === 1 ? "warn" : checkPriority(status) === 3 ? "good" : "info";
   const openCheck = (row: Record<string, unknown>) => onOpenCheck(row);
-  return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:String(data.fifo_guard.guard_mode ?? ""),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><section className="work-section"><SectionHeader kicker="Настройки расчётов" title="Нормы и себестоимость"><SlidersHorizontal size={18} /></SectionHeader><div className="operation-actions"><p className="plan-empty">Нормы материала и себестоимость ведутся отдельно в настройках и участвуют в производственном плане и марже.</p><button className="secondary-button" type="button" onClick={() => onNavigate("settings")}>Открыть настройки</button></div></section><section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{checks.length ? <div className="data-quality-list">{checks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{String(row.Модуль ?? "Контроль")}</span><strong>{String(row.Проверка ?? "")}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">Проверок пока нет</p>}</section></div>;
+  return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:String(data.fifo_guard.guard_mode ?? ""),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><p className="form-hint">Нормы материала и себестоимость можно проверить в <button className="ghost-button" type="button" onClick={() => onNavigate("settings")}>настройках производства</button>.</p><section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{checks.length ? <div className="data-quality-list">{actionableChecks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{cabinetText(String(row.Модуль ?? "Контроль"))}</span><strong>{cabinetText(String(row.Проверка ?? ""))}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">Проверок пока нет</p>}{readyChecks.length ? <details className="cabinet-disclosure"><summary>{readyChecks.length} {plural(readyChecks.length,["проверка","проверки","проверок"])} в порядке</summary><div className="data-quality-list">{readyChecks.map((row,index) => <button className="data-quality-card detail-trigger" type="button" key={index} onClick={() => openCheck(row)}><strong>{cabinetText(String(row.Проверка ?? ""))}</strong><p>{String(row.Детали ?? "—")}</p></button>)}</div></details> : null}</section></div>;
 }
 
-function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
+function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () => Promise<void>; migration: React.ReactNode; sectionTarget?: string | null }) {
+  const [requestedSection, setRequestedSection] = useState(sectionTarget);
+  useEffect(() => { if (sectionTarget) setRequestedSection(sectionTarget); }, [sectionTarget]);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [backups, setBackups] = useState<Array<Record<string, unknown>>>([]);
   const [syncRuns, setSyncRuns] = useState<TenantSyncRun[]>([]);
@@ -2279,7 +2299,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
       setWbReadOnly(Boolean(wbStatus.read_only));
       setWbExpiresAt(wbStatus.expires_at ?? null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось загрузить параметры tenant");
+      setMessage(error instanceof Error ? error.message : "Не удалось загрузить параметры кабинета");
     }
   };
 
@@ -2490,7 +2510,7 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
     finally { setBusy(null); }
   };
 
-  if (!settings) return <div className="workspace-view"><section className="work-section"><p className="plan-empty">{message || "Загружаем параметры tenant."}</p></section></div>;
+  if (!settings) return <div className="workspace-view"><section className="work-section"><p className="plan-empty">{message || "Загружаем параметры кабинета."}</p></section></div>;
 
   return (
     <div className="workspace-view">
@@ -2498,16 +2518,18 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <div>
           <div className="eyebrow"><SlidersHorizontal size={16} /> настройки</div>
           <h2>Подключения и обслуживание</h2>
-          <p>Токены остаются в защищённом tenant-хранилище. Резервные копии не содержат ключей доступа.</p>
+          <p>Токены остаются в защищённом хранилище кабинета. Резервные копии не содержат ключей доступа.</p>
         </div>
       </section>
-      <OnboardingPanel connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
+      <OnboardingPanel hideCompleted connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
         days={settings.initial_history_days} busy={busy !== null} token={wbToken}
         onTokenChange={setWbToken} onConnect={() => void saveWBToken()}
         onDaysChange={(days) => setSettings({ ...settings, initial_history_days: days })}
         onSync={() => void startSync("all", settings.initial_history_days)}
         onEditCost={(item) => setEditingCost({ ...item })} />
-      <div className="content-grid">
+      {message ? <p className="operation-error" role="status">{message}</p> : null}
+      <SettingsWorkspace sectionTarget={requestedSection}
+        connections={<>      <div className="settings-connections-grid">
         <section className="work-section">
           <SectionHeader kicker="Обновление" title="Интервалы работы"><SlidersHorizontal size={18} /></SectionHeader>
           <div className="settings-form settings-intervals">
@@ -2517,12 +2539,12 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
             <button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveSettings()}><CheckCircle2 size={17} /><span>{busy === "settings" ? "Сохраняем" : "Сохранить параметры"}</span></button>
           </div>
         </section>
-        <aside className="insight-column">
+        <div className="settings-connection-panel">
           <section className="panel">
             <SectionHeader compact kicker="Подключения" title="Статус API"><ShieldCheck size={20} /></SectionHeader>
             {!settings.wb_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Wildberries"><p className="form-hint">Подключите WB-токен, чтобы загрузить продажи, остатки, финансы и отчёты.</p><label className="operation-field"><span>WB API-токен</span><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="Вставьте токен WB" /></label><button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : null}
             <div className="automation-list">
-              <AutomationRow item={{ title: "Wildberries API", detail: "Данные и операции tenant", status: settings.wb_connected ? "подключён" : "не подключён", tone: settings.wb_connected ? "good" : "warn" }} />
+              <AutomationRow item={{ title: "Wildberries API", detail: "Данные и операции кабинета", status: settings.wb_connected ? "подключён" : "не подключён", tone: settings.wb_connected ? "good" : "warn" }} />
               <AutomationRow item={{ title: "Ozon Seller API", detail: "Используется агентом цен", status: settings.ozon_connected ? "подключён" : "не подключён", tone: settings.ozon_connected ? "good" : "info" }} />
             </div>
             {!settings.ozon_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Ozon"><p className="form-hint">Подключите Ozon для ценовых рекомендаций.</p><label className="operation-field"><span>Client-Id</span><input autoComplete="off" value={ozonClientId} onChange={(event) => setOzonClientId(event.target.value)} /></label><label className="operation-field"><span>Api-Key</span><input autoComplete="off" type="password" value={ozonApiKey} onChange={(event) => setOzonApiKey(event.target.value)} /></label><button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void saveOzon()}>{busy === "wb-token" ? "Сохраняем" : "Сохранить Ozon"}</button></div> : <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeOzon()}>Отключить Ozon</button>}
@@ -2532,18 +2554,10 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
             {wbScopeMetadataAvailable && wbExpiresAt ? <p className="form-hint">Срок действия токена: {new Date(wbExpiresAt * 1000).toLocaleString("ru-RU")}</p> : null}
             {settings.wb_connected && !wbScopeMetadataAvailable ? <p className="form-hint">WB не передал карту категорий для сохранённого токена. Проверена категория «Статистика»; права остальных разделов уточняются при обращении к ним.</p> : null}
           </section>
-        </aside>
-      </div>
-      <section className="work-section">
-        <SectionHeader kicker="Обслуживание" title="Резервные копии"><ShieldCheck size={18} /></SectionHeader>
-        <div className="operation-actions">
-          <p className="plan-empty">Копируется база tenant и настройки без токенов. Хранится до 14 последних копий.</p>
-          <button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void createBackup()}><Download size={17} />{busy === "backup" ? "Создаём копию" : "Создать резервную копию"}</button>
         </div>
-        {message ? <p className="operation-error" role="status">{message}</p> : null}
-        <BackupHistory backups={backups} />
-      </section>
-      <section className="work-section">
+      </div>
+</>}
+        data={<>{migration}      <section className="work-section">
         <SectionHeader kicker="WB API" title="Синхронизация и журнал"><RefreshCw size={18} /></SectionHeader>
         <div className="operation-actions">
           <p className="plan-empty">Обновляет продажи, остатки, финансы и рекламу. Результат каждого запуска — в журнале ниже.</p>
@@ -2554,7 +2568,8 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("ads")}>Повторить только рекламу</button>
         <RuntimeStatus />
       </section>
-      <section className="work-section" id="material-inventory">
+      <SettingsChangeHistory refreshKey={historyRefreshKey} /></>}
+        production={<>      <section className="work-section" id="material-inventory">
         <SectionHeader kicker="Производство" title="Остатки сырья и сверка FIFO"><ClipboardCheck size={18} /></SectionHeader>
         <div className="operation-actions">
           <p className="plan-empty">Сначала укажите фактический остаток по каждому материалу и включите «Подтверждён». После проверки создайте FIFO-слои стартового сырья.</p>
@@ -2596,7 +2611,17 @@ function SettingsViewV2({ onSynced }: { onSynced: () => Promise<void> }) {
         <ExpenseCoveragePanel products={productCosts} />
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
-      <SettingsChangeHistory refreshKey={historyRefreshKey} />
+</>}
+        backups={<>      <section className="work-section">
+        <SectionHeader kicker="Обслуживание" title="Резервные копии"><ShieldCheck size={18} /></SectionHeader>
+        <div className="operation-actions">
+          <p className="plan-empty">Копируется база кабинета и настройки без токенов. Хранится до 14 последних копий.</p>
+          <button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void createBackup()}><Download size={17} />{busy === "backup" ? "Создаём копию" : "Создать резервную копию"}</button>
+        </div>
+        <BackupHistory backups={backups} />
+      </section>
+</>}
+      />
       {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item, reason) => { void saveCost(item, reason).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
       {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item, reason) => { void saveNorm(item, reason); }} /> : null}
     </div>
@@ -2709,9 +2734,13 @@ function ProductionView({
   onOpenProductionStage: (stage: ProductionStage) => void;
   onOpenMaterialNeed: (item: MaterialNeed) => void;
 }) {
+  const [productionTab, setProductionTab] = useState<"shift" | "wip" | "capacity" | "costs">("shift");
+  const productionTabs = [{ id: "shift", label: "Смена" }, { id: "wip", label: "НЗП и сырьё" }, { id: "capacity", label: "Мощность и календарь" }, { id: "costs", label: "Состав и затраты" }] as const;
   const plannedValue = productionMetrics.find((metric) => metric.label === "План смены" || metric.label === "К запуску")?.value ?? "0";
   return (
-    <div className="workspace-view">
+    <div className="workspace-view production-view">
+      <nav className="production-tabs" aria-label="Разделы производства">{productionTabs.map(tab => <button type="button" key={tab.id} aria-pressed={productionTab === tab.id} onClick={() => setProductionTab(tab.id)}>{tab.label}</button>)}</nav>
+      <div hidden={productionTab !== "shift"}>
       <section className="hero-strip production-hero" aria-label="Производственный контур">
         <div>
           <div className="eyebrow">
@@ -2730,9 +2759,6 @@ function ProductionView({
       </section>
 
       <div id="production-shift"><ProductionExecutionPanel onRefresh={onRefresh} /></div>
-      <ProductionWorkspace onChanged={() => void onRefresh()} />
-      <WorkcenterCalendar />
-      <ManufacturingCosts onChanged={() => void onRefresh()} />
 
       <MetricGrid metrics={productionMetrics} onMetricClick={(metric) => onAction("Партия", metric.label)} />
 
@@ -2769,6 +2795,10 @@ function ProductionView({
           </section>
         </aside>
       </div>
+      </div>
+      <ProductionWorkspace view={productionTab === "wip" || productionTab === "capacity" ? productionTab : "hidden"} onChanged={() => void onRefresh()} />
+      <div hidden={productionTab !== "capacity"}><WorkcenterCalendar /></div>
+      <div hidden={productionTab !== "costs"}><ManufacturingCosts onChanged={() => void onRefresh()} /></div>
     </div>
   );
 }
@@ -3006,7 +3036,7 @@ function SupplyView({
   };
   return (
     <div className="workspace-view">
-      {Object.keys(supplyErrors).length ? <div className="data-banner stale" role="status">Часть данных поставок WB недоступна: {Object.values(supplyErrors).join(" · ")}</div> : null}
+      {Object.keys(supplyErrors).length ? <p className="data-banner stale" role="status">{wbAvailabilityMessage(Object.values(supplyErrors))}</p> : null}
       <section className="hero-strip supply-hero" aria-label="Поставки">
         <div>
           <div className="eyebrow">
@@ -3172,10 +3202,10 @@ function AssistantView({
 
       <MetricGrid metrics={assistantMetrics} onMetricClick={(metric) => onAction("Агент", metric.label)} />
 
-      <div className="content-grid">
+      <div className={cx("content-grid", !agentCandidates.length && "assistant-empty-layout")}>
         <section className="work-section">
           <SectionHeader kicker="Решения" title="Очередь AI-агентов">
-            <div className="agent-filters">
+            {agentCandidates.length ? <div className="agent-filters">
               <select aria-label="Тип агента" className="filter-select" value={candidateFilter} onChange={(event) => setCandidateFilter(event.target.value as "all" | "ad" | "price")}>
                 <option value="all">Все типы</option><option value="ad">Реклама</option><option value="price">Цены</option>
               </select>
@@ -3185,7 +3215,7 @@ function AssistantView({
               <select aria-label="Действие" className="filter-select" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
                 <option value="all">Все действия</option>{actionOptions.map((action) => <option key={action} value={action}>{action}</option>)}
               </select>
-            </div>
+            </div> : null}
           </SectionHeader>
           {visibleCandidates.length ? <div className="action-list">
             {visibleCandidates.slice(0, 8).map((candidate) => <AgentCandidateRow candidate={candidate} key={candidate.id} onDecision={async (outcome) => {
@@ -3434,7 +3464,7 @@ function ReportsView({
         </div>
       </section>
 
-      <MetricGrid metrics={reportMetrics} />
+      <MetricGrid metrics={reportMetrics.map(metric => ({...metric,value: cabinetDate(metric.value), detail: cabinetText(metric.detail)}))} />
 
       {analytics || analyticsError ? <section className="work-section report-analytics-section"><SectionHeader kicker="WB Analytics" title="Воронка продаж и история остатков"><BarChart3 size={18} /></SectionHeader>{analyticsError ? <div className="data-banner stale" role="status">Аналитика WB недоступна: {analyticsError}</div> : null}{analytics ? <>{analytics.errors.sales_funnel ? <p className="form-hint">{analytics.errors.sales_funnel}</p> : null}<div className="analytics-funnel-grid">{analytics.sales_funnel.stages.map((stage) => <div className="analytics-funnel-card" key={stage.key}><span>{stage.label}</span><strong>{Number(stage.value).toLocaleString("ru-RU")}</strong></div>)}</div>{analytics.stock_history.length ? <div className="analytics-history-list"><strong>Снимки остатков WB</strong>{analytics.stock_history.slice(-14).map((row) => <div className="analytics-history-row" key={row.date}><span>{row.date}</span><b>{Number(row.quantity).toLocaleString("ru-RU")} шт.</b><small>{row.rows} строк</small></div>)}</div> : <p className="plan-empty">История появится после первой синхронизации WB.</p>}</> : <p className="plan-empty">После восстановления доступа обновите аналитику.</p>}</section> : null}
 
@@ -3446,16 +3476,18 @@ function ReportsView({
           <SectionHeader kicker="Без расписания" title="Быстрые отчёты"><span className="muted-count">3</span></SectionHeader>
           <div className="report-list compact-report-list">{["Операционный отчёт", "Остатки и пополнение", "Реклама и эффективность"].map((name) => <button className="report-row detail-trigger" key={name} type="button" disabled={busyId === -2} onClick={() => void runQuickReport(name)}><div><span>{quickReportMetrics[name].length} раздела · {quickDays} {quickDays === 1 ? "день" : "дней"}</span><h3>{name}</h3><p>Сформировать PDF и сохранить в архив</p></div><Download size={18} /></button>)}</div>
 
-          <div className="report-subsection">
+          <div className={cx("report-subsection", operations && !operationsError && !operations.definitions.length && "cabinet-empty-row")}>
             <SectionHeader kicker="Автоматическая отправка" title="Расписания"><span className="muted-count">{operations?.definitions.length ?? reportCards.length}</span></SectionHeader>
-            {operationsError ? <div className="data-banner stale" role="status">Расписания недоступны: {operationsError}</div> : operations ? (operations.definitions.length ? <div className="report-list">{operations.definitions.map((report) => <article className={cx("report-row", report.enabled ? "good" : "paused")} key={report.id}><div><span>{report.schedule_type === "daily" ? "Ежедневно" : report.schedule_type === "weekly" ? "Еженедельно" : "Ежемесячно"} · {report.schedule_time} МСК · {definitionMetricCount(report)} разделов</span><h3>{report.name}</h3><p>Последний запуск: {report.last_run_at ?? "ещё не было"} · {report.email_enabled ? "Email" : "без email"} · {report.telegram_enabled ? "Telegram" : "без Telegram"}</p></div><StatusPill tone={report.enabled ? "good" : "warn"}>{report.enabled ? "включён" : "пауза"}</StatusPill><div className="action-controls"><button className="icon-button" aria-label={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} title={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} disabled={busyId === report.id} type="button" onClick={() => void toggleDefinition(report)}><Play size={16} /></button><button className="icon-button" aria-label="Изменить расписание" title="Изменить расписание" disabled={busyId === report.id} type="button" onClick={() => void editDefinition(report)}><Pencil size={16} /></button><button className="icon-button" aria-label="Сформировать PDF сейчас" title="Сформировать PDF сейчас" disabled={busyId === report.id} type="button" onClick={() => void runDefinition(report.id)}><Play size={16} /></button><button className="icon-button" aria-label="Удалить расписание" title="Удалить расписание" disabled={busyId === report.id} type="button" onClick={() => void removeDefinition(report.id)}><Trash2 size={16} /></button></div></article>)}</div> : <p className="plan-empty">Расписаний пока нет. Создайте ежедневный, еженедельный или ежемесячный отчёт.</p>) : <p className="plan-empty">Загружаем расписания…</p>}
+            {operationsError ? <div className="data-banner stale" role="status">Расписания недоступны: {operationsError}</div> : operations ? (operations.definitions.length ? <div className="report-list">{operations.definitions.map((report) => <article className={cx("report-row", report.enabled ? "good" : "paused")} key={report.id}><div><span>{report.schedule_type === "daily" ? "Ежедневно" : report.schedule_type === "weekly" ? "Еженедельно" : "Ежемесячно"} · {report.schedule_time} МСК · {definitionMetricCount(report)} разделов</span><h3>{report.name}</h3><p>Последний запуск: {cabinetDate(report.last_run_at)} · {report.email_enabled ? "Email" : "без email"} · {report.telegram_enabled ? "Telegram" : "без Telegram"}</p></div><StatusPill tone={report.enabled ? "good" : "warn"}>{report.enabled ? "включён" : "пауза"}</StatusPill><div className="action-controls"><button className="icon-button" aria-label={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} title={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} disabled={busyId === report.id} type="button" onClick={() => void toggleDefinition(report)}><Play size={16} /></button><button className="icon-button" aria-label="Изменить расписание" title="Изменить расписание" disabled={busyId === report.id} type="button" onClick={() => void editDefinition(report)}><Pencil size={16} /></button><button className="icon-button" aria-label="Сформировать PDF сейчас" title="Сформировать PDF сейчас" disabled={busyId === report.id} type="button" onClick={() => void runDefinition(report.id)}><Play size={16} /></button><button className="icon-button" aria-label="Удалить расписание" title="Удалить расписание" disabled={busyId === report.id} type="button" onClick={() => void removeDefinition(report.id)}><Trash2 size={16} /></button></div></article>)}</div> : <p className="plan-empty">Расписаний пока нет.</p>) : <p className="plan-empty">Загружаем расписания…</p>}
+            {operations && !operationsError && !operations.definitions.length ? <button className="ghost-button" type="button" onClick={() => setShowForm(true)}>Создать расписание</button> : null}
           </div>
         </section>
 
         <aside className="insight-column">
-          <section className="panel">
+          <section className={cx("panel", operations && !operationsError && !operations.runs.length && !exportItems.length && "cabinet-empty-row")}>
             <SectionHeader compact kicker="Запуски" title="Файлы и ошибки"><BarChart3 size={20} /></SectionHeader>
-            {operationsError ? <p className="plan-empty">История запусков недоступна до восстановления API.</p> : operations ? (operations.runs.length ? <div className="export-list">{operations.runs.map((run) => <article className={cx("export-row", `run-${run.status}`)} key={run.id}><div><strong>{run.definition_name || `Отчёт #${run.definition_id}`}</strong><span>{run.metric_count ?? 0} разделов · {run.finished_at ?? run.started_at}</span>{run.error ? <small className="run-error-text">{run.error}</small> : null}{run.delivery_error ? <small className="run-error-text">{run.delivery_error}</small> : null}</div><div className="run-actions"><StatusPill tone={runTone(run.status)}>{runLabel(run.status)}</StatusPill>{run.delivery_requested ? <small className={run.delivery_status === "error" ? "run-error-text" : "muted"}>{deliveryLabel(run.delivery_status)}</small> : null}{run.status === "ok" && run.file_available ? <button className="icon-button" aria-label="Скачать PDF" title="Скачать PDF" type="button" onClick={() => void downloadSavedReport(run.id)}><Download size={16} /></button> : null}</div></article>)}</div> : exportItems.length ? <div className="export-list">{exportItems.map((item) => <ExportRow item={item} key={item.name} />)}</div> : <p className="plan-empty">Запусков ещё не было</p>) : <p className="plan-empty">Загружаем историю запусков…</p>}
+            {operationsError ? <p className="plan-empty">История запусков недоступна до восстановления API.</p> : operations ? (operations.runs.length ? <div className="export-list">{operations.runs.map((run) => <article className={cx("export-row", `run-${run.status}`)} key={run.id}><div><strong>{run.definition_name || `Отчёт #${run.definition_id}`}</strong><span>{run.metric_count ?? 0} разделов · {cabinetDate(run.finished_at ?? run.started_at)}</span>{run.error ? <small className="run-error-text">{run.error}</small> : null}{run.delivery_error ? <small className="run-error-text">{run.delivery_error}</small> : null}</div><div className="run-actions"><StatusPill tone={runTone(run.status)}>{runLabel(run.status)}</StatusPill>{run.delivery_requested ? <small className={run.delivery_status === "error" ? "run-error-text" : "muted"}>{deliveryLabel(run.delivery_status)}</small> : null}{run.status === "ok" && run.file_available ? <button className="icon-button" aria-label="Скачать PDF" title="Скачать PDF" type="button" onClick={() => void downloadSavedReport(run.id)}><Download size={16} /></button> : null}</div></article>)}</div> : exportItems.length ? <div className="export-list">{exportItems.map((item) => <ExportRow item={item} key={item.name} />)}</div> : <p className="plan-empty">Запусков ещё не было</p>) : <p className="plan-empty">Загружаем историю запусков…</p>}
+            {operations && !operationsError && !operations.runs.length && !exportItems.length ? <button className="ghost-button" disabled={busyId === -2} type="button" onClick={() => void runQuickReport("Операционный отчёт")}>Сформировать первый PDF</button> : null}
           </section>
 
           <section className="panel">
@@ -3836,6 +3868,8 @@ function ProductionPanel({ hasData, onOpen }: { hasData: boolean; onOpen?: () =>
 }
 
 function InventoryTable({ inventory, onOpen }: { inventory: InventoryWatchRow[]; onOpen?: (row: InventoryWatchRow) => void }) {
+  const sharedSignal = inventory.length > 1 && inventory.every(row => row.signal === inventory[0].signal) ? inventory[0].signal : null;
+  const displayRows = sharedSignal ? inventory.map(row => ({...row,signal:"—"})) : inventory;
   return (
     <section className="table-section">
       <SectionHeader kicker="SKU под наблюдением" title="Остатки, маржа, сигнал">
@@ -3845,6 +3879,8 @@ function InventoryTable({ inventory, onOpen }: { inventory: InventoryWatchRow[];
         </button>
       </SectionHeader>
 
+      {sharedSignal ? <p className="form-hint">{sharedSignal}</p> : null}
+      {inventory.some(row => row.margin.trim().startsWith("−") || row.margin.trim().startsWith("-")) ? <p className="form-hint">Отрицательная маржа означает, что учтённые затраты превышают выручку. При небольшой выручке процент может быть большим; проверьте период и состав затрат.</p> : null}
       <div className="desktop-table">
         <table>
           <thead>
@@ -3857,16 +3893,16 @@ function InventoryTable({ inventory, onOpen }: { inventory: InventoryWatchRow[];
             </tr>
           </thead>
           <tbody>
-            {inventory.map((row) => (
-            <InventoryTableRow row={row} key={row.sku} onOpen={onOpen ? () => onOpen(row) : undefined} />
+            {displayRows.map((row) => (
+            <InventoryTableRow row={row} key={row.sku} onOpen={onOpen ? () => onOpen(inventory.find(original => original.sku === row.sku) ?? row) : undefined} />
             ))}
           </tbody>
         </table>
       </div>
 
       <div className="mobile-sku-list">
-        {inventory.map((row) => (
-          <article className="mobile-sku-card detail-trigger" key={row.sku} tabIndex={onOpen ? 0 : undefined} role={onOpen ? "button" : undefined} onClick={onOpen ? () => onOpen(row) : undefined} onKeyDown={onOpen ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(row); } } : undefined}>
+        {displayRows.map((row) => (
+          <article className="mobile-sku-card detail-trigger" key={row.sku} tabIndex={onOpen ? 0 : undefined} role={onOpen ? "button" : undefined} onClick={onOpen ? () => onOpen(inventory.find(original => original.sku === row.sku) ?? row) : undefined} onKeyDown={onOpen ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(inventory.find(original => original.sku === row.sku) ?? row); } } : undefined}>
             <div>
               <span>{row.sku}</span>
               <h3>{row.name}</h3>
@@ -3974,7 +4010,7 @@ function FunnelBar({ label, onOpen, value, width }: { label: string; onOpen: () 
         <strong>{value}</strong>
       </div>
       <div>
-        <span style={{ width: `${width}%` }} />
+        <span style={{ width: `${Math.max(width > 0 ? 4 : 0, Math.min(100,width))}%` }} />
       </div>
     </button>
   );
@@ -4027,7 +4063,7 @@ function OperationDialog({
     <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="operation-title">
         <div className="drawer-header">
-          <div><span className="eyebrow">backend operation</span><h2 id="operation-title">{title}</h2><p>Данные будут записаны в рабочую базу tenant.</p></div>
+          <div><span className="eyebrow">Операция кабинета</span><h2 id="operation-title">{title}</h2><p>Данные будут записаны в рабочую базу кабинета.</p></div>
           <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button>
         </div>
         <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit(event.currentTarget); }}>

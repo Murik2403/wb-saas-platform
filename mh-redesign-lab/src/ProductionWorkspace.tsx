@@ -26,7 +26,7 @@ async function request<T>(path = "", method = "GET", body?: unknown, signal?: Ab
   return data as T;
 }
 
-export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
+export function ProductionWorkspace({ onChanged, view = "all" }: { onChanged?: () => void; view?: "all" | "wip" | "capacity" | "hidden" }) {
   const [data, setData] = useState<Workspace | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -35,6 +35,7 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
   const pending = useRef(false);
   const [start, setStart] = useState(today);
   const [days, setDays] = useState(14);
+  const [showEmptyDays, setShowEmptyDays] = useState(false);
   const [capacity, setCapacity] = useState<Capacity | null>(null);
   const issueId = useRef(crypto.randomUUID());
   const packageId = useRef(crypto.randomUUID());
@@ -86,14 +87,17 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
   const savedBlank = issueProduct?.blank_type?.trim() ?? "";
   const currentMaterial = materials.find(m => m.material_name.trim() === savedMaterial);
   const materialUnit = currentMaterial?.unit || "м";
-  return <section className="production-workspace" aria-label="НЗП и мощность производства">
-    <header><h2>НЗП, заготовки и мощность</h2><button disabled={busy || loading} onClick={() => { setError(""); void load().catch((e: Error) => setError(e.message)); }}>Обновить производство</button></header>
+  const visibleDays = data?.calendar.filter(day => showEmptyDays || day.tasks.length > 0 || day.planned_pieces === null || day.actual_pieces === null || Boolean(day.planned_pieces) || Boolean(day.actual_pieces) || Boolean(day.overload_pieces) || day.missing_pack_size) ?? [];
+  const emptyDays = (data?.calendar.length ?? 0) - visibleDays.length;
+  return <section className="production-workspace" aria-label="НЗП и мощность производства" hidden={view === "hidden"}>
+    <header><h2>{view === "capacity" ? "Мощность производства" : view === "wip" ? "НЗП и сырьё" : "НЗП, заготовки и мощность"}</h2><button disabled={busy || loading} onClick={() => { setError(""); void load().catch((e: Error) => setError(e.message)); }}>Обновить производство</button></header>
     {error && <p role="alert" className="pw-error">{error}</p>}
     {notice && <p role="status" className="pw-notice">{notice}</p>}
     {loading && <p role="status">Загружаем НЗП и календарь…</p>}
     {!loading && !data && <button onClick={() => { setLoading(true); void load().catch((e: Error) => setError(e.message)).finally(() => setLoading(false)); }}>Повторить загрузку</button>}
     {data && <>
-      {readOnly && <p role="status">Доступ только для просмотра. Производственные операции и настройки недоступны.</p>}
+      {readOnly && <p role="status" className="pw-read-only">Доступ только для просмотра. Для выдачи сырья, выпуска и изменения мощности нужна роль с правом производственных операций.</p>}
+      <div hidden={view === "capacity"}>
       <div className="pw-metrics"><p>Открыто партий <strong>{data.wip.status.open_batches}</strong></p><p>Сырьё в НЗП <strong>{rub(data.wip.status.open_cost_rub)}</strong></p><p>Заготовок на складе <strong>{data.wip.status.remaining_units} шт.</strong></p><p>Стоимость заготовок <strong>{rub(data.wip.status.remaining_cost_rub)}</strong></p></div>
       <div className="pw-forms">
         <form onSubmit={issue} onChange={() => { issueId.current = crypto.randomUUID(); }}><h3>Выдать сырьё в НЗП</h3><p>Количество указывается в единицах материала из справочника. Стоимость выдачи рассчитывается по FIFO.</p>
@@ -109,11 +113,15 @@ export function ProductionWorkspace({ onChanged }: { onChanged?: () => void }) {
         {!b.reversed_at && <div className="pw-actions">{b.status === "open" ? <><button disabled={busy || readOnly} onClick={() => setClosing(closing === b.id ? null : b.id)}>Закрыть партию</button><button disabled={busy || readOnly} onClick={() => { if (window.confirm(`Отменить выдачу партии №${b.id} и вернуть сырьё на склад?`)) void mutate(`/wip/${b.id}/reverse`, { stage: "issue" }, "Выдача отменена, сырьё возвращено."); }}>Отменить выдачу</button></> : <button disabled={busy || readOnly} onClick={() => { if (window.confirm(`Отменить выпуск заготовок №${b.id}? Партия вернётся в НЗП. Если заготовки уже использованы, отмена будет отклонена.`)) void mutate(`/wip/${b.id}/reverse`, { stage: "completion" }, "Выпуск отменён. Партия возвращена в НЗП."); }}>Отменить выпуск заготовок</button>}</div>}
         {closing === b.id && b.status === "open" && !b.reversed_at && <form onSubmit={e => complete(e, b.id)}><fieldset disabled={busy || readOnly}><label>Годных заготовок, шт.<input name="good" type="number" min="1" max="10000000" step="1" required /></label><label>Брак, шт.<input name="scrap" type="number" min="0" max="10000000" step="1" defaultValue="0" required /></label><label>Комментарий<input name="note" maxLength={2000} /></label><p>Стоимость сырья распределяется на годные заготовки.</p><button type="submit">Подтвердить выпуск</button></fieldset></form>}
       </article>)}</div>
+      </div>
+      <div hidden={view === "wip"}>
       {capacity && <form onSubmit={e => { e.preventDefault(); const { capacity_known, pieces_per_day, workdays, horizon_days, fulfillment_lead_days, emergency_cover_days, expedited_fbo_lead_days, fbs_lead_days, note } = capacity; void mutate("/capacity", { capacity_known, pieces_per_day, workdays, horizon_days, fulfillment_lead_days, emergency_cover_days, expedited_fbo_lead_days, fbs_lead_days, note }, "Мощность сохранена.", "PUT"); }}><h3>Настройки мощности</h3><fieldset disabled={busy || readOnly}><label className="pw-check"><input type="checkbox" checked={capacity.capacity_known} onChange={e => setCapacity({ ...capacity, capacity_known: e.target.checked })} />Мощность известна</label><div className="pw-capacity-fields">{([{ key: "pieces_per_day", label: "Штук в рабочий день", min: capacity.capacity_known ? 1 : 0, max: 10000000 }, { key: "horizon_days", label: "Горизонт плана, дней", min: 1, max: 90 }, { key: "fulfillment_lead_days", label: "До склада WB, дней", min: 0, max: 365 }, { key: "emergency_cover_days", label: "Аварийный запас, дней", min: 1, max: 365 }, { key: "expedited_fbo_lead_days", label: "Ускоренная поставка FBO, дней", min: 0, max: 365 }, { key: "fbs_lead_days", label: "Поставка FBS, дней", min: 0, max: 365 }] as const).map(f => <label key={f.key}>{f.label}<input type="number" required step="1" min={f.min} max={f.max} value={capacity[f.key]} onChange={e => setCapacity({ ...capacity, [f.key]: Number(e.target.value) })} /></label>)}</div><div className="pw-actions" role="group" aria-label="Рабочие дни">{["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d, i) => <label className="pw-check" key={d}><input type="checkbox" checked={capacity.workdays.includes(i)} onChange={e => setCapacity({ ...capacity, workdays: e.target.checked ? [...capacity.workdays, i].sort() : capacity.workdays.filter(x => x !== i) })} />{d}</label>)}</div><label>Комментарий к мощности<input maxLength={2000} value={capacity.note} onChange={e => setCapacity({ ...capacity, note: e.target.value })} /></label><button disabled={!capacity.workdays.length} type="submit">Сохранить мощность</button></fieldset></form>}
       <h3>Календарь загрузки</h3><p>Сохранённые задания производства. Комплекты переведены в штуки по норме товара; календарь не создаёт и не переносит задания.</p><div className="pw-actions"><label>Начало календаря<input type="date" value={start} onChange={e => { if (e.target.value) setStart(e.target.value); }} /></label><label>Период<select value={days} onChange={e => setDays(Number(e.target.value))}><option value={7}>7 дней</option><option value={14}>14 дней</option><option value={30}>30 дней</option><option value={90}>90 дней</option></select></label></div>
       {!!data.undated_tasks.length && <p className="pw-error">Заданий без даты: {data.undated_tasks.length}. Они не включены в дневную загрузку.</p>}
       {!data.calendar.some(d => d.tasks.length) && <p>В выбранном периоде нет сохранённых производственных заданий.</p>}
-      <div className="pw-table-scroll"><table><caption>Загрузка по дням, в штуках изделий</caption><thead><tr><th>Дата</th><th>План</th><th>Факт</th><th>Мощность</th><th>Превышение</th><th>Задания</th></tr></thead><tbody>{data.calendar.map(d => <tr key={d.date} className={d.overload_pieces ? "pw-overload" : ""}><td>{d.date}</td><td>{d.planned_pieces ?? "Неизвестно"}</td><td>{d.actual_pieces ?? "Неизвестно"}</td><td>{d.capacity_pieces ?? "Не задана"}</td><td>{d.overload_pieces ?? "—"}</td><td>{d.missing_pack_size && <span>Не заполнен размер комплекта. </span>}{d.tasks.map(t => <div key={t.task_key}>{t.product_name || t.supplier_article}{Number(t.chrt_id ?? 0) > 0 ? ` · вариант ${t.chrt_id}` : ""} · {t.status}</div>)}</td></tr>)}</tbody></table></div>
+      {data.calendar.length > 0 && <button type="button" aria-pressed={showEmptyDays} onClick={() => setShowEmptyDays(value => !value)}>{showEmptyDays ? "Скрыть дни без заданий" : `Показать дни без заданий (${emptyDays})`}</button>}
+      {visibleDays.length > 0 && <div className="pw-table-scroll"><table><caption>Загрузка по дням, в штуках изделий</caption><thead><tr><th>Дата</th><th>План</th><th>Факт</th><th>Мощность</th><th>Превышение</th><th>Задания</th></tr></thead><tbody>{visibleDays.map(d => <tr key={d.date} className={d.overload_pieces ? "pw-overload" : ""}><td>{d.date}</td><td>{d.planned_pieces ?? "Неизвестно"}</td><td>{d.actual_pieces ?? "Неизвестно"}</td><td>{d.capacity_pieces ?? "Не задана"}</td><td>{d.overload_pieces ?? "—"}</td><td>{d.missing_pack_size && <span>Не заполнен размер комплекта. </span>}{d.tasks.map(t => <div key={t.task_key}>{t.product_name || t.supplier_article}{Number(t.chrt_id ?? 0) > 0 ? ` · вариант ${t.chrt_id}` : ""} · {t.status}</div>)}</td></tr>)}</tbody></table></div>}
+      </div>
     </>}
   </section>;
 }

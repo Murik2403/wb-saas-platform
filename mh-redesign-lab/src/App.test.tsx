@@ -344,7 +344,7 @@ describe("operational detail drawer", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
-    expect(await screen.findByText("Карточки WB недоступны: /api/v1/products/cards: HTTP 403")).toBeInTheDocument();
+    expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
     expect(screen.getByText("После исправления доступа обновите раздел.")).toBeInTheDocument();
   });
 
@@ -392,7 +392,7 @@ describe("operational detail drawer", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
-    expect(await screen.findByText("Часть данных WB недоступна: /api/v1/dashboard/customer-quality: HTTP 403")).toBeInTheDocument();
+    expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
   });
 
   it("shows prices access errors instead of an empty prices state", async () => {
@@ -401,7 +401,7 @@ describe("operational detail drawer", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
-    expect(await screen.findByText("Цены WB недоступны: /api/v1/products/prices: HTTP 403")).toBeInTheDocument();
+    expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
   });
 
   it("opens an FBS supply and requests its QR code", async () => {
@@ -544,6 +544,7 @@ describe("operational detail drawer", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
+    fireEvent.click(screen.getByText("Проверка себестоимости"));
     expect(await screen.findByText("3 / 9 ед.")).toBeInTheDocument();
     expect(screen.getByText("33,33% единиц продаж и возвратов")).toBeInTheDocument();
     expect(screen.getByText("50% финансовых строк")).toBeInTheDocument();
@@ -564,8 +565,9 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(screen.getByText("Проверка себестоимости"));
     await user.click(await screen.findByRole("button", { name: "Показать строки" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Загружаю FIFO-сверку");
+    expect(await within(screen.getByRole("region", { name: "Детальные строки FIFO-сверки" })).findByRole("status")).toHaveTextContent("Загружаю FIFO-сверку");
     expect(await screen.findByText("SKU-123")).toBeInTheDocument();
     expect(screen.getAllByText("48 ₽")).toHaveLength(3);
     expect(screen.getByRole("columnheader", { name: "Учтено в P&L" })).toBeInTheDocument();
@@ -583,8 +585,9 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(screen.getByText("Проверка себестоимости"));
     await user.click(await screen.findByRole("button", { name: "Показать строки" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("API недоступен");
+    expect(await within(screen.getByRole("region", { name: "Детальные строки FIFO-сверки" })).findByRole("alert")).toHaveTextContent("API недоступен");
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("За выбранный период нет строк продаж или возвратов для сверки.")).toBeInTheDocument();
   });
@@ -683,6 +686,7 @@ describe("explicit reasons for settings edits", () => {
     const source = await import("./data-source");
     vi.mocked(source.getProductCostSettings).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Тест",cost_per_wb_unit:10,note:"Примечание товара",updated_at:""}]});
     const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    await user.click(await screen.findByRole("button",{name:"Производство"}));
     await user.click(await screen.findByRole("button",{name:"Изменить себестоимость: Тест"}));
     await user.type(screen.getByLabelText("Причина изменения"),"Новая закупочная цена");
     const value=screen.getByLabelText("Себестоимость одной единицы, ₽");await user.clear(value);await user.type(value,"15");
@@ -694,6 +698,7 @@ describe("explicit reasons for settings edits", () => {
     const source=await import("./data-source");
     vi.mocked(source.getProductionNorms).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Тест",enabled:1,material_per_unit:2,min_batch:1,pack_size:1,blank_type:"",material_unit:"м"}]});
     const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    await user.click(await screen.findByRole("button",{name:"Производство"}));
     await user.click(await screen.findByRole("button",{name:"Изменить норму"}));
     await user.type(screen.getByLabelText("Причина изменения"),"Уточнение раскроя");
     await user.click(screen.getByRole("button",{name:"Сохранить норму"}));

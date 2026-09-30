@@ -20,6 +20,12 @@ beforeEach(() => {
 });
 
 describe("first report onboarding", () => {
+  it("hides a completed onboarding strip only after server verification when requested", async () => {
+    vi.mocked(getActivationSummary).mockResolvedValue({ ...summary, first_value_verified: true });
+    const { container } = render(<OnboardingPanel {...props} hideCompleted />);
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+    expect(recordFirstReportViewed).not.toHaveBeenCalled();
+  });
   it("records only after the requested real report has loaded and rendered", async () => {
     let resolveReport!: (value: FirstGrowthReport) => void;
     vi.mocked(getFirstGrowthReport).mockReturnValue(new Promise((resolve) => { resolveReport = resolve; }));

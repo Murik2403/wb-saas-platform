@@ -26,3 +26,4 @@
 .manufacturing-costs .mfg-component-provenance ul { padding-left: 20px; margin: 6px 0; color: #b8c6d8; }
 @media (max-width: 900px) { .manufacturing-costs .mfg-panels { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .manufacturing-costs form, .manufacturing-costs .mfg-journal { padding: 14px; } .manufacturing-costs .mfg-row { display: block; } }
+.manufacturing-costs .mfg-read-only { padding: 14px 16px; border: 1px solid #637487; border-radius: 10px; background: #192735; color: #d8e5f2; }

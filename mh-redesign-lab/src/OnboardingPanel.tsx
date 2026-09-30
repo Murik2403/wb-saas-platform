@@ -6,6 +6,7 @@ import { onboardingEvidence } from "./onboarding";
 import { trackMetrikaGoal } from "./metrika";
 
 type Props = {
+  hideCompleted?: boolean;
   connected: boolean;
   runs: TenantSyncRun[];
   costs: ProductCostSetting[];
@@ -97,6 +98,7 @@ export function OnboardingPanel(props: Props) {
   }, [syncState, refresh]);
   const costComplete = summary?.selected_product.cost_configured ?? evidence.costComplete;
   const done = summary?.first_value_verified;
+  if (done && !report && props.hideCompleted) return null;
   if (done && !report) return <section className="work-section"><p>Первый результат получен. Подключения и себестоимость можно изменить ниже.</p></section>;
   return <section className="work-section onboarding-panel" id="onboarding" aria-labelledby="onboarding-title">
     <h2 id="onboarding-title">Первый результат на ваших данных</h2>

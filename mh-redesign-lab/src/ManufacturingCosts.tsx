@@ -182,8 +182,8 @@ export function ManufacturingCosts({ onChanged, canEdit = true }: { onChanged?: 
   const releaseBlocked = semiPreview.some((entry) => entry.blocked);
   return <section className="manufacturing-costs" aria-labelledby="mfg-title" aria-busy={busy || loading}>
     <div className="mfg-heading"><div><h2 id="mfg-title">Состав изделия и затраты производства</h2><p>Материалы, работа и износ оборудования входят в стоимость выпуска. Списанный брак учитывается отдельно.</p><p>Это стоимость выпуска и запасов. Финансовый отчёт использует историческую стоимость FIFO при точном сопоставлении продаж; неполные данные помечаются как предварительные. Выпуск сам по себе не является расходом от продаж.</p></div><button type="button" className="ghost-button" disabled={busy || loading} onClick={() => setReloadKey((value) => value + 1)}>Обновить данные</button></div>
-    {(!canEdit || data?.allowed_actions?.length === 0) && <p>У вашей роли нет прав на изменение производственного учёта. Данные доступны для просмотра.</p>}
-    {canEdit && data?.allowed_actions && data.allowed_actions.length > 0 && data.allowed_actions.length < 6 && <p>Доступные действия ограничены вашей ролью. Остальные формы доступны для просмотра.</p>}
+    {(!canEdit || data?.allowed_actions?.length === 0) && <p role="status" className="mfg-read-only">У вашей роли нет прав на изменение производственного учёта. Данные доступны для просмотра.</p>}
+    {canEdit && data?.allowed_actions && data.allowed_actions.length > 0 && data.allowed_actions.length < 6 && <p role="status" className="mfg-read-only">Доступные действия ограничены вашей ролью. Остальные формы доступны для просмотра.</p>}
     {loading && <p role="status">Загружаем производственный учёт…</p>}
     {error && <p role="alert" className="mfg-error">{error}</p>}
     {success && <p role="status" className="mfg-success">{success}</p>}

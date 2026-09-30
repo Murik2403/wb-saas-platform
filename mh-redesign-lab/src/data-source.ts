@@ -1,3 +1,4 @@
+import { plural } from "./cabinet-copy";
 import { scopedFetch as fetch, shopReadTimeout } from "./selected-shop";
 import { writeError } from './write-error';
 import {shopDataUpdated,currentMutationEvent} from './shop-data-updated';
@@ -1265,7 +1266,7 @@ export function useDashboardData(activePage: PageId, selectedPeriod: DashboardPe
     connection: {
       mode: API_MODE === "mock" ? "mock" : "loading",
       label: API_MODE === "mock" ? "Mock режим" : "Подключаю API",
-      detail: API_MODE === "mock" ? "Интерфейс работает на локальных данных" : "Пробую tenant API",
+      detail: API_MODE === "mock" ? "Интерфейс работает на локальных данных" : "Подключаю кабинет",
     },
   }));
   const [refreshing, setRefreshing] = useState(false);
@@ -1486,7 +1487,7 @@ async function loadApiV1(
     stockCoverage: adaptCoverage(stock?.coverage ?? stock?.warehouses ?? [], model.stockCoverage),
     stockRules: adaptRules(stock?.rules ?? [], model.stockRules),
     sellerWarehouses: sellerWarehouseStock?.warehouses ?? model.sellerWarehouses,
-    adsHero: adaptAdsHero(ads?.hero, ads?.campaigns?.length ? { title: `${ads.campaigns.length} кампаний за выбранный период`, description: "Расходы и выручка по атрибуции рекламного API WB.", tone: "info" } : model.adsHero),
+    adsHero: adaptAdsHero(ads?.hero, ads?.campaigns?.length ? { title: `${ads.campaigns.length} ${plural(ads.campaigns.length,["кампания","кампании","кампаний"])} за выбранный период`, description: "Расходы и выручка по атрибуции рекламного API WB.", tone: "info" } : model.adsHero),
     campaigns: mergedCampaigns,
     adsFunnel: adaptFunnel(ads?.funnel ?? [], model.adsFunnel),
     creativeSignals: adaptCreativeSignals(ads?.creative_tests ?? [], model.creativeSignals),
@@ -1708,7 +1709,7 @@ function createMockViewModel(syncOverride?: Partial<DashboardSync>): DashboardVi
 
 function createLiveEmptyViewModel(syncOverride?: Partial<DashboardSync>): DashboardViewModel {
   return {
-    connection: { mode: "loading", label: "Подключаю API", detail: "Пробую tenant API" },
+    connection: { mode: "loading", label: "Подключаю API", detail: "Подключаю кабинет" },
     navItems: mock.navItems.map(({ count: _count, ...item }) => item),
     pageMeta: mock.pageMeta,
     mobileNav: mock.mobileNav,
@@ -1797,7 +1798,7 @@ function adaptInventory(input: ApiInventoryWatchRow[], fallback: InventoryWatchR
     name: text(row.name ?? row.product ?? row["Товар"], fallback[index]?.name ?? "Товар"),
     stock:
       typeof row.stock_days === "number" || typeof row.days_of_stock === "number" || typeof row["Запас, дней"] === "number"
-        ? `${formatNumber((row.stock_days ?? row.days_of_stock ?? row["Запас, дней"] ?? 0) as number)} дня`
+        ? `${formatNumber((row.stock_days ?? row.days_of_stock ?? row["Запас, дней"] ?? 0) as number)} ${plural(Number(row.stock_days ?? row.days_of_stock ?? row["Запас, дней"] ?? 0),["день","дня","дней"])}`
         : typeof row.stock === "number"
           ? `${formatNumber(row.stock)} шт.`
           : "остатки WB не загружены",
@@ -1845,7 +1846,7 @@ function adaptReorder(input: ApiReorderItem[], fallback: ReorderItem[]): Reorder
     name: text(item.name ?? item.product, fallback[index]?.name ?? "Товар"),
     days:
       typeof item.stock_days === "number" || typeof item.days_of_stock === "number"
-        ? `${formatNumber(item.stock_days ?? item.days_of_stock ?? 0)} дня`
+        ? `${formatNumber(item.stock_days ?? item.days_of_stock ?? 0)} ${plural(Number(item.stock_days ?? item.days_of_stock ?? 0),["день","дня","дней"])}`
         : fallback[index]?.days ?? "нет данных",
     qty:
       typeof item.recommended_qty === "number" || typeof item.order_qty === "number"
@@ -1924,7 +1925,7 @@ function adaptCampaigns(input: ApiCampaign[], fallback: AdCampaign[]): AdCampaig
   }
 
   return input.map((campaign, index) => ({
-    name: text(campaign.name, `Кампания ${campaign.campaign ?? campaign.id ?? index + 1}`),
+    name: text(campaign.name, `Кампания ${campaign.campaign ?? campaign.id ?? index + 1} · название не передано WB`),
     spend: typeof campaign.spend_kop === "number" ? formatMoney(campaign.spend_kop) : typeof campaign.spend === "number" ? formatMoney(campaign.spend * 100) : "-",
     acos: typeof campaign.acos_bps === "number" ? formatPercent(campaign.acos_bps) : typeof campaign.drr === "number" ? `${campaign.drr.toFixed(1)}%` : "-",
     revenue:
@@ -2570,7 +2571,7 @@ function liveDetail(sync: ApiSync | undefined): string {
     return `Обновлено ${sync.lag_minutes} минут назад`;
   }
 
-  return "Данные получены из tenant API";
+  return "Данные кабинета обновлены";
 }
 
 function displayValue(value: unknown, fallback: string): string {

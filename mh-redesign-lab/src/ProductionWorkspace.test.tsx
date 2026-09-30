@@ -9,6 +9,38 @@ const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => { fetchMock.mockReset(); fetchMock.mockImplementation(async () => json(data)); vi.stubGlobal("fetch", fetchMock); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it("separates WIP and capacity without discarding a draft or reloading on a tab switch", async () => {
+  const { rerender } = render(<ProductionWorkspace view="wip" />);
+  const quantity = await screen.findByLabelText("Расход сырья, м");
+  fireEvent.change(quantity, { target: { value: "2.5" } });
+  expect(screen.getByRole("button", { name: "Выдать в НЗП" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Сохранить мощность" })).not.toBeInTheDocument();
+  const requests = fetchMock.mock.calls.length;
+  rerender(<ProductionWorkspace view="capacity" />);
+  expect(screen.getByRole("button", { name: "Сохранить мощность" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Выдать в НЗП" })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Штук в рабочий день"), { target: { value: "120" } });
+  rerender(<ProductionWorkspace view="wip" />);
+  expect(screen.getByLabelText("Расход сырья, м")).toHaveValue(2.5);
+  rerender(<ProductionWorkspace view="capacity" />);
+  expect(screen.getByLabelText("Штук в рабочий день")).toHaveValue(120);
+  expect(fetchMock.mock.calls).toHaveLength(requests);
+});
+
+it("collapses empty calendar days but preserves work, unknown norms and overload", async () => {
+  const day = { date: "2026-09-30", planned_pieces: 0, actual_pieces: 0, capacity_pieces: 100, overload_pieces: 0, missing_pack_size: false, tasks: [] };
+  fetchMock.mockImplementation(async () => json({ ...data, calendar: [day, { ...day, date: "2026-10-01", planned_pieces: 20 }, { ...day, date: "2026-10-02", missing_pack_size: true }] }));
+  render(<ProductionWorkspace view="capacity" />);
+  await screen.findByRole("button", { name: "Показать дни без заданий (1)" });
+  expect(screen.queryByText("2026-09-30")).not.toBeInTheDocument();
+  expect(screen.getByText("2026-10-01")).toBeVisible();
+  expect(screen.getByText("2026-10-02")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Показать дни без заданий (1)" }));
+  expect(screen.getByText("2026-09-30")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Скрыть дни без заданий" }));
+  expect(screen.queryByText("2026-09-30")).not.toBeInTheDocument();
+});
+
 it("shows failure without invented stock and can retry", async () => {
   fetchMock.mockImplementationOnce(async () => json({ detail: "Временно недоступно" }, 503));
   render(<ProductionWorkspace />);
