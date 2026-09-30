@@ -320,6 +320,22 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
         r.bom_version_id AS producer_bom_version_id,r.status AS producer_status
         FROM finished_goods_cost_layers l LEFT JOIN manufacturing_releases r ON r.id=l.producer_release_id
         WHERE l.ready_units>0 AND l.status<>'reversed' ORDER BY l.id""").fetchall()]
+    # Incident holds reserve existing physical units; they must not cover parent
+    # demand even though they remain present in the immutable cost layers.
+    holds = []
+    hold_revision = {"last_id": 0, "last_release": None}
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='incident_holds'").fetchone():
+        holds = [dict(r) for r in conn.execute("SELECT id,case_id,layer_id,units,created_at FROM incident_holds WHERE location='ready' AND status='held' ORDER BY id")]
+        revision = conn.execute("SELECT COALESCE(MAX(id),0) AS last_id,MAX(released_at) AS last_release FROM incident_holds WHERE location='ready'").fetchone()
+        hold_revision = dict(revision)
+    reserved = {}
+    for hold in holds:
+        reserved[hold["layer_id"]] = reserved.get(hold["layer_id"], 0) + int(hold["units"])
+    for layer in intermediate_layers:
+        physical = int(layer["ready_units"])
+        layer["physical_ready_units"] = physical
+        layer["quarantined_ready_units"] = reserved.get(layer["id"], 0)
+        layer["ready_units"] = max(0, physical - layer["quarantined_ready_units"])
     # A hashable source revision lets confirm detect writes to otherwise unchanged selected fields too.
     revisions = {
         "tasks": [tuple(r) for r in conn.execute("SELECT task_key,task_date,nm_id,chrt_id,planned_units,actual_units,status,updated_at FROM execution_tasks WHERE task_date BETWEEN ? AND ? ORDER BY task_key", (start_date, end_date)).fetchall()],
@@ -327,6 +343,7 @@ def load_supply_plan_snapshot(conn: sqlite3.Connection, start_date: str, end_dat
         "inventory": [tuple(r) for r in conn.execute("SELECT material_key,balance_known,full_rolls,partial_meters,roll_length,unit,tracking_mode,updated_at FROM material_inventory_color ORDER BY material_key").fetchall()],
         "orders": [tuple(r) for r in po_rows],
         "fifo": [tuple(r) for r in fifo_inventory],
+        "ready_quarantine": {"holds": holds, "revision": hold_revision},
     }
     return {"start_date": start_date, "end_date": end_date, "tasks": tasks, "variants": variants, "boms": boms, "inventory": inventory, "fifo_inventory": fifo_inventory, "open_orders": [dict(r) for r in po_rows], "suppliers": suppliers, "catalog_identities": catalog_identities, "intermediate_layers": intermediate_layers, "revisions": revisions}
 

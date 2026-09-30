@@ -85,3 +85,63 @@ def test_depth_limit_blocks_overlong_route():
   nm=10+i;s["catalog_identities"].append(dict(nm_id=nm,valid=True,chrt_ids=[nm*10]))
   s["boms"].append(bom(i+1,nm,[semi(nm+1,i+2)] if i<10 else [raw()]))
  assert build_supply_preview(s)["blockers"][0]["code"]=="nested_depth"
+
+
+class QuarantineNestedSupplyTests(DbTestCase):
+ def seed(self):
+  from db.core import connect
+  from db.wb_incidents import create_wb_incident_case
+  from db.fifo_finished_goods import _create_finished_goods_layer
+  with connect() as conn:
+   source=fixture()
+   for card in source["catalog_identities"]:
+    conn.execute("INSERT INTO products_catalog(nm_id,raw_json) VALUES (?,?)",(card["nm_id"],json.dumps({"sizes":[{"chrtID":card["chrt_ids"][0]}]})))
+   for spec in source["boms"]:
+    conn.execute("INSERT INTO manufacturing_boms(id,nm_id,chrt_id,version,materials_json,operations_json,packaging_per_unit,other_per_unit,note,created_at) VALUES (?,?,?,?,?,'[]',0,0,'','2026-09-01')",(spec["id"],spec["nm_id"],spec["chrt_id"],spec["version"],json.dumps(spec["materials"])))
+   conn.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,chrt_id,planned_units,actual_units,status,updated_at) VALUES ('final','production','2026-09-15',10,100,2,0,'Не начато','2026-09-01')")
+   conn.execute("INSERT INTO material_inventory_color(material_key,material_name,balance_known,full_rolls,partial_meters,roll_length,unit,tracking_mode,updated_at) VALUES ('raw','Сырьё',1,0,0,1,'м','quantity','2026-09-01')")
+   conn.execute("INSERT INTO suppliers(name,default_currency,lead_time_days,active,created_at,updated_at) VALUES ('Supplier','RUB',1,1,'2026-09-01','2026-09-01')")
+   layer=_create_finished_goods_layer(conn,20,'semi','semi','opening','source','2026-09-01',2,20,'ready',chrt_id=200)
+  return create_wb_incident_case('Инцидент','2026-09-01'),layer
+ def preview(self):
+  from db.core import connect
+  from db.supply_planning import load_supply_plan_snapshot
+  with connect() as conn:
+   before=conn.total_changes
+   source=load_supply_plan_snapshot(conn,'2026-09-01','2026-09-30')
+   assert conn.total_changes==before
+   return source,build_supply_preview(source)
+ def test_full_hold_removes_coverage_release_restores_and_fingerprint_keeps_revision(self):
+  from db.incident_workflow import hold,release
+  case,layer=self.seed();initial_source,initial=self.preview();assert initial['lines']==[]
+  identifier=hold(case,layer,'ready',2,'ready-hold','owner')
+  source,blocked=self.preview();assert blocked['lines'][0]['required_base_qty']==12
+  assert source['intermediate_layers'][0]['physical_ready_units']==2 and source['intermediate_layers'][0]['ready_units']==0
+  assert blocked['preview_fingerprint']!=initial['preview_fingerprint']
+  release(case,identifier,'Сверено','owner');_,restored=self.preview()
+  assert restored['lines']==[]
+  assert restored['preview_fingerprint'] not in {initial['preview_fingerprint'],blocked['preview_fingerprint']}
+ def test_partial_hold_covers_only_unheld_quantity(self):
+  from db.incident_workflow import hold
+  case,layer=self.seed();hold(case,layer,'ready',1,'ready-hold','owner')
+  _,preview=self.preview()
+  assert preview['lines'][0]['required_base_qty']==6
+  assert sum(item['covered_units'] for item in preview['intermediate_allocations'] if item['nm_id']==20)==1
+ def test_hold_change_invalidates_confirmation_without_creating_order(self):
+  import pytest
+  from db.incident_workflow import hold,release
+  from db.core import connect
+  from db.supply_planning import confirm_supply_plan
+  case,layer=self.seed();identifier=hold(case,layer,'ready',1,'ready-hold','owner');_,old=self.preview()
+  release(case,identifier,'Сверено','owner');_,current=self.preview()
+  with connect() as conn:
+   with pytest.raises(ValueError,match='stale_preview'):
+    confirm_supply_plan(conn,'old-request','hash',old['preview_fingerprint'],current,[dict(material_key='raw',unit='м',quantity=6,supplier_id=1,expected_date='2026-09-10')])
+   assert conn.execute('SELECT COUNT(*) FROM procurement_orders').fetchone()[0]==0
+ def test_other_location_hold_does_not_reduce_ready_coverage(self):
+  from db.incident_workflow import hold
+  from db.core import connect
+  case,layer=self.seed()
+  with connect() as conn:conn.execute('UPDATE finished_goods_cost_layers SET wb_units=2 WHERE id=?',(layer,))
+  hold(case,layer,'wb',2,'other-hold','owner')
+  _,preview=self.preview();assert preview['lines']==[]
