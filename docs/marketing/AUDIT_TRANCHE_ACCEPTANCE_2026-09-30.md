@@ -87,3 +87,14 @@ Runtime revision: `8a34de29eac3211d6ebc9afc75003a7534b2ccc8`.
 - Повторное открытие авторизованной `/admin` показывает оба кабинета running. Подписки, права, токены и runtime image marketing не менялись.
 
 Оставшиеся большие блоки: счета и выписки (builder close_semifinished, независимая review close_procurement), сверяемый Ozon P&L (builder close_cashflow), полное переключение операций магазинов и распределяемый склад. Реальный кейс, интервью и актуальное видео остаются отдельными задачами; никаких вымышленных результатов или согласий владельцев не добавлено.
+
+### Ежедневное демо — полный runtime принят, 04:06 МСК
+
+- Первопричина второго failed: root backup helper с `cap_drop ALL` не мог писать в demo-каталог mode 700 владельца 10001. Fixed-demo backup/restore helper теперь работает как владелец данных 10001; права и capabilities других резервных копий не расширялись.
+- Provisioner revision `c1c399fcd4fe7f30d788ea2721fa2ffc3c728f80`, image `mh-provisioner:c1c399f`, immutable `sha256:3196239437822a0946790ca6d442f56bc8b01de42611e3117ad50f62d0e64ad8`; 73 теста provisioner прошли.
+- До релиза полный actual Docker pipeline проверен в синтетических контейнерах/volume без сети и Traefik: encrypted backup/verify → stop → seed → validator → recreate → healthy. Отдельно injected validation failure → реальное восстановление архива → прежний container ID/healthy → очистка recovery journal. Production-демо этим прогоном не менялось.
+- Зашифрованная копия `gateway-provisioner-c1c399fcd4fe-1790730345245671618.sqlite3.enc`; rollback `wb-saas-provisioner-1-rollback-1790730346144496954` сохранён.
+- Живой failed-only retry вернул success; `last_success_date=2026-09-30`, `last_success_at=2026-09-30T04:06:14.715566+03:00`, daily enabled, 03:00 МСК. Demo image точно совпадает с принятым tenant 95b6ed8, healthy, restart_count=0.
+- Независимое повторное чтение сохранённой demo-базы: fresh=true, пять controls true (закупка, выпуск, отгрузка/приёмка, продажа/возврат FIFO, ручной расход). Учебный режим не распространяется на настоящие кабинеты.
+- Автоматический следующий день ещё не наступил: проверен тот же worker при явном failed-only retry и его persisted success, а не будущий таймер. Открытие `/demo` встроенным браузером этой сессии заблокировано клиентом; визуальная приёмка публичного маршрута не заявляется.
+- Внешняя стандартная TLS-проверка: `https://www.marketshelper.ru/` перенаправляет на каноническую главную 200; capabilities, calculator и static/favicon.svg также 200. Проверка сертификата не отключалась.
