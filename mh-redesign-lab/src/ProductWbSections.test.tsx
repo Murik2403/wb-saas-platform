@@ -49,6 +49,11 @@ const quality = (over: Partial<CustomerQualityData> = {}): CustomerQualityData =
 });
 
 describe("ShopQualityPanel", () => {
+  it("explains transport failures without showing raw API paths or HTTP codes", () => {
+    render(<ShopQualityPanel data={quality({ errors: ["/api/v1/dashboard/customer-quality: HTTP 409"] })} actions={actions()} />);
+    expect(screen.getByText(/Проверьте подключение и права токена/)).toBeTruthy();
+    expect(screen.queryByText(/\/api\/v1\/|HTTP 409/)).toBeNull();
+  });
   it("names the product from productDetails and shows stars and date", () => {
     render(<ShopQualityPanel data={quality({ feedbacks: [feedback("f1")] })} actions={actions()} />);
     expect(screen.getByText("Салфетки на стол")).toBeTruthy();

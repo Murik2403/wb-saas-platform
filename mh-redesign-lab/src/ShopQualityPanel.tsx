@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import type { CustomerQualityData } from "./data-source";
-import { cabinetDate, cabinetText, plural } from "./cabinet-copy";
+import { cabinetDate, cabinetText, plural, wbAvailabilityMessage } from "./cabinet-copy";
 import "./ProductWbSections.css";
 
 type Item = Record<string, unknown>;
@@ -77,7 +77,12 @@ export function ShopQualityPanel({ data, actions }: { data: CustomerQualityData 
   const questions = (data?.questions ?? []) as Item[];
   const chats = (data?.chats ?? []) as Item[];
   // Source errors are already Russian sentences ("rating: у токена нет доступа …"): show them minus the technical prefix.
-  const notes = (data?.errors ?? []).map((error) => cabinetText(error.replace(SOURCE_RE, "").trim())).filter(Boolean);
+  const notes = [...new Set((data?.errors ?? []).map((error) => {
+    const reason = error.replace(SOURCE_RE, "").trim();
+    return /\/api\/|\bHTTP\s+\d{3}|timeout|failed to fetch|network error/i.test(reason)
+      ? wbAvailabilityMessage([reason])
+      : cabinetText(reason);
+  }).filter(Boolean))];
   const empty = !feedbacks.length && !questions.length && !chats.length && !returnList.length;
 
   return (
