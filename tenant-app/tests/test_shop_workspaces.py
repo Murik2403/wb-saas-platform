@@ -7,7 +7,7 @@ import pytest
 import config
 import db.core as core
 from db import shop_workspaces as shops
-from shop_workspace_service import execute,_worker_slot
+from shop_workspace_service import execute,prepare,_worker_slot
 
 @pytest.fixture
 def database(tmp_path,monkeypatch):
@@ -90,6 +90,13 @@ def test_two_real_shop_snapshots_keep_same_wb_article_cost_isolated(database,mon
         shops.store_snapshot(shop,0,child.read_bytes(),synced=True)
     assert execute(ids[0],'report','2026-09-01','2026-09-02')['products'][0]['cost']==10
     assert execute(ids[1],'report','2026-09-01','2026-09-02')['products'][0]['cost']==30
+    before=shops.read(ids[0])
+    prepared=prepare(ids[0],'cost','2026-09-01','2026-09-02',cost={'nm_id':123,'cost_per_wb_unit':44})
+    assert prepared['response']['products'][0]['cost']==44
+    assert prepared['identity']=='first' and prepared['base_revision']==before['revision']
+    assert prepared['snapshot'].startswith(b'SQLite format 3\x00')
+    assert shops.read(ids[0])==before
+    assert execute(ids[0],'report','2026-09-01','2026-09-02')['products'][0]['cost']==10
     changed=execute(ids[0],'cost','2026-09-01','2026-09-02',cost={'nm_id':123,'cost_per_wb_unit':55})
     assert changed['products'][0]['cost']==55
     assert execute(ids[1],'report','2026-09-01','2026-09-02')['products'][0]['cost']==30

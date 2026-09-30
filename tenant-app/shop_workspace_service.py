@@ -14,7 +14,13 @@ def execute(shop_id:int,action:str,start:str,end:str,*,_timeout:int|None=None,**
     try:return _execute(shop_id,action,start,end,_timeout=_timeout,**kwargs)
     finally:_worker_slot.release()
 
-def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|None=None,**kwargs) -> dict:
+def prepare(shop_id:int,action:str,start:str,end:str,*,_timeout:int|None=None,**kwargs)->dict:
+    """Run a private child without committing any main snapshot or warehouse fact."""
+    if not _worker_slot.acquire(blocking=False):raise ValueError('Другой магазин уже обрабатывается. Повторите позже')
+    try:return _execute(shop_id,action,start,end,_timeout=_timeout,_prepare=True,**kwargs)
+    finally:_worker_slot.release()
+
+def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|None=None,_prepare:bool=False,**kwargs) -> dict:
     if date.fromisoformat(end)<date.fromisoformat(start):raise ValueError('Конец периода раньше начала')
     if (date.fromisoformat(end)-date.fromisoformat(start)).days>366:raise ValueError('Период не больше года')
     state=shops.worker_input(shop_id)
@@ -26,7 +32,7 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
         env=dict(os.environ,WB_SAAS_DATA_DIR=str(root),SHOP_RESULT_PATH=str(root/'result.json'),WB_SAAS_TENANT_SLUG='shop-worker')
         for name in ('WB_SAAS_INTERNAL_API_URL','WB_SAAS_INTERNAL_API_SECRET','WB_SAAS_BILLING_URL','WB_SAAS_LOGOUT_URL'):
             env.pop(name,None)
-        payload={'token':state['token'],'action':action,'start':start,'end':end,'source_errors':state['source_errors'],**kwargs}
+        payload={**kwargs,'token':state['token'],'action':action,'start':start,'end':end,'source_errors':state['source_errors']}
         try:
             result=subprocess.run([sys.executable,str(Path(__file__).with_name('shop_workspace_worker.py'))],
                 input=json.dumps(payload),capture_output=True,text=True,env=env,timeout=_timeout or (600 if action=='sync' else 90))
@@ -35,11 +41,16 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
         if result.returncode!=0:
             raise ValueError('Не удалось обработать магазин; прежние данные сохранены. Проверьте подключение и доступ к API')
         report=json.loads((root/'result.json').read_text(encoding='utf-8'))
+        prepared_snapshot=None
         if action!='report':
             snapshot=root/'snapshot.sqlite3'
             with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(snapshot)) as target:
                 source.backup(target)
                 if target.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('База магазина не прошла проверку')
             if snapshot.stat().st_size>shops.MAX_SNAPSHOT:raise ValueError('База магазина превысила допустимый размер')
-            shops.store_snapshot(shop_id,state['revision'],snapshot.read_bytes(),synced=action=='sync',source_errors=report['sync_errors'])
+            prepared_snapshot=snapshot.read_bytes()
+            if not _prepare:shops.store_snapshot(shop_id,state['revision'],prepared_snapshot,synced=action=='sync',source_errors=report['sync_errors'])
+        if _prepare:
+            return {'base_revision':state['revision'],'identity':state['identity'],'snapshot':prepared_snapshot,'response':report,
+                    'synced':action=='sync','source_errors':report.get('sync_errors',[])}
         return report

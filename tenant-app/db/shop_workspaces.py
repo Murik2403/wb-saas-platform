@@ -69,18 +69,23 @@ def read(shop_id: int) -> dict:
 
 def worker_input(shop_id: int) -> dict:
     r=read(shop_id)
-    return {'revision':r['revision'],'token':_decipher(r['credential_cipher']), 'snapshot':r['database_snapshot'],'source_errors':json.loads(r['sync_quality_json'])}
+    return {'revision':r['revision'],'identity':r['account_identity'],'token':_decipher(r['credential_cipher']), 'snapshot':r['database_snapshot'],'source_errors':json.loads(r['sync_quality_json'])}
 
 def store_snapshot(shop_id: int, revision: int, snapshot: bytes, *, synced: bool=False,source_errors:list[str]|None=None) -> None:
-    if not snapshot.startswith(b'SQLite format 3\x00') or len(snapshot)>MAX_SNAPSHOT:
-        raise ValueError("Некорректная база магазина")
     with connect() as c:
         c.execute('BEGIN IMMEDIATE')
-        stamp=datetime.now(timezone.utc).isoformat()
-        result=c.execute('UPDATE shop_workspaces SET database_snapshot=?,revision=revision+1,updated_at=?,synced_at=CASE WHEN ? THEN ? ELSE synced_at END,sync_quality_json=? WHERE id=? AND active=1 AND revision=?',
-                         (snapshot,stamp,int(synced),stamp,json.dumps(source_errors or []),shop_id,revision))
-        if result.rowcount != 1:
-            raise ValueError("Данные магазина изменились параллельно. Повторите действие")
+        store_snapshot_in_transaction(c,shop_id,revision,snapshot,synced=synced,source_errors=source_errors)
+
+def store_snapshot_in_transaction(c,shop_id:int,revision:int,snapshot:bytes,*,synced:bool=False,source_errors:list[str]|None=None,identity:str|None=None)->None:
+    """Persist a prepared snapshot in the caller's single writer transaction."""
+    if not c.in_transaction:raise ValueError('Запись магазина требует активной транзакции')
+    if not snapshot.startswith(b'SQLite format 3\x00') or len(snapshot)>MAX_SNAPSHOT:
+        raise ValueError("Некорректная база магазина")
+    stamp=datetime.now(timezone.utc).isoformat()
+    result=c.execute('UPDATE shop_workspaces SET database_snapshot=?,revision=revision+1,updated_at=?,synced_at=CASE WHEN ? THEN ? ELSE synced_at END,sync_quality_json=? WHERE id=? AND active=1 AND revision=? AND (? IS NULL OR account_identity=?)',
+                     (snapshot,stamp,int(synced),stamp,json.dumps(source_errors or [],allow_nan=False),shop_id,revision,identity,identity))
+    if result.rowcount != 1:
+        raise ValueError("Данные или продавец магазина изменились параллельно. Повторите действие")
 
 def deactivate(shop_id: int) -> None:
     initialize()

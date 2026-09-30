@@ -5,6 +5,7 @@ snapshot may project these facts, but must never manufacture an independent
 physical copy. Public adapters and the snapshot bridge are separate stages.
 """
 from datetime import date, datetime, timezone
+from contextlib import contextmanager
 from decimal import Decimal, ROUND_HALF_UP
 import hashlib
 import json
@@ -268,6 +269,23 @@ def allocated_units(conn,layer_id,location):
 def owned_held_units(conn,reservation_id,layer_id,location):
     return int(conn.execute("SELECT COALESCE(SUM(units),0) FROM warehouse_owned_holds WHERE reservation_id=? AND layer_id=? AND location=? AND status='held'",(reservation_id,layer_id,location)).fetchone()[0])
 
+
+@contextmanager
+def transaction(supplied=None):
+    """Join an existing main writer transaction without changing its lifecycle."""
+    if supplied is not None:
+        if not supplied.in_transaction:
+            raise WarehouseError('Переданная связь требует активной бизнес-транзакции')
+        if not supplied.execute("SELECT 1 FROM sqlite_master WHERE name='warehouse_documents'").fetchone():
+            raise WarehouseError('Схема склада должна быть подготовлена до транзакции')
+        yield supplied
+        return
+    with connect() as connection:
+        initialize(connection)
+        connection.execute('BEGIN IMMEDIATE')
+        yield connection
+
+
 def register_shop(shop_id,verified_identity,primary_accounts=()):
     shop_id=integer(shop_id,True);identity=text(verified_identity,200)
     with connect() as conn:
@@ -377,13 +395,13 @@ def preview(shop_id,nm_id,chrt_id,quantity,document_date,actor=None,role='owner'
         result=_preview(conn,shop_id,nm_id,chrt_id,quantity,document_date,actor,role)
         return dict(result,fingerprint=digest(result))
 
-def reserve(shop_id,nm_id,chrt_id,quantity,document_date,source_ref,request_key,expected,actor=None,role='owner'):
+def reserve(shop_id,nm_id,chrt_id,quantity,document_date,source_ref,request_key,expected,actor=None,role='owner',*,_conn=None):
     nm_id,chrt_id,quantity=integer(nm_id,maximum=2**53-1),integer(chrt_id,True,2**53-1),integer(quantity);document_date=day(document_date)
     source_ref,request_key=text(source_ref),text(request_key)
     body=dict(shop_id=shop_id,nm_id=nm_id,chrt_id=chrt_id,quantity=quantity,document_date=document_date,source_ref=source_ref,expected=expected)
     fingerprint=digest(body)
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE');access(conn,shop_id,actor,role,True)
+    with transaction(_conn) as conn:
+        access(conn,shop_id,actor,role,True)
         old=conn.execute('SELECT * FROM warehouse_reservations WHERE request_key=? OR (shop_id=? AND source_ref=?)',(request_key,shop_id,source_ref)).fetchone()
         if old:
             if old['fingerprint']!=fingerprint:raise WarehouseConflict('Документ или ключ резерва уже использован')
@@ -419,13 +437,13 @@ def _reservation(conn,reservation,actor,role,write=True):
     if row['shop_identity']!=shop['identity']:raise WarehouseScopeError('Продавец не совпадает с документом')
     return dict(row)
 
-def transition(reservation_id,kind,source_ref,request_key,document_date,revision,actor=None,role='owner'):
+def transition(reservation_id,kind,source_ref,request_key,document_date,revision,actor=None,role='owner',*,_conn=None):
     """Whole-reservation commit/receipt/release, preserving every layer's cost."""
     if kind not in {'commit','receipt','release'}:raise WarehouseError('Неподдерживаемый складской переход')
     source_ref,request_key=text(source_ref),text(request_key);document_date=day(document_date);revision=integer(revision)
     body=dict(reservation_id=reservation_id,kind=kind,source_ref=source_ref,document_date=document_date,revision=revision);fingerprint=digest(body)
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE');reservation=_reservation(conn,reservation_id,actor,role)
+    with transaction(_conn) as conn:
+        reservation=_reservation(conn,reservation_id,actor,role)
         replay=_replay(conn,reservation['shop_id'],kind,source_ref,request_key,fingerprint)
         if replay is not None:return replay
         if reservation['revision']!=revision:raise WarehouseConflict('Резерв изменился; обновите данные')
@@ -491,12 +509,12 @@ def preview_sale(reservation_id,quantity,document_date,actor=None,role='owner'):
         result=_sale_preview(conn,reservation,quantity,document_date)
         return dict(result,fingerprint=digest(result))
 
-def sell(reservation_id,quantity,document_date,source_ref,request_key,expected,actor=None,role='owner'):
+def sell(reservation_id,quantity,document_date,source_ref,request_key,expected,actor=None,role='owner',*,_conn=None):
     """Consume only this shop's original received FIFO allocation, never synthesize."""
     quantity=integer(quantity);document_date=day(document_date);source_ref=text(source_ref);request_key=text(request_key)
     fingerprint=digest(dict(reservation_id=reservation_id,quantity=quantity,document_date=document_date,source_ref=source_ref,expected=expected))
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE');reservation=_reservation(conn,reservation_id,actor,role)
+    with transaction(_conn) as conn:
+        reservation=_reservation(conn,reservation_id,actor,role)
         replay=_replay(conn,reservation['shop_id'],'sale',source_ref,request_key,fingerprint)
         if replay is not None:return replay
         preview=_sale_preview(conn,reservation,quantity,document_date)
@@ -519,7 +537,7 @@ def sell(reservation_id,quantity,document_date,source_ref,request_key,expected,a
         # deterministic source key when requesting a matched return.
         return result
 
-def return_sale(sale_request_key,quantity,document_date,source_ref,request_key,revision,actor=None,role='owner',allocation_plan=None,allocation_proof=None,disposition='available'):
+def return_sale(sale_request_key,quantity,document_date,source_ref,request_key,revision,actor=None,role='owner',allocation_plan=None,allocation_proof=None,disposition='available',*,_conn=None):
     """Restore exact original owned layers, bounded by that sale's unreturned units."""
     quantity=integer(quantity);revision=integer(revision);document_date=day(document_date)
     sale_request_key=text(sale_request_key);source_ref=text(source_ref);request_key=text(request_key)
@@ -537,8 +555,7 @@ def return_sale(sale_request_key,quantity,document_date,source_ref,request_key,r
             chosen[identifier]=units
         if sum(chosen.values())!=quantity:raise WarehouseError('Состав возврата не совпадает с количеством')
     fingerprint=digest(dict(sale_request_key=sale_request_key,quantity=quantity,document_date=document_date,source_ref=source_ref,revision=revision,allocation_plan=chosen,allocation_proof=proof,disposition=disposition))
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE')
+    with transaction(_conn) as conn:
         sale=conn.execute("SELECT * FROM warehouse_documents WHERE request_key=? AND kind='sale'",(sale_request_key,)).fetchone()
         if not sale:raise WarehouseScopeError('Возврат требует точного исходного документа продажи')
         reservation=_reservation(conn,sale['reservation_id'],actor,role)
@@ -574,14 +591,14 @@ def return_sale(sale_request_key,quantity,document_date,source_ref,request_key,r
         _receipt(conn,reservation['shop_id'],reservation['shop_identity'],'return',source_ref,request_key,fingerprint,reservation['id'],document_date,result,actor)
         return result
 
-def quarantine_owned(reservation_id,layer_id,location,quantity,document_date,source_ref,request_key,revision,proof,actor=None,role='owner'):
+def quarantine_owned(reservation_id,layer_id,location,quantity,document_date,source_ref,request_key,revision,proof,actor=None,role='owner',*,_conn=None):
     """A documented subset of one shop's existing ownership, not another claim."""
     quantity=integer(quantity);revision=integer(revision);layer_id=integer(layer_id,maximum=2**53-1)
     if location not in {'inbound','wb'}:raise WarehouseError('Выберите товар в пути или на WB')
     source_ref=text(source_ref);request_key=text(request_key);proof=text(proof,1000);document_date=day(document_date)
     fingerprint=digest(dict(reservation_id=reservation_id,layer_id=layer_id,location=location,quantity=quantity,document_date=document_date,source_ref=source_ref,revision=revision,proof=proof))
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE');reservation=_reservation(conn,reservation_id,actor,role)
+    with transaction(_conn) as conn:
+        reservation=_reservation(conn,reservation_id,actor,role)
         replay=_replay(conn,reservation['shop_id'],'owned_hold',source_ref,request_key,fingerprint)
         if replay is not None:return replay
         if reservation['revision']!=revision or reservation['status']!=location:raise WarehouseConflict('Обновите принадлежность и расположение партии')
@@ -596,11 +613,10 @@ def quarantine_owned(reservation_id,layer_id,location,quantity,document_date,sou
         _receipt(conn,reservation['shop_id'],reservation['shop_identity'],'owned_hold',source_ref,request_key,fingerprint,reservation_id,document_date,result,actor)
         return result
 
-def release_owned_hold(hold_id,document_date,source_ref,request_key,revision,reason,actor=None,role='owner'):
+def release_owned_hold(hold_id,document_date,source_ref,request_key,revision,reason,actor=None,role='owner',*,_conn=None):
     revision=integer(revision);source_ref=text(source_ref);request_key=text(request_key);reason=text(reason,1000);document_date=day(document_date)
     fingerprint=digest(dict(hold_id=hold_id,document_date=document_date,source_ref=source_ref,revision=revision,reason=reason))
-    with connect() as conn:
-        initialize(conn);conn.execute('BEGIN IMMEDIATE')
+    with transaction(_conn) as conn:
         hold=conn.execute('SELECT * FROM warehouse_owned_holds WHERE id=?',(hold_id,)).fetchone()
         if not hold:raise WarehouseScopeError('Карантин магазина не найден')
         reservation=_reservation(conn,hold['reservation_id'],actor,role)
