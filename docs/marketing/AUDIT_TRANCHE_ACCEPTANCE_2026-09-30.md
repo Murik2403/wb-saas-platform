@@ -189,3 +189,5 @@ Fresh verified backup `marketshelper_manual_20260930_025919_943260.zip`; rollbac
 Provisioner same immutable 0eb4746 image; approved tenant pin now exact c79eae5. Control-plane encrypted backup `gateway-provisioner-0eb4746d06dc-1790737278619467178.sqlite3.enc`, rollback `wb-saas-provisioner-1-rollback-1790737279528406405`. Demo settings unchanged. Unreleased shop selector frontend is excluded from this image.
 
 Video: all six actual-UI teaching frames assembled; layout duration150s, zero lint/runtime/layout findings, contrast24/24. Midpoints/cut snapshots visually inspected; Studio preview started on localhost3002 and final render question sent. No MP4 or publication claimed.
+
+Additional read-only Ozon evidence: 05, 10, 15, 20, 25 September each returned HTTP200 / accruals=[] / no next cursor; previous 01 and29 September were also empty. Seven sampled days are not proof of an empty month or a verified monetary schema. No credentials or record values were printed, no live ledger was modified. Owner asked whether an active Ozon shop with actual sales is available; normalization remains unverified pending authoritative schema and nonempty provenance evidence.
