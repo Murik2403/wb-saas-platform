@@ -45,7 +45,8 @@ def test_primary_binding_duplicate_secondary_and_failed_wb_are_not_registered(tr
     with connect() as conn:assert conn.execute('SELECT COUNT(*) FROM warehouse_shops WHERE shop_id=0').fetchone()[0]==0
 
 def test_primary_verified_membership_migration_has_current_role_and_immutable_journal(trusted,monkeypatch):
-    warehouse.register_shop(0,'verified')
+    monkeypatch.setattr(config,'get_token',lambda:token('verified'))
+    warehouse.register_shop(0,shops.account_identity(token('verified')))
     with connect() as conn:
         conn.execute('BEGIN IMMEDIATE')
         setup.access(conn,0,'existing-member','viewer')

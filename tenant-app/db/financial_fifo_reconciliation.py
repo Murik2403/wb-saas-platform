@@ -255,9 +255,9 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
     if end_exclusive <= start:
         return pd.DataFrame(columns=_COLUMNS)
     with connect() as conn:
+        conn.execute('BEGIN')
         finance = conn.execute(
-            """SELECT rrd_id,operation_date,sale_date,nm_id,supplier_article,quantity,
-                      operation_name,doc_type_name,raw_json
+            """SELECT *
                  FROM financial_report
                 WHERE operation_date >= ? AND operation_date < ?
                 ORDER BY operation_date,rrd_id""",
@@ -313,7 +313,9 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
                     nm_chunk,
                 ).fetchall()
                 baseline_rates.update({int(row["nm_id"]): max(0.0, float(row["cost_per_wb_unit"] or 0)) for row in costs})
-    rows = _reconcile(financial_rows, fifo_events, allocation_rows, baseline_rates)
+        rows = _reconcile(financial_rows, fifo_events, allocation_rows, baseline_rates)
+        from shared_warehouse_finance import apply_projection
+        rows = apply_projection(conn,financial_rows,rows)
     return pd.DataFrame(rows, columns=_COLUMNS)
 
 

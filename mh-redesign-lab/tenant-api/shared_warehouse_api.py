@@ -4,7 +4,7 @@ from uuid import UUID
 from contextlib import contextmanager
 from typing import Literal
 from fastapi import APIRouter,Request,HTTPException
-from pydantic import BaseModel,ConfigDict,Field,StrictInt
+from pydantic import BaseModel,ConfigDict,Field,StrictInt,StrictBool
 from starlette.concurrency import run_in_threadpool
 import shop_context
 import shared_warehouse_setup as setup
@@ -50,6 +50,13 @@ class Hold(Document,Quantity):
     location:Literal['inbound','wb']
     proof:str=Field(min_length=1,max_length=500)
 class HoldRelease(Document):reason:str=Field(min_length=1,max_length=500)
+class FinancialBinding(Input):
+    rrd_id:StrictInt=Field(gt=0,le=2**53-1)
+    document_key:UUID
+    manual:StrictBool=False
+    source_proof:str|None=Field(default=None,max_length=500)
+class FinancialBindingConfirm(FinancialBinding):
+    fingerprint:str=Field(pattern=r'^[0-9a-f]{64}$')
 
 def actor(request):
     try:
@@ -88,6 +95,21 @@ def reservation(conn,identifier,shop_id):
 @router.get('/{shop_id}/workspace')
 def workspace(shop_id:int,request:Request):
     return checked(setup.workspace,shop_id,*target(request,shop_id))
+
+@router.get('/{shop_id}/financial-source')
+def financial_source(shop_id:int,request:Request):
+    import shared_warehouse_finance as finance
+    return checked(finance.rows,shop_id,*target(request,shop_id))
+
+@router.post('/{shop_id}/financial-bindings/preview')
+def financial_preview(shop_id:int,body:FinancialBinding,request:Request):
+    import shared_warehouse_finance as finance
+    return checked(finance.preview,shop_id,body.rrd_id,str(body.document_key),body.manual,body.source_proof,*target(request,shop_id))
+
+@router.post('/{shop_id}/financial-bindings/confirm')
+def financial_confirm(shop_id:int,body:FinancialBindingConfirm,request:Request):
+    import shared_warehouse_finance as finance
+    return checked(finance.confirm,shop_id,body.rrd_id,str(body.document_key),body.manual,body.source_proof,body.fingerprint,*target(request,shop_id),key(request))
 
 @router.post('/primary-binding')
 async def binding(body:Input,request:Request):

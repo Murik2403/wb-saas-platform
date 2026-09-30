@@ -15,6 +15,7 @@ _GROUP_COLUMNS = [
     "exact_units", "estimated_units", "insufficient_units", "sale_return_units",
     "exact_rows", "estimated_rows", "insufficient_rows", "exact_unit_coverage_percent",
     "known_unit_coverage_percent", "cogs_quality", "cogs_complete",
+    "manual_source_cogs_rub", "manual_source_units",
 ]
 
 
@@ -27,9 +28,10 @@ def _number(value: Any) -> float | None:
 
 
 def _totals(rows: pd.DataFrame, *, include_nm_id: bool) -> dict[str, Any]:
-    events = rows[rows["cogs_source"].isin(("exact_fifo", "current_cost_estimate", "insufficient"))]
+    events = rows[rows["cogs_source"].isin(("exact_fifo", "current_cost_estimate", "manual_source_fifo", "insufficient"))]
     exact = events[events["cogs_source"] == "exact_fifo"]
-    estimated = events[events["cogs_source"] == "current_cost_estimate"]
+    estimated = events[events["cogs_source"].isin(("current_cost_estimate", "manual_source_fifo"))]
+    manual = events[events['cogs_source']=='manual_source_fifo']
     insufficient = events[events["cogs_source"] == "insufficient"]
     total_units = int(events["units"].sum())
     exact_units = int(exact["units"].sum())
@@ -48,7 +50,9 @@ def _totals(rows: pd.DataFrame, *, include_nm_id: bool) -> dict[str, Any]:
     result: dict[str, Any] = {
         "cogs_rub": round(float(events["cogs_rub"].sum()), 2),
         "exact_fifo_cogs_rub": round(float(exact["cogs_rub"].sum()), 2),
-        "current_cost_estimate_rub": round(float(estimated["cogs_rub"].sum()), 2),
+        "current_cost_estimate_rub": round(float(events[events['cogs_source']=='current_cost_estimate']['cogs_rub'].sum()), 2),
+        "manual_source_cogs_rub": round(float(manual['cogs_rub'].sum()), 2),
+        "manual_source_units": int(manual['units'].sum()),
         "exact_units": exact_units,
         "estimated_units": estimated_units,
         "insufficient_units": insufficient_units,
@@ -59,7 +63,7 @@ def _totals(rows: pd.DataFrame, *, include_nm_id: bool) -> dict[str, Any]:
         "exact_unit_coverage_percent": round(exact_units / total_units * 100, 2) if total_units else 0.0,
         "known_unit_coverage_percent": round((exact_units + estimated_units) / total_units * 100, 2) if total_units else 0.0,
         "cogs_quality": quality,
-        "cogs_complete": bool(total_units > 0 and insufficient_units == 0),
+        "cogs_complete": bool(total_units > 0 and insufficient_units == 0 and manual.empty),
     }
     return result
 
@@ -101,12 +105,12 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
         elif units <= 0:
             cogs_source = "insufficient"
             reason = reason or "financial_quantity_zero"
-        elif status == "exact":
+        elif status in {"exact","manual_source"}:
             exact_value = _number(row.get("eligible_fifo_cogs_rub"))
             expected_sign = 1 if event_type == "sale" else -1
             sign_is_valid = exact_value is not None and (exact_value >= 0 if event_type == "sale" else exact_value <= 0)
             if sign_is_valid:
-                cogs, cogs_source = exact_value, "exact_fifo"
+                cogs, cogs_source = exact_value, "manual_source_fifo" if reason=='shared_fifo_manual_source' else "exact_fifo"
             else:
                 cogs_source = "insufficient"
                 reason = "exact_fifo_cost_missing_or_wrong_sign"

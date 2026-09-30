@@ -369,6 +369,9 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         "cost_coverage": 0.0,
         "exact_fifo_cogs_rub": 0.0,
         "current_cost_estimate_rub": 0.0,
+        "manual_source_cogs_rub": 0.0,
+        "manual_source_units": 0.0,
+        "shared_fifo_manual_source_rows": 0,
         "insufficient_cogs_units": 0.0,
         "sale_return_units": 0.0,
         "exact_units": 0.0,
@@ -497,6 +500,9 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # the former positive-net-units x current-cost formula, which lost FIFO
         # history and did not reverse COGS in the return's operation period.
         reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())
+        financial['shared_fifo_manual_source_rows'] = int((reconciliation['reason']=='shared_fifo_manual_source').sum()) if not reconciliation.empty else 0
+        if financial['shared_fifo_manual_source_rows']:
+            financial['financial_period_complete'] = False
         _cogs_rows, cogs_by_nm, cogs_store = project_historical_cogs(reconciliation)
         financial["cost"] = float(cogs_store["cogs_rub"])
         for field in (
@@ -504,6 +510,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "sale_return_units", "exact_units", "estimated_units",
             "exact_unit_coverage_percent", "known_unit_coverage_percent",
             "cogs_quality", "cogs_complete",
+            "manual_source_cogs_rub", "manual_source_units",
         ):
             output_field = "insufficient_cogs_units" if field == "insufficient_units" else field
             financial[output_field] = cogs_store[field]
@@ -615,6 +622,9 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             grouped[column] = pd.to_numeric(grouped[column], errors="coerce").fillna(0.0)
         grouped["cogs_quality"] = grouped["cogs_quality"].fillna("no_sales")
         grouped["cogs_complete"] = grouped["cogs_complete"].fillna(False).astype(bool)
+        for column in ('manual_source_cogs_rub','manual_source_units'):
+            if column not in grouped:grouped[column]=0.0
+            grouped[column]=pd.to_numeric(grouped[column],errors='coerce').fillna(0.0)
         grouped["cost"] = grouped["cogs_rub"]
         grouped["wb_expenses"] = grouped[["logistics", "rebill_logistics", "storage", "penalties", "deductions", "acceptance"]].sum(axis=1)
         grouped["after_wb"] = grouped["to_pay"] + grouped["additional_payment"] - grouped["wb_expenses"]
@@ -807,6 +817,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "insufficient_units": "Без себестоимости, шт.",
             "exact_unit_coverage_percent": "Точное FIFO-покрытие, %",
             "cogs_quality": "Источник себестоимости",
+            "manual_source_cogs_rub": "FIFO по ручному источнику",
+            "manual_source_units": "Ручной источник, шт.",
             "cogs_complete": "Покрытие себестоимости полное",
             "cost_share_pct": "Доля себестоимости, %",
             "direct_profit": "Маржинальная прибыль",
@@ -835,6 +847,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             "Себестоимость ед.", "Себестоимость", "Точная FIFO-себестоимость",
             "Оценка по текущей себестоимости", "Без себестоимости, шт.",
             "Точное FIFO-покрытие, %", "Источник себестоимости", "Покрытие себестоимости полное",
+            "FIFO по ручному источнику", "Ручной источник, шт.",
             "Доля себестоимости, %",
             "Маржинальная прибыль", "Маржинальная прибыль на ед.", "Маржинальность, %",
             "Доля общих расходов, %", "Распределено общих расходов",

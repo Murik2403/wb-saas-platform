@@ -165,3 +165,55 @@ physical lifecycle. Local full gates:474 tenant tests plus8 subtests,391 API tes
 These are private source gates; actual native image/Nginx two-shop physical proof,
 frontend workflow, seller-tagged ingestion and primary/secondary P&L projection
 remain release dependencies. This stage does not close the entire audit.
+
+## Financial source and canonical projection work order
+
+Capture the actual WB client seller identity before each remote financial read;
+persist its hash and the entire normalized row fingerprint in the same ingest
+transaction. An append-only latest marker records verified API provenance or
+explicit legacy-unverified provenance. Unchanged source/facts do not grow the
+journal on every overlap sync. Legacy writes never borrow an older verified
+marker. A previously verified rrd_id belonging to another seller and a mismatch
+with the frozen primary seller reject the whole batch. No tokens are journaled.
+
+Then bind a single verified financial row to one immutable canonical sale/return
+document with exact seller, variant, quantity and date proof. Legacy row approval
+is an explicit audited manual action and remains preliminary as a source. A raw
+fact change invalidates the binding. Primary and secondary readers replace the
+same COGS once; they never consume physical FIFO again. Secondary projection data
+and the immutable central binding must be committed atomically with the snapshot
+revision. Multi-row aggregate matching is unsupported until explicitly proven;
+quantity mismatches fail closed. Exact row variant needs raw chrt/barcode proof,
+not an arbitrary UI variant selection. Independent source review and native
+two-shop primary/secondary P&L/export acceptance remain mandatory.
+
+The implemented three financial routes are financial-source GET and
+financial-bindings preview/confirm. Confirm uses a real immutable UUID receipt,
+rechecks current ACL/seller before replay, and commits the central binding plus
+private secondary projection snapshot/revision in one main transaction. No
+secondary physical layers are copied. Primary physical/setup access also rejects
+a disconnected or different current seller before replay; same-seller credential
+renewal remains compatible. Report quality removes only shared_fifo_pending when
+the selected period is complete with100% verified canonical COGS coverage, never
+for manual legacy confirmations or actual source errors.
+
+Manual legacy source uses a distinct manual_source reconciliation status and
+manual_source_fifo detail. Its canonical amount is retained, but store/product
+quality remains estimated/mixed, COGS completeness is false, automatic exact
+coverage excludes it, and CSV includes explicit manual-source amount/units.
+This is not an automatically verified historical seller/source claim.
+
+Fresh broad source gates:485 tenant tests plus8 subtests and393 API tests passed
+with unique external basetemp paths. Actual primary/secondary reader tests show
+.34+.67=1.01 shared money conservation, matched return1.01-.34=.67, no duplicate
+legacy FIFO events, and an actual child cost preparation retaining the canonical
+projection despite changing its local baseline to999. Atomic failure before main
+snapshot persistence leaves no central binding/receipt or new snapshot.
+
+Still unsupported: automatic aggregation of multiple financial rows into one
+canonical document; automatic reassignment of an old row to a new seller; silent
+replacement of a binding after a source/catalog change. Such rows stay
+preliminary until an explicit correction/version workflow is implemented. Native
+image/Nginx/browser acceptance, financial UI and continuous secondary report
+scheduling are separate remaining audit gates. Downgrade after new writes still
+requires restoring a verified compatible database while preserving new evidence.

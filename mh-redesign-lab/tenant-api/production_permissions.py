@@ -12,6 +12,7 @@ def write_allowed(role: str, method: str, path: str) -> bool:
         if role=="integration_reader":return False
         if method in {"GET","HEAD","OPTIONS"}:return True
         if path.endswith("/preview") and not path.endswith("/returns/preview"):return True
+        if '/financial-bindings/' in path:return role in {'owner','manager'}
         if path.endswith("/primary-binding") or path.endswith("/items") or "/mappings/" in path:return role=="owner"
         return role in {"owner","manager","warehouse"}
     if method == "POST" and path == "/api/v1/cash-accounts/statements/preview":

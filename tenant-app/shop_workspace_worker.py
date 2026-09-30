@@ -132,7 +132,9 @@ def main():
             match=costs[costs['nm_id']==nm_id] if not costs.empty else costs
             item['cost']=float(match.iloc[0].get('cost_per_wb_unit') or 0) if not match.empty else None
             products.append(item)
-    report=json_safe({'financial':dashboard.financial,'products':products,'stocks':dashboard.stocks.head(500).to_dict('records'), 'product_count':len(cards), 'stock_row_count':len(dashboard.stocks), 'sync_errors':sync_errors,'sources_complete':not sync_errors,'synced':synced})
+    from shared_warehouse_finance import verified_period_errors
+    report_errors=verified_period_errors(sync_errors,dashboard.financial)
+    report=json_safe({'financial':dashboard.financial,'products':products,'stocks':dashboard.stocks.head(500).to_dict('records'), 'product_count':len(cards), 'stock_row_count':len(dashboard.stocks), 'sync_errors':report_errors,'sources_complete':not report_errors,'synced':synced})
     persist_settings()
     # Dedicated output file: logs and credential-bearing exceptions cannot enter API output.
     Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps(report,ensure_ascii=False,allow_nan=False),encoding='utf-8')

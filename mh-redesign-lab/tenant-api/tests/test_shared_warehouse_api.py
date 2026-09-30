@@ -19,13 +19,14 @@ from db.production import _apply_pipeline_delta
 @pytest.fixture
 def warehouse_client(client,monkeypatch):
     monkeypatch.setattr(config,'TENANT_SLUG','trusted-tenant')
+    monkeypatch.setattr(config,'get_token',lambda:token('primary'))
     import shared_warehouse_setup as setup
     setup.initialize()
     with connect() as conn:
         conn.execute("INSERT INTO products_catalog(nm_id,product_name,raw_json) VALUES(100,'Canonical',?)",(json.dumps({'sizes':[{'chrtID':10}]}),))
         _create_finished_goods_layer(conn,100,'canonical','Canonical','production','trusted-production','2026-09-01',3,.335,'ready',chrt_id=10)
         _apply_pipeline_delta(conn,100,'canonical',3,0)
-    warehouse.register_shop(0,'primary-seller')
+    warehouse.register_shop(0,shops.account_identity(token('primary')))
     return client
 
 def post(client,path,body,shop=0,key=None,role='owner'):
@@ -89,7 +90,7 @@ def test_primary_setup_changes_identity_only_after_verified_session(warehouse_cl
     with patch.object(config,'get_token',return_value=token('new-seller')),patch('wb_api.WBAPI.test_statistics',return_value=True):
         response=post(warehouse_client,'/primary-binding',{})
     assert response.status_code==409,response.text
-    assert warehouse_client.get('/api/v1/shop-context/session').json()['shops'][0]['verified_identity']=='primary-seller'
+    assert warehouse_client.get('/api/v1/shop-context/session').json()['shops'][0]['verified_identity']==shops.account_identity(token('primary'))
 
 def test_two_shop_public_reserve_cannot_overdraw_or_use_other_shop_document(warehouse_client):
     client=warehouse_client
@@ -153,4 +154,68 @@ def test_unbound_primary_is_visible_setup_state_and_verified_binding_refreshes_s
     session=client.get('/api/v1/shop-context/session').json()
     assert session['shops'][0]['verified_identity']==bound.json()['verified_identity']
     assert bound.headers['x-mh-shop-identity']==bound.json()['verified_identity']
+
+def financial_sale(client):
+    item=post(client,'/items',{'nm_id':100,'chrt_id':10,'name':'Canonical'}).json()
+    mapping(client,0,100,10,item['id'])
+    body={'nm_id':100,'chrt_id':10,'quantity':1,'document_date':'2026-09-10'}
+    preview=post(client,'/0/reserve/preview',body).json()
+    reservation=post(client,'/0/reserve/confirm',{**body,'source_ref':'finance-order','fingerprint':preview['fingerprint']}).json()['id']
+    for revision,kind in ((1,'commit'),(2,'receipt')):
+        response=post(client,f'/0/reservations/{reservation}/transition',{'kind':kind,'revision':revision,'source_ref':'finance-'+kind,'document_date':'2026-09-10'})
+        assert response.status_code==200,response.text
+    preview=post(client,f'/0/reservations/{reservation}/sale/preview',{'quantity':1,'document_date':'2026-09-11'}).json()
+    document=str(uuid.uuid4())
+    response=post(client,f'/0/reservations/{reservation}/sale/confirm',{'quantity':1,'source_ref':'finance-sale','document_date':'2026-09-11','fingerprint':preview['fingerprint']},key=document)
+    assert response.status_code==200,response.text
+    return document
+
+def test_public_financial_binding_actual_cogs_export_and_current_seller_replay_guard(warehouse_client,monkeypatch):
+    client=warehouse_client;document=financial_sale(client)
+    from db.ingest import upsert_financial
+    upsert_financial([{'rrd_id':1,'nm_id':100,'chrt_id':10,'quantity':1,'rr_dt':'2026-09-11','sale_dt':'2026-09-11','doc_type_name':'Продажа','ppvz_for_pay':100}],source_identity=shops.account_identity(token('primary')))
+    rows=client.get('/api/v1/shared-warehouse/0/financial-source')
+    assert rows.status_code==200 and rows.json()['rows'][0]['source_kind']=='wb_api',rows.text
+    body={'rrd_id':1,'document_key':document}
+    preview=post(client,'/0/financial-bindings/preview',body)
+    assert preview.status_code==200,preview.text
+    confirmed={**body,'fingerprint':preview.json()['fingerprint']};request_key=str(uuid.uuid4())
+    applied=post(client,'/0/financial-bindings/confirm',confirmed,key=request_key)
+    assert applied.status_code==200 and applied.json()['cost_rub']==.34,applied.text
+    assert post(client,'/0/financial-bindings/confirm',confirmed,key=request_key).json()==applied.json()
+    assert post(client,'/0/financial-bindings/confirm',{**confirmed,'manual':True,'source_proof':'different'},key=request_key).status_code==409
+    window='?period=custom&start=2026-09-11&end=2026-09-11'
+    diagnostic=client.get('/api/v1/dashboard/finance/fifo-reconciliation'+window)
+    assert diagnostic.status_code==200 and diagnostic.json()['rows'][0]['cogs_source']=='exact_fifo',diagnostic.text
+    export=client.get('/api/v1/operations/finance/export'+window+'&format=csv')
+    assert export.status_code==200 and b'0.34' in export.content,export.text
+    with connect() as conn:count=conn.execute('SELECT COUNT(*) FROM warehouse_documents').fetchone()[0]
+    monkeypatch.setattr(config,'get_token',lambda:token('another-seller'))
+    assert post(client,'/0/financial-bindings/confirm',confirmed,key=request_key).status_code==409
+    assert client.get('/api/v1/shared-warehouse/0/workspace').status_code==409
+    monkeypatch.setattr(config,'get_token',lambda:None)
+    assert post(client,'/0/financial-bindings/confirm',confirmed,key=request_key).status_code==409
+    assert client.get('/api/v1/shared-warehouse/0/workspace').status_code==409
+    monkeypatch.setattr(config,'get_token',lambda:token('primary')+'.renewed')
+    assert post(client,'/0/financial-bindings/confirm',confirmed,key=request_key).json()==applied.json()
+    with connect() as conn:assert conn.execute('SELECT COUNT(*) FROM warehouse_documents').fetchone()[0]==count
+
+def test_public_manual_source_cogs_is_preliminary_in_diagnostics_and_export(warehouse_client):
+    client=warehouse_client;document=financial_sale(client)
+    from db.ingest import upsert_financial
+    upsert_financial([{'rrd_id':1,'nm_id':100,'chrt_id':10,'quantity':1,'rr_dt':'2026-09-11','doc_type_name':'Продажа','ppvz_for_pay':100}])
+    body={'rrd_id':1,'document_key':document}
+    assert post(client,'/0/financial-bindings/preview',body).status_code==409
+    body.update(manual=True,source_proof='User confirmed historical seller document #1')
+    preview=post(client,'/0/financial-bindings/preview',body)
+    assert preview.status_code==200 and preview.json()['preliminary'],preview.text
+    applied=post(client,'/0/financial-bindings/confirm',{**body,'fingerprint':preview.json()['fingerprint']})
+    assert applied.status_code==200 and applied.json()['preliminary'],applied.text
+    window='?period=custom&start=2026-09-11&end=2026-09-11'
+    diagnostic=client.get('/api/v1/dashboard/finance/fifo-reconciliation'+window)
+    assert diagnostic.status_code==200,diagnostic.text
+    row=diagnostic.json()['rows'][0]
+    assert row['status']=='manual_source' and row['cogs_source']=='manual_source_fifo' and row['cogs_rub']==.34
+    export=client.get('/api/v1/operations/finance/export'+window+'&format=csv')
+    assert export.status_code==200 and b'estimated' in export.content and b'0.34' in export.content,export.text
     assert client.get('/api/v1/shared-warehouse/0/workspace').json()['needs_primary_binding'] is False

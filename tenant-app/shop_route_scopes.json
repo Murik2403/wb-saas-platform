@@ -960,5 +960,20 @@
     "method": "POST",
     "path": "/api/v1/shared-warehouse/{shop_id}/holds/{hold_id}/release",
     "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shared-warehouse/{shop_id}/financial-source",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/financial-bindings/preview",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/shared-warehouse/{shop_id}/financial-bindings/confirm",
+    "scope": "tenant_shared"
   }
 ]

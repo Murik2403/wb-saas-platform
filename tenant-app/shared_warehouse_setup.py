@@ -56,6 +56,11 @@ def access(conn,shop_id,account,role,write=False):
     if shop_id==0:
         primary=conn.execute('SELECT * FROM warehouse_shops WHERE shop_id=0 AND active=1').fetchone()
         if not primary:raise warehouse.WarehouseScopeError('Сначала подтвердите подключение основного магазина')
+        token=config.get_token()
+        try:current_identity=shops.account_identity(token) if token else None
+        except ValueError:current_identity=None
+        if current_identity!=primary['identity']:
+            raise warehouse.WarehouseScopeError('Подключение основного продавца изменилось; прежние документы недоступны')
         # Existing primary membership is verified upstream on every request.
         # can_write never overrides the current role check in warehouse.access.
         old=conn.execute('SELECT 1 FROM warehouse_primary_memberships WHERE account=? AND source_role=? AND tenant_slug=? AND identity=?',
@@ -85,7 +90,7 @@ def bind_primary(account,role):
         return {'shop_id':0,'verified_identity':result['identity'],'refresh_session':True}
 
 @contextmanager
-def catalog_connection(conn,shop_id,account,role):
+def catalog_connection(conn,shop_id,account,role,*,writable=False):
     scope=access(conn,shop_id,account,role)
     if shop_id==0:
         yield conn,{'shop_id':0,'identity':scope['identity'],'snapshot_revision':None}
@@ -102,7 +107,7 @@ def catalog_connection(conn,shop_id,account,role):
         filename.write_bytes(row['database_snapshot'])
         private=sqlite3.connect(filename);private.row_factory=sqlite3.Row
         try:
-            private.execute('PRAGMA query_only=ON')
+            if not writable:private.execute('PRAGMA query_only=ON')
             yield private,{'shop_id':shop_id,'identity':scope['identity'],'snapshot_revision':row['revision']}
         finally:private.close()
 
