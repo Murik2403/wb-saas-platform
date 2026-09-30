@@ -49,6 +49,14 @@ class RobotsAndSitemapTests(unittest.TestCase):
         self.assertIn("text/plain", response.headers["content-type"])
         self.assertIn(f"Sitemap: {config.base_url()}/sitemap.xml", response.text)
 
+    def test_release_journal_is_public_and_discoverable(self) -> None:
+        response = self.client.get("/updates")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<time datetime="2026-09-30">', response.text)
+        self.assertIn('href="/updates"', self.client.get("/contacts").text)
+        self.assertIn(f"<loc>{config.base_url()}/updates</loc>", self.client.get("/sitemap.xml").text)
+        self.assertIn('/updates', self.client.get("/llms.txt").text)
+
     def test_robots_txt_hides_authenticated_areas(self) -> None:
         body = self.client.get("/robots.txt").text
         for path in ("/account", "/billing", "/admin", "/internal/", "/webhooks/"):

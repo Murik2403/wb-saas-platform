@@ -45,7 +45,7 @@ class MarketingRouteTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_all_pages_render_and_navigation_resolves(self):
-        existing = {"/", "/pricing", "/login", "/register", "/offer", "/privacy", "/contacts"}
+        existing = {"/", "/pricing", "/capabilities", "/login", "/register", "/offer", "/privacy", "/contacts"}
         for path in PUBLIC_MARKETING_PATHS:
             with self.subTest(path=path):
                 response = self.client.get(path + "?utm_source=test")
@@ -67,6 +67,9 @@ class MarketingRouteTests(unittest.TestCase):
     def test_tariff_and_trial_follow_config(self):
         with patch.object(config, "SUBSCRIPTION_PRICE_RUB", 4190), patch.object(config, "TRIAL_DAYS", 21), patch.object(config, "BILLING_PERIOD_DAYS", 31):
             for path in PUBLIC_MARKETING_PATHS:
+                if path == "/updates":
+                    # A dated release journal is not a tariff/registration offer.
+                    continue
                 html = self.client.get(path).text
                 self.assertIn("4190 ₽ / 31 дней", html)
                 self.assertIn("Попробовать 21 дней", html)
