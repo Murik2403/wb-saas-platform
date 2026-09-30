@@ -1,3 +1,4 @@
+import {createDialogFocusScope,useDialogFocus} from './dialog-focus';
 import { downloadScoped, currentShop } from "./selected-shop";
 import {fifoReasonLabel} from './fifo-reason';
 import { SelectedShopSettings } from "./SelectedShopSettings";
@@ -116,12 +117,17 @@ function cx(...classes: Array<string | false | null | undefined>) {
  * It is deliberately DOM based so legacy inline action handlers can use it
  * without coupling every section to a second piece of React state.
  */
+let interactionDialogSequence=0;
 function openInteractionDialog(options: { title: string; message?: string; input?: string; confirm?: boolean }): Promise<string | boolean | null> {
   if (typeof document === "undefined") return Promise.resolve(options.input ?? (options.confirm ? false : null));
+  const opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
   const dialog = document.createElement("dialog");
+  const titleId=`interaction-dialog-title-${++interactionDialogSequence}`;
+  dialog.setAttribute("aria-labelledby",titleId);dialog.setAttribute("aria-modal","true");
   dialog.className = "plan-drawer operation-dialog interaction-dialog";
-  const heading = document.createElement("h3"); heading.textContent = options.title;
+  const heading = document.createElement("h3");heading.id=titleId; heading.textContent = options.title;
   const message = document.createElement("p"); message.textContent = options.message ?? "";
+  if(options.message){message.id=titleId+"-message";dialog.setAttribute("aria-describedby",message.id);}
   const form = document.createElement("form"); form.method = "dialog";
   const controls = document.createElement("div"); controls.className = "dialog-actions";
   const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "ghost-button"; cancel.textContent = "Отмена";
@@ -132,14 +138,14 @@ function openInteractionDialog(options: { title: string; message?: string; input
   form.append(controls); dialog.append(heading, message); if (input) dialog.append(input); dialog.append(form);
   document.body.appendChild(dialog);
   return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: string | boolean | null) => { if (settled) return; settled = true; dialog.remove(); resolve(value); };
+    let settled = false;let disposeFocus:(()=>void)|undefined;
+    const finish = (value: string | boolean | null) => { if (settled) return; settled = true; disposeFocus?.();dialog.remove(); resolve(value); };
     cancel.addEventListener("click", () => finish(null));
     dialog.addEventListener("cancel", () => finish(null));
     form.addEventListener("submit", (event) => { event.preventDefault(); finish(options.confirm ? true : (input?.value ?? "")); });
     dialog.addEventListener("close", () => finish(null));
     if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
-    input?.focus();
+    disposeFocus=createDialogFocusScope(dialog,()=>finish(null),opener);
   });
 }
 
@@ -1309,6 +1315,7 @@ function PlanDrawer({
   busyId: string | null;
   onUpdate: (id: string, patch: Partial<Pick<ActionPlanItem, "status" | "assignee" | "due_at" | "priority" | "result">>) => void;
 }) {
+  const dialogRef=useDialogFocus(onClose);
   const activeItems = items.filter((item) => item.status !== "done" && item.status !== "cancelled");
   const visibleItems = filter === "all" ? activeItems : items.filter((item) => item.status === filter);
   const statusLabels: Record<"all" | ActionPlanItem["status"], string> = {
@@ -1323,7 +1330,7 @@ function PlanDrawer({
   return (
     <>
       <button className="drawer-backdrop" type="button" aria-label="Закрыть план задач" onClick={onClose} />
-      <aside className="plan-drawer" role="dialog" aria-modal="true" aria-labelledby="task-plan-title">
+      <aside className="plan-drawer" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="task-plan-title">
         <div className="drawer-header">
           <div>
             <span className="eyebrow">Операционный контур</span>
@@ -1420,9 +1427,10 @@ function ActionDetailDialog({
   onClose: () => void;
   onNavigate: (page: PageId, target?: string) => void;
 }) {
+  const dialogRef=useDialogFocus(onClose);
   return (
     <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="plan-drawer operation-dialog action-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="action-detail-title">
+      <section className="plan-drawer operation-dialog action-detail-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="action-detail-title">
         <div className="drawer-header">
           <div><span className="eyebrow">детализация</span><h2 id="action-detail-title">{detail.title}</h2><p>{detail.description}</p></div>
           <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button>
@@ -2133,6 +2141,7 @@ function ProductCardEditor({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const dialogRef=useDialogFocus(onClose);
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description ?? "");
   const [brand, setBrand] = useState(card.brand);
@@ -2153,7 +2162,7 @@ function ProductCardEditor({
     finally { setBusy(false); }
   };
   return <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section className="plan-drawer operation-dialog product-card-editor" role="dialog" aria-modal="true" aria-labelledby="product-card-editor-title">
+    <section className="plan-drawer operation-dialog product-card-editor" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="product-card-editor-title">
       <div className="drawer-header"><div><span className="eyebrow">Контент WB · редактирование</span><h2 id="product-card-editor-title">{card.title}</h2><p>WB {card.nmId} · {card.vendorCode || "без артикула продавца"}</p></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose} disabled={busy}><X size={18} /></button></div>
       <div className="form-grid"><label>Название<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={255} /></label><label>Бренд<input value={brand} onChange={(event) => setBrand(event.target.value)} maxLength={255} /></label><label className="full-width">Описание<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} maxLength={5000} /></label><label className="full-width">Медиафайлы, по одной ссылке на строку<textarea value={mediaText} onChange={(event) => setMediaText(event.target.value)} rows={5} /></label></div>
       <label className="form-checkbox"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> Я подтверждаю отправку изменений и замену списка медиафайлов в WB</label>
@@ -2172,9 +2181,10 @@ function DetailDrawer({
   onClose: () => void;
   onNavigate: (page: PageId, target?: string) => void;
 }) {
+  const dialogRef=useDialogFocus(onClose);
   return (
     <div className="drawer-backdrop detail-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="plan-drawer detail-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-drawer-title">
+      <section className="plan-drawer detail-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="detail-drawer-title">
         <div className="drawer-header">
           <div>
             <span className="eyebrow">детали</span>
@@ -3253,6 +3263,7 @@ function FifoDialog({
   onApply: (note: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const [confirmed, setConfirmed] = useState(false);
   const [note, setNote] = useState("");
   const guardReason = String(data.guard.reason ?? "Проверка статуса FIFO");
@@ -3264,7 +3275,7 @@ function FifoDialog({
 
   return (
     <div className="drawer-backdrop operation-backdrop" role="presentation">
-      <section className="plan-drawer operation-dialog fifo-dialog" role="dialog" aria-modal="true" aria-labelledby="fifo-dialog-title">
+      <section className="plan-drawer operation-dialog fifo-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="fifo-dialog-title">
         <div className="drawer-header">
           <div><span className="eyebrow">FIFO</span><h2 id="fifo-dialog-title">Безопасная сверка</h2><p>{guardReason}</p></div>
           <button className="icon-button" type="button" aria-label="Закрыть FIFO-сверку" onClick={onClose}><X size={18} /></button>
@@ -3307,9 +3318,10 @@ function AgentCandidateRow({ candidate, onDecision }: { candidate: AgentCandidat
 }
 
 function AgentDecisionDialog({ candidate, busy, onCancel, onConfirm }: { candidate: AgentCandidate; busy: boolean; onCancel: () => void; onConfirm: () => Promise<void> }) {
+  const dialogRef=useDialogFocus(onCancel);
   return (
     <div className="drawer-backdrop operation-backdrop" role="presentation">
-      <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-confirm-title">
+      <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="agent-confirm-title">
         <div className="drawer-header"><div><span className="eyebrow">подтверждение</span><h2 id="agent-confirm-title">Применить рекомендацию?</h2><p>{candidate.marketplace.toUpperCase()} · {candidate.targetName}</p></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={onCancel}><X size={18} /></button></div>
         <div className="operation-form"><p className="confirm-copy">{candidate.reason}</p><p className="confirm-values">{candidate.currentValue} → {candidate.proposedValue}</p><div className="operation-actions"><button className="ghost-button" type="button" onClick={onCancel}>Отмена</button><button className="primary-button" type="button" disabled={busy} onClick={() => void onConfirm()}><CheckCircle2 size={16} />{busy ? "Применяем" : "Применить"}</button></div></div>
       </section>
@@ -3603,9 +3615,10 @@ function FbsSupplyDialog({
   onClose: () => void;
   onLoadBarcode: () => Promise<void>;
 }) {
+  const dialogRef=useDialogFocus(onClose);
   const barcodeValue = item.barcode?.barcode ?? item.barcode?.file ?? item.barcode?.url;
   const imageSource = typeof barcodeValue === "string" && barcodeValue.startsWith("data:image/") ? barcodeValue : null;
-  return <dialog className="plan-drawer operation-dialog" open aria-labelledby="fbs-supply-dialog-title">
+  return <dialog ref={dialogRef} aria-modal="true" className="plan-drawer operation-dialog" open aria-labelledby="fbs-supply-dialog-title">
     <div className="dialog-header"><div><span className="eyebrow">WB FBS</span><h2 id="fbs-supply-dialog-title">Поставка {item.id}</h2></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button></div>
     {error ? <p className="operation-error" role="alert">{error}</p> : null}
     <div className="fbs-detail-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void onLoadBarcode()}>{busy ? "Загружаю…" : "Получить QR / стикер"}</button></div>
@@ -3982,6 +3995,7 @@ function OperationDialog({
   onSubmit: (form: HTMLFormElement) => void;
   productName: string;
 }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const title = kind === "procurement" ? "Создать заявку" : "Собрать смену";
   const [norms, setNorms] = useState<ProductionNorm[]>([]);
   const [productionSku, setProductionSku] = useState(item);
@@ -4011,7 +4025,7 @@ function OperationDialog({
   };
   return (
     <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="operation-title">
+      <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="operation-title">
         <div className="drawer-header">
           <div><span className="eyebrow">backend operation</span><h2 id="operation-title">{title}</h2><p>Данные будут записаны в рабочую базу tenant.</p></div>
           <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button>
@@ -4055,12 +4069,13 @@ function ProductCostDialog({
   onClose: () => void;
   onSubmit: (item: ProductCostSetting, reason?: string) => void;
 }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const [reason, setReason] = useState("");
   const [cost, setCost] = useState(String(item.cost_per_wb_unit));
   const [note, setNote] = useState(item.note);
   const title = item.product_name || item.supplier_article || `WB ${item.nm_id}`;
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="cost-dialog-title">
+    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="cost-dialog-title">
       <div className="drawer-header"><div><span className="eyebrow">экономика</span><h2 id="cost-dialog-title">Себестоимость товара</h2><p>{title} · WB {item.nm_id}</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
       <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, cost_per_wb_unit: Number(cost), note }, reason); }}>
         <label>Себестоимость одной единицы, ₽<input autoFocus min="0" required step="0.01" type="number" value={cost} onChange={(event) => setCost(event.target.value)} /></label>
@@ -4074,13 +4089,14 @@ function ProductCostDialog({
 }
 
 function ProductionNormDialog({ busy, item, onClose, onSubmit }: { busy: boolean; item: ProductionNorm; onClose: () => void; onSubmit: (item: ProductionNorm, reason?: string) => void }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const [reason, setReason] = useState("");
   const [material, setMaterial] = useState(String(item.material_per_unit));
   const [batch, setBatch] = useState(String(item.min_batch));
   const [pack, setPack] = useState(String(item.pack_size));
   const [enabled, setEnabled] = useState(Boolean(item.enabled));
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="norm-dialog-title">
+    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="norm-dialog-title">
       <div className="drawer-header"><div><span className="eyebrow">производство</span><h2 id="norm-dialog-title">Норма материала</h2><p>{item.product_name || item.supplier_article} · WB {item.nm_id}</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
       <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ ...item, material_per_unit: Number(material), min_batch: Number(batch), pack_size: Number(pack), enabled: enabled ? 1 : 0 }, reason); }}>
         <label>Расход на комплект, {item.material_unit || "ед."}<input required min="0" step="0.001" type="number" value={material} onChange={(event) => setMaterial(event.target.value)} /></label>
@@ -4095,10 +4111,11 @@ function ProductionNormDialog({ busy, item, onClose, onSubmit }: { busy: boolean
 }
 
 function SupplierDialog({ busy, item, onClose, onSubmit }: { busy: boolean; item: SupplierRecord; onClose: () => void; onSubmit: (item: SupplierRecord) => void }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const [draft, setDraft] = useState(item);
   const update = (key: keyof SupplierRecord, value: string | number) => setDraft((current) => ({ ...current, [key]: value }));
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section className="plan-drawer operation-dialog supplier-dialog" role="dialog" aria-modal="true" aria-labelledby="supplier-dialog-title">
+    <section className="plan-drawer operation-dialog supplier-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="supplier-dialog-title">
       <div className="drawer-header"><div><span className="eyebrow">справочник поставщиков</span><h2 id="supplier-dialog-title">{item.id ? "Редактировать поставщика" : "Добавить поставщика"}</h2><p>Контакты используются при оформлении закупок.</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
       <form className="operation-form supplier-form" onSubmit={(event) => { event.preventDefault(); onSubmit(draft); }}>
         <label>Название поставщика<input required value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="Например, ООО Кромка+" /></label>
@@ -4123,10 +4140,11 @@ function ProcurementPaymentDialog({
   onClose: () => void;
   onSubmit: (payment: { amount: number; payment_date: string; method: string; note: string }) => void;
 }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const outstanding = Math.max(0, Number(order.outstanding_amount ?? 0));
   const today = new Date().toISOString().slice(0, 10);
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-title">
+    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="payment-title">
       <div className="drawer-header"><div><span className="eyebrow">реальная операция</span><h2 id="payment-title">Внести оплату</h2><p>Закупка #{String(order.id)} · остаток {Math.round(outstanding).toLocaleString("ru-RU")} ₽</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
       <form className="operation-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onSubmit({ amount: Number(form.get("amount")), payment_date: String(form.get("payment_date")), method: String(form.get("method")), note: String(form.get("note") ?? "") }); }}>
         <label>Сумма оплаты<input name="amount" required min="0.01" max={outstanding || undefined} step="0.01" type="number" defaultValue={outstanding ? outstanding.toFixed(2) : ""} /></label>
@@ -4152,12 +4170,13 @@ function ProcurementReceiptDialog({
   onClose: () => void;
   onSubmit: (itemId: number, quantity: number) => void;
 }) {
+  const dialogRef=useDialogFocus(()=>{if(!busy)onClose();});
   const first = items[0];
   const [itemId, setItemId] = useState(String(first?.id ?? ""));
   const selected = items.find((item) => String(item.id) === itemId) ?? first;
   const remaining = Math.max(0, Number(selected?.quantity ?? 0) - Number(selected?.posted_quantity ?? 0));
   return <div className="drawer-backdrop operation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+    <section className="plan-drawer operation-dialog" role="dialog" aria-modal="true" ref={dialogRef} aria-labelledby="receipt-title">
       <div className="drawer-header"><div><span className="eyebrow">реальная операция</span><h2 id="receipt-title">Провести приёмку</h2><p>Закупка #{String(order.id)}. Остаток позиции будет оприходован в FIFO.</p></div><button className="icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={18} /></button></div>
       <form className="operation-form" onSubmit={(event) => { event.preventDefault(); onSubmit(Number(itemId), Number(new FormData(event.currentTarget).get("quantity"))); }}>
         <label>Позиция<select className="filter-select" value={itemId} onChange={(event) => setItemId(event.target.value)}>{items.map((item) => <option key={String(item.id)} value={String(item.id)}>{String(item.product_name || item.material_name || item.supplier_article || `Позиция #${String(item.id)}`)} · остаток {Math.max(0, Number(item.quantity ?? 0) - Number(item.posted_quantity ?? 0))}</option>)}</select></label>

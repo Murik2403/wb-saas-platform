@@ -224,6 +224,14 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=products");
   });
 
+  it("contains keyboard focus in the real product drawer and restores its opener", async () => {
+    const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    const opener=await screen.findByRole("button",{name:/Товар для проверки/i});await user.click(opener);
+    const dialog=screen.getByRole("dialog"),close=within(dialog).getAllByRole("button",{name:"Закрыть"})[0];expect(close).toHaveFocus();
+    await user.tab({shift:true});expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");expect(screen.queryByRole("dialog")).not.toBeInTheDocument();expect(opener).toHaveFocus();
+  });
+
   it("opens a product card drawer on click", async () => {
     const { default: App } = await import("./App");
     const user = userEvent.setup();
@@ -492,6 +500,7 @@ describe("operational detail drawer", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Ответить" }));
+    expect(screen.getByRole("dialog",{name:"Сообщение покупателю"})).toBeInTheDocument();
     const editor = document.querySelector("dialog textarea") as HTMLTextAreaElement;
     expect(editor).toBeTruthy();
     await user.clear(editor);
