@@ -163,3 +163,17 @@ Cherry-pick 81de476 в release как 7076485: канонические слои
 - Рабочий браузер owner: каталог 37 товаров; выбран WB308044778; сохранён новый private сценарий `e5f06d55-77a8-40dc-91a6-7e3589bd0f78` «Проверка привязки SKU — вымышленные суммы»; повторное открытие показывает снимок привязки и те же 426 ₽, 35,5%, coverage1/9. Ручные суммы не объявлены фактическими; себестоимость рабочего товара не изменена.
 - Попытка save во время смены tenant image остановилась fail-closed, выбранный SKU сохранился в черновике. После verified pin update повтор успешен. Не привязанный сценарий вместо запрошенного не сохранялся.
 - Серверные exact UUID replay / identity / CSRF / membership / immutability gates покрыты тестами; повторный GET в браузере не выдается за повторный POST.
+
+## Дополнение: atomic shop bridge core — 30.09.2026, 05:35–05:38 МСК
+
+Production tenant revision: 21dfec49bf33b2e818ed53e2ca84665f9e273f71. Immutable image mh-tenant:21dfec4 = sha256:7dfcfe8a2781f1f3f844188abadfd7984f76a550fe64f17185f89097e8e03bbb. Core-only tranche: подготовленный снимок магазина, канонические операции склада и immutable UUID receipt фиксируются одной транзакцией; чтение повторного результата согласованное. Публичный dispatcher и переключатель не объявляются выпущенными.
+
+Fresh root tests: 476 tenant-app tests + 8 subtests; 382 API tests; promotion source gate 8; clean release gate 18/18. Independent scoped review: 52 allocation/bridge tests, затем 15 final bridge/workspace tests. Frontend 4d783ff интегрирован в source как 35bc362, 146 UI tests + build; он не входил в этот production image.
+
+На изолированно восстановленной зашифрованной копии: 5 параллельных API ответов 200; exact memory limit 1610612736 bytes, observed peak 668774400 bytes, OOM=false, restart_count=0. Выписка/план/idempotent replay, atomic transfer/cancel; Ozon sale-return-resale FIFO, source reconciliation, lot UUID replay, CSV dedup, unknown=null, WB stock unchanged. После бизнес-проб восстановлен private pre-business DB, candidate и rollback API приняты. Действующий tenant во время rehearsal не изменялся.
+
+Свежая independently restore-verified backup: marketshelper_manual_20260930_023548_047576.zip. Rollback container: wb-tenant-mvvorokov-rollback-20260930-023547. Native deploy 4 probes; root live17 API + HTML/assets and revision/health accepted. Default wb-dashboard-tenant:redesign tag points to exact candidate image. После новых shared-stock записей rollback требует согласованного восстановления данных с сохранением последующих документов, а не только смены образа.
+
+Provisioner image/revision unchanged (0eb4746d06dcc9356ca95b26a7096efb014495c6 / sha256:99fd4efe198af2b757ff3c2aa407e898bb349ea842ea3a1450cfb77aac4bab72); approved tenant target обновлён на exact21dfec4. Control-plane backup gateway-provisioner-0eb4746d06dc-1790735832890082780.sqlite3.enc, rollback wb-saas-provisioner-1-rollback-1790735833833027103. Demo settings не менялись.
+
+Остаток: совместный public shop dispatcher/ACL/UI и фактическая приёмка двух магазинов; подтверждённая нормализация непустого актуального Ozon источника; готовый 150s ролик (пока 2 из 6 сцен); owner approval конкретного реального кейса и реальные интервью. Весь аудит не закрыт.
