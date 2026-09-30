@@ -6,6 +6,18 @@
 .topbar-actions { gap: 8px; }
 .workspace > .connection-banner { display: none; }
 .cabinet-disclosure, .finance-cost-review { border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.cashflow-compact > h2 { margin: 0 0 8px; font-size: 1.2rem; }
+.cashflow-compact > h3 { margin: 12px 0 8px; }
+.cashflow-compact > p { margin: 8px 0; font-size: .875rem; line-height: 1.45; }
+.cashflow-compact > .cashflow-controls { margin: 10px 0; }
+.cashflow-compact > .cabinet-disclosure { padding: 10px 12px; margin: 8px 0; }
+.cashflow-compact { margin-bottom: 0; }
+.finance-workspace > .cabinet-disclosure:not([open]), .finance-workspace > .finance-cost-review:not([open]) { padding: 10px 12px; }
+@media (min-width: 1101px) {
+  .cashflow-compact > .cash-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .finance-hero[aria-label="Финансовый контур"] h2 { font-size: 1.5rem; }
+  .finance-hero[aria-label="Финансовый контур"] p { font-size: .875rem; line-height: 1.45; }
+}
 .cabinet-disclosure > summary, .finance-cost-review > summary { cursor: pointer; font-weight: 700; padding-block: 4px; }
 .cabinet-disclosure > summary:focus-visible, .finance-cost-review > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
 .finance-cost-review > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

@@ -53,7 +53,7 @@ export function CashflowPanel({role, compact = false}: {role: string; compact?: 
     catch(reason) {setError(reason instanceof Error?reason.message:"Ошибка сохранения");}
     finally {setBusy(false);}
   }
-  return <section className="work-section cashflow-panel" aria-labelledby="cashflow-title">
+  return <section className={`work-section cashflow-panel${compact ? " cashflow-compact" : ""}`} aria-labelledby="cashflow-title">
     <h2 id="cashflow-title">Движение денег и платёжный календарь</h2>
     <p>Учитываются только внесённые вами денежные операции. Выручка и прибыль WB не означают поступление на счёт. Закупки и расходы из других разделов автоматически сюда не добавляются: внесите оплату один раз и укажите ссылку или номер документа.</p>
     <div className="cashflow-controls"><label>Начало периода<input aria-label="Начало периода ДДС" type="date" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Конец периода<input aria-label="Конец периода ДДС" type="date" value={end} onChange={event=>setEnd(event.target.value)}/></label><button type="button" className="secondary-button" disabled={loading} onClick={()=>setRefresh(value=>value+1)}>Обновить календарь</button></div>
