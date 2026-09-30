@@ -975,5 +975,15 @@
     "method": "POST",
     "path": "/api/v1/shared-warehouse/{shop_id}/financial-bindings/confirm",
     "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/shop-schedules/{shop_id}",
+    "scope": "tenant_shared"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/shop-schedules/{shop_id}/{kind}",
+    "scope": "tenant_shared"
   }
 ]

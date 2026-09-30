@@ -6,6 +6,7 @@ import {selectShop,clearShopContext} from './selected-shop';
 const mocks=vi.hoisted(()=>({read:vi.fn(),write:vi.fn()}));
 vi.mock('./data-source',()=>({getProductCostSettings:mocks.read,updateProductCostSettings:mocks.write}));
 vi.mock('./SettingsChangeHistory',()=>({SettingsChangeHistory:()=> <p>История себестоимости выбранного магазина</p>}));
+vi.mock('./SecondaryShopSchedules',()=>({SecondaryShopSchedules:()=> <p>Расписания выбранного магазина</p>}));
 function selected(write=true){selectShop({role:write?'owner':'viewer',selected_shop_id:0,shops:[{id:0,name:'Primary',active:true,verified_identity:null,snapshot_revision:null,can_write:true,allowed_actions:[]},{id:2,name:'BETA',active:true,verified_identity:'a'.repeat(64),snapshot_revision:1,can_write:write,allowed_actions:['PATCH /api/v1/settings/product-costs']}],route_scopes:[]},2);}
 beforeEach(()=>{mocks.read.mockReset().mockResolvedValue({items:[{nm_id:123,supplier_article:'BETA',product_name:'Beta item',cost_per_wb_unit:30,note:''}]});mocks.write.mockReset().mockResolvedValue({saved:1});selected();});
 afterEach(()=>{cleanup();clearShopContext();});

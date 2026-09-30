@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {currentShop,navigateToShop} from './selected-shop';
 import {getProductCostSettings,updateProductCostSettings,type ProductCostSetting} from './data-source';
 import {SettingsChangeHistory} from './SettingsChangeHistory';
+import {SecondaryShopSchedules} from './SecondaryShopSchedules';
 
 export function SelectedShopSettings() {
  const shop=currentShop();
@@ -30,5 +31,5 @@ export function SelectedShopSettings() {
    <label className="operation-field"><span>Основание изменения WB {item.nm_id}</span><input aria-label={`Основание изменения WB ${item.nm_id}`} maxLength={500} disabled={!canWrite||busy!==null} value={reasons[item.nm_id]??''} onChange={event=>setReasons(value=>({...value,[item.nm_id]:event.target.value}))}/></label>
    <button className="secondary-button" type="submit" disabled={!canWrite||busy!==null}>{busy===item.nm_id?'Сохраняем…':'Сохранить себестоимость'}</button></form>)}
   {!loading&&!items.length&&!error&&<p>В выбранном магазине ещё нет каталога товаров. Загрузите его в разделе магазинов.</p>}
- </section><SettingsChangeHistory/></div>;
+ </section><SettingsChangeHistory/><SecondaryShopSchedules/></div>;
 }
