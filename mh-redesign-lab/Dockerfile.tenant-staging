@@ -28,6 +28,7 @@ RUN apt-get update \
 
 COPY tenant-app/requirements.txt tenant-app/requirements.lock ./
 RUN python -m pip install --no-cache-dir 'pip>=26.2,<27' && pip install --no-cache-dir -r requirements.txt
+RUN python -c "import httpx; from httpx import ASGITransport; assert httpx.__version__ == '0.28.1'"
 
 COPY tenant-app/ ./
 # The redesign owns its additive API adapter; the Streamlit source tree remains
