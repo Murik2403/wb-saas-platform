@@ -91,7 +91,7 @@ from growth_outbox_worker import delivery_worker_enabled, run_growth_outbox_work
 from today_service import compute_today, json_safe
 from ui_helpers import build_data_quality_overview
 from reports.store import ReportStore
-from reports.metrics import METRIC_LABELS
+from reports.catalog import METRIC_LABELS
 from reports import delivery
 from db.procurement import create_procurement_order, post_procurement_receipt
 from db.manual_expenses import (
@@ -122,7 +122,6 @@ from db.financial_fifo_reconciliation import (
 )
 from db.production import save_execution_tasks
 from db.wb_incidents import apply_wb_incident_loss, create_wb_incident_case, read_wb_incident_cases, record_wb_incident_compensation, wb_incident_financial_summary
-from reports.pdf_builder import build_report_pdf
 from agents.store import AgentStore
 from agents import ad_agent, price_agent
 from agents.marketplaces.wb_client import WBAgentClient
@@ -143,6 +142,12 @@ from sentry_integration import initialize as initialize_sentry
 
 
 initialize_sentry(service_name="tenant-api")
+
+
+def build_report_pdf(name, metric_codes, start, end):
+    """Load chart rendering only when a PDF is actually requested."""
+    from reports.pdf_builder import build_report_pdf as render_pdf
+    return render_pdf(name, metric_codes, start, end)
 
 
 class ActionPlanCreate(BaseModel):

@@ -15,11 +15,16 @@ from zoneinfo import ZoneInfo
 
 from config import DB_PATH
 from reports import delivery
-from reports.pdf_builder import build_report_pdf
 from reports.store import ReportStore
 
 CHECK_INTERVAL_SECONDS = 5
 REPORTS_DIR = DB_PATH.parent / "reports"
+
+
+def build_report_pdf(name, metric_codes, start, end):
+    """Load chart rendering only when a PDF is actually requested."""
+    from reports.pdf_builder import build_report_pdf as render_pdf
+    return render_pdf(name, metric_codes, start, end)
 
 
 def _now_msk() -> datetime:

@@ -8,8 +8,6 @@ from html import escape
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
 
 from db import (
     finished_goods_fifo_guard_status, get_production_capacity, read_financial,
@@ -134,6 +132,7 @@ def _delta_badge_html(value: float | None) -> str:
 
 
 def kpi_card(label: str, value: str, note: str = "", hero: bool = False, delta: float | None = None) -> None:
+    import streamlit as st
     css_class = "kpi-card kpi-card-hero" if hero else "kpi-card"
     st.markdown(
         f'<div class="{css_class}"><div class="kpi-label">{label}</div>'
@@ -153,6 +152,8 @@ def kpi_card_with_sparkline(
     sparkline+card from Trackify, and the vs-previous-period trend badge
     from Oripio's Nexo Co sales dashboard.
     """
+    import streamlit as st
+    import plotly.graph_objects as go
     kpi_card(label, value, note, delta=delta)
     values = pd.to_numeric(series, errors="coerce").fillna(0.0) if series is not None else pd.Series(dtype=float)
     if values.empty or values.abs().sum() == 0:
@@ -184,6 +185,7 @@ def render_problem_products_panel(
     instead of a raw dataframe -- the underlying risk_reason/status classification
     already happens in calculations.py, this just makes it scannable at a glance.
     """
+    import streamlit as st
     problems = pd.DataFrame()
     if financial_products is not None and not financial_products.empty:
         problems = financial_products[financial_products["Статус"].isin(_PROBLEM_STATUS_SEVERITY)].copy()
@@ -218,6 +220,7 @@ def render_funnel_bars(stages: list[tuple[str, float, str]]) -> None:
     stage first -- e.g. Заказано -> Выкуплено -> Возврат. Adapted from the
     pipeline-stage bars in Oripio's Nexo Co sales dashboard reference.
     """
+    import streamlit as st
     max_value = max((v for _, v, _ in stages), default=0) or 1
     rows = []
     for label, value, color in stages:
@@ -239,6 +242,7 @@ def render_setup_checklist(token_exists: bool, sync_info: dict | None) -> None:
     just one line of text. Borrowed from setup-checklist patterns common in
     SaaS onboarding dashboards (e.g. Wix's post-signup "welcome" checklist).
     """
+    import streamlit as st
     steps = [
         ("Подключить токен Wildberries", bool(token_exists), "Настройки → API токен"),
         ("Дождаться первой синхронизации", sync_info is not None, "Обычно занимает несколько минут после подключения токена"),
@@ -260,6 +264,7 @@ def render_setup_checklist(token_exists: bool, sync_info: dict | None) -> None:
 def render_empty_state(title: str, note: str, icon: str = "○") -> None:
     """A centered, slightly more considered "nothing here yet" panel than a
     plain st.info() -- for pages like Реклама/Закупки with no data yet."""
+    import streamlit as st
     st.markdown(
         f'<div class="empty-state">'
         f'<div class="empty-state-icon">{icon}</div>'
@@ -275,6 +280,7 @@ def render_section_header(title: str, tooltip: str, level: int = 3) -> None:
     replacing a plain st.markdown("### ...") call. Pure CSS/HTML hover, no
     click and no JS -- unlike onboarding.render_page_hint's page-level
     popover, this is meant for every sub-heading inside a page."""
+    import streamlit as st
     tag = f"h{level}"
     st.markdown(
         f'<{tag} class="section-header-hint" title="{escape(tooltip)}">{escape(title)}</{tag}>',

@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from reports import delivery
-from reports.metrics import METRIC_LABELS
+from reports.catalog import METRIC_LABELS
 from reports.store import ReportStore
 from today_service import json_safe
 

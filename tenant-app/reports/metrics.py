@@ -32,29 +32,7 @@ COLOR_MUTED = "#64748b"
 COLOR_GRID = "#e2e8f0"
 COLOR_BG = "#ffffff"
 
-METRIC_LABELS = {
-    "sales_orders": "Заказы и продажи по дням",
-    "ads": "Рекламные расходы и ДРР по дням",
-    "stocks": "Остатки: топ-20 товаров",
-    "pnl": "Финансовый результат (P&L)",
-    "abc_analysis": "ABC-анализ товаров по прибыли",
-    "buyout_rate": "Процент выкупа по товарам",
-    "oos_risk": "Риск Out-of-Stock (дни запаса)",
-    "wb_deductions": "Структура удержаний WB",
-    "ad_performance": "Эффективность рекламы по кампаниям",
-    "warehouse_stocks": "География остатков по складам",
-    "unit_economics": "Юнит-экономика по товарам",
-    "returns_cancellations": "Отмены и возвраты по дням",
-    "organic_vs_ads": "Органика vs Реклама",
-    "ad_funnel": "Воронка конверсии рекламных кампаний",
-    "cost_structure": "Структура себестоимости товаров",
-    "wb_commission_rate": "Эффективная ставка комиссии WB по категориям",
-    "stock_in_transit": "Остаток на складе vs в пути",
-    "weekday_pattern": "Заказы и отмены по дням недели",
-    "wb_incident_losses": "Потери и компенсации на складах WB",
-    "frozen_capital": "Замороженный капитал в неликвидных остатках",
-    "roi_by_sku": "Рентабельность инвестиций по товарам (ROI)",
-}
+from .catalog import METRIC_LABELS
 
 
 @dataclass
