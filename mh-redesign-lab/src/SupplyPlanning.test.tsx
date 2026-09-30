@@ -26,12 +26,16 @@ const preview = {
 const json = (body: unknown) => body;
 
 beforeEach(() => {
+  // Keep the initial period and supplier ETA tied to the fixture's date.
+  // Fake only Date: user-event and async assertions still use real timers.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-25T12:00:00+03:00"));
   mocks.preview.mockReset().mockResolvedValue(json(preview));
   mocks.confirm.mockReset().mockResolvedValue({ confirmation_key: "key", order_ids: [1], order_numbers: ["ЗАК-1"], replayed: false });
   vi.stubGlobal("confirm", vi.fn(() => true));
   vi.stubGlobal("crypto", { randomUUID: vi.fn(() => "00000000-0000-4000-8000-000000000099") });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 async function calculate(readOnly = false) {
   render(<SupplyPlanning readOnly={readOnly} onRefresh={vi.fn().mockResolvedValue(undefined)} />);
@@ -108,6 +112,7 @@ describe("SupplyPlanning", () => {
   it("marks a period-edited preview stale and prevents confirmation", async () => {
     await calculate();
     const endDate = screen.getByLabelText("По дату");
+    expect(endDate).toHaveValue("2026-10-09");
     fireEvent.change(endDate, { target: { value: "2026-10-15" } });
     await userEvent.selectOptions(screen.getByLabelText("Поставщик Ткань A"), "7");
     expect(await screen.findByRole("status")).toHaveTextContent("Предпросмотр устарел");
