@@ -783,6 +783,9 @@ app.include_router(integration_router)
 app.include_router(supply_planning_router)
 from shop_workspaces_api import router as shop_workspaces_router
 app.include_router(shop_workspaces_router)
+from shop_schedules_api import router as shop_schedules_router
+app.include_router(shop_schedules_router)
+
 from shop_context_api import router as shop_context_router
 app.include_router(shop_context_router)
 from shared_warehouse_api import router as shared_warehouse_router

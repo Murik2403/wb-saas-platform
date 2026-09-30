@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from contextlib import nullcontext
 from .core import connect
 from . import shared_warehouse as warehouse, shop_workspaces as shops
 
@@ -99,14 +100,15 @@ def _operation_scope(conn,shop_id,operation):
     return name,kwargs
 
 def commit(shop_id,identity,base_revision,request_key,request,account,role,*,snapshot,response,
-           operations=(),synced=False,source_errors=None):
+           operations=(),synced=False,source_errors=None,_conn=None):
     key=_key(request_key);expected=fingerprint(shop_id,identity,base_revision,request)
     if type(shop_id)!=int or shop_id<=0:raise warehouse.WarehouseScopeError('Мост предназначен для дополнительного магазина')
     if not isinstance(operations,(list,tuple)) or len(operations)>100:raise warehouse.WarehouseScopeError('Слишком много физических операций')
     # Do not initialize or commit inside the shared business transaction.
-    initialize()
-    with connect() as conn:
-        conn.execute('BEGIN IMMEDIATE')
+    if _conn is None:initialize()
+    elif not _conn.in_transaction:raise warehouse.WarehouseConflict('Мост требует активной транзакции')
+    with (connect() if _conn is None else nullcontext(_conn)) as conn:
+        if _conn is None:conn.execute('BEGIN IMMEDIATE')
         record=_scope(conn,shop_id,identity,account,role)
         prior=conn.execute('SELECT * FROM shop_request_receipts WHERE request_key=?',(key,)).fetchone()
         if prior:

@@ -34,7 +34,7 @@ def sync_lock(path: Path | None = None):
             except BlockingIOError as exc:
                 raise SyncBusyError("Синхронизация уже выполняется") from exc
         try:
-            yield
+            yield handle
         finally:
             if os.name == "nt":
                 handle.seek(0)

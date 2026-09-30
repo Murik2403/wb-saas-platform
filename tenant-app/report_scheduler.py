@@ -161,6 +161,8 @@ def process_queued(store: ReportStore, *, limit: int = 1) -> int:
 
 def check_once(*, deliver: bool = True) -> int:
     store = ReportStore(DB_PATH)
+    from shop_schedule_runner import run_one
+    run_one()
     queued = process_queued(store)
     now = _now_msk()
     generated = queued
