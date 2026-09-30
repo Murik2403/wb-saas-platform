@@ -294,6 +294,8 @@ def main() -> None:
                     )
 
     _seed_fifo_learning_scenario()
+    with connect() as conn:
+        conn.execute("INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES ('demo_fixture_date',?,?)", (TODAY.isoformat(), datetime.now().isoformat(timespec="seconds")))
     print(f"Demo data seeded: {len(PRODUCTS)} products, {DAYS_OF_HISTORY + 1} days of history and one FIFO learning scenario.")
 
 

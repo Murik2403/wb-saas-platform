@@ -6,6 +6,7 @@ import pytest
 
 import db.core as core
 import seed_demo_data
+from demo_validation import validate_demo
 
 
 def _snapshot() -> dict[str, list[tuple]]:
@@ -42,6 +43,11 @@ def test_demo_seed_builds_rolling_fifo_example_idempotently(tmp_path, monkeypatc
 
     seed_demo_data.main()
     first = _snapshot()
+    validated = validate_demo(str(core.DB_PATH))
+    assert validated['ok'] is True
+    assert len(validated['cases']) == 5
+    assert all(validated['cases'].values())
+    assert validate_demo(str(core.DB_PATH), today='2000-01-01')['fresh'] is False
     seed_demo_data.main()
     second = _snapshot()
 
@@ -69,3 +75,22 @@ def test_demo_seed_builds_rolling_fifo_example_idempotently(tmp_path, monkeypatc
         assert rows[1]["matched_sale_event_id"] is not None
         expense = conn.execute("SELECT amount_rub FROM manual_expenses WHERE note LIKE 'DEMO-FIFO-CASE:%'").fetchall()
         assert len(expense) == 1 and expense[0][0] == 120
+
+
+@pytest.mark.parametrize('sql,case', [
+    ("UPDATE procurement_orders SET status='Заказано' WHERE source_key='demo-fifo-learning-procurement-v1'", 'procurement'),
+    ("UPDATE manufacturing_releases SET packaging_cost_rub=0 WHERE source_key='demo-fifo-learning-release-v1|chrt:100001'", 'production'),
+    ("UPDATE inventory_movements SET status='reversed' WHERE source_task_key='demo-fifo-learning-dispatch-v1'", 'dispatch_receipt'),
+    ("UPDATE sales_fifo_events SET matched_sale_event_id=NULL WHERE srid='DEMO-FIFO-LEARNING-001' AND event_type='return'", 'sale_return_fifo'),
+    ("DELETE FROM manual_expenses WHERE note LIKE 'DEMO-FIFO-CASE:%'", 'manual_expense'),
+])
+def test_demo_controls_reject_broken_business_case(tmp_path, monkeypatch, sql, case):
+    monkeypatch.setattr(core, 'DB_PATH', tmp_path/'demo.sqlite3')
+    monkeypatch.setenv('WB_SAAS_IS_DEMO', '1')
+    monkeypatch.setenv('WB_SAAS_TENANT_SLUG', 'demo')
+    seed_demo_data.main()
+    with core.connect() as c:
+        c.execute(sql)
+    result = validate_demo(str(core.DB_PATH))
+    assert result['ok'] is False
+    assert result['cases'][case] is False

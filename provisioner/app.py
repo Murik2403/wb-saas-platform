@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +24,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from backup_crypto import decrypt_file, encrypt_file
+from demo_refresh import DailyDemoRefresh
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def _lifespan(_app):
+    start_daily_demo()
+    try:
+        yield
+    finally:
+        stop_daily_demo()
+
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TENANT_IMAGE = os.environ.get("WB_SAAS_TENANT_IMAGE", "wb-dashboard-tenant:redesign")
@@ -42,6 +53,48 @@ BACKUP_HELPER_IMAGE = "alpine:3.20"
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
 CONTROL_PLANE_BACKUP_GROUP = "control-plane"
 _DEMO_RESEED_LOCK = threading.Lock()
+_DEMO_REFRESH_STOP = threading.Event()
+_DEMO_REFRESH_THREAD = None
+_DEMO_DAILY = None
+
+
+def _refresh_demo_and_healthcheck():
+    reseed_demo()
+    client = _client()
+    for _ in range(30):
+        container = client.containers.get('wb-tenant-demo')
+        container.reload()
+        if container.attrs.get('State', {}).get('Health', {}).get('Status') == 'healthy':
+            return
+        time.sleep(2)
+    raise RuntimeError('Demo health check failed')
+
+
+def start_daily_demo():
+    global _DEMO_DAILY, _DEMO_REFRESH_THREAD
+    _DEMO_DAILY = DailyDemoRefresh(BACKUP_MOUNT / 'demo', _refresh_demo_and_healthcheck,
+        enabled=os.environ.get('WB_SAAS_DEMO_DAILY_REFRESH', '0') == '1',
+        hour=int(os.environ.get('WB_SAAS_DEMO_REFRESH_HOUR_MOSCOW', '3')))
+    if _DEMO_DAILY.enabled:
+        _DEMO_REFRESH_STOP.clear()
+        _DEMO_REFRESH_THREAD = threading.Thread(target=_DEMO_DAILY.run, args=(_DEMO_REFRESH_STOP,), daemon=True, name='demo-daily-refresh')
+        _DEMO_REFRESH_THREAD.start()
+
+
+def stop_daily_demo():
+    _DEMO_REFRESH_STOP.set()
+    if _DEMO_REFRESH_THREAD is not None:
+        _DEMO_REFRESH_THREAD.join(timeout=15)
+
+
+@app.get('/v1/demo/refresh-status')
+def daily_demo_status():
+    if _DEMO_DAILY is None:
+        return {'enabled': False, 'last_result': 'not_started'}
+    try:
+        return _DEMO_DAILY.status()
+    except Exception:
+        raise HTTPException(status_code=503, detail='Demo refresh state unavailable') from None
 
 
 class TenantRequest(BaseModel):
@@ -496,18 +549,7 @@ def _remove_partial_demo(client: Any, slug: str) -> None:
 
 def _validate_demo_seed(volume_name: str, client: Any) -> dict[str, Any]:
     """Check the seed marker and essential joined business/FIFO invariants read-only."""
-    code = """import json,sqlite3
-c=sqlite3.connect('/app/data/wb_dashboard.sqlite3'); c.row_factory=sqlite3.Row
-meta=c.execute(\"SELECT value FROM app_meta WHERE key='demo_learning_scenario_v1'\").fetchone()
-order=c.execute(\"SELECT id,status FROM procurement_orders WHERE source_key='demo-fifo-learning-procurement-v1'\").fetchone()
-item=c.execute(\"SELECT posted_quantity FROM procurement_items WHERE order_id=?\",(order['id'],)).fetchone() if order else None
-release=c.execute(\"SELECT total_cost_rub,packaging_cost_rub,status FROM manufacturing_releases WHERE source_key='demo-fifo-learning-release-v1'\").fetchone()
-events=c.execute(\"SELECT event_type,status,fifo_cost_rub,matched_sale_event_id FROM sales_fifo_events WHERE srid='DEMO-FIFO-LEARNING-001' ORDER BY event_date,event_type\").fetchall()
-expense=c.execute(\"SELECT COUNT(*) FROM manual_expenses WHERE note LIKE 'DEMO-FIFO-CASE:%'\").fetchone()[0]
-errors=c.execute(\"SELECT COUNT(*) FROM sales_fifo_events WHERE srid='DEMO-FIFO-LEARNING-001' AND status='error'\").fetchone()[0]
-ok=bool(meta and meta['value']=='1' and order and order['status']=='Получено' and item and item['posted_quantity']>=100 and release and release['status']=='applied' and release['total_cost_rub']>0 and release['packaging_cost_rub']>0 and len(events)==2 and all(e['status']=='applied' and e['fifo_cost_rub']>0 for e in events) and events[1]['matched_sale_event_id'] is not None and expense==1 and errors==0)
-print(json.dumps({'ok':ok,'order':bool(order),'release':bool(release),'events':len(events),'expense':expense,'errors':errors}))
-raise SystemExit(0 if ok else 1)"""
+    code = "import json; from demo_validation import validate_demo; r=validate_demo('/app/data/wb_dashboard.sqlite3'); print(json.dumps(r)); raise SystemExit(0 if r['ok'] else 1)"
     output = client.containers.run(
         TENANT_IMAGE,
         command=["python3", "-c", code],

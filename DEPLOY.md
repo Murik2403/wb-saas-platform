@@ -666,3 +666,24 @@ Postgres через testcontainers (нужен Docker на машине, где 
 - Хост-бэкап через `scripts/backup_tenant_volumes.py` (нужен образ `alpine`
   и настоящий Docker-демон) тоже не прогонялся вживую в этой сессии —
   проверьте на первом клиенте перед тем как полагаться на него.
+# Daily fictional demo refresh
+
+The fixed `demo` is refreshed by the provisioner lifecycle worker, not a host cron.
+Deploy both updated tenant and provisioner images before enabling
+`WB_SAAS_DEMO_DAILY_REFRESH=1`; optional `WB_SAAS_DEMO_REFRESH_HOUR_MOSCOW=3`
+sets the daily hour (0..23). Encrypted backup configuration and a running demo
+are required. The source defaults to disabled; no customer tenant is targeted.
+
+On startup after the scheduled hour, a missing daily success triggers refresh.
+The worker checks every minute, retries failure no more than hourly, persists
+success under `/backups/demo/daily-refresh.json`, and excludes other workers with
+an OS lock. Existing reseed keeps verified encrypted rollback and validates five
+real fictional scenarios before replacement. Daily success additionally requires
+healthy demo after replacement. Internal `GET /v1/demo/refresh-status` exposes
+schedule/attempt/success timestamps only; it is not a public gateway route.
+
+Acceptance: from the internal provisioning network read refresh-status (enabled,
+current Moscow last_success_date, last_result success), and execute the tenant
+`demo_validation.validate_demo('/app/data/wb_dashboard.sqlite3')` read-only. All
+five cases plus fresh must be true. Check demo HTTP/API health and mutation403.
+The latest successful seed alone does not prove a schedule was installed.
