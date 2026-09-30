@@ -28,11 +28,16 @@ def main():
     install()
     action=payload['action']
     sync_errors=payload.get('source_errors',[])
+    synced=False
+    from db.core import last_sync
+    previous_sync_id=int((last_sync() or {}).get('id') or 0)
     if action=='sync':
         from sync import sync_all
         config.save_settings({'initial_history_days':payload['days'],'advert_history_days':payload['days']})
         outcome=sync_all()
         sync_errors=[k for k,v in outcome.items() if v and (k.endswith('_error') or k.endswith('_skipped') or k=='fifo_errors')]
+        from db.core import last_sync
+        synced=bool((last_sync() or {}).get('status')=='success' and int((last_sync() or {}).get('id') or 0)>previous_sync_id and not sync_errors)
         sync_errors.append('shared_fifo_pending')
         settings=config.load_settings();settings['shop_source_errors']=sync_errors;config.save_settings(settings)
     elif action=='cost':
@@ -87,6 +92,8 @@ def main():
             from db.core import last_sync
             status=last_sync() or {}
             if status.get('status') in {'partial','error'}:sync_errors.append('sync_'+status['status'])
+            synced=bool(envelope['path']=='/api/v1/sync' and captured_outcomes and
+                        status.get('status')=='success' and int(status.get('id') or 0)>previous_sync_id and not sync_errors)
             sync_errors=sorted(set(sync_errors+['shared_fifo_pending']))
             config.save_settings({**config.load_settings(),'shop_source_errors':sync_errors})
         if len(response.content)>4*1024*1024:raise ValueError('Child response too large')
@@ -104,7 +111,7 @@ def main():
         result={'status':response.status_code,'body':base64.b64encode(content).decode(),
                 'content_type':response.headers.get('content-type','application/json'),
                 'content_disposition':response.headers.get('content-disposition'),
-                'sync_errors':sync_errors}
+                'sync_errors':sync_errors,'synced':synced}
         persist_settings()
         Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps(result,allow_nan=False),encoding='utf-8')
         return
@@ -125,7 +132,7 @@ def main():
             match=costs[costs['nm_id']==nm_id] if not costs.empty else costs
             item['cost']=float(match.iloc[0].get('cost_per_wb_unit') or 0) if not match.empty else None
             products.append(item)
-    report=json_safe({'financial':dashboard.financial,'products':products,'stocks':dashboard.stocks.head(500).to_dict('records'), 'product_count':len(cards), 'stock_row_count':len(dashboard.stocks), 'sync_errors':sync_errors,'sources_complete':not sync_errors})
+    report=json_safe({'financial':dashboard.financial,'products':products,'stocks':dashboard.stocks.head(500).to_dict('records'), 'product_count':len(cards), 'stock_row_count':len(dashboard.stocks), 'sync_errors':sync_errors,'sources_complete':not sync_errors,'synced':synced})
     persist_settings()
     # Dedicated output file: logs and credential-bearing exceptions cannot enter API output.
     Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps(report,ensure_ascii=False,allow_nan=False),encoding='utf-8')

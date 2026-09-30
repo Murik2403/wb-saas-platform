@@ -48,7 +48,7 @@ async def dispatch(request,call_next):
             raise warehouse.WarehouseConflict('Контекст магазина изменился при подготовке')
         if write and result['status']<400:
             committed=await run_in_threadpool(bridge.commit,shop_id,record['account_identity'],revision,key,envelope,account,role,
-              snapshot=prepared['snapshot'],response=result,source_errors=prepared['source_errors'])
+              snapshot=prepared['snapshot'],response=result,source_errors=prepared['source_errors'],synced=prepared.get('synced') is True)
             result=committed['result']['response']
         record=await run_in_threadpool(shop_context.authorize,shop_id,account,role)
         if not write and record['revision']!=prepared['base_revision']:

@@ -184,3 +184,37 @@ def test_report_and_consolidation_recheck_target_acl_after_private_worker(client
         assert result.status_code==200
         assert [row['id'] for row in result.json()['shops']]==[0]
         assert '999' not in result.text
+
+
+def test_public_sync_freshness_commits_atomically_and_replay_does_not_refresh(client):
+    import uuid,shop_dispatch
+    shop=shops.create('Second','unused','verified-seller')
+    import db.core as core
+    blob=core.DB_PATH.read_bytes()
+    headers={'x-mh-shop-id':str(shop),'x-mh-shop-revision':'0','x-mh-request-key':str(uuid.uuid4())}
+    prepared={'identity':'verified-seller','base_revision':0,'snapshot':blob,
+      'response':{'status':200,'body':base64.b64encode(b'{"ok":true}').decode(),'content_type':'application/json'},
+      'synced':True,'source_errors':['shared_fifo_pending']}
+    with patch.object(shop_dispatch,'prepare',return_value=prepared) as worker:
+        result=client.post('/api/v1/sync',headers=headers)
+        assert result.status_code==200,result.text
+        first=shops.read(shop)
+        assert first['synced_at'] and first['revision']==1
+        assert client.post('/api/v1/sync',headers=headers).status_code==200
+        assert shops.read(shop)['synced_at']==first['synced_at'] and worker.call_count==1
+    listing=client.get('/api/v1/shop-workspaces').json()['items'][0]
+    assert listing['synced_at']==first['synced_at']
+    prepared.update(base_revision=1,synced=False,source_errors=['ads_error','shared_fifo_pending'])
+    headers.update({'x-mh-shop-revision':'1','x-mh-request-key':str(uuid.uuid4())})
+    with patch.object(shop_dispatch,'prepare',return_value=prepared):
+        assert client.post('/api/v1/sync',headers=headers).status_code==200
+    second=shops.read(shop)
+    assert second['revision']==2 and second['synced_at']==first['synced_at']
+    assert 'ads_error' in second['sync_quality_json']
+    with patch.object(routes,'execute',return_value={'financial':{'sales':5,'profit':3},'sources_complete':False}):
+        with patch('calculations.build_dashboard') as main:
+            main.return_value.financial={'sales':10,'profit':6}
+            report=client.get('/api/v1/shop-workspaces/consolidated/report?start=2026-09-01&end=2026-09-02')
+            assert report.status_code==200,report.text
+            assert report.json()['total']['sales']==15
+            assert report.json()['complete'] is False

@@ -98,8 +98,8 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
                 if target.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('База магазина не прошла проверку')
             if snapshot.stat().st_size>shops.MAX_SNAPSHOT:raise ValueError('База магазина превысила допустимый размер')
             prepared_snapshot=snapshot.read_bytes()
-            if not _prepare:shops.store_snapshot(shop_id,state['revision'],prepared_snapshot,synced=action=='sync',source_errors=report['sync_errors'])
+            if not _prepare:shops.store_snapshot(shop_id,state['revision'],prepared_snapshot,synced=report.get('synced') is True,source_errors=report['sync_errors'])
         if _prepare:
             return {'base_revision':state['revision'],'identity':state['identity'],'snapshot':prepared_snapshot,'response':report,
-                    'synced':action=='sync','source_errors':report.get('sync_errors',[])}
+                    'synced':report.get('synced') is True,'source_errors':report.get('sync_errors',[])}
         return report

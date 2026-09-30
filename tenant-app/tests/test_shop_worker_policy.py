@@ -50,3 +50,31 @@ shop_workspace_worker.main()
     assert value['status']==200
     assert value['sync_errors']==['ads_error','shared_fifo_pending']
     assert 'sensitive detail' not in output.read_text()
+
+
+def test_public_full_sync_freshness_requires_new_successful_log(tmp_path):
+    for status in ('success','partial','error','unchanged'):
+        directory=tmp_path/status;directory.mkdir();output=directory/'result.json'
+        code="""
+import io,json,os,sys
+from db.core import init_db,start_sync_log,finish_sync_log
+init_db();old=start_sync_log();finish_sync_log(old,'success','old')
+import sync
+def full_sync():
+ status=os.environ['TEST_SYNC_STATUS']
+ if status!='unchanged':
+  identifier=start_sync_log();finish_sync_log(identifier,status,'new')
+ return {'orders':1,**({'ads_error':'private detail'} if status in {'partial','error'} else {})}
+sync.sync_all=full_sync
+sys.stdin=io.StringIO(json.dumps({'token':'unused','action':'request','actor':'owner@test','role':'owner',
+ 'start':'2026-09-01','end':'2026-09-02','source_errors':[],
+ 'request':{'method':'POST','path':'/api/v1/sync','query':'','body':'','content_type':'application/json'}}))
+import shop_workspace_worker
+shop_workspace_worker.main()
+"""
+        env=dict(os.environ,WB_SAAS_DATA_DIR=str(directory),SHOP_RESULT_PATH=str(output),TEST_SYNC_STATUS=status)
+        result=subprocess.run([sys.executable,'-c',code],cwd=Path(__file__).resolve().parents[1],env=env,capture_output=True,text=True,timeout=30)
+        assert result.returncode==0,result.stderr
+        value=json.loads(output.read_text())
+        assert value['synced'] is (status=='success')
+        assert 'shared_fifo_pending' in value['sync_errors']
