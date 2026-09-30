@@ -49,7 +49,10 @@ export function MigrationImport({role,onRefresh}:{role:string;onRefresh:()=>Prom
     pending.current??={kind,csv_text:text,mapping:{...mapping},request_key:crypto.randomUUID(),preview_fingerprint:preview.preview_fingerprint};
     lock.current=true;setBusy(true);setMessage("");
     try{const result=await call<{imported_count:number;replayed:boolean}>("/confirm",pending.current);pending.current=null;setPreview(null);setConsent(false);setMessage(`${result.replayed?"Импорт уже выполнен":"Импорт выполнен"}: ${result.imported_count} строк.`);await onRefresh().catch(()=>undefined);await loadHistory();}
-    catch(error){setMessage(error instanceof Error?error.message:"Ошибка импорта");}
+    catch(error){
+      const uncertain=error instanceof TypeError||error instanceof SyntaxError||(error instanceof Error&&/failed to fetch|network error|networkerror|timeout|unexpected end of json/i.test(error.message));
+      setMessage(uncertain?"Результат импорта неизвестен: ответ сервера не получен. Повторите подтверждение без изменения таблицы — тот же запрос не создаст дубликат.":error instanceof Error?error.message:"Ошибка импорта");
+    }
     finally{setBusy(false);lock.current=false;}
   }
   async function loadHistory(){try{setHistory((await call<{items:typeof history}>("/history")).items);}catch(error){setMessage(error instanceof Error?error.message:"История недоступна");}}

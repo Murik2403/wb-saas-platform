@@ -39,6 +39,18 @@ describe('MigrationImport',()=>{
   expect(calls).toHaveLength(2);expect(calls[0][1]?.body).toEqual(calls[1][1]?.body);
   await waitFor(()=>expect(window.confirm).not.toHaveBeenCalled());
  });
+ it('explains an unknown network result and retains the request for safe retry',async()=>{
+  await ready();vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  fireEvent.click(screen.getByRole('checkbox',{name:/Проверил .* строк/}));
+  fireEvent.click(screen.getByRole('button',{name:'Подтвердить импорт'}));
+  await screen.findByText(/Результат импорта неизвестен/);
+  expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
+  vi.mocked(fetch).mockResolvedValueOnce(response({imported_count:1,replayed:true}) as Response).mockResolvedValueOnce(response({items:[]}) as Response);
+  fireEvent.click(screen.getByRole('button',{name:'Подтвердить импорт'}));
+  await screen.findByText('Импорт уже выполнен: 1 строк.');
+  const calls=vi.mocked(fetch).mock.calls.filter(call=>String(call[0]).endsWith('/confirm'));
+  expect(calls).toHaveLength(2);expect(calls[1][1]?.body).toEqual(calls[0][1]?.body);
+ });
  it('requires visible approval and sends only one request during rapid repeated clicks',async()=>{
   await ready();const button=screen.getByRole('button',{name:'Подтвердить импорт'});
   expect(button).toBeDisabled();fireEvent.click(button);expect(fetch).toHaveBeenCalledTimes(1);
