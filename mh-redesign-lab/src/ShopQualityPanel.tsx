@@ -80,7 +80,7 @@ export function ShopQualityPanel({ data, actions }: { data: CustomerQualityData 
   const notes = [...new Set((data?.errors ?? []).map((error) => {
     const reason = error.replace(SOURCE_RE, "").trim();
     return /\/api\/|\bHTTP\s+\d{3}|timeout|failed to fetch|network error/i.test(reason)
-      ? wbAvailabilityMessage([reason])
+      ? wbAvailabilityMessage([reason]).replace("Часть данных WB", "Данные качества магазина")
       : cabinetText(reason);
   }).filter(Boolean))];
   const empty = !feedbacks.length && !questions.length && !chats.length && !returnList.length;
