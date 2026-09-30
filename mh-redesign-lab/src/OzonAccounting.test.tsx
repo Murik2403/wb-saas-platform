@@ -6,7 +6,7 @@ import { clearShopContext, selectShop, type ShopSession } from "./selected-shop"
 const mocks = vi.hoisted(() => ({ session: vi.fn() }));
 vi.mock("./data-source", () => ({ API_BASE_URL: "/tenant-api", apiHeaders: () => ({"content-type":"application/json"}), getDashboardSession: mocks.session }));
 vi.mock("./selected-shop",async importOriginal=>({...await importOriginal<typeof import('./selected-shop')>(),scopedFetch:(...args:Parameters<typeof fetch>)=>globalThis.fetch(...args)}));
-const loaded = { configured:true, loaded:true, source_complete:true, accounting_complete:false, net_accrual_rub:"100", estimated_cogs_rub:"0", profit_rub:null, known_cost_units:0, sales_and_return_units:2, blockers:["Себестоимость не заполнена"],products:[{sku:"123",offer_id:"Товар",product_id:1,stocks:[],cost_mapping:null}], source_counts:{products:1,stocks:0,fbo:0,fbs:0,returns:0,accruals:1}, fees:[] };
+const loaded = { configured:true, loaded:true, source_complete:false, source_collection_complete:true, financial_normalization_verified:false, accounting_complete:false, net_accrual_rub:"100", estimated_cogs_rub:"0", profit_rub:null, known_cost_units:0, sales_and_return_units:2, blockers:["Себестоимость не заполнена"],products:[{sku:"123",offer_id:"Товар",product_id:1,stocks:[],cost_mapping:null}], source_counts:{products:1,stocks:0,fbo:0,fbs:0,returns:0,accruals:1}, fees:[] };
 const response = (body: unknown, ok=true) => ({ ok, status:ok?200:422, json:async()=>body }) as Response;
 beforeEach(() => {
   clearShopContext();
@@ -15,6 +15,22 @@ beforeEach(() => {
 });
 afterEach(() => {cleanup();clearShopContext();vi.unstubAllGlobals();});
 describe("Ozon accounting", () => {
+  it("distinguishes a complete collection from unverified monetary interpretation", async () => {
+    vi.mocked(fetch).mockResolvedValue(response({...loaded, source_complete:false, source_collection_complete:true, financial_normalization_verified:false}));
+    render(<OzonAccounting />);
+    await screen.findByText("Товар");
+    expect(screen.getByRole("status")).toHaveTextContent("Загрузка API: все страницы загружены");
+    expect(screen.getByRole("status")).toHaveTextContent("Денежная расшифровка API: не подтверждена");
+    expect(screen.getByRole("status")).not.toHaveTextContent("неполная загрузка");
+    expect(screen.getByText(/Прибыль: не рассчитано/)).toBeInTheDocument();
+  });
+  it.each([false, undefined])("does not infer collection completeness from legacy source_complete: %s", async collection => {
+    vi.mocked(fetch).mockResolvedValue(response({...loaded, source_complete:true, source_collection_complete:collection}));
+    render(<OzonAccounting />);
+    await screen.findByText("Товар");
+    expect(screen.getByRole("status")).toHaveTextContent("Загрузка API: полнота не подтверждена");
+    expect(screen.getByRole("status")).not.toHaveTextContent("все страницы загружены");
+  });
   it("does not fetch or render primary Ozon figures for a verified secondary WB shop",async()=>{
     const selected:ShopSession={role:'owner',selected_shop_id:0,shops:[{id:0,name:'Primary',verified_identity:null,snapshot_revision:null,active:true,can_write:true,allowed_actions:[]},{id:2,name:'WB second',verified_identity:'a'.repeat(64),snapshot_revision:1,active:true,can_write:true,allowed_actions:[]}],route_scopes:[]};
     selectShop(selected,2);render(<OzonAccounting />);

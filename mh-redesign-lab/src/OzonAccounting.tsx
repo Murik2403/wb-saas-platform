@@ -6,7 +6,7 @@ import { OzonHistoricalPnl } from "./OzonHistoricalPnl";
 
 type CostMapping = { mode: "manual" | "wb_estimate"; unit_cost_text: string | null; nm_id: number | null };
 type Product = { sku: string; offer_id: string; product_id: number; stocks: Array<{ present?: number; reserved?: number; type?: string }>; cost_mapping?: CostMapping | null };
-type Workspace = { configured?: boolean; loaded: boolean; source_complete: boolean; accounting_complete: boolean; synced_at?: string; net_accrual_rub: string | null; estimated_cogs_rub?: string; estimate_after_known_cogs_rub?: string | null; profit_rub: string | null; sales_and_return_units?: number; known_cost_units?: number; products: Product[]; blockers: string[]; source_counts?: Record<string, number>; fees?: Array<{ type_id: string; name: string; amount_rub: string; mapped: boolean }>; returns_scope?: string };
+type Workspace = { configured?: boolean; loaded: boolean; source_complete: boolean; source_collection_complete?: boolean; financial_normalization_verified?: boolean; accounting_complete: boolean; synced_at?: string; net_accrual_rub: string | null; estimated_cogs_rub?: string; estimate_after_known_cogs_rub?: string | null; profit_rub: string | null; sales_and_return_units?: number; known_cost_units?: number; products: Product[]; blockers: string[]; source_counts?: Record<string, number>; fees?: Array<{ type_id: string; name: string; amount_rub: string; mapped: boolean }>; returns_scope?: string };
 const iso = (day: Date) => `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,"0")}-${String(day.getDate()).padStart(2,"0")}`;
 const previous = (days: number) => { const day = new Date(); day.setDate(day.getDate()-days); return iso(day); };
 const money = (value: string | null | undefined) => value === null || value === undefined ? "не рассчитано" : `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
@@ -65,7 +65,7 @@ function PrimaryOzonAccounting() {
     {data?.configured === false ? <p>Подключите Ozon в разделе «Настройки».</p> : null}
     {!canWrite ? <p>Загрузка и изменение себестоимости доступны владельцу и менеджеру.</p> : null}
     {data?.loaded ? <>
-      <p role="status">Источники: {data.source_complete ? "все страницы загружены" : "неполная загрузка"}. Расчёт: {data.accounting_complete ? "по загруженным данным" : "предварительный"}. Последняя загрузка: {data.synced_at ? new Date(data.synced_at).toLocaleString("ru-RU") : "—"}.</p>
+      <p role="status">Загрузка API: {data.source_collection_complete === true ? "все страницы загружены" : "полнота не подтверждена"}. Денежная расшифровка API: {data.financial_normalization_verified === true ? "подтверждена" : "не подтверждена"}. Расчёт: {data.accounting_complete ? "по загруженным данным" : "предварительный"}. Последняя загрузка: {data.synced_at ? new Date(data.synced_at).toLocaleString("ru-RU") : "—"}.</p>
       <div className="ozon-metrics"><div>Итог начислений Ozon<strong>{money(data.net_accrual_rub)}</strong></div><div>Оценочная себестоимость продаж и возвратов<strong>{money(data.estimated_cogs_rub)}</strong></div><div>Покрытие себестоимости<strong>{data.known_cost_units ?? 0} / {data.sales_and_return_units ?? 0} ед.</strong></div></div>
       <p>Прибыль: {money(data.profit_rub)}. Точный FIFO Ozon требует подтверждённых списаний партий для этого канала. Оценочная ставка не заменяет исторический FIFO.</p>
       {data.blockers.length ? <ul aria-label="Неполные данные Ozon">{data.blockers.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}
