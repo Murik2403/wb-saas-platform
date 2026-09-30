@@ -24,7 +24,7 @@ import app as gateway_app  # noqa: E402
 import config  # noqa: E402
 from marketing_routes import AUTHOR_GUIDES, AUTHOR_NAME, AUTHOR_PATH, AUTHOR_ROLE, GUIDE_DATES  # noqa: E402
 
-PUBLIC_PAGES = ("/", "/pricing", "/contacts", "/compliance", "/offer", "/privacy") + gateway_app.PUBLIC_MARKETING_PATHS
+PUBLIC_PAGES = ("/", "/pricing", "/capabilities", "/contacts", "/compliance", "/offer", "/privacy") + gateway_app.PUBLIC_MARKETING_PATHS
 PRIVATE_PAGES = ("/login", "/forgot-password", "/register")
 
 

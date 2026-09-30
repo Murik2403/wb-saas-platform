@@ -213,6 +213,11 @@ def pricing_page(request: Request):
     )
 
 
+@app.get("/capabilities", response_class=HTMLResponse)
+def capabilities_page(request: Request):
+    return templates.TemplateResponse(request, "capabilities.html", {})
+
+
 @app.get("/offer", response_class=HTMLResponse)
 def offer_page(request: Request):
     return templates.TemplateResponse(request, "offer.html", {"policy_version": accounts.PDN_POLICY_VERSION})
@@ -256,6 +261,7 @@ _SITEMAP_PATHS: tuple[tuple[str, str, str], ...] = (
     # path, changefreq, priority
     ("/", "weekly", "1.0"),
     ("/pricing", "monthly", "0.9"),
+    ("/capabilities", "monthly", "0.8"),
     ("/contacts", "yearly", "0.4"),
     ("/compliance", "yearly", "0.3"),
     ("/offer", "yearly", "0.3"),
