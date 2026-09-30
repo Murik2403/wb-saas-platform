@@ -1,4 +1,5 @@
-import { downloadScoped } from "./selected-shop";
+import { downloadScoped, currentShop } from "./selected-shop";
+import { SelectedShopSettings } from "./SelectedShopSettings";
 import { ShopContextBoundary } from "./ShopContextBoundary";
 import { IncidentWorkflow } from "./IncidentWorkflow";
 import { WorkcenterCalendar } from "./WorkcenterCalendar";
@@ -13,6 +14,7 @@ import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
 import { OzonAccounting } from "./OzonAccounting";
+import { FinanceProfitHeading } from "./FinanceProfitHeading";
 import { PriceScenarios } from "./PriceScenarios";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
@@ -1169,7 +1171,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? <><MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} /><SettingsViewV2 onSynced={dashboard.refresh} /></> : null}
+        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <><MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} /><SettingsViewV2 onSynced={dashboard.refresh} /></>) : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">
@@ -1814,8 +1816,8 @@ function FinanceView({
             <WalletCards size={16} />
             деньги
           </div>
-          <h2>{financeMetrics[0]?.value ?? "0 ₽"} {!financeReport.cogsEvidence || financeReport.cogsEvidence.quality === "exact" || financeReport.cogsEvidence.quality === "no_sales" ? "расчётной прибыли" : "предварительной прибыли"}</h2>
-          <p>Выручка, расходы WB, реклама и себестоимость сведены в один управленческий контур.</p>
+          <FinanceProfitHeading report={financeReport} />
+          <p>Результат WB по реализации за выбранный период с учтённой рекламой и себестоимостью. Дополнительные подтверждённые расходы показаны ниже в управленческом результате.</p>
         </div>
           <div className="hero-actions">
             <button className="secondary-button" type="button" onClick={() => onAction("Отчет", "финансы")}>

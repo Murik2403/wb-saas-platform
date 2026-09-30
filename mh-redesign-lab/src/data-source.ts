@@ -2033,6 +2033,7 @@ export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallba
   const rows = (input?.expense_rows ?? []).map((row) => ({ label: text(row.label, "Статья"), amount: Number(row.amount ?? 0) }));
   const sum = (rows: Array<Record<string, unknown>> | undefined) => (rows ?? []).reduce((total, row) => total + Number(row.bonusSumm ?? row.bonus_sum ?? row.sum ?? row.amount ?? 0), 0);
   return {
+    financialProfitRub: input?.financial ? (Number(f.report_rows)>0 && typeof f.profit==='number' && Number.isFinite(f.profit) ? f.profit : null) : fallback.financialProfitRub,
     lastDate: text(f.report_last_date, fallback.lastDate ?? ""),
     calculationEnd: text(f.financial_calculation_end, fallback.calculationEnd ?? ""),
     complete: Boolean(f.financial_period_complete ?? fallback.complete),

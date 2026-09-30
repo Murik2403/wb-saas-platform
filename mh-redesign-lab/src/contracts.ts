@@ -175,6 +175,7 @@ export type FinanceFifoReconciliation = {
   statusCounts: Record<string, number>;
 };
 export type FinanceReportState = {
+  financialProfitRub?: number | null;
   lastDate?: string;
   calculationEnd?: string;
   complete?: boolean;
