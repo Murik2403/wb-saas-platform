@@ -60,6 +60,8 @@ def import_snapshot(snapshot):
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         ensure_schema(conn)
+        from .ozon_pnl import capture_source_snapshot
+        capture_source_snapshot(conn, snapshot)
         # Source range is replaced atomically after all remote collections succeed.
         conn.execute("DELETE FROM ozon_accrual_ledger WHERE accrual_date BETWEEN ? AND ?", (start, end))
         conn.executemany("INSERT INTO ozon_accrual_ledger VALUES (?,?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET accrual_id=excluded.accrual_id,accrual_date=excluded.accrual_date,currency=excluded.currency,amount_text=excluded.amount_text,payload_json=excluded.payload_json", prepared)

@@ -1322,6 +1322,8 @@ def init_db() -> None:
         init_workcenter_schema(conn)
         from .expense_coverage import init_expense_coverage_schema
         init_expense_coverage_schema(conn)
+        from .ozon_pnl import ensure_schema as ensure_ozon_pnl_schema
+        ensure_ozon_pnl_schema(conn)
         # Idempotent audit ledger for the explicit supply-plan confirmation flow.
         # This is additive and preserves all legacy procurement records.
         conn.execute("""CREATE TABLE IF NOT EXISTS supply_plan_confirmations (
