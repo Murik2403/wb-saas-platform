@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LayoutGrid, List, Table2 } from "lucide-react";
 import type { ProductEconomicsRow } from "./data-source";
 import "./ProductEconomicsList.css";
@@ -11,6 +11,16 @@ const MODES: Array<{ id: ProductViewMode; label: string; Icon: typeof List }> = 
   { id: "list", label: "Список", Icon: List },
 ];
 const STORAGE_KEY = "mh.products.viewMode";
+
+type SortKey = "product" | "revenue" | "margin" | "marginPct" | "drr" | "stock";
+const COLUMNS: Array<{ key: SortKey; label: string }> = [
+  { key: "product", label: "Товар" },
+  { key: "revenue", label: "Выручка" },
+  { key: "margin", label: "Расчётная прибыль" },
+  { key: "marginPct", label: "Маржа" },
+  { key: "drr", label: "ДРР" },
+  { key: "stock", label: "Запас" },
+];
 
 // localStorage can be blocked or throw (private window, cleared site data): the view must still work.
 function readMode(): ProductViewMode {
@@ -28,8 +38,27 @@ const marginOf = (item: ProductEconomicsRow) =>
 const stockOf = (item: ProductEconomicsRow) =>
   `${item.stock.toLocaleString("ru-RU")} шт.${item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}`;
 
+const sortValue = (item: ProductEconomicsRow, key: SortKey): string | number =>
+  key === "product" ? item.product : key === "marginPct" ? marginOf(item) : item[key];
+
 export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomicsRow[]; onOpen: (item: ProductEconomicsRow) => void }) {
   const [mode, setMode] = useState<ProductViewMode>(readMode);
+  // Sorting belongs to the table only; tiles and list keep the order the API returned.
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
+  const sorted = useMemo(() => {
+    if (!sort) return items;
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const x = sortValue(a, sort.key);
+      const y = sortValue(b, sort.key);
+      return sign * (typeof x === "string" ? x.localeCompare(String(y), "ru") : x - Number(y));
+    });
+  }, [items, sort]);
+  // First click: text A-Z, numbers high-to-low (what people look for); second click reverses.
+  const toggleSort = (key: SortKey) =>
+    setSort((current) => current?.key === key
+      ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: key === "product" ? "asc" : "desc" });
   const choose = (next: ProductViewMode) => {
     setMode(next);
     try { window.localStorage.setItem(STORAGE_KEY, next); } catch { /* per-viewer convenience only */ }
@@ -68,10 +97,18 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
         <div className="product-table-scroll">
           <table className="product-economics-table">
             <thead>
-              <tr><th>Товар</th><th>Выручка</th><th>Расчётная прибыль</th><th>Маржа</th><th>ДРР</th><th>Запас</th></tr>
+              <tr>
+                {COLUMNS.map(({ key, label }) => (
+                  <th key={key} aria-sort={sort?.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" className="product-sort" onClick={() => toggleSort(key)}>
+                      {label}<span aria-hidden="true">{sort?.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}</span>
+                    </button>
+                  </th>
+                ))}
+              </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {sorted.map((item) => (
                 <tr key={item.nmId} onClick={() => onOpen(item)}>
                   <td>
                     <button type="button" className="product-row-open" onClick={(event) => { event.stopPropagation(); onOpen(item); }}>

@@ -60,4 +60,25 @@ describe("ProductEconomicsList", () => {
     expect(screen.getByText(/прогноз недоступен/)).toBeTruthy();
     expect(screen.getByText("-20.0%").className).toContain("negative");
   });
+
+  it("sorts the table by column, toggles direction, and leaves tiles in API order", () => {
+    const three = [row({ nmId: "1", product: "Б", margin: 100, marginPct: 10 }), row({ nmId: "2", product: "А", margin: 300, marginPct: 30 }), row({ nmId: "3", product: "В", margin: -50, marginPct: -5 })];
+    render(<ProductEconomicsList items={three} onOpen={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    const names = () => screen.getAllByRole("row").slice(1).map((r) => r.querySelector("strong")?.textContent);
+
+    expect(names()).toEqual(["Б", "А", "В"]); // API order until a header is clicked
+    fireEvent.click(screen.getByRole("button", { name: /Расчётная прибыль/ }));
+    expect(names()).toEqual(["А", "Б", "В"]); // numbers: high to low first
+    expect(screen.getByRole("columnheader", { name: /Расчётная прибыль/ }).getAttribute("aria-sort")).toBe("descending");
+    fireEvent.click(screen.getByRole("button", { name: /Расчётная прибыль/ }));
+    expect(names()).toEqual(["В", "Б", "А"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Товар/ }));
+    expect(names()).toEqual(["А", "Б", "В"]); // text: A-Z first
+
+    fireEvent.click(screen.getByRole("button", { name: "Плитка" }));
+    expect(screen.getAllByRole("button", { name: /Б|А|В/ }).length).toBeGreaterThan(0);
+    const tileOrder = Array.from(document.querySelectorAll(".product-economics-card-heading > div > strong")).map((e) => e.textContent);
+    expect(tileOrder).toEqual(["Б", "А", "В"]);
+  });
 });

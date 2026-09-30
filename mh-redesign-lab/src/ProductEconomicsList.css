@@ -30,6 +30,9 @@
 .product-economics-table td:first-child { text-align: left; white-space: normal; min-width: 16rem; }
 .product-economics-table tbody tr { cursor: pointer; }
 .product-economics-table tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+.product-sort { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.product-sort:hover,
+.product-sort:focus-visible { text-decoration: underline; }
 .product-row-open { display: grid; gap: 0.15rem; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .product-row-open small,
 .product-row-name small { opacity: 0.65; }
