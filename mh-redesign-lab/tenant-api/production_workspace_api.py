@@ -261,3 +261,105 @@ def package(payload: PackageInput) -> dict:
 def save_capacity(payload: CapacityInput) -> dict:
     save_production_capacity(**payload.model_dump())
     return {"capacity": _capacity()}
+
+
+# Workcenter schedules are independent overlays; no execution fact/batch is rewritten.
+from db import workcenters as centers_db
+from production_permissions import write_allowed
+
+class CenterInput(Input):
+    id: PositiveInt | None = None
+    revision: NonnegativeInt = 0
+    name: str = Field(min_length=1,max_length=100)
+    daily_minutes: float = Field(gt=0,le=144000,allow_inf_nan=False,strict=True)
+    workdays: list[Annotated[StrictInt,Field(ge=0,le=6)]] = Field(min_length=1,max_length=7)
+
+class NormInput(Input):
+    nm_id: PositiveInt
+    chrt_id: NonnegativeInt = 0
+    operation: str = Field(min_length=1,max_length=100)
+    minutes_per_unit: float = Field(gt=0,le=1440,allow_inf_nan=False,strict=True)
+    revision: NonnegativeInt = 0
+
+class AssignmentInput(Input):
+    task_key: str = Field(min_length=1,max_length=200)
+    operation: str = Field(min_length=1,max_length=100)
+    center_id: PositiveInt
+    scheduled_date: date
+    revision: NonnegativeInt = 0
+
+class ScheduleInput(Input):
+    start: date
+    days: Annotated[StrictInt,Field(ge=1,le=90)] = 14
+    change: AssignmentInput
+
+class ScheduleConfirmInput(ScheduleInput):
+    preview_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    request_id: UUID
+
+def _workcenter_authorize(request,preview=False):
+    role=request.headers.get("x-tenant-role","owner").lower()
+    if preview:
+        if not write_allowed(role,request.method,request.url.path):raise HTTPException(403,detail="Нет доступа")
+    elif config.IS_DEMO or not write_allowed(role,request.method,request.url.path):
+        raise HTTPException(403,detail="Нет права изменять календарь")
+    return role
+
+def _workcenter_error(exc):
+    if isinstance(exc,ValueError):
+        messages={"stale_revision":"Данные изменились. Обновите календарь и повторите действие.","stale_preview":"Предпросмотр устарел. Отмените его, обновите календарь и проверьте назначение заново.","idempotency_conflict":"Этот запрос уже сохранён с другими параметрами."}
+        raise HTTPException(409 if str(exc) in messages else 422,detail=messages.get(str(exc),str(exc))) from exc
+    import sqlite3
+    if isinstance(exc,sqlite3.IntegrityError):raise HTTPException(409,detail="Название или операция уже существуют") from exc
+    raise exc
+
+@router.get("/workcenters")
+def workcenter_view(request:Request,start:date|None=None,days:int=Query(14,ge=1,le=90)):
+    _workcenter_authorize(request,preview=True)
+    try:
+        with connect() as conn:
+            conn.execute("BEGIN")
+            source=centers_db.snapshot(conn,(start or date.today()).isoformat(),days)
+            history=[dict(r) for r in conn.execute("SELECT id,task_key,operation,before_json,after_json,actor_role,created_at FROM production_workcenter_history ORDER BY id DESC LIMIT 100")]
+        role=request.headers.get("x-tenant-role","owner").lower()
+        return dict(**source,**centers_db.loading(source),history=history,read_only=bool(config.IS_DEMO) or role not in {"owner","manager","technologist"},can_schedule=not config.IS_DEMO and role in {"owner","manager"})
+    except (ValueError,) as exc:_workcenter_error(exc)
+
+@router.post("/workcenters/centers")
+def workcenter_save(payload:CenterInput,request:Request):
+    _workcenter_authorize(request)
+    try:
+        with connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            identifier=centers_db.save_center(conn,payload.model_dump())
+        return {"id":identifier}
+    except Exception as exc:_workcenter_error(exc)
+
+@router.post("/workcenters/norms")
+def workcenter_norm(payload:NormInput,request:Request):
+    _workcenter_authorize(request)
+    try:
+        with connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            centers_db.save_norm(conn,payload.model_dump())
+        return {"saved":True}
+    except Exception as exc:_workcenter_error(exc)
+
+@router.post("/workcenters/preview")
+def workcenter_preview(payload:ScheduleInput,request:Request):
+    _workcenter_authorize(request,preview=True)
+    try:
+        with connect() as conn:
+            conn.execute("BEGIN")
+            source=centers_db.snapshot(conn,payload.start.isoformat(),payload.days)
+            return centers_db.preview(conn,source,payload.change.model_dump(mode="json"))
+    except ValueError as exc:_workcenter_error(exc)
+
+@router.post("/workcenters/confirm")
+def workcenter_confirm(payload:ScheduleConfirmInput,request:Request):
+    role=_workcenter_authorize(request)
+    try:
+        with connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            return centers_db.confirm(conn,payload.start.isoformat(),payload.days,payload.change.model_dump(mode="json"),payload.preview_fingerprint,str(payload.request_id),role)
+    except Exception as exc:_workcenter_error(exc)

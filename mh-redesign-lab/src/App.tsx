@@ -1,4 +1,5 @@
 import { IncidentWorkflow } from "./IncidentWorkflow";
+import { WorkcenterCalendar } from "./WorkcenterCalendar";
 import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
@@ -2708,6 +2709,7 @@ function ProductionView({
 
       <div id="production-shift"><ProductionExecutionPanel onRefresh={onRefresh} /></div>
       <ProductionWorkspace onChanged={() => void onRefresh()} />
+      <WorkcenterCalendar />
       <ManufacturingCosts onChanged={() => void onRefresh()} />
 
       <MetricGrid metrics={productionMetrics} onMetricClick={(metric) => onAction("Партия", metric.label)} />
