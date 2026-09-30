@@ -258,7 +258,7 @@ def cleanup_orphan_zero_costs() -> int:
         )
         return int(cur.rowcount or 0)
 
-def upsert_financial(rows: Iterable[dict[str, Any]]) -> int:
+def upsert_financial(rows: Iterable[dict[str, Any]], *, source_identity: str | None = None) -> int:
     from .core import _dump, _first, _int, _num, connect, ensure_financial_schema
     ensure_financial_schema()
     payload = []
@@ -311,6 +311,9 @@ def upsert_financial(rows: Iterable[dict[str, Any]]) -> int:
     """
     values = [tuple(row[c] for c in columns) for row in payload]
     with connect() as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        from .financial_source import record
+        record(conn, payload, source_identity)
         conn.executemany(sql, values)
     return len(payload)
 

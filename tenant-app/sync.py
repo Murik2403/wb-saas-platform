@@ -133,10 +133,12 @@ def _sync_all_locked() -> dict[str, int | str]:
         # sales, stocks, FIFO or advertising updates.
         try:
             finance_start, finance_end = _financial_incremental_range(history_days)
+            from db.financial_source import captured_identity
+            financial_identity = captured_identity(api)
             finance_rows = api.get_financial_report(
                 finance_start.isoformat(), finance_end.isoformat(), period="daily"
             )
-            result["financial_rows"] = upsert_financial(finance_rows)
+            result["financial_rows"] = upsert_financial(finance_rows, source_identity=financial_identity)
             result["financial_from"] = finance_start.isoformat()
             result["financial_to"] = finance_end.isoformat()
         except Exception as exc:
@@ -234,8 +236,10 @@ def _sync_finances_locked(days: int) -> dict[str, int]:
     api = WBAPI(token)
     end = datetime.now(ZoneInfo("Europe/Moscow")).date()
     start = end - timedelta(days=max(1, days) - 1)
+    from db.financial_source import captured_identity
+    financial_identity = captured_identity(api)
     rows = api.get_financial_report(start.isoformat(), end.isoformat(), period="daily")
-    return {"financial_rows": upsert_financial(rows)}
+    return {"financial_rows": upsert_financial(rows, source_identity=financial_identity)}
 
 
 def loop() -> None:
