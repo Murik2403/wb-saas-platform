@@ -16,7 +16,7 @@ class _Client:
         self.old = Mock()
         self.old.id = 'original-demo-id'
         self.old.name = 'wb-tenant-demo'
-        self.old.attrs = {"State": {"Status": "running"}}
+        self.old.attrs = {"State": {"Status": "running"}, 'Config':{'Env':['WB_SAAS_IS_DEMO=1','WB_SAAS_TENANT_SLUG=demo'],'Labels':{'wb-saas.slug':'demo'}},'Mounts':[{'Type':'volume','Name':'wb-tenant-data-demo','Destination':'/app/data'}]}
         self.old_removed = False
         self.old_renamed = False
         self.old.rename.side_effect = self._rename_old
@@ -36,7 +36,7 @@ class _Client:
             return self.old
         if name == "wb-tenant-demo" and not self.old_removed and not self.old_renamed:
             return self.old
-        raise RuntimeError("not found")
+        raise app.DockerNotFound("not found")
 
 
 def _prepared(monkeypatch, tmp_path):
@@ -99,7 +99,7 @@ def test_demo_reseed_failure_restores_backup_and_keeps_old_container(monkeypatch
     assert raised.value.status_code == 502
     assert "details must not leak" not in raised.value.detail
     assert events[:3] == ["backup", "verify", "seed"]
-    assert events[-1] == "restore"
+    assert events[-2:] == ["restore","healthy"]
     client.old.start.assert_called_once()
     client.old.remove.assert_not_called()
 
@@ -121,7 +121,7 @@ def test_demo_reseed_recreate_failure_restores_snapshot_and_recreates_old(monkey
 
     assert raised.value.status_code == 502
     assert "details must not leak" not in raised.value.detail
-    assert events == ["backup", "verify", "seed", "validate", "start-new", "restore"]
+    assert events == ["backup", "verify", "seed", "validate", "start-new", "restore", "healthy"]
     client.old.remove.assert_not_called()
     client.old.start.assert_called_once()
     assert client.old.rename.call_args.args == ('wb-tenant-demo',)
@@ -139,7 +139,7 @@ def test_unhealthy_candidate_restores_original_before_backup_cleanup(monkeypatch
     monkeypatch.setattr(app, '_wait_demo_health', unhealthy)
     with pytest.raises(HTTPException):
         app.reseed_demo()
-    assert events[-2:] == ['unhealthy','restore']
+    assert events[-3:] == ['unhealthy','restore','unhealthy']
     client.old.remove.assert_not_called()
     client.old.start.assert_called_once()
     assert client.old.rename.call_args.args == ('wb-tenant-demo',)

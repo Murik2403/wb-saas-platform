@@ -13,7 +13,7 @@ class DemoRecoveryJournal:
         if not self.path.exists():
             return None
         state = json.loads(self.path.read_text('utf-8'))
-        if state.get('phase') not in {'stopping','mutating'} or not isinstance(state.get('original_id'),str) or not state['original_id']:
+        if state.get('volume')!='wb-tenant-data-demo' or state.get('phase') not in {'stopping','mutating'} or not isinstance(state.get('original_id'),str) or not state['original_id']:
             raise ValueError('Invalid demo recovery journal')
         if state['phase']=='mutating' and (Path(state.get('archive','')).name!=state.get('archive') or not state['archive'].endswith('.tar.gz.enc')):
             raise ValueError('Invalid demo recovery archive')
@@ -32,7 +32,7 @@ class DemoRecoveryJournal:
         temporary=self.directory/'reseed-recovery.json.tmp'
         with temporary.open('w',encoding='utf-8') as handle:
             os.chmod(temporary,0o600)
-            json.dump({'phase':phase,'original_id':original_id,'archive':archive},handle)
+            json.dump({'phase':phase,'original_id':original_id,'volume':'wb-tenant-data-demo','archive':archive},handle)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary,self.path)
