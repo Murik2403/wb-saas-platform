@@ -33,7 +33,7 @@ class DailyDemoRefresh:
             os.fsync(handle.fileno())
         os.replace(temporary, target)
 
-    def tick(self):
+    def tick(self, *, retry_failed=False):
         if not self.enabled:
             return 'disabled'
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -49,7 +49,7 @@ class DailyDemoRefresh:
             except (BlockingIOError, PermissionError):
                 return 'busy'
             try:
-                return self._locked_tick()
+                return self._locked_tick(retry_failed=retry_failed)
             finally:
                 if os.name == 'nt':
                     lock.seek(0)
@@ -57,13 +57,15 @@ class DailyDemoRefresh:
                 else:
                     fcntl.flock(lock, fcntl.LOCK_UN)
 
-    def _locked_tick(self):
+    def _locked_tick(self, *, retry_failed=False):
         now = self.clock().astimezone(ZoneInfo('Europe/Moscow'))
         state = self.status()  # Corrupt state fails closed, never silently resets.
         if now.hour < self.hour or state.get('last_success_date') == now.date().isoformat():
             return 'not_due'
+        if retry_failed and state.get('last_result')!='failed':
+            return 'not_failed'
         attempt = state.get('last_attempt_at')
-        if attempt and now - datetime.fromisoformat(attempt) < timedelta(hours=1):
+        if attempt and not retry_failed and now - datetime.fromisoformat(attempt) < timedelta(hours=1):
             return 'retry_later'
         state.update(last_attempt_at=now.isoformat(), last_result='running')
         self._save(state)  # Failure to persist refuses the destructive operation.

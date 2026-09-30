@@ -91,3 +91,26 @@ def test_healthcheck_must_pass_before_daily_success(monkeypatch):
     assert container.reload.call_count == 30
     container.attrs['State']['Health']['Status'] = 'healthy'
     app._wait_demo_health(client)
+
+
+def test_explicit_failed_retry_only_bypasses_cooldown_and_never_repeats_success(tmp_path):
+    refresh=Mock(side_effect=RuntimeError('failed'))
+    worker=DailyDemoRefresh(tmp_path,refresh,enabled=True,clock=lambda:datetime(2026,9,30,3,tzinfo=ZoneInfo('Europe/Moscow')))
+    assert worker.tick(retry_failed=True)=='not_failed'
+    refresh.assert_not_called()
+    assert worker.tick()=='failed'
+    assert worker.tick()=='retry_later'
+    refresh.side_effect=None
+    assert worker.tick(retry_failed=True)=='success'
+    assert worker.status()['last_success_date']=='2026-09-30'
+    assert worker.tick(retry_failed=True)=='not_due'
+    assert refresh.call_count==2
+
+
+def test_failed_retry_preserves_os_lock_and_disabled_schedule(tmp_path):
+    now=lambda:datetime(2026,9,30,3,tzinfo=ZoneInfo('Europe/Moscow'))
+    second=DailyDemoRefresh(tmp_path,Mock(),enabled=True,clock=now)
+    results=[]
+    first=DailyDemoRefresh(tmp_path,lambda:results.append(second.tick(retry_failed=True)),enabled=True,clock=now)
+    assert first.tick()=='success' and results==['busy']
+    assert DailyDemoRefresh(tmp_path,Mock()).tick(retry_failed=True)=='disabled'

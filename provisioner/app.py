@@ -103,6 +103,17 @@ def daily_demo_status():
         raise HTTPException(status_code=503, detail='Demo refresh state unavailable') from None
 
 
+@app.post('/v1/demo/refresh-retry')
+def retry_failed_daily_demo():
+    if _DEMO_DAILY is None:
+        return {'result':'disabled','status':daily_demo_status()}
+    try:
+        result=_DEMO_DAILY.tick(retry_failed=True)
+        return {'result':result,'status':_DEMO_DAILY.status()}
+    except Exception:
+        raise HTTPException(status_code=503,detail='Demo failed refresh retry unavailable') from None
+
+
 class TenantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
