@@ -176,4 +176,16 @@ Fresh root tests: 476 tenant-app tests + 8 subtests; 382 API tests; promotion so
 
 Provisioner image/revision unchanged (0eb4746d06dcc9356ca95b26a7096efb014495c6 / sha256:99fd4efe198af2b757ff3c2aa407e898bb349ea842ea3a1450cfb77aac4bab72); approved tenant target обновлён на exact21dfec4. Control-plane backup gateway-provisioner-0eb4746d06dc-1790735832890082780.sqlite3.enc, rollback wb-saas-provisioner-1-rollback-1790735833833027103. Demo settings не менялись.
 
-Остаток: совместный public shop dispatcher/ACL/UI и фактическая приёмка двух магазинов; подтверждённая нормализация непустого актуального Ozon источника; готовый 150s ролик (пока 2 из 6 сцен); owner approval конкретного реального кейса и реальные интервью. Весь аудит не закрыт.
+Остаток: совместный public shop dispatcher/ACL/UI и фактическая приёмка двух магазинов; подтверждённая нормализация непустого актуального Ozon источника; финальный MP4; owner approval конкретного реального кейса и реальные интервью. Весь аудит не закрыт.
+
+## Дополнение: bounded Ozon collection — 30.09.2026, 05:59–06:02 МСК
+
+Production revision `c79eae5ab02b2a0af78fb76929c8c65467f8590b`, immutable image `mh-tenant:c79eae5` = `sha256:7eb2afa5ce1f08161684c80a08688dd0e90ee9a79313319bb47c5d5f7bd59e82`. Strict pagination, response/time/request limits, no redirects; raw source collection completeness separated from verified accounting completeness. Empty/legacy source does not establish profit or a monetary mapping. Automatic nonempty Ozon normalization remains open; manual ledger unchanged.
+
+494 tenant tests + 8 subtests, 382 API tests, 51 focused tests and independent review passed. Private encrypted restore rehearsal: 524722176-byte observed peak under 1610612736-byte limit; 5 parallel responses 200, OOM=false/restart0, cash/Ozon business checks and private pre-business DB restore before rollback passed.
+
+Fresh verified backup `marketshelper_manual_20260930_025919_943260.zip`; rollback `wb-tenant-mvvorokov-rollback-20260930-025919`. Native deploy four probes, independent live17 API + HTML/assets + exact revision/health passed. Owner catalog37/exact identity accepted; readonly Ozon P&L remains loaded=False / api_normalization_verified=False. Default redesign image tag updated only after acceptance.
+
+Provisioner same immutable 0eb4746 image; approved tenant pin now exact c79eae5. Control-plane encrypted backup `gateway-provisioner-0eb4746d06dc-1790737278619467178.sqlite3.enc`, rollback `wb-saas-provisioner-1-rollback-1790737279528406405`. Demo settings unchanged. Unreleased shop selector frontend is excluded from this image.
+
+Video: all six actual-UI teaching frames assembled; layout duration150s, zero lint/runtime/layout findings, contrast24/24. Midpoints/cut snapshots visually inspected; Studio preview started on localhost3002 and final render question sent. No MP4 or publication claimed.
