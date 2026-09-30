@@ -43,3 +43,20 @@ def test_actual_demo_denies_and_current_routes_registry(imported,monkeypatch):
  monkeypatch.setattr(api,'IS_DEMO',True)
  assert imported.post(base+'preview',json={'nm_id':100,'reason':'Original check'},headers=headers()).status_code==403
  assert imported.post(base+'confirm',json={'nm_id':100,'reason':'Original check','fingerprint':'a'*64},headers=headers()).status_code==403
+
+def test_denied_confirm_before_lazy_schema_has_no_database_writes(imported,monkeypatch):
+ def snapshot():
+  with core.connect() as c:
+   schema=[tuple(r) for r in c.execute('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name')]
+   tables=[r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+   assert 'warehouse_imported_transfers' not in tables and 'warehouse_imported_authority' not in tables
+   return schema,{name:[tuple(r) for r in c.execute('SELECT * FROM "'+name.replace('"','""')+'" ORDER BY rowid')] for name in tables}
+ before=snapshot();body={'nm_id':100,'reason':'Original check','fingerprint':'a'*64}
+ for role in ('manager','viewer','warehouse'):
+  assert imported.post(base+'confirm',json=body,headers=headers(**{'x-tenant-role':role})).status_code==403
+  assert snapshot()==before
+ assert imported.post(base+'confirm',json=body,headers=headers(origin='https://evil.test')).status_code==403
+ assert snapshot()==before
+ monkeypatch.setattr(api,'IS_DEMO',True)
+ assert imported.post(base+'confirm',json=body,headers=headers()).status_code==403
+ assert snapshot()==before

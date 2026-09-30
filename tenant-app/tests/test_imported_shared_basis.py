@@ -37,6 +37,16 @@ def accept():
  p=transfer.preview(100,'Confirmed authority change','1','owner')
  return transfer.confirm(100,p['reason'],p['fingerprint'],'1','owner',str(uuid4()))
 
+def test_transfer_registers_current_variant_with_zero_imported_stock(ready):
+ with core.connect() as c:
+  c.execute('UPDATE products_catalog SET raw_json=? WHERE nm_id=100',(json.dumps({'sizes':[{'chrtID':10},{'chrtID':11},{'chrtID':12}]}),))
+ result=accept()
+ assert {item['chrt_id'] for item in result['items']}=={10,11,12}
+ assert result['total_units']==6 and result['total_cents']==202
+ with core.connect() as c:
+  assert c.execute('SELECT COUNT(*) FROM finished_goods_cost_layers WHERE chrt_id=12').fetchone()[0]==0
+  assert wh.managed(c,100,12)
+
 def test_whole_sku_switch_immutable_units_money_no_events_and_replay(ready):
  p=transfer.preview(100,'Confirmed authority change','1','owner');key=str(uuid4())
  with core.connect() as c:before=[tuple(r) for r in c.execute('SELECT * FROM finished_goods_cost_layers ORDER BY id')]
