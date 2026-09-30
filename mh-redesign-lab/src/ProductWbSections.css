@@ -1,0 +1,63 @@
+/* "Карточки и медиа", "Качество магазина", "Цены и скидки" on the Products page. */
+.wbx-panel { display: grid; gap: 0.8rem; }
+
+.wbx-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
+.wbx-search { flex: 1 1 18rem; max-width: 26rem; }
+.wbx-count { font-weight: 600; white-space: nowrap; }
+.wbx-muted { opacity: 0.55; }
+.wbx-more { justify-self: start; }
+
+/* stats row: one aligned strip instead of a block squeezed into the header */
+.wbx-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem; }
+.wbx-notes { margin: 0; padding: 0.6rem 0.9rem 0.6rem 1.6rem; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(240, 180, 60, 0.08); }
+
+.wbx-group { display: grid; gap: 0.5rem; }
+.wbx-group h3 { margin: 0; font-size: 1rem; }
+.wbx-group h3 span { opacity: 0.6; font-weight: 500; margin-left: 0.3rem; }
+.wbx-items { display: grid; gap: 0.5rem; }
+.wbx-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(20, 25, 34, 0.7);
+}
+.wbx-item > div { display: grid; gap: 0.2rem; min-width: 0; }
+.wbx-item small { opacity: 0.7; }
+.wbx-item p { margin: 0; overflow-wrap: anywhere; }
+
+/* price table */
+.wbx-table-scroll { overflow-x: auto; }
+.wbx-price-table { width: 100%; min-width: 44rem; border-collapse: collapse; }
+.wbx-price-table th,
+.wbx-price-table td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.wbx-price-table th:first-child,
+.wbx-price-table td:first-child { text-align: left; }
+.wbx-price-table th:nth-child(2), .wbx-price-table td:nth-child(2),
+.wbx-price-table th:nth-child(3), .wbx-price-table td:nth-child(3) { text-align: left; }
+.wbx-price-table input { width: 7rem; padding: 0.35rem 0.5rem; text-align: right; color: inherit; font: inherit; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; }
+.wbx-price-table input:focus-visible { outline: 2px solid var(--accent, #7c6cf6); outline-offset: 1px; }
+.wbx-price-table tr.edited { background: rgba(124, 108, 246, 0.14); }
+.wbx-final { font-weight: 600; }
+
+.wbx-submit-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(10, 11, 18, 0.96);
+}
+
+@media (max-width: 720px) {
+  .wbx-item { grid-template-columns: 1fr; }
+}
