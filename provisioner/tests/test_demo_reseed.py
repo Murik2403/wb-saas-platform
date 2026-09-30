@@ -69,6 +69,7 @@ def test_demo_reseed_verifies_backup_before_running_seed(monkeypatch, tmp_path):
     client.old.stop.assert_called_once()
     client.old.remove.assert_called_once_with(force=True)
     client.containers.run.assert_called_once()
+    assert client.containers.run.call_args.kwargs['environment']['WB_SAAS_DATA_DIR']=='/app/data'
 
 
 def test_demo_reseed_missing_backup_key_fails_before_docker_or_stop(monkeypatch):

@@ -724,7 +724,7 @@ def reseed_demo() -> dict[str, str]:
                 remove=True,
                 entrypoint=["python3"],
                 command=["seed_demo_data.py"],
-                environment={"WB_SAAS_IS_DEMO": "1", "WB_SAAS_TENANT_SLUG": "demo"},
+                environment={"WB_SAAS_IS_DEMO": "1", "WB_SAAS_TENANT_SLUG": "demo", "WB_SAAS_DATA_DIR": "/app/data"},
                 labels={'wb-saas.slug':'demo','wb-saas.operation':'demo-seed'},
                 network_mode="none",
                 volumes={volume.name: {"bind": "/app/data", "mode": "rw"}},
