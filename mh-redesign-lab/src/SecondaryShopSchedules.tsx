@@ -41,7 +41,7 @@ function ScheduleForm({schedule,metrics,canConfigure,canEnable,refresh}:{schedul
  <label className="operation-field"><span>Интервал {name}, минут</span><input aria-label={`Интервал ${name}, минут`} inputMode="numeric" value={interval} disabled={!canConfigure||busy} onChange={event=>setInterval(event.target.value)}/></label>
  <label className="operation-field"><span>Период {name}, дней</span><input aria-label={`Период ${name}, дней`} inputMode="numeric" value={period} disabled={!canConfigure||busy} onChange={event=>setPeriod(event.target.value)}/></label>
  {kind==='pdf'&&<fieldset disabled={!canConfigure||busy}><legend>Метрики PDF (до восьми)</legend>{metrics.map(metric=><label key={metric}><input type="checkbox" disabled={!names[metric]} checked={selected.includes(metric)} onChange={event=>setSelected(values=>event.target.checked?[...values,metric]:values.filter(value=>value!==metric))}/>{names[metric]??'Неизвестная метрика — недоступна'}</label>)}</fieldset>}
- <p>Следующая попытка: {utc(schedule.next_due_utc)}</p><p>Последняя попытка: {status(schedule.last_status)} {failure(schedule.last_error)}</p>
+ <p>{schedule.enabled?`Следующая попытка: ${utc(schedule.next_due_utc)}`:'Расписание выключено — следующая попытка не назначена.'}</p><p>Последняя попытка: {status(schedule.last_status)} {failure(schedule.last_error)}</p>
  {error&&<p role="alert">{error} После перезагрузки проверьте сохранённое расписание перед новым действием.</p>}{message&&<p role="status">{message}</p>}
  <button type="submit" className="secondary-button" disabled={!canConfigure||busy}>{busy?'Сохраняем…':`Сохранить ${name}`}</button></form>;
 }
