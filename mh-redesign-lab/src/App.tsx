@@ -927,6 +927,8 @@ function App() {
             className="icon-button mobile-only"
             type="button"
             aria-expanded={mobileMenuOpen}
+            aria-controls={mobileMenuOpen ? "mobile-navigation-dialog" : undefined}
+            aria-haspopup="dialog"
             aria-label="Открыть меню"
             onClick={() => setMobileMenuOpen((open) => !open)}
           >
@@ -1039,18 +1041,7 @@ function App() {
         {dashboard.dataWarning && (activeNav === "finance" || activeNav === "products" || activeNav === "production") ? <p className="data-banner stale" role="status">{dashboard.dataWarning}</p> : null}
 
         {mobileMenuOpen ? (
-          <div className="mobile-menu" role="dialog" aria-label="Все разделы">
-            <nav>
-              {dashboard.navItems.map((item) => (
-                <NavButton
-                  active={activeNav === item.id}
-                  item={item}
-                  key={item.id}
-                  onSelect={() => selectPage(item.id)}
-                />
-              ))}
-            </nav>
-          </div>
+          <MobileNavigationDialog items={dashboard.navItems} activeNav={activeNav} onSelect={selectPage} onClose={()=>setMobileMenuOpen(false)} />
         ) : null}
 
         {activeNav === "today" ? (
@@ -1276,6 +1267,19 @@ function App() {
       </nav>
     </div>
   );
+}
+
+function MobileNavigationDialog({items,activeNav,onSelect,onClose}:{items:NavItem[];activeNav:PageId;onSelect:(page:PageId)=>void;onClose:()=>void}){
+  const dialogRef=useDialogFocus(onClose);
+  return <div className="mobile-navigation-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
+    <section className="mobile-menu" id="mobile-navigation-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" ref={dialogRef}>
+      <div className="mobile-menu-heading">
+        <h2 id="mobile-navigation-title">Все разделы</h2>
+        <button type="button" className="icon-button" aria-label="Закрыть меню" onClick={onClose}><X size={20}/></button>
+      </div>
+      <nav aria-label="Разделы кабинета">{items.map(item=><NavButton active={activeNav===item.id} item={item} key={item.id} onSelect={()=>onSelect(item.id)}/>)}</nav>
+    </section>
+  </div>;
 }
 
 function NavButton({

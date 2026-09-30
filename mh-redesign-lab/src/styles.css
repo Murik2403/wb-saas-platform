@@ -3466,12 +3466,39 @@ td {
 
   .mobile-menu {
     display: block;
-    margin-top: 0.75rem;
+    margin: 0;
+    width: min(100%, 34rem);
+    max-height: 100%;
+    overflow-y: auto;
     border: 1px solid var(--line-strong);
     border-radius: var(--radius);
     padding: 0.55rem;
     background: rgba(13, 17, 24, 0.96);
     box-shadow: var(--shadow);
+  }
+
+  .mobile-navigation-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+    background: rgba(0, 0, 0, 0.65);
+  }
+
+  .mobile-menu-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0.5rem 0.75rem;
+  }
+
+  .mobile-menu-heading h2 {
+    margin: 0;
+    font-size: 1.05rem;
   }
 
   .mobile-menu nav {
