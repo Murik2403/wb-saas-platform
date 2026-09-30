@@ -14,7 +14,7 @@ FIELDS = {
 }
 from . import finished_history_import as finished_history
 FIELDS.update(finished_history.FIELDS)
-UNITS = {"м", "кг", "л", "шт"}
+UNITS = {"м", "кг", "л", "шт", "г", "мл", "мм", "см"}
 
 def _json(value): return json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(",",":"),allow_nan=False)
 def _hash(value): return hashlib.sha256(_json(value).encode()).hexdigest()
@@ -60,7 +60,7 @@ def parse_csv(kind, text, mapping):
                     if not row["nm_id"].isdigit() or not 0<int(row["nm_id"])<=2**53-1: raise ValueError("Артикул WB должен быть положительным целым")
                     row["nm_id"]=int(row["nm_id"]); identity=str(row["nm_id"])
                 else:
-                    if row["unit"] not in UNITS: raise ValueError("Единица должна быть м, кг, л или шт")
+                    if row["unit"] not in UNITS: raise ValueError("Единица должна быть м, см, мм, кг, г, л, мл или шт")
                     identity=row["material_name"].casefold()
                     row["material_key"]=identity
                 if identity in identities: raise ValueError("Товар или материал повторяется внутри файла")
@@ -98,9 +98,16 @@ def _preview(conn, kind, text, mapping):
             if kind=="materials" and found: errors.append({"line":item["line"],"message":"Материал уже существует: импорт не перезаписывает справочник"})
             if kind=="opening_materials":
                 if not found: errors.append({"line":item["line"],"message":"Сначала импортируйте материал в справочник"})
-                elif found["unit"]!=row["unit"] or found["tracking_mode"]!="quantity": errors.append({"line":item["line"],"message":"Единица или режим склада не совпадает; используйте материал в базовых единицах"})
+                elif found["tracking_mode"]!="quantity": errors.append({"line":item["line"],"message":"Используйте материал с количественным режимом склада"})
                 elif layers or float(found["partial_meters"] or 0)!=0 or int(found["full_rolls"] or 0)!=0:
                     errors.append({"line":item["line"],"message":"У материала уже есть остаток или история FIFO: замена запрещена"})
+                elif found['unit']!=row['unit']:
+                    from .material_units import convert_material_amount
+                    try:
+                        conversion=convert_material_amount(row['quantity'],row['unit_cost_rub'],row['unit'],found['unit'])
+                        row.update(quantity=float(conversion['base_quantity']),unit_cost_rub=float(conversion['base_unit_price_rub']),unit=found['unit'],unit_conversion=conversion)
+                    except ValueError as exc:
+                        errors.append({'line':item['line'],'message':str(exc)})
         state["source"]=None
         # Query a journal only if present: preview must not create schema or data.
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='migration_import_sources'").fetchone():
@@ -135,6 +142,7 @@ def confirm_import(kind,text,mapping,request_key,preview_fingerprint,actor=None)
         current=_preview(conn,kind,text,mapping)
         if current["preview_fingerprint"]!=preview_fingerprint: raise ValueError("Данные изменились: повторите предпросмотр")
         if not current["can_confirm"]: raise ValueError("Импорт заблокирован ошибками; существующие данные не заменяются")
+        if kind=='opening_materials':rows=current['rows']
         now=datetime.now(timezone.utc).isoformat()
         if kind in finished_history.FIELDS:finished_history.apply(conn,kind,rows,current["_plans"])
         for item in rows:

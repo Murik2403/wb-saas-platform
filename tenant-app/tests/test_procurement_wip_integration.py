@@ -19,6 +19,83 @@ from .base import DbTestCase
 
 
 class ProcurementReceiptCreatesMaterialLayerTests(DbTestCase):
+    def test_centimetres_receipt_preserves_known_packaged_catalog_length(self):
+        with connect() as conn:
+            self.set_material_physical_stock(conn,'ткань','Ткань',partial_meters=0,roll_length=25.5)
+            conn.execute("UPDATE material_inventory_color SET unit='м',tracking_mode='packaged' WHERE material_key='ткань'")
+        order=procurement.create_procurement_order(procurement_type='Сырьё',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',items=pd.DataFrame([{'material_name':'Ткань','unit':'см','quantity':2600,'unit_price':0.1}]))
+        item=procurement.read_procurement_items(order).iloc[0]
+        result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':2600}]))
+        self.assertEqual(result['errors'],[])
+        with connect() as conn:
+            self.assertEqual(tuple(conn.execute("SELECT full_rolls,partial_meters,roll_length,tracking_mode FROM material_inventory_color WHERE material_key='ткань'").fetchone()),(1,0.5,25.5,'packaged'))
+            self.assertEqual(tuple(conn.execute("SELECT original_meters,unit_cost_rub_m,original_amount_rub FROM material_cost_layers WHERE material_key='ткань'").fetchone()),(26,10,260))
+
+    def test_partial_grams_receipt_keeps_currency_total_and_immutable_base_provenance(self):
+        import json
+        import sqlite3
+        with connect() as conn:
+            self.set_material_physical_stock(conn,'нить','Нить',partial_meters=0,roll_length=1)
+            conn.execute("UPDATE material_inventory_color SET unit='кг',tracking_mode='quantity' WHERE material_key='нить'")
+        order=procurement.create_procurement_order(procurement_type='Сырьё',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',currency='CNY',exchange_rate=13,items=pd.DataFrame([{'material_name':'Нить','unit':'г','quantity':1000,'supplier_unit_price':0.1,'exchange_rate':13}]))
+        item=procurement.read_procurement_items(order).iloc[0]
+        first=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':250}]))
+        self.assertEqual(first['errors'],[])
+        with connect() as conn:
+            layer=conn.execute("SELECT * FROM material_cost_layers WHERE material_key='нить'").fetchone()
+            self.assertEqual((layer['original_meters'],layer['unit_cost_rub_m'],layer['original_amount_rub']),(0.25,1300,325))
+            self.assertEqual(conn.execute("SELECT partial_meters FROM material_inventory_color WHERE material_key='нить'").fetchone()[0],0.25)
+            proof=json.loads(conn.execute('SELECT payload_json FROM material_unit_conversion_receipts').fetchone()[0])
+            self.assertEqual((proof['entered_quantity'],proof['base_quantity'],proof['source_total_rub']),('250','0.25','325'))
+            with self.assertRaises(sqlite3.IntegrityError):conn.execute('DELETE FROM material_unit_conversion_receipts')
+        second=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':750}]))
+        self.assertEqual(second['errors'],[])
+        replay=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':1000}]))
+        self.assertEqual(replay['items'],0)
+        updated=procurement.read_procurement_items(order).iloc[0]
+        self.assertEqual((updated['quantity'],updated['unit'],updated['unit_price'],updated['received_quantity']),(1000,'г',1.3,1000))
+        with connect() as conn:
+            self.assertEqual(conn.execute('SELECT SUM(original_amount_rub) FROM material_cost_layers').fetchone()[0],1300)
+            movement=conn.execute("SELECT id FROM inventory_movements WHERE movement_type='procurement_material_receipt' ORDER BY id DESC LIMIT 1").fetchone()[0]
+        from db.inventory_movements import undo_inventory_movement
+        reversed_receipt=undo_inventory_movement(movement)
+        self.assertTrue(reversed_receipt['ok'],reversed_receipt)
+        self.assertEqual(procurement.read_procurement_items(order).iloc[0]['received_quantity'],250)
+        with connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM material_unit_conversion_receipts').fetchone()[0],2)
+            self.assertEqual(conn.execute("SELECT full_rolls+partial_meters FROM material_inventory_color WHERE material_key='нить'").fetchone()[0],0.25)
+        replacement=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':750}]))
+        self.assertEqual(replacement['errors'],[])
+        issue=wip.issue_wip_material(batch_date='2026-09-30',material_name='Нить',blank_type='Тип А',meters_used=0.5,note='converted-base')
+        self.assertEqual(issue['errors'],[])
+        self.assertEqual(issue['cost_rub'],650)
+
+    def test_receipt_cross_dimension_rejects_without_inventory_or_receipt_mutation(self):
+        with connect() as conn:
+            self.set_material_physical_stock(conn,'нить','Нить',partial_meters=0,roll_length=1)
+            conn.execute("UPDATE material_inventory_color SET unit='кг',tracking_mode='quantity' WHERE material_key='нить'")
+        order=procurement.create_procurement_order(procurement_type='Сырьё',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',items=pd.DataFrame([{'material_name':'Нить','unit':'л','quantity':1,'unit_price':100}]))
+        item=procurement.read_procurement_items(order).iloc[0]
+        result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':1}]))
+        self.assertTrue(result['errors'])
+        with connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM material_cost_layers').fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inventory_movements WHERE movement_type='procurement_material_receipt'").fetchone()[0],0)
+        self.assertEqual(procurement.read_procurement_items(order).iloc[0]['received_quantity'],0)
+
+    def test_converted_receipt_preserves_exact_physical_quantity_without_tolerance_carry(self):
+        with connect() as conn:
+            self.set_material_physical_stock(conn,'нить','Нить',partial_meters=0,roll_length=1)
+            conn.execute("UPDATE material_inventory_color SET unit='кг',tracking_mode='quantity' WHERE material_key='нить'")
+        order=procurement.create_procurement_order(procurement_type='Сырьё',supplier_name='Supplier',status='Запланировано',order_date='2026-09-01',payment_due_date=None,expected_date=None,note='',items=pd.DataFrame([{'material_name':'Нить','unit':'г','quantity':999,'unit_price':0.1}]))
+        item=procurement.read_procurement_items(order).iloc[0]
+        result=procurement.post_procurement_receipt(order,pd.DataFrame([{'item_id':int(item['id']),'receive_now':999}]))
+        self.assertEqual(result['errors'],[])
+        self.assertEqual(result['items'],1)
+        with connect() as conn:
+            self.assertEqual(tuple(conn.execute('SELECT original_meters,original_amount_rub FROM material_cost_layers').fetchone()),(0.999,99.9))
+            self.assertEqual(tuple(conn.execute("SELECT full_rolls,partial_meters FROM material_inventory_color WHERE material_key='нить'").fetchone()),(0,0.999))
+
     def test_product_receipt_keeps_variant_on_item_movement_and_fifo_layer(self) -> None:
         order_id = procurement.create_procurement_order(
             procurement_type="Товар", supplier_name="Supplier", status="Запланировано",

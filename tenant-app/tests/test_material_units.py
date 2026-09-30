@@ -28,3 +28,9 @@ def test_rejects_incompatible_unknown_and_unrepresentable_base(amount,entered,ba
 
 def test_custom_catalog_identity_is_preserved_without_guessing_conversion():
     assert normalize_material_quantity('2','box','box')['conversion_factor']=='1'
+
+
+@pytest.mark.parametrize('qty,price,entered,base', [('1.001','0.1','г','кг'),('1','0.000001','кг','г'),('1','NaN','г','кг')])
+def test_receipt_conversion_rejects_quantity_and_inverse_rate_precision_loss(qty,price,entered,base):
+    from db.material_units import convert_material_amount
+    with pytest.raises(ValueError): convert_material_amount(qty,price,entered,base)

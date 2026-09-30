@@ -1,4 +1,20 @@
 from test_cashflow_api import client
+
+def test_opening_material_api_conversion_preserves_preview_cost_and_replays(client):
+ from db import core
+ with core.connect() as c:
+  c.execute("INSERT INTO material_inventory_color(material_key,material_name,unit,tracking_mode,balance_known,full_rolls,partial_meters,roll_length,note,updated_at) VALUES('нить','Нить','кг','quantity',0,0,0,1,'','2026-09-01')")
+ data={'kind':'opening_materials','csv_text':';'.join(FIELDS['opening_materials'])+'\no1;Нить;г;1250;0.1;2026-09-01','mapping':{f:f for f in FIELDS['opening_materials']}}
+ h={'x-tenant-role':'owner'}
+ response=client.post('/api/v1/migration-import/preview',json=data,headers=h)
+ assert response.status_code==200,response.text
+ p=response.json();assert p['can_confirm']
+ assert p['rows'][0]['data']['unit_conversion']['source_total_rub']=='125'
+ body={**data,'request_key':str(uuid4()),'preview_fingerprint':p['preview_fingerprint']}
+ confirmed=client.post('/api/v1/migration-import/confirm',json=body,headers=h)
+ assert confirmed.status_code==200,confirmed.text
+ assert client.post('/api/v1/migration-import/confirm',json=body,headers=h).json()['replayed']
+ with core.connect() as c:assert c.execute('SELECT original_amount_rub FROM material_cost_layers').fetchone()[0]==125
 import pytest
 from uuid import uuid4
 from db.migration_import import FIELDS

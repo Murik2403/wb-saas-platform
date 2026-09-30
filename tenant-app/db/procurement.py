@@ -658,6 +658,7 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
             try:
                 conn.execute("SAVEPOINT procurement_receipt_item")
                 material_delta = 0.0
+                unit_conversion = None
                 ready_delta = 0
                 movement_type = "procurement_product_receipt"
                 if str(item["item_type"] or "") == "Сырьё":
@@ -676,13 +677,25 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                             """,
                             (key, material_name, 1, 0, 0.0, roll_length, "Создано при приёмке закупки", now),
                         )
+                        if str(item['unit'] or '').strip() != 'рулон':
+                            conn.execute("UPDATE material_inventory_color SET unit=?,tracking_mode='quantity',roll_length=1 WHERE material_key=?",(str(item['unit'] or 'м').strip(),key))
                     elif int(existing["balance_known"] or 0) != 1:
                         conn.execute(
                             "UPDATE material_inventory_color SET balance_known=1,roll_length=?,updated_at=? WHERE material_key=?",
                             (roll_length, now, key),
                         )
                     material_delta = qty * roll_length if str(item["unit"] or "") == "рулон" else qty
-                    _apply_material_delta(conn, key, material_name, material_delta)
+                    if existing is not None and str(item['unit'] or '').strip() != 'рулон' and str(item['unit'] or '').strip() != str(existing['unit'] or 'м'):
+                        from .material_units import convert_material_amount
+                        entered_rate=_landed_unit_cost(item['supplier_unit_price'],item['exchange_rate'],item['delivery_unit_foreign'],item['extra_unit_rub'],item['unit_price'])
+                        unit_conversion=convert_material_amount(qty,entered_rate,str(item['unit']).strip(),str(existing['unit'] or 'м'))
+                        material_delta=float(unit_conversion['base_quantity'])
+                    exact_quantity_receipt = unit_conversion is not None or (existing is None and str(item['unit'] or '').strip() != 'рулон')
+                    if exact_quantity_receipt:
+                        from .material_units import apply_quantity_receipt_delta
+                        apply_quantity_receipt_delta(conn,key,material_name,material_delta)
+                    else:
+                        _apply_material_delta(conn, key, material_name, material_delta)
                     movement_type = "procurement_material_receipt"
                     result["materials_m"] += material_delta
                 else:
@@ -715,6 +728,9 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     ),
                 )
                 movement_id = int(movement_cur.lastrowid)
+                if unit_conversion is not None:
+                    from .material_units import record_receipt_conversion
+                    record_receipt_conversion(conn,movement_id,source_key,unit_conversion)
                 landed_unit = _landed_unit_cost(
                     item["supplier_unit_price"], item["exchange_rate"],
                     item["delivery_unit_foreign"], item["extra_unit_rub"], item["unit_price"],
@@ -739,7 +755,7 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     if unit_text == "рулон":
                         rate_rub_m = landed_unit / max(0.1, float(item["roll_length"] or 25.5))
                     else:
-                        rate_rub_m = landed_unit
+                        rate_rub_m = float(unit_conversion['base_unit_price_rub']) if unit_conversion is not None else landed_unit
                     layer_id = _create_material_layer(
                         conn, str(item["material_key"] or item["material_name"]),
                         str(item["material_name"] or ""), "procurement", f"movement:{movement_id}",
@@ -750,7 +766,7 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                     conn.execute(
                         "UPDATE inventory_movements SET material_cost_rub=?,unit_cost_rub=?,note=? WHERE id=?",
                         (receipt_amount, rate_rub_m,
-                         f"Приёмка закупки {order['order_number']}; FIFO-слой #{layer_id}: {material_delta:.3f} м по {rate_rub_m:.2f} ₽/м",
+                         (f"Приёмка закупки {order['order_number']}; FIFO-слой #{layer_id}: {unit_conversion['entered_quantity']} {unit_conversion['entered_unit']} = {unit_conversion['base_quantity']} {unit_conversion['base_unit']}; {rate_rub_m} ₽/{unit_conversion['base_unit']}" if unit_conversion is not None else f"Приёмка закупки {order['order_number']}; FIFO-слой #{layer_id}: {material_delta:.3f} м по {rate_rub_m:.2f} ₽/м"),
                          movement_id),
                     )
                 conn.execute(
@@ -771,7 +787,8 @@ def post_procurement_receipt(order_id: int, receipt_df: pd.DataFrame) -> dict[st
                 except Exception:
                     pass
                 result["errors"].append(f"{item['material_name'] or item['supplier_article']}: {exc}")
-        _refresh_procurement_order_status(conn, int(order_id))
+        if result['items']:
+            _refresh_procurement_order_status(conn, int(order_id))
     return result
 
 def read_procurement_movements(limit: int = 300) -> pd.DataFrame:

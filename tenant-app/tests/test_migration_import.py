@@ -5,6 +5,38 @@ from db.migration_import import preview_import, confirm_import, import_history, 
 def database(monkeypatch,tmp_path):
  monkeypatch.setattr(core,'DB_PATH',tmp_path/'import.sqlite');core.init_db()
 def mapping(k):return {f:f for f in FIELDS[k]}
+
+def test_opening_conversion_keeps_total_original_provenance_and_replay():
+ import json
+ save('materials',['m1;Нить;кг'])
+ k='opening_materials';t=text(k,['o1;Нить;г;1250;0.1;2026-09-01']);p=preview_import(k,t,mapping(k))
+ assert p['can_confirm'],p
+ assert p['rows'][0]['data']['quantity']==1.25
+ assert p['rows'][0]['data']['unit_cost_rub']==100
+ from db.migration_import import parse_csv,_hash
+ original_rows,errors=parse_csv(k,t,mapping(k));assert not errors
+ original_hash=_hash({'kind':k,'rows':original_rows})
+ assert original_hash!=_hash({'kind':k,'rows':p['rows']})
+ assert not confirm_import(k,t,mapping(k),'converted',p['preview_fingerprint'])['replayed']
+ assert confirm_import(k,t,mapping(k),'converted',p['preview_fingerprint'])['replayed']
+ with core.connect() as c:
+  layer=c.execute('SELECT * FROM material_cost_layers').fetchone()
+  assert (layer['original_meters'],layer['unit_cost_rub_m'],layer['original_amount_rub'])==(1.25,100,125)
+  snapshot=json.loads(c.execute("SELECT snapshot_json FROM migration_import_sources WHERE kind='opening_materials'").fetchone()[0])
+  assert snapshot['unit_conversion']['entered_quantity']=='1250'
+  assert snapshot['unit_conversion']['entered_unit']=='г'
+  assert snapshot['unit_conversion']['base_unit']=='кг'
+  assert c.execute("SELECT content_hash FROM migration_import_batches WHERE request_key='converted'").fetchone()[0]==original_hash
+
+def test_converted_opening_stale_catalog_and_lossy_precision_fail_without_layer():
+ save('materials',['m1;Нить;кг'])
+ k='opening_materials';t=text(k,['o1;Нить;г;1250;0.1;2026-09-01']);p=preview_import(k,t,mapping(k))
+ assert p['can_confirm']
+ for row in ['o2;Нить;л;1;100;2026-09-01','o2;Нить;г;1.001;100;2026-09-01']:
+  assert not preview_import(k,text(k,[row]),mapping(k))['can_confirm']
+ with core.connect() as c:c.execute("UPDATE material_inventory_color SET unit='л' WHERE material_key='нить'")
+ with pytest.raises(ValueError):confirm_import(k,t,mapping(k),'stale',p['preview_fingerprint'])
+ with core.connect() as c:assert c.execute('SELECT COUNT(*) FROM material_cost_layers').fetchone()[0]==0
 def text(k,rows):return ';'.join(FIELDS[k])+'\n'+'\n'.join(rows)
 def save(k,rows,key='request-1'):
  t=text(k,rows);p=preview_import(k,t,mapping(k));assert p['can_confirm'],p
