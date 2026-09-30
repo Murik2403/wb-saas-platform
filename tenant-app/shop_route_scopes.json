@@ -684,17 +684,17 @@
   {
     "method": "GET",
     "path": "/api/v1/ozon-accounting/workspace",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "POST",
     "path": "/api/v1/ozon-accounting/sync",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "PUT",
     "path": "/api/v1/ozon-accounting/cost",
-    "scope": "shop_local"
+    "scope": "forbidden"
   },
   {
     "method": "GET",

@@ -218,3 +218,28 @@ def test_public_sync_freshness_commits_atomically_and_replay_does_not_refresh(cl
             assert report.status_code==200,report.text
             assert report.json()['total']['sales']==15
             assert report.json()['complete'] is False
+
+
+def test_selected_wb_shop_cannot_read_or_mutate_any_ozon_accounting_route(client):
+    import shop_context,shop_dispatch
+    shop=shops.create('WB only','unused','wb-seller')
+    headers={'x-mh-shop-id':str(shop)}
+    routes=[r for r in shop_context.ROUTES if r['path'].startswith('/api/v1/ozon-accounting/')]
+    assert len(routes)>=8
+    for route in api.app.routes:
+        if getattr(route,'path','').startswith('/api/v1/ozon-accounting/'):
+            for method in route.methods:
+                assert shop_context.route_scope(method,route.path)['scope']=='forbidden'
+    session=client.get('/api/v1/shop-context/session',headers=headers).json()
+    selected=next(r for r in session['shops'] if r['id']==shop)
+    assert not any('/ozon-accounting/' in action for action in selected['allowed_actions'])
+    with patch.object(shop_dispatch,'prepare') as worker:
+        for route in routes:
+            path=route['path'].replace('{id}','1').replace('{request_key}','test')
+            response=client.request(route['method'],path,headers=headers)
+            assert response.status_code in {403,409},(path,response.text)
+            if response.status_code==409:assert response.json()['detail']['code']=='SHOP_ROUTE_FORBIDDEN'
+    worker.assert_not_called()
+    primary=client.get('/api/v1/ozon-accounting/workspace?start_date=2026-09-01&end_date=2026-09-02')
+    assert primary.status_code==200,primary.text
+    assert primary.headers['x-mh-resource-scope']=='tenant_shared'
