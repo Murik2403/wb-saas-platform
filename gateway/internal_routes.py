@@ -19,6 +19,7 @@ import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 import config
 import mailer
@@ -29,6 +30,41 @@ logger = logging.getLogger("wb_saas_gateway.internal")
 
 router = APIRouter()
 MAX_REPORT_UPLOAD_BYTES = config.MAX_REPORT_UPLOAD_BYTES
+
+
+class TenantMemberRoleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    slug: StrictStr = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    account: StrictStr = Field(pattern=r"^[1-9][0-9]{0,18}$")
+
+    @field_validator("account")
+    @classmethod
+    def sqlite_account_id(cls, value: str) -> str:
+        if int(value) > 2**63 - 1:
+            raise ValueError("invalid account identifier")
+        return value
+
+
+@router.post("/internal/tenant-member-role")
+def tenant_member_role(payload: TenantMemberRoleInput, request: Request):
+    """Fresh membership for a bounded scheduled delegation, not an access grant.
+
+    Auth uses the existing exact tenant credential. Unknown, revoked and
+    unavailable memberships all return the same null result. No global account
+    lookup details or credentials are exposed and successful replies are not cached.
+    """
+    if not _secret_is_valid(request.headers.get("x-internal-secret", ""), payload.slug):
+        raise HTTPException(status_code=403, detail="forbidden")
+    role = None
+    with control_db.connect() as conn:
+        conn.execute("BEGIN")
+        tenant = accounts.get_tenant_by_slug(conn, payload.slug)
+        account = accounts.get_account_by_id(conn, int(payload.account))
+        if tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant) and accounts.is_email_verified(account):
+            membership = accounts.get_tenant_membership(conn, int(tenant["id"]), int(payload.account))
+            if membership is not None and membership["role"] in accounts.TENANT_ROLES:
+                role = membership["role"]
+    return JSONResponse({"role": role}, headers={"Cache-Control": "no-store"})
 
 
 def _secret_is_valid(provided: str, slug: str = "") -> bool:
