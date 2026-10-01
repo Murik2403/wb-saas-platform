@@ -13,6 +13,14 @@ class OzonAccountingError(ValueError):
     pass
 
 
+def checked_realization_month(month: int, year: int):
+    if type(month) is not int or type(year) is not int or not 1 <= month <= 12:
+        raise OzonAccountingError("Выберите месяц отчёта Ozon.")
+    if (year, month) < (2023, 8) or (year, month) > (date.today().year, date.today().month):
+        raise OzonAccountingError("Отчёт доступен с августа 2023 года, без будущих месяцев.")
+    return year, month
+
+
 def checked_period(start: str, end: str) -> tuple[date, date]:
     first, last = date.fromisoformat(start), date.fromisoformat(end)
     if first > last or (last-first).days > 30 or first < date(2022, 1, 1) or last > date.today():
@@ -31,15 +39,17 @@ class OzonAccountingClient:
         self.page_receipts = []
         self.deadline = time.monotonic()+300
 
-    def _post(self, path: str, body: dict) -> dict:
+    def _post(self, path: str, body: dict, *, timeout=20) -> dict:
         self.requests += 1
         if self.requests > 250 or time.monotonic() > self.deadline:
             raise OzonAccountingError("Достигнут предел загрузки Ozon. Сократите период.")
         response = None
         try:
-            response = self.session.post(self.BASE+path, headers=self.headers, json=body, timeout=20, allow_redirects=False, stream=True)
+            response = self.session.post(self.BASE+path, headers=self.headers, json=body, timeout=timeout, allow_redirects=False, stream=True)
             if response.status_code != 200:
-                raise OzonAccountingError(f"Ozon: HTTP {response.status_code} при чтении {path}. Данные не заменены.")
+                error=OzonAccountingError(f"Ozon: HTTP {response.status_code} при чтении {path}. Данные не заменены.")
+                error.status_code=response.status_code
+                raise error
             raw = bytearray()
             for chunk in response.iter_content(chunk_size=65536):
                 if time.monotonic()>self.deadline or len(raw)+len(chunk)>2*1024*1024 or len(chunk)>self.byte_budget:
@@ -125,6 +135,23 @@ class OzonAccountingClient:
                            if isinstance(row.get("posting_number"), str) and row["posting_number"]]
         finance_postings = self.finance_postings(posting_numbers)
         return {"start_date": start, "end_date": end, "products": products, "stocks": stocks, "fbo": fbo, "fbs": fbs, "returns": returns, "types": dictionary, "accruals": accruals,"finance_postings":finance_postings,"finance_postings_scope":{"requested_number_count":len(set(posting_numbers)),"date_filter_supported":False,"missing_number_count":len(set(posting_numbers)-{r["posting_number"] for r in finance_postings}),"normalization_verified":False},"collection_provenance":{"schema_version":1,"completed_days":completed_days,"start_date":start,"end_date":end,"terminal_pages_checked":True,"financial_normalization_verified":False,"page_receipts":self.page_receipts.copy()}}
+
+    def realization_source(self, month: int, year: int) -> dict:
+        checked_realization_month(month, year)
+        self.deadline=min(self.deadline,time.monotonic()+5)
+        try:
+            report = self._post("/v1/finance/realization/posting", {"month":month,"year":year}, timeout=5)
+        except OzonAccountingError as exc:
+            if getattr(exc,'status_code',None) in (403,404):
+                raise OzonAccountingError("Месячный документ Ozon недоступен для этого аккаунта или периода. Это не подтверждение нулевых продаж. Сохранённый документ не заменён.") from None
+            raise
+        if (not isinstance(report.get("header"), dict) or not isinstance(report.get("rows"), list)
+                or any(not isinstance(row, dict) for row in report["rows"])):
+            raise OzonAccountingError("Не распознана структура месячного отчёта Ozon.")
+        if len(report["rows"]) > self.max_rows:
+            raise OzonAccountingError("Превышен безопасный объём месячного отчёта Ozon.")
+        return {"source_kind":"ozon-realization-v1", "month":month,"year":year,
+                "report":report,"page_receipts":self.page_receipts.copy()}
 
     def finance_postings(self, posting_numbers: list[str]) -> list[dict]:
         """Official v1 raw financial rows, sequential requests of 1..200 numbers.

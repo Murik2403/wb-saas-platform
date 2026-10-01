@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders, getDashboardSession } from "./data-source";
 import "./OzonAccounting.css";
 import { OzonHistoricalPnl } from "./OzonHistoricalPnl";
+import { OzonRealizationSource } from "./OzonRealizationSource";
 
 type CostMapping = { mode: "manual" | "wb_estimate"; unit_cost_text: string | null; nm_id: number | null };
 type Product = { sku: string; offer_id: string; product_id: number; stocks: Array<{ present?: number; reserved?: number; type?: string }>; cost_mapping?: CostMapping | null };
@@ -98,6 +99,7 @@ function PrimaryOzonAccounting() {
       </section>
       {data.fees?.length ? <><h3>Сборы по справочнику Ozon</h3><p>Расшифровка уже входит в итог начислений: эти суммы не вычитаются повторно.</p><ul>{data.fees.map(fee => <li key={fee.type_id}>{fee.name}: {money(fee.amount_rub)}{fee.mapped ? "" : " · тип не распознан"}</li>)}</ul></> : null}
     </> : data ? <p>{data.blockers.join(" ")}</p> : <p>Читаем сохранённый отчёт…</p>}
+    <OzonRealizationSource canWrite={canWrite} />
     <OzonHistoricalPnl key={`${start}:${end}`} start={start} end={end} canWrite={canWrite} />
   </section>;
 }
