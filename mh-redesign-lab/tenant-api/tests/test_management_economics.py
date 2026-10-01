@@ -301,3 +301,51 @@ def test_monthly_pnl_rejects_too_long_period_and_handles_empty_store():
     assert err.value.status_code == 422
     empty = api.get_management_pnl_monthly(period="custom", start=date(2026, 9, 1), end=date(2026, 9, 30))
     assert empty["data_status"] == "no_financial_data" and empty["total"]["result"] == 0
+
+
+def _without_tax(monthly):
+    import json
+    copy = json.loads(json.dumps(monthly))
+    for row in copy["months"] + [copy["total"]]:
+        row.pop("tax")
+    return json.dumps(copy, sort_keys=True)
+
+
+def test_tax_block_is_additive_and_settings_roundtrip():
+    from fastapi import HTTPException
+    _seed_two_months()
+    kw = dict(period="custom", start=date(2026, 8, 1), end=date(2026, 9, 30))
+    before = api.get_management_pnl_monthly(**kw)
+    assert before["total"]["tax"] is None and all(m["tax"] is None for m in before["months"])
+
+    assert api.get_tax_settings(year=2026)["regime"] is None
+    saved = api.put_tax_settings(api.TaxSettingsInput(year=2026, regime="usn_income", rates=[
+        api.TaxRateInput(month=8, usn_pct=6, vat_pct=20), api.TaxRateInput(month=9, usn_pct=6, vat_pct=20)]))
+    assert saved["regime"] == "usn_income" and len(saved["rates"]) == 2
+    after = api.get_management_pnl_monthly(**kw)
+    assert _without_tax(after) == _without_tax(before)  # existing fields untouched
+    aug = after["months"][0]
+    assert aug["tax"]["vat_out"] == round(aug["sales"] * 20 / 120, 2)
+    assert aug["tax"]["total"] == round(aug["tax"]["vat_out"] + aug["tax"]["usn"], 2)
+    assert after["total"]["tax"]["status"] == "ok"
+
+    for bad in (
+        dict(year=2026, regime="osno"),
+        dict(year=2019, regime="usn_income"),
+        dict(year=2026, regime="usn_income", rates=[api.TaxRateInput(month=13, usn_pct=6, vat_pct=0)]),
+        dict(year=2026, regime="usn_income", rates=[api.TaxRateInput(month=1, usn_pct=101, vat_pct=0)]),
+        dict(year=2026, regime="usn_income", rates=[api.TaxRateInput(month=1, usn_pct=6, vat_pct=-1)]),
+        dict(year=2026, regime="usn_income", rates=[api.TaxRateInput(month=1, usn_pct=6, vat_pct=0)] * 2),
+    ):
+        with pytest.raises(HTTPException) as err:
+            api.put_tax_settings(api.TaxSettingsInput(**bad))
+        assert err.value.status_code == 422
+    assert api.get_tax_settings(year=2026)["regime"] == "usn_income"  # failed saves changed nothing
+
+
+def test_tax_settings_write_is_owner_and_manager_only():
+    from production_permissions import ROLES, write_allowed
+    for role in ROLES:
+        assert write_allowed(role, "PUT", "/api/v1/settings/tax") == (role in {"owner", "manager"})
+        if role != "integration_reader":
+            assert write_allowed(role, "GET", "/api/v1/settings/tax")
