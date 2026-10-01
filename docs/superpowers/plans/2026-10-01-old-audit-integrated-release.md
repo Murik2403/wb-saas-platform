@@ -24,8 +24,8 @@
 - [x] Run the complete affected backend/API/frontend suites and production build.
 - [x] Verify the two added interfaces in CUA on a synthetic fixture; confirm they are accessible and preserve unknown/source labels.
 - [x] Update Graphify and commit the acceptance/release scope without the unrelated TrueStats draft.
-- [ ] Build a clean committed archive; verify immutable runtime base and candidate source bytes.
-- [ ] Restore fresh encrypted backups in isolation, then deploy demo followed by mvvorokov; verify health, source endpoints and cold finance.
-- [ ] Pin provisioner for future tenants, record live revision and actual remaining external criteria.
+- [x] Build a clean committed archive; verify immutable runtime base and candidate source bytes.
+- [x] Restore fresh encrypted backups in isolation, then deploy demo followed by mvvorokov; verify health, source endpoints and cold finance.
+- [x] Pin provisioner for future tenants, record live revision and actual remaining external criteria.
 
 Full automatic Ozon ledger normalization remains conditional on a supported correction/return contract and real source examples. This source-preview increment does not silently declare that requirement delivered. Actual historical accuracy, interviews and cohort outcomes also require evidence beyond code.
