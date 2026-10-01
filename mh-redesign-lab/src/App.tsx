@@ -16,6 +16,7 @@ import { ProductCardsPanel } from "./ProductCardsPanel";
 import { ShopQualityPanel } from "./ShopQualityPanel";
 import { ProductPricesPanel } from "./ProductPricesPanel";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
+import { ManagementPnlMonthly } from "./ManagementPnlMonthly";
 import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
@@ -1870,6 +1871,7 @@ export function FinanceView({
         {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
       </> : null}
       <ManagementPnlSummary period={period} />
+      <ManagementPnlMonthly period={period} />
       {cashflow}
       <section className="work-section finance-movement-panel" aria-label="Денежное движение">
         <SectionHeader kicker="P&L" title="Денежное движение">

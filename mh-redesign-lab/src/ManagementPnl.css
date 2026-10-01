@@ -1,0 +1,28 @@
+.pnl-delta { display: block; font-size: 0.74rem; font-weight: 600; color: var(--muted); }
+.pnl-delta.good { color: var(--success); }
+.pnl-delta.bad { color: var(--danger); }
+.pnl-compare-note { margin: 0 0 0.55rem; }
+
+.pnl-monthly { padding: 1rem; margin-bottom: 1rem; }
+.pnl-monthly .section-header { gap: 0.75rem; flex-wrap: wrap; }
+.pnl-monthly .section-header h2 { margin-bottom: 0; }
+.pnl-monthly-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.pnl-monthly-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.pnl-monthly-table th, .pnl-monthly-table td { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.pnl-monthly-table thead th { color: var(--muted); font-weight: 700; vertical-align: bottom; }
+.pnl-monthly-table thead th small { display: block; color: var(--amber); font-weight: 600; font-size: 0.68rem; }
+.pnl-monthly-table tbody th { text-align: left; white-space: normal; min-width: 13rem; max-width: 20rem; font-weight: 500; position: sticky; left: 0; background: var(--surface); }
+.pnl-monthly-table thead th:first-child { text-align: left; }
+.pnl-monthly-table td span { display: block; }
+.pnl-monthly-table td small { display: block; color: var(--muted); font-size: 0.72rem; }
+.pnl-monthly-table .pnl-total-col { background: rgba(255, 255, 255, 0.035); border-left: 1px solid var(--line-strong); }
+.pnl-monthly-table .pnl-row-sub th { padding-left: 1.6rem; color: var(--muted); }
+.pnl-monthly-table th { font-family: inherit; }
+.pnl-monthly-table .pnl-row-total th, .pnl-monthly-table .pnl-row-total td span { font-weight: 700; color: var(--text); }
+.pnl-monthly-table .pnl-row-expense:not(.pnl-row-sub) th, .pnl-monthly-table .pnl-row-expense:not(.pnl-row-sub) td span { font-weight: 600; color: var(--text); }
+.pnl-monthly-table tbody tr:last-child td, .pnl-monthly-table tbody tr:last-child th { border-bottom: 0; }
+.pnl-monthly-note { margin-top: 0.75rem; }
+@media (max-width: 640px) {
+  .pnl-monthly-table tbody th { min-width: 7.5rem; max-width: 8.5rem; font-size: 0.76rem; }
+  .pnl-monthly-table .pnl-row-sub th { padding-left: 0.9rem; }
+}

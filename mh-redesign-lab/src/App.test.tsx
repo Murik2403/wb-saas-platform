@@ -142,6 +142,7 @@ vi.mock("./data-source", async () => {
     useDashboardData: () => mockedDashboard,
     getFinanceFifoReconciliationPage: vi.fn().mockResolvedValue({ period: { start: "2026-08-26", end: "2026-09-24" }, total: 0, offset: 0, limit: 25, rows: [] }),
     getManagementPnl: vi.fn().mockResolvedValue({ data_status: "no_financial_data", expenses: { included: [], excluded: [], unknown_source: [] } }),
+    getManagementPnlMonthly: vi.fn().mockResolvedValue({ data_status: "no_financial_data", months: [], total: {} }),
     getActionPlanItems: vi.fn().mockResolvedValue([]),
     getDashboardSession: vi.fn().mockResolvedValue({
       user: { id: "u1", name: "demo", role: "owner" },
