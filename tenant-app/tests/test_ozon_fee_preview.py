@@ -94,3 +94,37 @@ def test_ambiguous_dictionary_and_unknown_component_fields_fail_closed():
     source = row()
     source["non_item_fee"]["unknown_money"] = {"amount": "2", "currency": "RUB"}
     assert preview([source])["rows"][0]["reconciled"] is False
+
+
+@pytest.mark.parametrize("field,value,display", [
+    ("date", {"bad":"date"}, "date"), ("date", "2026-02-30", "date"),
+    ("accrual_id", {"bad":"id"}, "accrual_id"), ("accrual_id", True, "accrual_id"),
+    ("accrued_category", {"bad":"category"}, "category"),
+    ("accrued_category", ["NON_ITEM"], "category"),
+])
+def test_rejected_metadata_never_forwards_unsafe_display_values(field, value, display):
+    source = {**row(), field:value}
+    original = copy.deepcopy(source)
+    result = preview([source, row()])
+    rejected = result["rows"][0]
+    assert rejected["reconciled"] is False
+    assert rejected[display] is None
+    assert rejected["components"] == []
+    assert result["reconciled_total_rub"] == "-0.10"
+    assert source == original
+    assert all(result[flag] is False for flag in ("financial_normalization_verified", "marketplace_source_complete", "ledger_confirmation_allowed"))
+
+
+@pytest.mark.parametrize("description,name,expected", [
+    ({"bad":"label"}, "Safe name", "Safe name"),
+    (["unsafe"], {"bad":"name"}, "1"),
+    (False, 123, "1"), ("Safe description", {"bad":"name"}, "Safe description"),
+])
+def test_dictionary_label_is_scalar_without_changing_reconciliation(description, name, expected):
+    dictionary = [{"id":1, "description":description, "name":name}]
+    original = copy.deepcopy(dictionary)
+    result = fee_preview([row()], dictionary)
+    assert result["rows"][0]["components"][0]["name"] == expected
+    assert result["rows"][0]["reconciled"] is True
+    assert result["reconciled_total_rub"] == "-0.10"
+    assert dictionary == original

@@ -22,6 +22,23 @@ def _money(value):
     return amount
 
 
+def _display_date(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return value if date.fromisoformat(value).isoformat() == value else None
+    except ValueError:
+        return None
+
+
+def _display_label(entry, type_id):
+    for field in ("description", "name"):
+        value = entry.get(field)
+        if isinstance(value, str) and value:
+            return value
+    return str(type_id)
+
+
 def fee_preview(rows, types):
     encoded = json.dumps({"rows": rows, "types": types}, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     version = hashlib.sha256(encoded.encode()).hexdigest()
@@ -34,7 +51,11 @@ def fee_preview(rows, types):
         try:
             if not isinstance(row, dict):
                 raise ValueError("Не распознана строка начисления.")
-            result.update({"accrual_id": row.get("accrual_id"), "date": row.get("date"), "category": row.get("accrued_category")})
+            # Rejected rows still reach the UI; never copy raw containers into
+            # display metadata. Validation below continues using the raw row.
+            result.update({"accrual_id": row.get("accrual_id") if type(row.get("accrual_id")) is int and row["accrual_id"] >= 0 else None,
+                           "date": _display_date(row.get("date")),
+                           "category": row.get("accrued_category") if isinstance(row.get("accrued_category"), str) else None})
             if type(row.get("accrual_id")) is not int or row["accrual_id"] < 0:
                 raise ValueError("Не распознан идентификатор начисления.")
             if date.fromisoformat(row["date"]).isoformat() != row["date"]:
@@ -74,7 +95,7 @@ def fee_preview(rows, types):
                 amount = _money(fee["accrued"])
                 component_sum += amount
                 components.append({"source_path": path, "type_id": type_id, "sku": sku, "amount_rub": str(amount),
-                                   "name": known[type_id].get("description") or known[type_id].get("name") or str(type_id)})
+                                   "name": _display_label(known[type_id], type_id)})
             if component_sum != expected:
                 raise ValueError("Сумма компонентов сборов не совпадает с итогом Ozon; строка исключена из preview.")
             result.update({"reconciled": True, "components": components, "component_sum_rub": str(component_sum)})

@@ -1,0 +1,37 @@
+# Ozon POSTING contract recheck on 541d640
+
+Investigation date: 2026-10-01. This increment researches the remaining monetary contract and fixes a proven display-safety defect; it does not claim that full monetary normalization is complete. The released raw postings collector and source table are not duplicated.
+
+## New primary-source trail
+
+The verified [Ozon Seller API notification channel](https://t.me/s/OzonSellerAPI?before=685) was read again through the web tool. Its July 21 notice identifies a changed description of `accruals.posting.products.delivery.services`. Its July 28 notice announces the beta `/v1/report/realization/posting/create` and an updated error description for `/v1/finance/realization/posting`. These are a concrete alternative contract trail for an order-level realization report; they are not evidence of a formula for the by-day POSTING object. Individual notice links: [July 21](https://t.me/OzonSellerAPI/670), [July 28](https://t.me/OzonSellerAPI/673).
+
+The same primary source [July 14 notice](https://t.me/OzonSellerAPI/667) confirms retirement of the legacy v3 financial transaction methods on 2026-09-08 and recommends the three v1 accrual methods. The [current notification feed](https://t.me/s/OzonSellerAPI), whose last visible dated notice is September 28, was also inspected. The fetched feed does not supply a POSTING equation, operation uniqueness/correction contract, or return linkage. This bounded observation is not a claim that such documentation cannot exist elsewhere.
+
+Direct official Seller API and migration-page reads still redirect-loop in the web fetcher. The child browser inventory is empty. The root browser successfully read the expanded official schemas below; failed web fetches do not establish that the documentation is unavailable. No proposed endpoint is called against a seller account. In particular, a report-generation `create` request would create external state and is outside this read-only investigation.
+
+## Fresh expanded official schemas
+
+Root CUA captured rendered text for [by-day](https://docs.ozon.ru/api/seller/#operation/GetFinanceAccrualByDay), [monthly realization](https://docs.ozon.ru/api/seller/#operation/FinanceAPI_GetRealizationReportV1), and [report generation](https://docs.ozon.ru/api/seller/#operation/CreateCompanyFinanceRealizationPostingReport). The resulting private proof `audit-private-deliverables-20260930/ozon-official-contract-20261001.json` was read locally; SHA256 `db33a7b77a00ccd7d7db98ca4ab7db29c77740ab7be4b16c66a76c52747bda77`.
+
+The expanded by-day commission descriptions distinguish the realized amount (`sale_amount`) from nullable unit price (`seller_price`) and customer price (`sale_price`). `sale_commission` is the price-list commission, while `commission` is the final commission including discounts and markups. Bonus and partner coinvestment are separate described fields. Delivery exposes a services list and aggregate `total_accrued`. No inspected description establishes a signed equation relating these fields to the accrual's `total_amount`, correction/supersession identity, or physical return linkage. In particular, summing nullable unit prices as realized revenue is not justified by these definitions.
+
+The monthly `/v1/finance/realization/posting` accepts int32 month/year and returns a header and rows. Separate delivery and return commission sections contain int32 quantities and numeric double totals; line, order, item and legal-entity-document identifiers are present. Header examples include document number/date/currency, and order examples include posting number/creation date. The description limits coverage to delivered/returned goods, excludes cancellations and non-purchases, excludes Kazakhstan, and says reports are available back to August 2023. The `commission` and `compensation` fields are explicitly limited to reports before 2024-04-30; current sections also contain standard fee and named loyalty contributions. These historical restrictions prevent assuming those old fields form a current equation. The examples are zero/string placeholders rather than authoritative nonempty sale/partial-return/correction fixtures. A report line number is only described as a line number; no durable revision or cross-period original-sale contract is given in this capture.
+
+The separate `/v1/report/realization/posting/create` yields a report code for retrieval via `/v1/report/info`; it is not equivalent to the direct monthly JSON response. No importer or report-generation request is added in this release.
+
+## Decision before monetary code
+
+No new normalizer is justified by the newly fetched sources. Descriptions of field names and a report's existence do not establish which commission fields are overlapping bases, which contribute once, or whether financial quantities describe physical movement. An occurrence fingerprint is an immutable snapshot coordinate, not business-operation identity. A mathematically equal candidate sum on synthetic numbers would not prove which candidate equation is correct.
+
+If the realization contract supplies explicit sale/return sections, quantities, document period and totals, evaluate it as a separate source contract first. Do not join it to by-day using SKU/date, derive a return's original sale from its order reference, or silently treat report revisions as delta operations. Monetary observation and physical FIFO remain independent acceptance gates.
+
+The db99eca browser receipt was re-read: synthetic source observations were unchanged after UI reads; `ozon_accrual_ledger=5`, `ozon_document_events=0`, raw source versions=1, integrity=ok. This confirms the released source table's read-only boundary, not the external money contract.
+
+## Concrete existing safety finding
+
+An independent probe of `fee_preview` on this base found that object-valued `date`, `accrual_id` and `accrued_category` are correctly rejected (`reconciled=false`) but still copied into display metadata before rejection. The fee table renders those metadata values directly, so this failure path reproduced the React object-child crash already fixed for the separate postings table. Dictionary names/descriptions also required a scalar display boundary. The authorized bounded repair sanitizes display metadata and dictionary labels while preserving raw payloads. Invalid calendar dates become null; dictionary labels use a valid description/name or the numeric type ID as text. Defensive frontend scalar checks keep rejected rows readable. The raw validation, signed arithmetic, aggregate matching and financial flags are unchanged.
+
+## Verification
+
+On the fresh isolated worktree from `541d640fbe9a88c756ba1a6ca44a4e1cee8a569a`, existing targeted suites (`test_ozon_posting_evidence`, `test_ozon_accounting`, `test_ozon_fee_preview`, `test_ozon_pnl`) initially passed **92 tests**. A pure helper probe reproduced rejected object metadata forwarding for all three fields. New regressions were red with **9 backend failures** and **1 UI failure/React object-child error**. After the repair, **102 backend tests and 14 Ozon UI tests passed**, and production TypeScript/Vite build passed. Tests preserve source objects, existing signed totals, rejection behavior and false flags; a valid neighboring row remains readable when malformed metadata is rejected. Graphify AST update completed; git diff check passed. No seller credentials, client exports, production writes or external seller API calls were used.

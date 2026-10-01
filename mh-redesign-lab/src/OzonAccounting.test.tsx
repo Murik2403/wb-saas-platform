@@ -15,6 +15,19 @@ beforeEach(() => {
 });
 afterEach(() => {cleanup();clearShopContext();vi.unstubAllGlobals();});
 describe("Ozon accounting", () => {
+  it("keeps fee preview readable when rejected metadata and dictionary labels are malformed", async () => {
+    vi.mocked(fetch).mockResolvedValue(response({...loaded, fee_preview:{reconciled_total_rub:"-0.10",rows:[
+      {source_occurrence_key:"bad-metadata",accrual_id:{bad:"id"},date:{bad:"date"},category:["NON_ITEM"],reconciled:false,component_sum_rub:null,reason:"Исходные метаданные не распознаны",components:[]},
+      {source_occurrence_key:"bad-label",accrual_id:7,date:"2026-09-01",category:"NON_ITEM",reconciled:true,component_sum_rub:"-0.10",components:[{source_path:"non_item_fee",type_id:1,name:{bad:"label"},sku:{bad:"sku"},amount_rub:"-0.10"}]}
+    ]}}));
+    render(<OzonAccounting />);
+    await screen.findByRole("heading",{name:"Предварительная сверка сборов Ozon"});
+    expect(screen.getByText("Исходные метаданные не распознаны")).toBeInTheDocument();
+    expect(screen.getByText(/Сверено строк: 1 из 2/)).toBeInTheDocument();
+    expect(screen.getAllByText("не указано / не распознано").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/Прибыль: не рассчитано/)).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.every(call=>(call[1] as RequestInit).method==="GET")).toBe(true);
+  });
   it("renders malformed posting dates and reference fields as unknown without crashing", async () => {
     vi.mocked(fetch).mockResolvedValue(response({...loaded,posting_accrual_evidence:{loaded:true,source_row_count:1,rows:[
       {source_occurrence_key:"malformed",posting_number:{bad:"posting"},accrual_date:{bad:"date"},sku_text:{bad:"sku"},type_id_text:[],quantity_text:{bad:"quantity"},accrued_rub:null,seller_price_rub:null,reason:{bad:"reason"}}
