@@ -21,7 +21,7 @@ class MonthlyPnlTests(DbTestCase):
             fin(101, '2026-09-10', 'Продажа', 2, retail_price_withdisc_rub=1000, retail_amount=2000, ppvz_for_pay=1500, ppvz_sales_commission=400, acquiring_fee=100),
             fin(102, '2026-09-11', 'Возврат', 1, retail_price_withdisc_rub=1000, retail_amount=1000, ppvz_for_pay=750, ppvz_sales_commission=200, acquiring_fee=50),
             fin(103, '2026-09-12', 'Продажа', 1, supplier_oper_name='Компенсация ущерба', retail_price_withdisc_rub=1000, ppvz_for_pay=90),
-            fin(104, '2026-09-13', '', 0, deduction=50, deduction_reason='Услуги продвижения'),
+            fin(104, '2026-09-13', '', 0, deduction=50, deduction_reason='WB Продвижение'),
         ])
         upsert_ads([dict(campaign_id=1, day='2026-09-10', nm_id=0, spend=50)])
         save_costs(pd.DataFrame([{'nm_id':100,'cost_per_wb_unit':100}]))
