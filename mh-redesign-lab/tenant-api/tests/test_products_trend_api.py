@@ -60,3 +60,15 @@ def test_previous_without_products_reports_no_data(monkeypatch):
     monkeypatch.setattr(api, "_build_dashboard_cached", lambda s, e: _Data([], []))
     r = api.get_products_previous(period="custom", start=date(2026, 9, 11), end=date(2026, 9, 20))
     assert r["has_data"] is False and r["totals"] is None
+
+
+def test_heatmap_route_validates_metric_and_uses_window(monkeypatch):
+    assert "/api/v1/dashboard/products/heatmap" in api.app.openapi()["paths"]
+    with pytest.raises(HTTPException) as exc:
+        api.get_products_heatmap(metric="profit", period="7d", start=None, end=None)
+    assert exc.value.status_code == 422
+    calls = []
+    monkeypatch.setattr(api, "compute_products_heatmap", lambda m, s, e: calls.append((m, s, e)) or {"rows": [], "min": float("nan")})
+    r = api.get_products_heatmap(metric="ad_spend", period="custom", start=date(2026, 9, 10), end=date(2026, 9, 1))
+    assert calls == [("ad_spend", date(2026, 9, 1), date(2026, 9, 10))]
+    assert r["min"] is None  # json_safe: no NaN on the wire
