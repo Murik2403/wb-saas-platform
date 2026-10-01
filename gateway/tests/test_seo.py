@@ -43,6 +43,15 @@ class RobotsAndSitemapTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(gateway_app.app)
 
+    def test_switching_guide_keeps_ozon_source_and_ledger_boundaries(self) -> None:
+        response = self.client.get("/guides/zamena-servisov-analitiki")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Ozon подключается только в модуле рекомендаций", response.text)
+        self.assertIn("API Ozon", response.text)
+        self.assertIn("отдельный документальный журнал", response.text)
+        self.assertIn("Автоматическое преобразование начислений API в этот журнал пока не реализовано", response.text)
+        self.assertIn("налоги и внешние расходы", response.text)
+
     def test_robots_txt_points_at_the_sitemap(self) -> None:
         response = self.client.get("/robots.txt")
         self.assertEqual(response.status_code, 200)
