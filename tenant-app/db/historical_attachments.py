@@ -2,10 +2,23 @@
 import csv
 import io
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from .core import connect
 from .financial_source import fingerprint
 from .financial_fifo_reconciliation import _event_type, _json_srid
+
+
+def source_quantity(value):
+    """Keep unknown/non-integral source units unknown; never round WB facts."""
+    if value is None or isinstance(value, bool): return None
+    try:
+        quantity = abs(Decimal(str(value)))
+        if not quantity.is_finite() or not 0 < quantity <= 10**9:
+            return None
+        if quantity != quantity.to_integral_value(): return None
+        return int(quantity)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
 
 
 def variant(conn, fact):
@@ -36,7 +49,7 @@ def validate_sources(conn, rows):
         source = conn.execute('SELECT * FROM financial_report WHERE rrd_id=?', (row['rrd_id'],)).fetchone()
         if source is None: raise ValueError('Строка WB отсутствует: прикрепление не создаёт финансовые документы')
         fact = dict(source)
-        identity = (fact['nm_id'], fact['operation_date'], _event_type(fact), abs(int(fact['quantity'])), variant(conn, fact))
+        identity = (fact['nm_id'], fact['operation_date'], _event_type(fact), source_quantity(fact['quantity']), variant(conn, fact))
         expected = (row['nm_id'], row['operation_date'], row['event_type'], row['quantity'], row['chrt_id'])
         if identity != expected: raise ValueError('Дата, SKU, вариант, вид операции или количество не совпадают со строкой WB')
         if not _json_srid(fact.get('raw_json')) or _json_srid(fact['raw_json']) != row['source_srid']:
@@ -69,7 +82,7 @@ def template(start, end):
             fact = dict(source)
             if not _event_type(fact): continue
             row = dict.fromkeys(FIELDS['historical_attachments'], '')
-            row.update(rrd_id=fact['rrd_id'], nm_id=fact['nm_id'], chrt_id=variant(conn, fact), operation_date=fact['operation_date'], event_type=_event_type(fact), quantity=abs(int(fact['quantity'])), source_srid=_json_srid(fact.get('raw_json')), financial_fingerprint=fingerprint(fact))
+            row.update(rrd_id=fact['rrd_id'], nm_id=fact['nm_id'], chrt_id=variant(conn, fact), operation_date=fact['operation_date'], event_type=_event_type(fact), quantity=source_quantity(fact['quantity']), source_srid=_json_srid(fact.get('raw_json')), financial_fingerprint=fingerprint(fact))
             for field in MONEY: row[field]=fact.get('ppvz_sales_commission' if field=='commission' else field)
             # Financial numbers retain their signs. External source text remains
             # inert in spreadsheet software; re-check SRID against the source.
