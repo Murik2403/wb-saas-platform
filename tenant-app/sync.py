@@ -35,7 +35,7 @@ def _record_first_sync_event() -> None:
     try:
         from growth_activation import record_growth_event
         from config import DB_PATH
-        record_growth_event(
+        is_first = record_growth_event(
             DB_PATH,
             event_name="first_sync_succeeded",
             occurred_at=datetime.now(timezone.utc).isoformat(),
@@ -50,10 +50,29 @@ def _record_first_sync_event() -> None:
             # Delivery remains retryable from the outbox and must never make a
             # successful WB import fail.
             pass
+        # The outbox insert is unique per tenant, so True happens exactly once
+        # per store: that is the "first successful full sync" signal.
+        if is_first:
+            _notify_first_sync_telegram()
     except Exception:
         # Growth measurement must never make a successful WB import fail. The
         # next sync retries the idempotent outbox insert.
         return
+
+
+FIRST_SYNC_TELEGRAM_TEXT = (
+    "MARKETSHELPER: данные вашего магазина загружены. "
+    "Откройте кабинет и проверьте себестоимость товаров."
+)
+
+
+def _notify_first_sync_telegram() -> None:
+    """Best-effort one-off Telegram ping; skipped silently when not linked."""
+    try:
+        from reports.delivery import send_text_telegram
+        send_text_telegram(FIRST_SYNC_TELEGRAM_TEXT)
+    except Exception:
+        pass
 
 
 def _incremental_from(table: str, default_days: int) -> str:
