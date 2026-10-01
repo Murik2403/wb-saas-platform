@@ -3992,3 +3992,8 @@ def save_expense_article_coverage(payload: ExpenseArticleAttestationInput, reque
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"id": identifier, "message": "Подтверждение сохранено; суммы расходов не изменены"}
+
+
+import rnp_api  # noqa: E402  (plan-fact "РНП": local SQLite, reuses the price-advice economics rows)
+rnp_api.configure(lambda s, e: _build_dashboard_cached(s, e), lambda k, b: _dashboard_response(k, b), lambda: _ADVICE_COLUMNS)
+app.include_router(rnp_api.router)

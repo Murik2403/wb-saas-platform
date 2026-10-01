@@ -1033,6 +1033,26 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/dashboard/rnp",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/dashboard/rnp/favorites",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/dashboard/rnp/plan",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/dashboard/rnp/target",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/settings/tax",
     "scope": "shop_local"
   },
