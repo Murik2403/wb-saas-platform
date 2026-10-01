@@ -1,9 +1,10 @@
 import { shopViewUrl } from "./selected-shop";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
-import { getActivationSummary, getFirstGrowthReport, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport, type ProductCostSetting, type TenantSyncRun } from "./data-source";
-import { onboardingEvidence } from "./onboarding";
+import { getActivationSummary, getFirstGrowthReport, getTenantSyncHistory, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport, type ProductCostSetting, type TenantSyncRun } from "./data-source";
+import { onboardingEvidence, syncProgress } from "./onboarding";
 import { trackMetrikaGoal } from "./metrika";
+import "./OnboardingProgress.css";
 
 type Props = {
   hideCompleted?: boolean;
@@ -59,7 +60,11 @@ export function OnboardingPanel(props: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const evidence = onboardingEvidence(props.runs, props.costs, nmId);
+  // While a sync runs, the parent's run list is stale: read the history ourselves to show live progress.
+  const [liveRuns, setLiveRuns] = useState<TenantSyncRun[] | null>(null);
+  const [justLoaded, setJustLoaded] = useState(false);
+  const wasRunning = useRef(false);
+  const evidence = onboardingEvidence(liveRuns ?? props.runs, props.costs, nmId);
   useEffect(() => {
     let current = true;
     setSummary(null); setReport(null); setError("");
@@ -93,9 +98,18 @@ export function OnboardingPanel(props: Props) {
           : evidence.syncMessage;
   useEffect(() => {
     if (syncState !== "running") return;
+    let current = true;
+    void getTenantSyncHistory().then((history) => { if (current) setLiveRuns(history.runs); }).catch(() => undefined);
     const timer = window.setTimeout(() => setRefresh((value) => value + 1), 5000);
-    return () => window.clearTimeout(timer);
+    return () => { current = false; window.clearTimeout(timer); };
   }, [syncState, refresh]);
+  // Tell the user when a load they were waiting for has finished (nothing is shown if the page opens already loaded).
+  useEffect(() => {
+    if (syncState === "running") wasRunning.current = true;
+    else if (wasRunning.current && syncComplete) { wasRunning.current = false; setJustLoaded(true); }
+    else if (wasRunning.current && syncState) wasRunning.current = false;
+  }, [syncState, syncComplete]);
+  const progress = syncState === "running" ? syncProgress(evidence.latest?.details) : null;
   const costComplete = summary?.selected_product.cost_configured ?? evidence.costComplete;
   const done = summary?.first_value_verified;
   if (done && !report && props.hideCompleted) return null;
@@ -110,6 +124,7 @@ export function OnboardingPanel(props: Props) {
   return <section className="work-section onboarding-panel" id="onboarding" aria-labelledby="onboarding-title">
     <h2 id="onboarding-title">Первый результат на ваших данных</h2>
     <p className="form-hint">Загрузите историю, выберите один товар, сохраните полную себестоимость единицы и откройте расчёт.</p>
+    {justLoaded ? <p role="status" className="onboarding-loaded">Данные магазина загружены. Теперь выберите товар и проверьте себестоимость.</p> : null}
     {summary?.is_demo ? <p role="status">Это демонстрационные данные. Первый результат учитывается только в вашем кабинете.</p> : null}
     <div className="onboarding-steps">
       <article className={`onboarding-step ${props.connected ? "done" : "current"}`}>
@@ -117,7 +132,7 @@ export function OnboardingPanel(props: Props) {
         {props.connected ? <CheckCircle2 size={18} /> : <div className="onboarding-inline-form"><input aria-label="WB API-токен для первого запуска" autoComplete="off" type="password" value={props.token} onChange={(event) => props.onTokenChange(event.target.value)} placeholder="WB API-токен" /><button className="primary-button" disabled={props.busy} type="button" onClick={props.onConnect}>Проверить и сохранить</button></div>}
       </article>
       <article className={`onboarding-step ${!props.connected ? "locked" : syncComplete ? "done" : "current"}`}>
-        <span className="onboarding-step-number">2</span><div><strong>Загрузить историю</strong><small>{syncMessage}</small></div>
+        <span className="onboarding-step-number">2</span><div><strong>Загрузить историю</strong><small>{syncMessage}</small>{progress ? <><progress className="onboarding-progress" max={progress.total} value={progress.done} aria-label={`Загрузка истории магазина, ${progress.percent}%`} /><small role="status">{progress.text}</small></> : null}</div>
         {syncComplete ? <CheckCircle2 size={18} /> : props.connected ? <div className="onboarding-inline-form"><input aria-label="Глубина первой загрузки, дней" min="7" max="90" type="number" value={props.days} onChange={(event) => props.onDaysChange(Number(event.target.value))} /><span>дней</span><button className="secondary-button" disabled={props.busy || syncState === "running"} type="button" onClick={props.onSync}>Загрузить историю</button></div> : null}
       </article>
       <article className={`onboarding-step ${!syncComplete ? "locked" : costComplete ? "done" : "current"}`}>

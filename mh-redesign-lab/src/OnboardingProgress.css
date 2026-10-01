@@ -1,0 +1,23 @@
+/* Live progress of the first store load (step 2 of the onboarding panel). */
+.onboarding-progress {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  height: 0.5rem;
+  margin: 0.45rem 0 0.25rem;
+  accent-color: var(--accent, #7c6cf6);
+}
+.onboarding-loaded {
+  margin: 0 0 0.8rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(50, 220, 180, 0.55);
+  border-radius: var(--radius, 12px);
+  background: rgba(50, 220, 180, 0.08);
+  font-weight: 600;
+}
+
+/* dark track + accent fill (the native <progress> defaults to a white track) */
+.onboarding-progress { appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.12); }
+.onboarding-progress::-webkit-progress-bar { background: rgba(255, 255, 255, 0.12); }
+.onboarding-progress::-webkit-progress-value { background: var(--accent, #7c6cf6); border-radius: 999px; }
+.onboarding-progress::-moz-progress-bar { background: var(--accent, #7c6cf6); border-radius: 999px; }

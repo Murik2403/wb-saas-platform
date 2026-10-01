@@ -13,3 +13,23 @@ export function onboardingEvidence(runs: TenantSyncRun[], costs: ProductCostSett
           : "Запустите полную загрузку истории магазина";
   return { latest, syncComplete, costComplete, selected, syncMessage };
 }
+
+// Order and names match SYNC_STAGES in tenant-app/sync.py ("progress: 3/7 sales").
+const STAGES = [
+  ["products", "товары"], ["orders", "заказы"], ["sales", "продажи"], ["finance", "финансовый отчёт"],
+  ["stocks", "остатки"], ["fifo", "учёт себестоимости"], ["ads", "реклама"],
+] as const;
+
+export type SyncProgress = { done: number; total: number; percent: number; text: string };
+
+export function syncProgress(details: string | null | undefined): SyncProgress | null {
+  const match = /^progress:\s*(\d+)\/(\d+)/.exec(details ?? "");
+  if (!match) return null;
+  const total = Math.max(1, Number(match[2]));
+  const done = Math.min(Number(match[1]), total);
+  const next = STAGES[done]?.[1];
+  return {
+    done, total, percent: Math.round((done / total) * 100),
+    text: next ? `Выполнено ${done} из ${total} этапов. Сейчас: ${next}.` : `Выполнено ${done} из ${total} этапов. Завершаем загрузку…`,
+  };
+}
