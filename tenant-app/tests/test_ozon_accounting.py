@@ -22,6 +22,8 @@ class OzonLedgerTests(DbTestCase):
         result = workspace("2026-09-01","2026-09-02")
         assert result["net_accrual_rub"] == "-12.34"
         assert result["fees"][0]["name"] == "Эквайринг"
+        assert result["fee_preview"]["reconciled_total_rub"] == "-12.34"
+        assert result["fee_preview"]["ledger_confirmation_allowed"] is False
         with connect() as conn:
             assert conn.execute("SELECT COUNT(*) FROM ozon_accrual_ledger").fetchone()[0] == 1
             assert [tuple(row) for row in conn.execute("SELECT * FROM sales")] == before

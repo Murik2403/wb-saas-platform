@@ -1,6 +1,6 @@
 # Ozon automatic money normalization: evidence gate, 2026-10-01
 
-Status: **open, external contract evidence missing**. This document does not close automatic Ozon monetary normalization. No runtime changes or deployment are implied.
+Status: **open for sales/returns and live verification; official schema inspected, bounded fee preview implemented**. This document does not close automatic Ozon monetary normalization. The follow-up below implements read-only fee preview on base `42476f5`; no deployment is claimed.
 
 Base examined: `93714b5` (committed cabinet release). Scope: `tenant-app/ozon_accounting_client.py`, `tenant-app/db/ozon_accounting.py`, `tenant-app/db/ozon_pnl.py`, their tests and API boundary. The owner has confirmed that no nonempty real Ozon financial export is available. No additional production API queries or credentials were used for this investigation.
 
@@ -45,4 +45,21 @@ The safe existing draft is the raw inspection workspace. The safe existing confi
 
 Those tests cover bounded pagination/raw provenance, repeated rows and IDs, malformed or unknown money, incomplete flags, manual preview/confirmation/dedup, historical lots and returns. They use synthetic fixtures and therefore **do not verify the current nonempty Ozon API money contract**.
 
-Acceptance decision: retain the existing safe collection/manual paths, leave automatic normalized Ozon money explicitly open, and do not deploy an invented mapping. This evidence-only increment requires no runtime release.
+Initial acceptance decision: retain the existing safe collection/manual paths and leave automatic normalized Ozon money open. The later bounded fee-preview increment below does not close live monetary verification or authorize ledger postings.
+
+
+## Follow-up: official browser schema and fee preview
+
+On 2026-10-01 the official documentation loaded in the Codex browser after its automatic challenge page completed, without CAPTCHA interaction, login, API keys or seller requests. Earlier failed server-side reads do not establish that the contract is unavailable. Browser title was `Документация Ozon Seller API`; the page identified documentation version 2.1. Expanded response fields were read directly from DOM sections `operation/GetFinanceAccrualByDay`, `operation/GetFinanceAccrualTypes`, and `operation/GetFinanceAccrualPostings`.
+
+Primary sources: [by-day v1](https://docs.ozon.ru/api/seller/#operation/GetFinanceAccrualByDay), [types v1](https://docs.ozon.ru/api/seller/#operation/GetFinanceAccrualTypes), [postings v1](https://docs.ozon.ru/api/seller/#operation/GetFinanceAccrualPostings). Direct Swagger retrieval at https://docs.ozon.ru/api/seller/swagger.json returned HTTP403; third-party mirrors/SDKs were discovery leads only. No official SDK or authoritative nonempty financial fixture was found. Documentation examples use placeholder strings, zero identifiers and an UNSPECIFIED category; these are schema illustrations, not reconciliation evidence.
+
+Observed facts enabling narrow extraction: NON_ITEM contains `non_item_fee.accrued/type_id`; ITEM contains `item_fees.fees[].sku/fees[]`; CONTAINER_FEES contains `container_fees.fees[]`. Each component uses `accrued.amount/currency`; `total_amount` is the aggregate. Dictionary IDs identify fee types. Money amounts are strings. The by-day request holds the date unchanged while using a cursor with a 15-minute lifetime. `accrual_id` is described as an identifier, without uniqueness, correction or line-version guarantees.
+
+The new pure adapter supports these three fee categories only. It preserves source amounts and signs, accepts RUB and exact kopecks, rejects unknown fee types, malformed money, ambiguous branches, unsupported categories and any component/total mismatch. Each component contributes once through the selected category branch. It produces a deterministic snapshot fingerprint plus occurrence index, preserving identical rows and reused IDs; changing a source version changes preview identities. Those keys are not marketplace business-event identities and cannot be used for ledger deduplication or correction posting.
+
+The saved workspace API exposes `fee_preview`; the existing Ozon screen shows reconciled and excluded rows, source occurrence, type, SKU and amounts. It has no confirmation action. Its totals cover only successfully reconciled fee rows. This is internal arithmetic consistency, not verified interpretation of current account data. `financial_normalization_verified=false`, `marketplace_source_complete=false`, `ledger_confirmation_allowed=false` remain mandatory. No document ledger, historical FIFO or WB stock writes occur in the adapter.
+
+POSTING still has no inspected formula for signs/overlapping commission components. Its by-day product structure does not supply quantity or original-sale return linkage; the postings endpoint supplies quantity/type/SKU but no authoritative operation identity/version relation to by-day. Sales, returns, P&L, source completeness and live monetary verification remain open. Do not infer movement date from accrual date or use placeholders as real examples. The earlier prohibition on drafts is narrowed solely for this read-only, category-selected fee consistency preview; it continues to apply to posting/return monetary events and ledger confirmation.
+
+Verification of bounded follow-up: initial new test collection failed because the adapter was absent; after implementation **68 Python tests passed** across fee preview, accounting and P&L; **13 focused frontend tests passed**, TypeScript and Vite build passed. These use synthetic data and verify implementation safety, not real Ozon interpretation. Graphify AST update completed; git diff --check passed. Browser acceptance of the new preview screen and deployment are for the integrating release workflow.

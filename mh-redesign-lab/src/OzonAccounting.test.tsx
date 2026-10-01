@@ -15,6 +15,19 @@ beforeEach(() => {
 });
 afterEach(() => {cleanup();clearShopContext();vi.unstubAllGlobals();});
 describe("Ozon accounting", () => {
+  it("shows reconciled fees and rejected rows without allowing ledger confirmation", async () => {
+    vi.mocked(fetch).mockResolvedValue(response({...loaded, fee_preview: {reconciled_total_rub:"-0.10",rows:[
+      {source_occurrence_key:"a",accrual_id:7,date:"2026-09-01",category:"NON_ITEM",reconciled:true,component_sum_rub:"-0.10",components:[{source_path:"non_item_fee",type_id:1,name:"Эквайринг",sku:null,amount_rub:"-0.10"}]},
+      {source_occurrence_key:"b",accrual_id:7,date:"2026-09-01",category:"POSTING",reconciled:false,component_sum_rub:null,components:[],reason:"Продажи не поддерживаются"}
+    ]}}));
+    render(<OzonAccounting />);
+    expect(await screen.findByRole("heading",{name:"Предварительная сверка сборов Ozon"})).toBeInTheDocument();
+    expect(screen.getByText(/Сверено строк: 1 из 2/)).toBeInTheDocument();
+    expect(screen.getByText("Продажи не поддерживаются")).toBeInTheDocument();
+    expect(screen.getByText(/Эквайринг: -0,1/)).toBeInTheDocument();
+    expect(screen.getByText(/запись в документальный учёт недоступна/)).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.every(call=>(call[1] as RequestInit).method==="GET")).toBe(true);
+  });
   it("distinguishes a complete collection from unverified monetary interpretation", async () => {
     vi.mocked(fetch).mockResolvedValue(response({...loaded, source_complete:false, source_collection_complete:true, financial_normalization_verified:false}));
     render(<OzonAccounting />);

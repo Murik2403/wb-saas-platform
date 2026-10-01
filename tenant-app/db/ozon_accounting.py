@@ -133,6 +133,8 @@ def workspace(start, end):
     if not saved:
         return {"loaded": False, "source_complete": False, "accounting_complete": False, "period": {"start_date": start,"end_date": end}, "products": [], "net_accrual_rub": None, "profit_rub": None, "blockers": ["Данные Ozon за выбранный период ещё не загружены."]}
     data = json.loads(saved["payload_json"])
+    from .ozon_fee_preview import fee_preview
+    reconciled_fees = fee_preview(data["accruals"], data["types"])
     types = {str(row.get("id")): row for row in data["types"]}
     net = Decimal(0); cogs = Decimal(0); sales_units = 0; covered_units = 0
     unknown_types = set(); blockers = set(); fees = {}; unknown_categories = set()
@@ -165,7 +167,7 @@ def workspace(start, end):
         if currency == "RUB": net += amount
         else: blockers.add("Есть начисления не в RUB; автоматическая конвертация не выполнялась.")
         category = row.get("accrued_category")
-        if category not in {"POSTING", "ITEM", "NON_ITEM", "CONTAINER"}: unknown_categories.add(str(category))
+        if category not in {"POSTING", "ITEM", "NON_ITEM", "CONTAINER_FEES"}: unknown_categories.add(str(category))
         walk(row)
         if row.get("container_fees"):
             blockers.add("Начисления по грузоместам сохранены; их структура пока не подтверждена.")
@@ -207,4 +209,4 @@ def workspace(start, end):
     for row in data["products"]:
         sku = str(row.get("sku") or "")
         products.append({"sku": sku,"offer_id": str(row.get("offer_id") or ""),"product_id": row.get("product_id"),"stocks": stocks.get(str(row.get("product_id")), []),"cost_mapping": mappings.get(sku)})
-    return {"loaded": True,"source_complete": False,"source_collection_complete": collection_verified,"financial_normalization_verified": False,"accounting_complete": False,"period": {"start_date": start,"end_date": end},"synced_at": saved["created_at"],"net_accrual_rub": str(net) if data["accruals"] else None,"estimated_cogs_rub": str(cogs),"profit_rub": None,"estimate_after_known_cogs_rub": str(net-cogs) if covered_units == sales_units and not blockers else None,"sales_and_return_units": sales_units,"known_cost_units": covered_units,"exact_fifo_units": 0,"blockers": sorted(blockers),"products": products,"source_counts": {key: len(data[key]) for key in ("products","stocks","fbo","fbs","returns","accruals")},"fees": [{"type_id": key,"name": types.get(key,{}).get("description") or types.get(key,{}).get("name") or "Неизвестный сбор","amount_rub": str(value),"mapped": key in types} for key,value in sorted(fees.items())],"returns_scope": "Текущий реестр всех возвратов, не сумма возвратов выбранного периода."}
+    return {"loaded": True,"fee_preview": reconciled_fees,"source_complete": False,"source_collection_complete": collection_verified,"financial_normalization_verified": False,"accounting_complete": False,"period": {"start_date": start,"end_date": end},"synced_at": saved["created_at"],"net_accrual_rub": str(net) if data["accruals"] else None,"estimated_cogs_rub": str(cogs),"profit_rub": None,"estimate_after_known_cogs_rub": str(net-cogs) if covered_units == sales_units and not blockers else None,"sales_and_return_units": sales_units,"known_cost_units": covered_units,"exact_fifo_units": 0,"blockers": sorted(blockers),"products": products,"source_counts": {key: len(data[key]) for key in ("products","stocks","fbo","fbs","returns","accruals")},"fees": [{"type_id": key,"name": types.get(key,{}).get("description") or types.get(key,{}).get("name") or "Неизвестный сбор","amount_rub": str(value),"mapped": key in types} for key,value in sorted(fees.items())],"returns_scope": "Текущий реестр всех возвратов, не сумма возвратов выбранного периода."}
