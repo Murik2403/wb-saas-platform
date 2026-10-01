@@ -1,0 +1,27 @@
+.pap { min-width: 0; }
+.pap-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 0.6rem 1rem; margin: 0.6rem 0; }
+.pap-controls label { display: grid; gap: 0.25rem; font-size: 0.85rem; }
+.pap-controls input { width: 6rem; padding: 0.35rem 0.5rem; color: inherit; font: inherit; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; }
+.pap-safe { margin: 0.4rem 0; padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; font-size: 0.9rem; }
+.pap-wrap { overflow-x: auto; max-width: 100%; }
+.pap-table { width: 100%; min-width: 52rem; border-collapse: collapse; }
+.pap-table th, .pap-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+.pap-table th:nth-child(-n+2), .pap-table td:nth-child(-n+2), .pap-table th:last-child, .pap-table td:last-child { text-align: left; }
+.pap-table th, .pap-table td { height: auto; }
+.pap-table td.pap-num { white-space: nowrap; }
+.pap-table small { display: block; opacity: 0.75; }
+.pap-table td:last-child { min-width: 12rem; }
+.pap-reason summary { cursor: pointer; text-decoration: underline; }
+.pap-reason p { margin: 0.3rem 0 0; max-width: 34rem; white-space: normal; font-size: 0.85rem; }
+.pap-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.6rem; }
+.pap .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 640px) {
+  .pap-table { min-width: 0; }
+  .pap-table thead { display: none; }
+  .pap-table tbody, .pap-table td { display: block; width: 100%; }
+  .pap-table { display: block; }
+  .pap-table tr { display: grid; gap: 0.2rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  .pap-table td { border: 0; padding: 0.15rem 0; text-align: left !important; }
+  .pap-table td[data-label]::before { content: attr(data-label) ": "; opacity: 0.7; }
+  .pap-table td:last-child { min-width: 0; }
+}

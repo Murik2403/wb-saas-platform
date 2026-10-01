@@ -87,6 +87,7 @@ from overview_service import (
     DEFAULT_PERIOD, PERIOD_LABELS, compute_overview, previous_window, resolve_window,
 )
 from products_service import compute_products
+import price_advice
 from products_trend import compute_products_trend, products_totals
 from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 from growth_delivery import deliver_pending_growth_events
@@ -901,6 +902,10 @@ def _clear_dashboard_caches() -> None:
     dashboard_data_cache.clear()
 
 
+# POST endpoints that only read (the body carries inputs): they must not drop the dashboard caches.
+READ_ONLY_POST_PATHS = {"/api/v1/dashboard/products/price-advice"}
+
+
 @app.middleware("http")
 async def invalidate_after_write(request, call_next):
     from production_permissions import ROLES, write_allowed
@@ -920,7 +925,7 @@ async def invalidate_after_write(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "Демо доступно только для просмотра"})
     from shop_dispatch import dispatch as dispatch_shop_request
     response = await dispatch_shop_request(request, call_next)
-    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400:
+    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400 and request.url.path not in READ_ONLY_POST_PATHS:
         _clear_dashboard_caches()
         context_response_cache.clear()
     return response
@@ -1462,6 +1467,87 @@ def get_products_previous(
         })
 
     return _dashboard_response(f"products-previous:{period}:{window_start}:{window_end}", build)
+
+
+_ADVICE_COLUMNS = {
+    "nm_id": "Артикул WB", "vendor_code": "Артикул продавца", "sale_units": "Продажи, шт", "units": "Продано нетто",
+    "revenue": "Выкупы по цене покупателя", "to_pay": "К перечислению за товар", "net_profit": "Чистая прибыль",
+    "cost": "Себестоимость", "unsold_cost_units": "Без себестоимости, шт.", "ad_spend": "Реклама", "wb_expenses": "Прямые расходы WB",
+}
+_UPLOAD_IN_PROGRESS = ("queued", "processing", "В обработке", "Статус пока неизвестен")
+
+
+class AdvicePrice(BaseModel):
+    nm_id: int = Field(gt=0)
+    price: int = Field(ge=0)
+    discount: int = Field(ge=0, le=99)
+
+
+class PriceAdviceInput(BaseModel):
+    prices: list[AdvicePrice] = Field(default_factory=list, max_length=5000)
+
+
+def _price_advice(period: str, start: date | None, end: date | None, target_margin: float, prices: dict[int, tuple] | None) -> dict:
+    """Read-only: local SQLite + the cached dashboard frame. Never calls WB, never writes."""
+    window_start, window_end = _products_window(period, start, end)
+
+    def build() -> dict:
+        data = _build_dashboard_cached(window_start, window_end)
+        frame = getattr(data, "financial_products", None)
+        rows = []
+        if frame is not None and not frame.empty:
+            for rec in frame.to_dict("records"):
+                rows.append({key: rec.get(col) for key, col in _ADVICE_COLUMNS.items()})
+        source = "request"
+        used = prices
+        in_progress: set[int] = set()
+        _init_redesign_schema()
+        with sqlite3.connect(DB_PATH) as conn:
+            cutoff = (datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None) - timedelta(hours=24)).isoformat(timespec="seconds")
+            marks = ",".join("?" * len(_UPLOAD_IN_PROGRESS))
+            in_progress = {int(r[0]) for r in conn.execute(
+                f"SELECT i.nm_id FROM price_upload_item i JOIN redesign_price_uploads u ON u.wb_upload_id=i.upload_id "
+                f"WHERE u.status IN ({marks}) AND u.updated_at>=?", (*_UPLOAD_IN_PROGRESS, cutoff))}
+            if used is None:  # GET: best effort from the latest local sale of each SKU (no WB call)
+                source = "local_sales"
+                used = {}
+                for nm, total, withdisc in conn.execute(
+                    "SELECT nm_id, total_price, price_with_disc FROM sales WHERE is_return=0 AND total_price>0 "
+                    "AND sale_date>=? ORDER BY sale_date", ((window_end - timedelta(days=60)).isoformat(),)):
+                    used[int(nm)] = (round(total), max(0, min(99, round((1 - (withdisc or 0) / total) * 100))))
+        items = price_advice.advise_all(rows, used, target_margin, in_progress)
+        return json_safe({
+            "start": window_start, "end": window_end, "target_margin": target_margin, "price_source": source,
+            "max_step_pct": price_advice.MAX_STEP_PCT, "min_sales": price_advice.MIN_SALES,
+            "disclaimer": "оценка, спрос на цену не прогнозируется", "items": items,
+        })
+
+    if prices is not None:  # request-specific input: do not share the page cache
+        return build()
+    return _dashboard_response(f"price-advice:{period}:{window_start}:{window_end}:{target_margin}", build)
+
+
+@app.get("/api/v1/dashboard/products/price-advice")
+def get_products_price_advice(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+    target_margin: float = Query(20, ge=0, le=80),
+) -> dict:
+    """Price RECOMMENDATIONS (see price_advice.py). Advice only: nothing is sent to WB or stored."""
+    return _price_advice(period, start, end, target_margin, None)
+
+
+@app.post("/api/v1/dashboard/products/price-advice")
+def post_products_price_advice(
+    payload: PriceAdviceInput,
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+    target_margin: float = Query(20, ge=0, le=80),
+) -> dict:
+    """Same as GET but with the current WB prices/discounts supplied by the cabinet. Read-only despite POST."""
+    return _price_advice(period, start, end, target_margin, {p.nm_id: (p.price, p.discount) for p in payload.prices})
 
 
 class FirstReportViewedInput(BaseModel):

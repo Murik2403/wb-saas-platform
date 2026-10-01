@@ -2815,3 +2815,20 @@ export async function saveTaxSettings(input: { year: number; regime: TaxRegime; 
   if (!response.ok) throw await writeError(response);
   return response.json() as Promise<TaxSettings>;
 }
+
+export type PriceAdviceStatus = "recommend" | "ok" | "below_breakeven" | "insufficient_data" | "upload_in_progress";
+export type PriceAdviceItem = {
+  nm_id: number; vendor_code: string; current_price: number | null; current_discount: number | null; current_final: number | null;
+  recommended_price: number | null; recommended_final: number | null; est_margin_now_pct: number | null; est_margin_after_pct: number | null;
+  breakeven_final: number | null; reason: string; status: PriceAdviceStatus; note: string;
+};
+export type PriceAdvice = { target_margin: number; max_step_pct: number; min_sales: number; disclaimer: string; items: PriceAdviceItem[] };
+
+/** Read-only recommendations (POST only carries the current WB prices). Nothing is sent to WB or stored. */
+export async function getPriceAdvice(period: DashboardPeriod, targetMargin: number, prices: ProductPriceRow[], signal: AbortSignal): Promise<PriceAdvice> {
+  const query = `${periodQuery(period)}&target_margin=${encodeURIComponent(String(targetMargin))}`;
+  const body = JSON.stringify({ prices: prices.map((p) => ({ nm_id: p.nmId, price: p.price, discount: p.discount })) });
+  const response = await fetch(`${API_BASE_URL}/api/v1/dashboard/products/price-advice${query}`, { method: "POST", headers: apiHeaders(true), body, signal });
+  if (!response.ok) throw new Error(`Рекомендации по ценам: HTTP ${response.status}`);
+  return response.json() as Promise<PriceAdvice>;
+}

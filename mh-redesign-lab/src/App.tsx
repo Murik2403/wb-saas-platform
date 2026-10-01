@@ -17,6 +17,7 @@ import { useGroupSelection, useProductGroups, ALL_PRODUCTS } from "./useProductG
 import { ProductCardsPanel } from "./ProductCardsPanel";
 import { ShopQualityPanel } from "./ShopQualityPanel";
 import { ProductPricesPanel } from "./ProductPricesPanel";
+import { PriceAdvisorPanel } from "./PriceAdvisorPanel";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManagementPnlMonthly } from "./ManagementPnlMonthly";
 import { TaxSettingsPanel } from "./TaxSettingsPanel";
@@ -2178,6 +2179,7 @@ export function ProductsView({
       <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
       {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
       <ShopQualityPanel data={customerQuality} actions={qualityActions} />
+      <PriceAdvisorPanel period={period} prices={prices ?? []} onApply={(items) => setPriceDrafts((rows) => ({ ...rows, ...Object.fromEntries(items.map((i) => [i.nmId, { price: i.price, discount: i.discount }])) }))} />
       <ProductPricesPanel prices={prices ?? []} query={query} drafts={priceDrafts} onDraft={(nmId, draft) => setPriceDrafts((rows) => ({ ...rows, [nmId]: draft }))}
         onSubmit={() => void submitPrices()} busy={priceSubmitting || !!priceUploadId} message={priceMessage} uploadStatus={priceUploadStatus}
         results={priceResults} history={priceUploadHistory} hasErrors={productPriceErrors.length > 0} />
