@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Columns3, Download, LayoutGrid, List, Table2 } from "lucide-react";
-import type { ProductEconomicsRow } from "./data-source";
+import type { ProductEconomicsRow, ProductsTrend } from "./data-source";
+import { ProductSparkline } from "./ProductSparkline";
 import { buildCsv } from "./csv";
 import "./ProductEconomicsList.css";
 
@@ -22,10 +23,11 @@ const marginOf = (item: ProductEconomicsRow) =>
 const stockOf = (item: ProductEconomicsRow) =>
   `${item.stock.toLocaleString("ru-RU")} шт.${item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}`;
 
-type ColumnKey = "product" | "revenue" | "margin" | "marginPct" | "drr" | "stock" | "orders" | "sales" | "buyout" | "adSpend" | "dailySales" | "daysOfStock" | "unitCost";
+type ColumnKey = "product" | "revenue" | "margin" | "marginPct" | "drr" | "stock" | "trend" | "orders" | "sales" | "buyout" | "adSpend" | "dailySales" | "daysOfStock" | "unitCost";
 type Column = {
   key: ColumnKey;
   label: string;
+  sortable?: false; // a chart column: no sorting, not exported
   optional?: boolean; // hidden until the user turns it on
   value: (item: ProductEconomicsRow) => string | number | null; // sorting and numeric CSV
   text?: (item: ProductEconomicsRow) => string; // what the cell shows
@@ -39,6 +41,7 @@ const COLUMNS: Column[] = [
   { key: "marginPct", label: "Маржа", value: (i) => marginOf(i), text: (i) => pct(marginOf(i)), negative: (i) => marginOf(i) < 0 },
   { key: "drr", label: "ДРР", value: (i) => i.drr, text: (i) => pct(i.drr) },
   { key: "stock", label: "Запас", value: (i) => i.stock, text: stockOf, csv: "text" },
+  { key: "trend", label: "Динамика выручки", sortable: false, value: () => null },
   { key: "orders", label: "Заказы, шт.", optional: true, value: (i) => i.orders, text: (i) => num(i.orders) },
   { key: "sales", label: "Продажи, шт.", optional: true, value: (i) => i.sales, text: (i) => num(i.sales) },
   // buyout is a percent (the "Выкуп, %" column of the products report), not a count
@@ -82,7 +85,8 @@ function downloadCsv(content: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomicsRow[]; onOpen: (item: ProductEconomicsRow) => void }) {
+// trend: lazily loaded daily revenue per SKU; while it is missing the chart cells show a dash.
+export function ProductEconomicsList({ items, onOpen, trend = null }: { items: ProductEconomicsRow[]; onOpen: (item: ProductEconomicsRow) => void; trend?: ProductsTrend | null }) {
   const [mode, setMode] = useState<ProductViewMode>(readMode);
   const [visible, setVisible] = useState<ColumnKey[]>(readColumns);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -120,8 +124,9 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
   const toggleColumn = (key: ColumnKey) =>
     saveColumns(COLUMNS.filter((c) => c.key === "product" || (c.key === key ? !visible.includes(key) : visible.includes(c.key))).map((c) => c.key));
   const exportCsv = () => {
-    const headers = columns.flatMap((c) => (c.key === "product" ? [c.label, "Артикул"] : [c.label]));
-    const rows = sorted.map((item) => columns.flatMap((c) =>
+    const exported = columns.filter((c) => c.sortable !== false);
+    const headers = exported.flatMap((c) => (c.key === "product" ? [c.label, "Артикул"] : [c.label]));
+    const rows = sorted.map((item) => exported.flatMap((c) =>
       c.key === "product" ? [item.product, item.article || item.nmId] : [c.csv === "text" ? c.text!(item) : c.value(item)]));
     downloadCsv(buildCsv(headers, rows));
   };
@@ -198,7 +203,7 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
           <table className="product-economics-table">
             <thead>
               <tr>
-                {columns.map(({ key, label }) => (
+                {columns.map(({ key, label, sortable }) => sortable === false ? <th key={key}>{label}</th> : (
                   <th key={key} aria-sort={activeSort?.key === key ? (activeSort.dir === "asc" ? "ascending" : "descending") : "none"}>
                     <button type="button" className="product-sort" onClick={() => toggleSort(key)}>
                       {label}<span aria-hidden="true">{activeSort?.key === key ? (activeSort.dir === "asc" ? " ▲" : " ▼") : ""}</span>
@@ -215,6 +220,10 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
                       <button type="button" className="product-row-open" onClick={(event) => { event.stopPropagation(); onOpen(item); }}>
                         <strong>{item.product}</strong><small>{item.article || item.nmId}</small>
                       </button>
+                    </td>
+                  ) : c.key === "trend" ? (
+                    <td key={c.key} className="product-trend-cell">
+                      <ProductSparkline values={trend?.series[String(item.nmId)]?.revenue ?? []} />
                     </td>
                   ) : (
                     <td key={c.key} className={c.negative?.(item) ? "negative" : ""}>{c.text!(item)}</td>

@@ -89,7 +89,7 @@ describe("ProductEconomicsList table tools", () => {
     fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
   };
   const headers = () => screen.getAllByRole("columnheader").map((h) => h.textContent?.replace(/[▲▼]/g, "").trim());
-  const defaults = ["Товар", "Выручка", "Расчётная прибыль", "Маржа", "ДРР", "Запас"];
+  const defaults = ["Товар", "Выручка", "Расчётная прибыль", "Маржа", "ДРР", "Запас", "Динамика выручки"];
   const pick = (name: string) => { fireEvent.click(screen.getByRole("button", { name: "Колонки" })); fireEvent.click(screen.getByRole("checkbox", { name })); };
 
   it("keeps today's columns by default, product cannot be unchecked", () => {
@@ -97,7 +97,7 @@ describe("ProductEconomicsList table tools", () => {
     expect(headers()).toEqual(defaults);
     fireEvent.click(screen.getByRole("button", { name: "Колонки" }));
     expect((screen.getByRole("checkbox", { name: "Товар и артикул" }) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getAllByRole("checkbox")).toHaveLength(13);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(14);
   });
 
   it("toggles columns, sorts by an extra column, persists and resets", () => {
@@ -151,3 +151,36 @@ describe("ProductEconomicsList table tools", () => {
     click.mockRestore();
   });
 });
+
+describe("revenue trend column", () => {
+  const trend = { start: "2026-09-01", end: "2026-09-03", bucketDays: 1, dates: ["2026-09-01", "2026-09-02", "2026-09-03"], series: { "1": { revenue: [100, 300, 200], units: [1, 3, 2] } } };
+
+  it("draws a sparkline per SKU once the trend has loaded and a dash for SKUs without sales", () => {
+    render(<ProductEconomicsList items={items} onOpen={() => undefined} trend={trend} />);
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    const charts = screen.getAllByRole("img");
+    expect(charts).toHaveLength(1);
+    expect(charts[0].getAttribute("aria-label")).toContain("итого 600");
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);          // second SKU has no series
+  });
+
+  it("shows only dashes while the trend is still loading, and the header is not a sort button", () => {
+    render(<ProductEconomicsList items={items} onOpen={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    expect(screen.queryAllByRole("img")).toHaveLength(0);
+    expect(screen.getByRole("columnheader", { name: "Динамика выручки" }).querySelector("button")).toBeNull();
+  });
+
+  it("is left out of the CSV export", () => {
+    let csv = "";
+    const originalBlob = globalThis.Blob;
+    vi.stubGlobal("Blob", class { constructor(parts: BlobPart[]) { csv = String(parts[0]); } });
+    URL.createObjectURL = vi.fn(() => "blob:x"); URL.revokeObjectURL = vi.fn();
+    render(<ProductEconomicsList items={items} onOpen={() => undefined} trend={trend} />);
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    fireEvent.click(screen.getByRole("button", { name: /Скачать CSV/ }));
+    expect(csv).not.toContain("Динамика");
+    vi.stubGlobal("Blob", originalBlob);
+  });
+});
+
