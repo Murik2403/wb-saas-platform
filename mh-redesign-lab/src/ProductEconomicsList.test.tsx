@@ -82,3 +82,72 @@ describe("ProductEconomicsList", () => {
     expect(tileOrder).toEqual(["Б", "А", "В"]);
   });
 });
+
+describe("ProductEconomicsList table tools", () => {
+  const open = () => {
+    render(<ProductEconomicsList items={items} onOpen={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+  };
+  const headers = () => screen.getAllByRole("columnheader").map((h) => h.textContent?.replace(/[▲▼]/g, "").trim());
+  const defaults = ["Товар", "Выручка", "Расчётная прибыль", "Маржа", "ДРР", "Запас"];
+  const pick = (name: string) => { fireEvent.click(screen.getByRole("button", { name: "Колонки" })); fireEvent.click(screen.getByRole("checkbox", { name })); };
+
+  it("keeps today's columns by default, product cannot be unchecked", () => {
+    open();
+    expect(headers()).toEqual(defaults);
+    fireEvent.click(screen.getByRole("button", { name: "Колонки" }));
+    expect((screen.getByRole("checkbox", { name: "Товар и артикул" }) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(13);
+  });
+
+  it("toggles columns, sorts by an extra column, persists and resets", () => {
+    open();
+    pick("Заказы, шт.");
+    expect(headers()).toEqual([...defaults, "Заказы, шт."]);
+    expect(JSON.parse(window.localStorage.getItem("mh.products.columns")!)).toContain("orders");
+    fireEvent.click(screen.getByRole("button", { name: "Заказы, шт." }));
+    expect(screen.getByRole("columnheader", { name: /Заказы/ }).getAttribute("aria-sort")).toBe("descending");
+
+    cleanup();
+    open();
+    expect(headers()).toContain("Заказы, шт."); // restored from storage
+
+    fireEvent.click(screen.getByRole("button", { name: "Колонки" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сбросить" }));
+    expect(headers()).toEqual(defaults);
+  });
+
+  it("falls back to defaults on garbage or blocked storage", () => {
+    for (const bad of ["{oops", '"x"', '{"a":1}', "null"]) {
+      window.localStorage.setItem("mh.products.columns", bad);
+      open();
+      expect(headers()).toEqual(defaults);
+      cleanup();
+    }
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    render(<ProductEconomicsList items={items} onOpen={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    pick("Выкуп, %");
+    expect(headers()).toContain("Выкуп, %");
+    vi.restoreAllMocks();
+  });
+
+  it("exports visible columns in the current order as CSV", async () => {
+    let blob: Blob | undefined;
+    URL.createObjectURL = vi.fn((b: Blob) => { blob = b; return "blob:x"; });
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    open();
+    pick("Выкуп, %");
+    fireEvent.click(screen.getByRole("button", { name: /^Маржа/ })); // high to low: 30 then -20
+    fireEvent.click(screen.getByRole("button", { name: /Скачать CSV/ }));
+    expect(click).toHaveBeenCalled();
+    const text = await blob!.text();
+    const lines = text.replace(/^﻿/, "").trim().split("\r\n");
+    expect(lines[0]).toBe("Товар;Артикул;Выручка;Расчётная прибыль;Маржа;ДРР;Запас;Выкуп, %");
+    expect(lines[1]).toBe("Салфетки на стол;NAP-1;1000;300;30;5;12 шт. · 12.0 дн.;80");
+    expect(lines[2].startsWith("Коврик;NAP-2;1000;-200;-20;5;")).toBe(true);
+    click.mockRestore();
+  });
+});

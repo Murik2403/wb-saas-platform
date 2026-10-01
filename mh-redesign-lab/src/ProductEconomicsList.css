@@ -66,3 +66,49 @@
   .product-economics-row { grid-template-columns: 1fr 1fr; }
   .product-row-name { grid-column: 1 / -1; }
 }
+
+/* Table tools: column picker + CSV export. The toolbar wraps on narrow screens. */
+.product-list-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; margin: 0.6rem 0 0.8rem; }
+.product-list-toolbar .product-view-switch { margin: 0; }
+.product-table-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-left: auto; }
+.product-column-picker { position: relative; }
+.product-tool-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(20, 25, 34, 0.7);
+  color: var(--text, #eef0f7);
+  font: inherit;
+  cursor: pointer;
+}
+.product-tool-button span { color: inherit; }
+.product-tool-button:hover { background: rgba(124, 108, 246, 0.18); }
+.product-tool-button:focus-visible,
+.product-view-switch button:focus-visible,
+.product-column-menu input:focus-visible { outline: 2px solid var(--accent, #7c6cf6); outline-offset: 2px; }
+.product-column-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  display: grid;
+  gap: 0.35rem;
+  min-width: 15rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #141922;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.product-column-menu label { display: flex; align-items: center; gap: 0.5rem; color: var(--text, #eef0f7); cursor: pointer; }
+.product-column-menu label span { color: inherit; }
+.product-column-menu input:disabled + span { opacity: 0.6; }
+.product-column-menu .product-tool-button { justify-content: center; margin-top: 0.2rem; }
+@media (max-width: 720px) {
+  .product-table-tools { margin-left: 0; }
+  .product-column-menu { right: auto; left: 0; }
+}
