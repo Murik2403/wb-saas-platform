@@ -6,6 +6,16 @@
 <h1>Админ-панель</h1>
 <p class="subtitle">Все аккаунты и их тенанты, {{ tenants|length }} шт.</p>
 
+<section aria-labelledby="feedback-heading">
+  <h2 id="feedback-heading">Добровольные ответы владельцев</h2>
+  <p>{{ product_feedback.responses }} ответов, {{ product_feedback.organizations }} организаций. Демонстрационные, административные и исключённые служебные аккаунты не учитываются.</p>
+  <p>Самостоятельно сообщённые наблюдения за выбранными периодами. Периоды могут иметь разную длину; это не число интервью, не доля оттока и не автоматический таймер.</p>
+  <table><thead><tr><th>Сценарий</th><th>Ответы</th><th>С указанным временем</th><th>Медиана минут за указанный период</th></tr></thead><tbody>
+  {% for item in product_feedback.scenarios %}<tr><td>{{ item.label }}</td><td>{{ item.responses }}</td><td>{{ item.minutes_observed }}</td><td>{% if item.median_minutes is not none %}{{ item.median_minutes }}{% else %}нет наблюдений{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+  <ul>{% for item in product_feedback.reasons %}<li>{{ item.label }}: {{ item.responses }} ответов</li>{% endfor %}</ul>
+</section>
+
 <section aria-labelledby="growth-heading">
   <h2 id="growth-heading">Привлечение и первые результаты</h2>
   <p>С начала сбора событий; даты и недельные когорты — UTC. Регистрация: {{ growth.registered }};

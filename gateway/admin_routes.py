@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 import config
 from logging_config import bind_account_context
-from logic import accounts, billing, csrf, growth, db as control_db
+from logic import accounts, billing, csrf, growth, product_feedback, db as control_db
 from template_setup import create_templates
 
 logger = logging.getLogger("wb_saas_gateway.admin")
@@ -57,6 +57,7 @@ def admin_dashboard(request: Request):
     with control_db.connect() as conn:
         tenants = accounts.list_all_tenants_overview(conn)
         growth_report = growth.growth_summary(conn)
+        feedback_report = product_feedback.summary(conn)
         exclusions = {int(row["account_id"]): row["exclusion_reason"] for row in conn.execute("SELECT account_id,exclusion_reason FROM growth_sources").fetchall()}
         for tenant in tenants:
             tenant["growth_exclusion"] = exclusions.get(tenant["account_id"], "")
@@ -65,8 +66,9 @@ def admin_dashboard(request: Request):
     response = templates.TemplateResponse(
         request,
         "admin_dashboard.html",
-        {"tenants": tenants, "csrf_token": csrf_token, "growth": growth_report},
+        {"tenants": tenants, "csrf_token": csrf_token, "growth": growth_report, "product_feedback": feedback_report},
     )
+    response.headers["Cache-Control"] = "private, no-store"
     csrf.set_cookie(response, csrf_token)
     return response
 

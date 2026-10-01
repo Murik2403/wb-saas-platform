@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Обратная связь о работе — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block card_extra_class %} card-wide{% endblock %}
+{% block content %}
+<h1>Обратная связь о работе</h1>
+<p>Ответ добровольный. Поможет понять причины отказа и фактические затраты времени на ручную сверку цифр за выбранный период.</p>
+<p>Это сообщение владельца кабинета, отдельное от интервью и публичного кейса. Контакты, токены, документы и свободный текст здесь не запрашиваются. Ответ доступен вам; администратор видит общую сводку. <a href="/privacy">Обработка данных</a>.</p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if saved %}<p role="status">Изменение сохранено.</p>{% endif %}
+<form method="post" action="/feedback">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Сценарий <select name="scenario" required>{% for key,label in scenarios.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+  <label>Начало периода <input type="date" name="period_start" value="{{ start }}" min="2000-01-01" max="{{ end }}" required></label>
+  <label>Конец периода <input type="date" name="period_end" value="{{ end }}" min="2000-01-01" max="{{ end }}" required></label>
+  <label>Причина отказа (необязательно) <select name="reason">{% for key,label in reasons.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+  <label>Фактическое время ручной сверки, минут (необязательно) <input type="number" name="actual_minutes" min="0" max="10080" step="1" aria-describedby="minutes-help"></label>
+  <p id="minutes-help">Укажите сколько минут действительно потратили вручную на сверку цифр по выбранному сценарию за весь указанный период. Включайте только собственное время; 0 означает, что ручной сверки не было. Если не измеряли или не помните, оставьте пустым. Плановую оценку не указывайте.</p>
+  <p>Нужны время или причина. Повторная отправка того же сценария и периода обновит ваш ответ.</p>
+  <button type="submit">Сохранить ответ</button>
+</form>
+<h2>Ваши последние ответы</h2>
+{% for row in responses %}<article>
+  <p>{{ scenarios[row.scenario] }} · {{ row.period_start }} — {{ row.period_end }} · {{ reasons[row.reason] }}.
+    Ручная сверка: {% if row.actual_minutes is not none %}{{ row.actual_minutes }} мин{% else %}время не указано{% endif %}.</p>
+  <form method="post" action="/feedback">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="delete">
+    <input type="hidden" name="scenario" value="{{ row.scenario }}"><input type="hidden" name="period_start" value="{{ row.period_start }}"><input type="hidden" name="period_end" value="{{ row.period_end }}">
+    <button type="submit">Удалить ответ</button>
+  </form>
+</article>{% else %}<p>Ответов пока нет.</p>{% endfor %}
+{% endblock %}

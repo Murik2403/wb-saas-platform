@@ -58,6 +58,16 @@ _GROWTH_SCHEMA_STATEMENTS = [
         metadata_json TEXT NOT NULL DEFAULT '{}',
         PRIMARY KEY (account_id, event_name, event_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS product_feedback (
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        scenario TEXT NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        actual_minutes INTEGER,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(account_id,scenario,period_start,period_end)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_growth_events_time ON growth_events(event_name, occurred_at)",
     """CREATE TABLE IF NOT EXISTS growth_payment_exclusions (
         payment_id INTEGER PRIMARY KEY REFERENCES payments(id) ON DELETE CASCADE,

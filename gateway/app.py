@@ -35,6 +35,7 @@ from admin_routes import router as admin_router
 from billing_routes import router as billing_router
 from internal_routes import router as internal_router
 from growth_internal import router as growth_internal_router
+from product_feedback_routes import router as product_feedback_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
 from logic import accounts, compliance, csrf, db as control_db, password_reset, growth, trial_emails
 from rate_limiter import RateLimiter
@@ -62,6 +63,7 @@ app.include_router(billing_router)
 app.include_router(admin_router)
 app.include_router(internal_router)
 app.include_router(growth_internal_router)
+app.include_router(product_feedback_router)
 app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
@@ -274,6 +276,7 @@ _ROBOTS_DISALLOW = (
     "/account",
     "/billing",
     "/admin",
+    "/feedback",
     "/provisioning",
     "/forgot-password",
     "/reset-password",
