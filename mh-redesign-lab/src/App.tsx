@@ -99,6 +99,8 @@ import type {
   Tone,
 } from "./contracts";
 import { financeExportUrl, getFinanceFifoReconciliationPage, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, getManualExpenses, createManualExpense, deleteManualExpense, updateManualExpenseInclusion, getManagementEconomics, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type FinanceFifoDetailPage, type IncidentOperations, type ManagementEconomics, type ManualExpense, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
+import { useProductsPrevious } from "./useProductsTrend";
+import { compareAmount, compareCount, comparePoints } from "./productsDelta";
 import { navItems as fallbackNavItems } from "./mock-dashboard";
 
 const iconByKey: Record<IconKey, LucideIcon> = {
@@ -2092,6 +2094,14 @@ export function ProductsView({
   const netProfit = products.reduce((sum, item) => sum + item.margin, 0);
   const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
   const atRisk = products.filter((item) => item.daysOfStock !== null && item.daysOfStock >= 0 && item.daysOfStock < 7).length;
+  const previous = useProductsPrevious(period).data; // lazy: tiles render first, the delta appears when it arrives
+  const prev = previous ? (previous.hasData ? previous.totals : null) : undefined;
+  const changes = prev === undefined ? [undefined, undefined, undefined, undefined] : [
+    compareAmount(revenue, prev?.revenue, "₽"),
+    comparePoints(netMarginPct, prev && prev.revenue > 0 ? prev.marginPct : null),
+    compareCount(atRisk, prev?.atRisk, "SKU", false),
+    compareCount(products.length, prev?.skuCount, "", null),
+  ];
   useEffect(() => { void getPriceUploadHistory().then(setPriceUploadHistory).catch(() => undefined); }, []);
   useEffect(() => {
     if (!priceUploadId) return undefined;
@@ -2149,7 +2159,7 @@ export function ProductsView({
     <div className="workspace-view">
       {(customerQuality?.errors?.length || productCardErrors.length || productPriceErrors.length) ? <p className="data-banner stale" role="status">{wbAvailabilityMessage([...(customerQuality?.errors ?? []), ...productCardErrors, ...productPriceErrors])}</p> : null}
       <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и чистая маржинальность по каждому артикулу WB.</p></div></section>
-      <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good" }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn" }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good" }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info" }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
+      <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good", change: changes[0] }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn", change: changes[1] }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good", change: changes[2] }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info", change: changes[3] }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
       <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
       <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label>{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
       <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
@@ -3538,6 +3548,7 @@ function MetricCard({ metric, onClick }: { metric: DashboardMetric; onClick?: ()
       <strong>{metric.value}</strong>
       <div>
         <em>{metric.delta}</em>
+        {metric.change ? <small className={cx("metric-change", metric.change.tone)}>{metric.change.text}</small> : null}
         <p>{metric.detail}</p>
       </div>
     </>;

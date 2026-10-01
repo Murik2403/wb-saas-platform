@@ -85,6 +85,7 @@ from overview_service import (
     DEFAULT_PERIOD, PERIOD_LABELS, compute_overview, previous_window, resolve_window,
 )
 from products_service import compute_products
+from products_trend import compute_products_trend, products_totals
 from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 from growth_delivery import deliver_pending_growth_events
 from growth_outbox_worker import delivery_worker_enabled, run_growth_outbox_worker
@@ -1348,6 +1349,53 @@ def get_products(
         return json_safe(compute_products(ctx))
 
     return _dashboard_response(f"products:{period}:{window_start}:{window_end}", build)
+
+
+def _products_window(period: str, start: date | None, end: date | None) -> tuple[date, date]:
+    today_msk = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    try:
+        return resolve_window(period, today_msk, start, end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+
+
+@app.get("/api/v1/dashboard/products/trend")
+def get_products_trend(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """Per-SKU daily revenue/units for sparklines. Local `sales` table only
+    (no WB calls); sums equal /api/products revenue/sales for the same window."""
+    window_start, window_end = _products_window(period, start, end)
+    return _dashboard_response(
+        f"products-trend:{period}:{window_start}:{window_end}",
+        lambda: json_safe(compute_products_trend(window_start, window_end)),
+    )
+
+
+@app.get("/api/v1/dashboard/products/previous")
+def get_products_previous(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """ProductsView tile totals for the equal-length window right before the
+    selected one, built by the same compute_products() path as /api/products."""
+    window_start, window_end = _products_window(period, start, end)
+    prev = previous_window(window_start, window_end)
+    if prev is None:
+        return {"start": None, "end": None, "has_data": False, "totals": None}
+
+    def build() -> dict:
+        data = _build_dashboard_cached(*prev)
+        products = compute_products({"data": data, "period": "custom", "start": prev[0], "end": prev[1]})["products"]
+        return json_safe({
+            "start": prev[0], "end": prev[1], "has_data": bool(products),
+            "totals": products_totals(products) if products else None,
+        })
+
+    return _dashboard_response(f"products-previous:{period}:{window_start}:{window_end}", build)
 
 
 class FirstReportViewedInput(BaseModel):

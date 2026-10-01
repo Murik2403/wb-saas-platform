@@ -1,0 +1,8 @@
+.product-sparkline {
+  display: block;
+  color: var(--teal);
+  overflow: visible;
+}
+.product-sparkline-empty {
+  color: var(--muted);
+}

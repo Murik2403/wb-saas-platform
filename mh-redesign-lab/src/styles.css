@@ -1058,6 +1058,13 @@ button.export-row {
   font-weight: 800;
 }
 
+.metric-card .metric-change {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.metric-card .metric-change.good { color: var(--lime); }
+.metric-card .metric-change.bad { color: var(--danger); }
+
 .metric-card p {
   margin: 0;
   color: var(--muted);
