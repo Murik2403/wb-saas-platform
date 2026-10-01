@@ -56,9 +56,14 @@ describe("monthly tax rows", () => {
   const missing = { status: "rates_missing" as const, usn_base: null, vat_out: null, usn: null, total: null, profit_after_tax_estimate: null, loss: false };
   const taxed: MonthlyPnl = {
     ...data,
+    tax_estimates_enabled: true,
     months: [{ ...data.months[0], tax: okTax }, { ...data.months[1], tax: missing }],
     total: { ...data.total, tax: { ...okTax, status: "partial" } },
   };
+  it("does not export tax payloads without explicit capability", () => {
+    expect(buildMonthlyPnlCsv({ ...taxed, tax_estimates_enabled: false })).not.toContain("Налоги");
+    expect(buildMonthlyPnlCsv({ ...taxed, tax_estimates_enabled: undefined })).not.toContain("Налоги");
+  });
   it("adds nothing to the CSV without a regime", () => {
     expect(buildMonthlyPnlCsv(data)).not.toContain("Налоги");
   });

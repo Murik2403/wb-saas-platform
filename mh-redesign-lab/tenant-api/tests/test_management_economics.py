@@ -311,7 +311,9 @@ def _without_tax(monthly):
     return json.dumps(copy, sort_keys=True)
 
 
-def test_tax_block_is_additive_and_settings_roundtrip():
+def test_tax_block_is_additive_and_settings_roundtrip(monkeypatch):
+    monkeypatch.setenv("WB_SAAS_TAX_ESTIMATE_ENABLED", "1")
+    monkeypatch.setenv("WB_SAAS_TAX_ACCOUNTANT_REVIEW_REF", "test-review-2026")
     from fastapi import HTTPException
     _seed_two_months()
     kw = dict(period="custom", start=date(2026, 8, 1), end=date(2026, 9, 30))
@@ -349,3 +351,24 @@ def test_tax_settings_write_is_owner_and_manager_only():
         assert write_allowed(role, "PUT", "/api/v1/settings/tax") == (role in {"owner", "manager"})
         if role != "integration_reader":
             assert write_allowed(role, "GET", "/api/v1/settings/tax")
+
+
+@pytest.mark.parametrize("flag,review", [(None,None),("1",None),("1"," "),("true","approved"),("0","approved")])
+def test_tax_gate_defaults_off_without_complete_review_configuration(monkeypatch, flag, review):
+    for name,value in (("WB_SAAS_TAX_ESTIMATE_ENABLED",flag),("WB_SAAS_TAX_ACCOUNTANT_REVIEW_REF",review)):
+        if value is None: monkeypatch.delenv(name, raising=False)
+        else: monkeypatch.setenv(name,value)
+    def forbidden(*args,**kwargs):
+        raise AssertionError("disabled tax must not read, write, or calculate")
+    monkeypatch.setattr(api,"read_tax_settings",forbidden)
+    monkeypatch.setattr(api,"save_tax_settings",forbidden)
+    monkeypatch.setattr(api,"add_tax_block",forbidden)
+    assert api.get_tax_settings(year=2026) == {"enabled":False,"year":2026,"regime":None,"cost_official":False,"rates":[],"supported_regimes":[]}
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as error:
+        api.put_tax_settings(api.TaxSettingsInput(year=2026,regime="usn_income"))
+    assert error.value.status_code == 404
+    result=api.get_management_pnl_monthly(period="custom",start=date(2026,9,1),end=date(2026,9,30))
+    assert result["tax_estimates_enabled"] is False
+    assert "tax" not in result["total"]
+    assert all("tax" not in month for month in result["months"])

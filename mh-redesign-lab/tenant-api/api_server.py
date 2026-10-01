@@ -3701,8 +3701,16 @@ def get_management_pnl_monthly(
         result = monthly_pnl(window_start, window_end)
     except ValueError:
         raise HTTPException(status_code=422, detail="period_too_long")
-    add_tax_block(result)
+    result["tax_estimates_enabled"] = _tax_estimates_enabled()
+    if result["tax_estimates_enabled"]:
+        add_tax_block(result)
     return json_safe(result)
+
+
+def _tax_estimates_enabled() -> bool:
+    """Explicit opt-in only after documented accountant review; disabled by default."""
+    return (os.environ.get("WB_SAAS_TAX_ESTIMATE_ENABLED") == "1"
+            and bool(os.environ.get("WB_SAAS_TAX_ACCOUNTANT_REVIEW_REF", "").strip()))
 
 
 class TaxRateInput(BaseModel):
@@ -3720,11 +3728,17 @@ class TaxSettingsInput(BaseModel):
 
 @app.get("/api/v1/settings/tax")
 def get_tax_settings(year: int = Query(..., ge=2020, le=2100)) -> dict:
-    return {**read_tax_settings(year), "supported_regimes": list(TAX_REGIMES)}
+    if not _tax_estimates_enabled():
+        # No DB access or saved taxpayer data while the feature is gated.
+        return {"enabled": False, "year": year, "regime": None, "cost_official": False,
+                "rates": [], "supported_regimes": []}
+    return {"enabled": True, **read_tax_settings(year), "supported_regimes": list(TAX_REGIMES)}
 
 
 @app.put("/api/v1/settings/tax")
 def put_tax_settings(payload: TaxSettingsInput) -> dict:
+    if not _tax_estimates_enabled():
+        raise HTTPException(status_code=404, detail="tax_estimates_disabled")
     if not 2020 <= payload.year <= 2100:
         raise HTTPException(status_code=422, detail="Год должен быть от 2020 до 2100")
     if payload.regime not in TAX_REGIMES:
@@ -3736,7 +3750,7 @@ def put_tax_settings(payload: TaxSettingsInput) -> dict:
         raise HTTPException(status_code=422, detail="Ставки должны быть от 0 до 100 %")
     save_tax_settings(payload.year, payload.regime, payload.cost_official,
                       [{"month": r.month, "usn_pct": float(r.usn_pct), "vat_pct": float(r.vat_pct)} for r in payload.rates])
-    return {**read_tax_settings(payload.year), "supported_regimes": list(TAX_REGIMES)}
+    return {"enabled": True, **read_tax_settings(payload.year), "supported_regimes": list(TAX_REGIMES)}
 
 
 @app.patch("/api/v1/settings/product-costs")

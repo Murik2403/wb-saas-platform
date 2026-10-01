@@ -61,7 +61,7 @@ export function monthlyRows(): Row[] {
 export const TAX_DISCLAIMER = "Оценка, не бухгалтерский учёт; окончательный расчёт — с бухгалтером.";
 const TAX_RATES_MISSING = "ставка не задана";
 
-export const hasTax = (data: MonthlyPnl) => data.months.some((m) => m.tax) || Boolean(data.total.tax);
+export const hasTax = (data: MonthlyPnl) => data.tax_estimates_enabled === true && (data.months.some((m) => m.tax) || Boolean(data.total.tax));
 
 /** Tax rows: taxes reduce the result, so they are negative; null means "show a placeholder". */
 export function taxRows(): Array<{ label: string; value: (tax: MonthlyTax) => number | null }> {
@@ -171,7 +171,7 @@ export function ManagementPnlMonthly({ period, onOpenTaxSettings }: { period: Da
       </div>
       {hasTax(ready)
         ? <p className="form-hint pnl-monthly-note">{TAX_DISCLAIMER}</p>
-        : <p className="form-hint pnl-monthly-note">Налоги: {onOpenTaxSettings ? <button className="ghost-button" type="button" onClick={onOpenTaxSettings}>укажите режим</button> : "укажите режим"} в настройках, чтобы увидеть оценку налогов и результат после них.</p>}
+        : ready.tax_estimates_enabled === true ? <p className="form-hint pnl-monthly-note">Налоги: {onOpenTaxSettings ? <button className="ghost-button" type="button" onClick={onOpenTaxSettings}>укажите режим</button> : "укажите режим"} в настройках, чтобы увидеть оценку налогов и результат после них.</p> : null}
       <p className="form-hint pnl-monthly-note">{ready.note} Под суммой — доля от реализации. Результат — финансовый результат WB с hybrid FIFO-себестоимостью; подтверждённые внешние расходы из сводки выше не вычитаются.{ready.data_through ? ` Отчёты WB загружены по ${ready.data_through}.` : ""}{flagged ? " Месяцы с пометками показаны за часть месяца или не полностью: сравнивать их с полными месяцами нельзя." : ""}</p>
     </> : null}
   </section>;

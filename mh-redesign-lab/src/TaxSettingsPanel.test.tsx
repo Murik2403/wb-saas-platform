@@ -6,7 +6,7 @@ import { getTaxSettings, saveTaxSettings } from "./data-source";
 vi.mock("./data-source", () => ({ getTaxSettings: vi.fn(), saveTaxSettings: vi.fn() }));
 const load = vi.mocked(getTaxSettings);
 const save = vi.mocked(saveTaxSettings);
-const empty = { year: new Date().getFullYear(), regime: null, cost_official: false, rates: [], supported_regimes: ["usn_income" as const, "usn_income_expense" as const] };
+const empty = { enabled: true, year: new Date().getFullYear(), regime: null, cost_official: false, rates: [], supported_regimes: ["usn_income" as const, "usn_income_expense" as const] };
 
 describe("buildRates", () => {
   const cells = Array.from({ length: 12 }, () => ({ usn: "", vat: "" }));
@@ -21,6 +21,13 @@ describe("buildRates", () => {
 });
 
 describe("TaxSettingsPanel", () => {
+  it("hides the entire panel when accountant review is disabled", async () => {
+    load.mockResolvedValue({ ...empty, enabled: false });
+    const { container } = render(<TaxSettingsPanel />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    expect(container).toBeEmptyDOMElement();
+    expect(save).not.toHaveBeenCalled();
+  });
   beforeEach(() => { load.mockReset(); save.mockReset(); load.mockResolvedValue(empty); });
 
   it("disables unsupported regimes and explains why", async () => {

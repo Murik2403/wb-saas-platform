@@ -36,6 +36,7 @@ export function buildRates(cells: TaxCell[]): { rates: TaxRate[] } | { error: st
 
 export function TaxSettingsPanel() {
   const thisYear = new Date().getFullYear();
+  const [enabled, setEnabled] = useState(false);
   const [year, setYear] = useState(thisYear);
   const [regime, setRegime] = useState<TaxRegime | null>(null);
   const [costOfficial, setCostOfficial] = useState(false);
@@ -50,6 +51,8 @@ export function TaxSettingsPanel() {
     setStatus(null);
     getTaxSettings(year, controller.signal)
       .then((data) => {
+        setEnabled(data.enabled === true);
+        if (data.enabled !== true) return;
         setRegime(data.regime);
         setCostOfficial(data.cost_official);
         const next = emptyCells();
@@ -94,6 +97,8 @@ export function TaxSettingsPanel() {
   const rateInput = (months: number[], field: keyof TaxCell, label: string, value: string, placeholder = "") =>
     <input type="number" inputMode="decimal" min={0} max={100} step="0.1" aria-label={label} value={value} placeholder={placeholder} disabled={loading || busy}
       onChange={(event) => setCell(months, field, event.target.value)} />;
+
+  if (!enabled) return null;
 
   return <section className="work-section tax-settings" id="tax-settings" aria-label="Налоговые ставки">
     <div className="section-header"><div><div className="eyebrow">Экономика</div><h2>Налоговые ставки</h2></div></div>
