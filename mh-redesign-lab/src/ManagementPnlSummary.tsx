@@ -14,6 +14,8 @@ function ExpenseLines({ title, items }: { title: string; items: ManagementPnlExp
 
 export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
   const [data, setData] = useState<ManagementPnl | null>(null);
+  // Previous-period deltas arrive in a second, optional request so the main numbers never wait for them.
+  const [previous, setPrevious] = useState<ManagementPnl["previous"]>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,8 +23,15 @@ export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    getManagementPnl(period, controller.signal, true)
-      .then((result) => setData(result))
+    setPrevious(undefined);
+    getManagementPnl(period, controller.signal)
+      .then((result) => {
+        setData(result);
+        setLoading(false);
+        return getManagementPnl(period, controller.signal, true)
+          .then((withPrevious) => { if (!controller.signal.aborted) setPrevious(withPrevious.previous); })
+          .catch(() => undefined); // deltas are optional: stay silent if they fail
+      })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Не удалось загрузить управленческий результат");
       })
@@ -30,7 +39,9 @@ export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
     return () => controller.abort();
   }, [period.id, period.start, period.end]);
 
-  const prev = data?.previous?.data_status === "ok" ? data.previous : null;
+  const prev = previous?.data_status === "ok" ? previous : null;
+  // While the comparison request is still in flight there is nothing to say: only show "no data" once it has answered.
+  const Delta = (props: Parameters<typeof PnlDelta>[0]) => (previous === undefined ? null : <PnlDelta {...props} />);
   return <section className="panel management-pnl-summary" aria-label="Управленческий результат всего магазина">
     <div className="section-header">
       <div><div className="eyebrow">P&amp;L · весь магазин</div><h2>Управленческий результат</h2></div>
@@ -40,16 +51,16 @@ export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
     {error ? <p className="operation-error" role="alert">{error}</p> : null}
     {data && !loading ? <>
       {data.data_status === "no_financial_data" ? <p className="form-hint">Нет финансовых данных WB за выбранный период; ручные расходы не применены.</p> : data.data_status === "missing_store_profit" ? <p className="operation-error" role="alert">Не удалось рассчитать прибыль магазина по финансовому снимку. Управленческий результат не показан; проверьте данные периода и обновите отчёт.</p> : <>
-        {data.previous !== undefined ? <p className="form-hint pnl-compare-note">{prev ? `Сравнение с предыдущим периодом той же длины: ${prev.period.start} — ${prev.period.end}.` : "За предыдущий период той же длины нет финансовых данных WB: сравнение не показано."}</p> : null}
+        {previous !== undefined ? <p className="form-hint pnl-compare-note">{prev ? `Сравнение с предыдущим периодом той же длины: ${prev.period.start} — ${prev.period.end}.` : "За предыдущий период той же длины нет финансовых данных WB: сравнение не показано."}</p> : null}
         <div className="cash-grid management-pnl-metrics">
-          <div className="stat"><span>Управленческая прибыль</span><strong>{money(data.management_profit_rub)}</strong><small>после подтверждённых внешних расходов</small><PnlDelta current={data.management_profit_rub} previous={prev?.management_profit_rub} /></div>
-          <div className="stat"><span>Финансовый результат WB</span><strong>{money(data.accounting_profit_rub)}</strong><small>с hybrid FIFO-себестоимостью и оценкой неполных строк</small><PnlDelta current={data.accounting_profit_rub} previous={prev?.accounting_profit_rub} /></div>
-          <div className="stat"><span>Подтверждённые внешние расходы</span><strong>{money(data.confirmed_external_expenses_rub)}</strong><small>{data.expenses.included.length} строк включено в расчёт</small><PnlDelta current={data.confirmed_external_expenses_rub} previous={prev?.confirmed_external_expenses_rub} goodWhen="down" /></div>
+          <div className="stat"><span>Управленческая прибыль</span><strong>{money(data.management_profit_rub)}</strong><small>после подтверждённых внешних расходов</small><Delta current={data.management_profit_rub} previous={prev?.management_profit_rub} /></div>
+          <div className="stat"><span>Финансовый результат WB</span><strong>{money(data.accounting_profit_rub)}</strong><small>с hybrid FIFO-себестоимостью и оценкой неполных строк</small><Delta current={data.accounting_profit_rub} previous={prev?.accounting_profit_rub} /></div>
+          <div className="stat"><span>Подтверждённые внешние расходы</span><strong>{money(data.confirmed_external_expenses_rub)}</strong><small>{data.expenses.included.length} строк включено в расчёт</small><Delta current={data.confirmed_external_expenses_rub} previous={prev?.confirmed_external_expenses_rub} goodWhen="down" /></div>
         </div>
         <div className="cash-grid management-pnl-exclusions">
-          <div className="stat"><span>Не подтверждены</span><strong>{money(data.excluded_unconfirmed_rub)}</strong><PnlDelta current={data.excluded_unconfirmed_rub} previous={prev?.excluded_unconfirmed_rub} goodWhen="down" /></div>
-          <div className="stat"><span>Комиссия WB исключена</span><strong>{money(data.excluded_wb_commission_rub)}</strong><small>уже учтена в результате WB</small><PnlDelta current={data.excluded_wb_commission_rub} previous={prev?.excluded_wb_commission_rub} goodWhen="none" /></div>
-          <div className="stat"><span>Неизвестный источник / основа</span><strong>{money(data.unknown_source_rub)}</strong><small>{data.expenses.unknown_source.length} строк не вычтено · {data.unknown_allocation_count} без суммы распределения</small><PnlDelta current={data.unknown_source_rub} previous={prev?.unknown_source_rub} goodWhen="down" /></div>
+          <div className="stat"><span>Не подтверждены</span><strong>{money(data.excluded_unconfirmed_rub)}</strong><Delta current={data.excluded_unconfirmed_rub} previous={prev?.excluded_unconfirmed_rub} goodWhen="down" /></div>
+          <div className="stat"><span>Комиссия WB исключена</span><strong>{money(data.excluded_wb_commission_rub)}</strong><small>уже учтена в результате WB</small><Delta current={data.excluded_wb_commission_rub} previous={prev?.excluded_wb_commission_rub} goodWhen="none" /></div>
+          <div className="stat"><span>Неизвестный источник / основа</span><strong>{money(data.unknown_source_rub)}</strong><small>{data.expenses.unknown_source.length} строк не вычтено · {data.unknown_allocation_count} без суммы распределения</small><Delta current={data.unknown_source_rub} previous={prev?.unknown_source_rub} goodWhen="down" /></div>
         </div>
         <p className="form-hint management-pnl-attestation">Подтверждение — отметка пользователя, а не автоматическая проверка. Проверьте период и основу распределения расхода (всего, на единицу или процент выручки), а также что сумма не задвоена с данными WB, рекламой и себестоимостью.</p>
         <ExpenseLines title="Включено в результат" items={data.expenses.included} />
