@@ -274,6 +274,20 @@ def init_db() -> None:
                 material_name TEXT DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS tax_regime (
+                year INTEGER PRIMARY KEY,
+                regime TEXT NOT NULL,
+                cost_official INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS tax_rate (
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                usn_pct REAL NOT NULL,
+                vat_pct REAL NOT NULL,
+                PRIMARY KEY (year, month)
+            );
+
             CREATE TABLE IF NOT EXISTS material_inventory (
                 material_key TEXT PRIMARY KEY,
                 material_name TEXT NOT NULL,

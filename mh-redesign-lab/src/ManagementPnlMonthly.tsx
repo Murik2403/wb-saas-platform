@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getManagementPnlMonthly } from "./data-source";
-import type { DashboardPeriod, MonthlyPnl, MonthlyPnlLines } from "./data-source";
+import type { DashboardPeriod, MonthlyPnl, MonthlyPnlLines, MonthlyTax } from "./data-source";
 import "./ManagementPnl.css";
 
 type LineKey = Exclude<keyof MonthlyPnlLines, "units" | "report_rows">;
@@ -58,6 +58,25 @@ export function monthlyRows(): Row[] {
   ];
 }
 
+export const TAX_DISCLAIMER = "Оценка, не бухгалтерский учёт; окончательный расчёт — с бухгалтером.";
+const TAX_RATES_MISSING = "ставка не задана";
+
+export const hasTax = (data: MonthlyPnl) => data.months.some((m) => m.tax) || Boolean(data.total.tax);
+
+/** Tax rows: taxes reduce the result, so they are negative; null means "show a placeholder". */
+export function taxRows(): Array<{ label: string; value: (tax: MonthlyTax) => number | null }> {
+  return [
+    { label: "Налоги (оценка)", value: (t) => (t.total === null ? null : -t.total) },
+    { label: "Результат после налогов (оценка)", value: (t) => t.profit_after_tax_estimate },
+  ];
+}
+
+function taxText(tax: MonthlyTax | null | undefined, value: number | null): string {
+  if (!tax) return "—";
+  if (tax.status === "rates_missing" || value === null) return TAX_RATES_MISSING;
+  return `${rubles(value)} ₽`;
+}
+
 function csvNumber(value: number, digits: number): string {
   const text = value.toFixed(digits);
   return (/^-0(\.0+)?$/.test(text) ? text.slice(1) : text).replace(".", ",");
@@ -68,13 +87,18 @@ export function buildMonthlyPnlCsv(data: MonthlyPnl): string {
   const columns: Array<{ title: string; lines: MonthlyPnlLines }> = data.months.map((m) => ({ title: monthLabel(m.month) + (m.partial ? " (часть месяца)" : ""), lines: m }));
   if (data.months.length > 1) columns.push({ title: "Итого", lines: data.total });
   const header = ["Показатель", ...columns.flatMap((c) => [`${c.title}, ₽`, `${c.title}, % от реализации`])];
+  const taxBody = hasTax(data) ? taxRows().map((row) => [row.label, ...[...data.months, ...(data.months.length > 1 ? [data.total] : [])].flatMap((c) => {
+    const tax = c.tax;
+    const value = tax && tax.status !== "rates_missing" ? row.value(tax) : null;
+    return [value === null ? (tax ? TAX_RATES_MISSING : "") : csvNumber(value, 2), ""];
+  })]) : [];
   const body = monthlyRows().map((row) => [row.label, ...columns.flatMap((c) => {
     const value = row.value(c.lines);
     const share = shareOfRealization(value, c.lines.realization);
     return [csvNumber(value, 2), share === null ? "" : csvNumber(share, 1)];
   })]);
   const quote = (cell: string) => (/[;"\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell);
-  return "﻿" + [header, ...body].map((r) => r.map(quote).join(";")).join("\r\n") + "\r\n";
+  return "﻿" + [header, ...body, ...taxBody].map((r) => r.map(quote).join(";")).join("\r\n") + "\r\n";
 }
 
 function downloadCsv(data: MonthlyPnl) {
@@ -89,7 +113,7 @@ function downloadCsv(data: MonthlyPnl) {
   URL.revokeObjectURL(url);
 }
 
-export function ManagementPnlMonthly({ period }: { period: DashboardPeriod }) {
+export function ManagementPnlMonthly({ period, onOpenTaxSettings }: { period: DashboardPeriod; onOpenTaxSettings?: () => void }) {
   const [data, setData] = useState<MonthlyPnl | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,9 +158,20 @@ export function ManagementPnlMonthly({ period }: { period: DashboardPeriod }) {
                 return <td key={index} className={showTotal && index === ready.months.length ? "pnl-total-col" : undefined}><span>{rubles(value)} ₽</span><small>{percent(shareOfRealization(value, lines.realization))}</small></td>;
               })}
             </tr>)}
+            {hasTax(ready) ? taxRows().map((row) => <tr key={row.label} className="pnl-row-expense pnl-row-tax">
+              <th scope="row">{row.label}</th>
+              {[...ready.months, ...(showTotal ? [ready.total] : [])].map((column, index) => {
+                const tax = column.tax;
+                const value = tax && tax.status !== "rates_missing" ? row.value(tax) : null;
+                return <td key={index} className={showTotal && index === ready.months.length ? "pnl-total-col" : undefined}><span>{taxText(tax, value)}</span>{tax?.status === "partial" ? <small>не все месяцы</small> : tax?.loss ? <small>убыток по базе</small> : null}</td>;
+              })}
+            </tr>) : null}
           </tbody>
         </table>
       </div>
+      {hasTax(ready)
+        ? <p className="form-hint pnl-monthly-note">{TAX_DISCLAIMER}</p>
+        : <p className="form-hint pnl-monthly-note">Налоги: {onOpenTaxSettings ? <button className="ghost-button" type="button" onClick={onOpenTaxSettings}>укажите режим</button> : "укажите режим"} в настройках, чтобы увидеть оценку налогов и результат после них.</p>}
       <p className="form-hint pnl-monthly-note">{ready.note} Под суммой — доля от реализации. Результат — финансовый результат WB с hybrid FIFO-себестоимостью; подтверждённые внешние расходы из сводки выше не вычитаются.{ready.data_through ? ` Отчёты WB загружены по ${ready.data_through}.` : ""}{flagged ? " Месяцы с пометками показаны за часть месяца или не полностью: сравнивать их с полными месяцами нельзя." : ""}</p>
     </> : null}
   </section>;

@@ -37,6 +37,7 @@ from ads_service import compute_ads
 from backup_tools import create_backup, latest_backup, list_backups
 from calculations import build_dashboard
 from monthly_pnl import monthly_pnl
+from tax_estimate import REGIMES as TAX_REGIMES, add_tax_block, read_tax_settings, save_tax_settings
 from config import (
     DB_PATH,
     INTERNAL_API_SECRET,
@@ -3611,9 +3612,45 @@ def get_management_pnl_monthly(
     if window_end < window_start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
     try:
-        return json_safe(monthly_pnl(window_start, window_end))
+        result = monthly_pnl(window_start, window_end)
     except ValueError:
         raise HTTPException(status_code=422, detail="period_too_long")
+    add_tax_block(result)
+    return json_safe(result)
+
+
+class TaxRateInput(BaseModel):
+    month: int
+    usn_pct: FiniteFloat
+    vat_pct: FiniteFloat
+
+
+class TaxSettingsInput(BaseModel):
+    year: int
+    regime: str
+    cost_official: bool = False
+    rates: list[TaxRateInput] = Field(default_factory=list, max_length=12)
+
+
+@app.get("/api/v1/settings/tax")
+def get_tax_settings(year: int = Query(..., ge=2020, le=2100)) -> dict:
+    return {**read_tax_settings(year), "supported_regimes": list(TAX_REGIMES)}
+
+
+@app.put("/api/v1/settings/tax")
+def put_tax_settings(payload: TaxSettingsInput) -> dict:
+    if not 2020 <= payload.year <= 2100:
+        raise HTTPException(status_code=422, detail="Год должен быть от 2020 до 2100")
+    if payload.regime not in TAX_REGIMES:
+        raise HTTPException(status_code=422, detail="Режим налогообложения пока не поддерживается")
+    months = [r.month for r in payload.rates]
+    if len(set(months)) != len(months) or any(not 1 <= m <= 12 for m in months):
+        raise HTTPException(status_code=422, detail="Месяц должен быть от 1 до 12 и не повторяться")
+    if any(not (0 <= r.usn_pct <= 100 and 0 <= r.vat_pct <= 100) for r in payload.rates):
+        raise HTTPException(status_code=422, detail="Ставки должны быть от 0 до 100 %")
+    save_tax_settings(payload.year, payload.regime, payload.cost_official,
+                      [{"month": r.month, "usn_pct": float(r.usn_pct), "vat_pct": float(r.vat_pct)} for r in payload.rates])
+    return {**read_tax_settings(payload.year), "supported_regimes": list(TAX_REGIMES)}
 
 
 @app.patch("/api/v1/settings/product-costs")

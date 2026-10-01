@@ -224,13 +224,18 @@ export type MonthlyPnlLines = {
   acquiring: number; penalties: number; storage: number; advertising: number; other: number; result: number;
   units: number; report_rows: number;
 };
-export type MonthlyPnlMonth = MonthlyPnlLines & { month: string; start: string; end: string; partial: boolean; data_incomplete: boolean };
+export type MonthlyTax = {
+  status: "ok" | "rates_missing" | "partial";
+  usn_base: number | null; vat_out: number | null; usn: number | null; total: number | null; profit_after_tax_estimate: number | null;
+  loss: boolean;
+};
+export type MonthlyPnlMonth = MonthlyPnlLines & { month: string; start: string; end: string; partial: boolean; data_incomplete: boolean; tax?: MonthlyTax | null };
 export type MonthlyPnl = {
   period: { start: string; end: string };
   data_status: "ok" | "no_financial_data";
   data_through: string | null;
   months: MonthlyPnlMonth[];
-  total: MonthlyPnlLines;
+  total: MonthlyPnlLines & { tax?: MonthlyTax | null };
   note: string;
 };
 export type ProductionNorm = { material_unit?: string; material_name?: string; nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
@@ -2795,4 +2800,18 @@ export async function getPriceUploadDetail(uploadId: number): Promise<PriceUploa
   const response = await fetch(`${API_BASE_URL}/api/v1/products/price-uploads/${uploadId}`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`Детали загрузки: HTTP ${response.status}`);
   return response.json() as Promise<PriceUploadDetail>;
+}
+
+export type TaxRegime = "usn_income" | "usn_income_expense";
+export type TaxRate = { month: number; usn_pct: number; vat_pct: number };
+export type TaxSettings = { year: number; regime: TaxRegime | null; cost_official: boolean; rates: TaxRate[]; supported_regimes: TaxRegime[] };
+
+export async function getTaxSettings(year: number, signal: AbortSignal = new AbortController().signal): Promise<TaxSettings> {
+  return fetchJson<TaxSettings>(`/api/v1/settings/tax?year=${encodeURIComponent(String(year))}`, signal);
+}
+
+export async function saveTaxSettings(input: { year: number; regime: TaxRegime; cost_official: boolean; rates: TaxRate[] }): Promise<TaxSettings> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings/tax`, { method: "PUT", headers: apiHeaders(true), body: JSON.stringify(input) });
+  if (!response.ok) throw await writeError(response);
+  return response.json() as Promise<TaxSettings>;
 }
