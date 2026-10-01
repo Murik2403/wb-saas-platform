@@ -4,6 +4,13 @@ import {afterEach,it,expect,vi} from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import {createDialogFocusScope,useDialogFocus} from './dialog-focus';
 afterEach(cleanup);
+it('activates a pre-existing sibling native dialog and preserves isolation on out-of-order disposal',()=>{
+ const background=document.createElement('button'),parent=document.createElement('section'),child=document.createElement('dialog');parent.innerHTML='<button>Parent</button>';child.innerHTML='<button>Native</button>';document.body.append(background,parent,child);
+ const disposeParent=createDialogFocusScope(parent,vi.fn());expect(child).toHaveAttribute('inert');child.open=true;
+ const disposeChild=createDialogFocusScope(child,vi.fn());expect(child).not.toHaveAttribute('inert');expect(child.querySelector('button')).toHaveFocus();expect(parent).toHaveAttribute('inert');
+ disposeParent();expect(background).toHaveAttribute('inert');expect(child).not.toHaveAttribute('inert');expect(child.querySelector('button')).toHaveFocus();
+ disposeChild();expect(background).not.toHaveAttribute('inert');background.remove();parent.remove();child.remove();
+});
 it('wraps to a details summary while skipping controls in its collapsed content',()=>{
  const root=document.createElement('section');root.innerHTML='<button>Close</button><details><summary>Details</summary><input aria-label="Collapsed"/></details>';document.body.append(root);
  const dispose=createDialogFocusScope(root,vi.fn());

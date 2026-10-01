@@ -146,7 +146,7 @@ function openInteractionDialog(options: { title: string; message?: string; input
   document.body.appendChild(dialog);
   return new Promise((resolve) => {
     let settled = false;let disposeFocus:(()=>void)|undefined;
-    const finish = (value: string | boolean | null) => { if (settled) return; settled = true; disposeFocus?.();dialog.remove(); resolve(value); };
+    const finish = (value: string | boolean | null) => { if (settled) return; settled = true; dialog.remove();disposeFocus?.(); resolve(value); };
     cancel.addEventListener("click", () => finish(null));
     dialog.addEventListener("cancel", () => finish(null));
     form.addEventListener("submit", (event) => { event.preventDefault(); finish(options.confirm ? true : (input?.value ?? "")); });

@@ -1,10 +1,20 @@
 import {useCallback,useLayoutEffect,useRef,type RefCallback} from 'react';
 
 const activeScopes:HTMLElement[]=[];
+const background=new Map<Element,string|null>();
+function isolateTopScope(){
+ for(const[element,value]of background){if(value===null)element.removeAttribute('inert');else element.setAttribute('inert',value);}
+ background.clear();
+ const root=activeScopes.at(-1);if(!root)return;
+ for(let branch:Element=root;branch.parentElement;branch=branch.parentElement){
+  for(const sibling of Array.from(branch.parentElement.children))if(sibling!==branch){background.set(sibling,sibling.getAttribute('inert'));sibling.setAttribute('inert','');}
+  if(branch.parentElement===document.body)break;
+ }
+}
 function controls(root:HTMLElement){
  return Array.from(root.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,summary,[tabindex],[contenteditable="true"]')).filter(element=>{
   const summary=element.matches('summary')&&element.parentElement?.matches('details')&&element.parentElement.querySelector('summary')===element;
-  if((element.tabIndex<0&&!summary&&!element.matches('[contenteditable="true"]'))||element.matches(':disabled')||element.closest('[hidden],[inert]'))return false;
+  if((element.tabIndex<0&&(element.hasAttribute('tabindex')||(!summary&&!element.matches('[contenteditable="true"]'))))||element.matches(':disabled')||element.closest('[hidden],[inert]'))return false;
   for(let ancestor=element.parentElement;ancestor&&root.contains(ancestor);ancestor=ancestor.parentElement){
    if(ancestor.matches('details:not([open])')&&!ancestor.querySelector('summary')?.contains(element))return false;
   }
@@ -17,12 +27,8 @@ export function createDialogFocusScope(root:HTMLElement,onClose:()=>void,opener:
  const oldTabIndex=root.getAttribute('tabindex');root.tabIndex=-1;
  // aria-modal describes a modal; inert actually removes the background from
  // keyboard, pointer and assistive-technology interaction. Preserve nested scopes.
- const background=new Map<Element,string|null>();
- for(let branch:Element=root;branch.parentElement;branch=branch.parentElement){
-  for(const sibling of Array.from(branch.parentElement.children))if(sibling!==branch){background.set(sibling,sibling.getAttribute('inert'));sibling.setAttribute('inert','');}
-  if(branch.parentElement===document.body)break;
- }
  activeScopes.push(root);
+ isolateTopScope();
  const first=()=>controls(root)[0]??root;
  first().focus();
  const separateNative=()=>Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open]')).some(dialog=>dialog!==root&&!root.contains(dialog));
@@ -45,7 +51,7 @@ export function createDialogFocusScope(root:HTMLElement,onClose:()=>void,opener:
   document.removeEventListener('focusin',focusin,true);
   const wasTop=activeScopes.at(-1)===root,index=activeScopes.indexOf(root);if(index>=0)activeScopes.splice(index,1);
   if(oldTabIndex===null)root.removeAttribute('tabindex');else root.setAttribute('tabindex',oldTabIndex);
-  for(const[element,value]of background){if(value===null)element.removeAttribute('inert');else element.setAttribute('inert',value);}
+  isolateTopScope();
   if(wasTop&&opener?.isConnected&&(!activeScopes.length||activeScopes.at(-1)!.contains(opener)))opener.focus();
  };
 }
