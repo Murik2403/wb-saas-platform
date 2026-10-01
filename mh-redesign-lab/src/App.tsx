@@ -17,6 +17,7 @@ import { ShopQualityPanel } from "./ShopQualityPanel";
 import { ProductPricesPanel } from "./ProductPricesPanel";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManagementPnlMonthly } from "./ManagementPnlMonthly";
+import { TaxSettingsPanel } from "./TaxSettingsPanel";
 import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
@@ -541,6 +542,10 @@ function App() {
     if (recommendation) {
       const destination = recommendationDestination(recommendation);
       selectPage(destination.page, destination.target);
+      return;
+    }
+    if (label === "Налоги") {
+      selectPage("settings", "tax-settings");
       return;
     }
     if (label === "Производственные нормы") {
@@ -1875,7 +1880,7 @@ export function FinanceView({
         {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
       </> : null}
       <ManagementPnlSummary period={period} />
-      <ManagementPnlMonthly period={period} />
+      <ManagementPnlMonthly period={period} onOpenTaxSettings={() => onAction("Налоги", "")} />
       {cashflow}
       <section className="work-section finance-movement-panel" aria-label="Денежное движение">
         <SectionHeader kicker="P&L" title="Денежное движение">
@@ -2637,6 +2642,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
         {manualExpenses.length ? <div className="cost-settings-list">{manualExpenses.map((item) => <div className="cost-setting-row" key={item.id}><div className="cost-setting-product"><strong>{item.article}</strong><span>WB {item.nm_id} · {item.period_start} — {item.period_end} · источник: {item.source === "manual" ? "вручную" : "импорт"} · {item.article === "wb_commission" ? "исключён: комиссия уже в выплате WB" : item.include_in_management_result ? "включён в результат после подтверждения" : "исключён: требуется проверить отсутствие в WB, рекламе и себестоимости"}</span></div><div className="cost-setting-amount"><span>{item.allocation_basis}</span><strong>{Number(item.amount_rub).toLocaleString("ru-RU")} ₽</strong></div>{item.article !== "wb_commission" ? <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void toggleExpenseInclusion(item)}>{item.include_in_management_result ? "Исключить из результата" : "Включить в результат"}</button> : <span className="muted-tag">Комиссия WB уже учтена</span>}<button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void calculateManagement(item)}>Рассчитать</button><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeExpense(item.id)}>Удалить</button></div>)}</div> : <p className="plan-empty">Ручных расходов пока нет.</p>}
         <ManualStoreExpenseManager />
         <ExpenseCoveragePanel products={productCosts} />
+        <TaxSettingsPanel />
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
 </>}

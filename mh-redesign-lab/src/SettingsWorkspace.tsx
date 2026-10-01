@@ -10,7 +10,7 @@ const categories = [
 
 export function SettingsWorkspace(props: Record<(typeof categories)[number]["id"], ReactNode> & { sectionTarget?: string | null }) {
   const targetCategory = (target?: string | null): (typeof categories)[number]["id"] | null =>
-    ["production-norms", "product-costs", "material-inventory", "manual-expenses"].includes(target ?? "") ? "production" : null;
+    ["production-norms", "product-costs", "material-inventory", "manual-expenses", "tax-settings"].includes(target ?? "") ? "production" : null;
   const [selected, setSelected] = useState<(typeof categories)[number]["id"]>(() => targetCategory(props.sectionTarget) ?? "connections");
   useEffect(() => {
     const category = targetCategory(props.sectionTarget);

@@ -50,3 +50,21 @@ describe("monthly P&L helpers", () => {
     expect(lines.find((l) => l.startsWith("Себестоимость"))).toBe("Себестоимость;-100,00;-10,0;-300,00;-20,0;-400,00;-16,0");
   });
 });
+
+describe("monthly tax rows", () => {
+  const okTax = { status: "ok" as const, usn_base: 700, vat_out: 150, usn: 42, total: 192, profit_after_tax_estimate: 277, loss: false };
+  const missing = { status: "rates_missing" as const, usn_base: null, vat_out: null, usn: null, total: null, profit_after_tax_estimate: null, loss: false };
+  const taxed: MonthlyPnl = {
+    ...data,
+    months: [{ ...data.months[0], tax: okTax }, { ...data.months[1], tax: missing }],
+    total: { ...data.total, tax: { ...okTax, status: "partial" } },
+  };
+  it("adds nothing to the CSV without a regime", () => {
+    expect(buildMonthlyPnlCsv(data)).not.toContain("Налоги");
+  });
+  it("exports tax rows as negative taxes and a rates-missing marker", () => {
+    const lines = buildMonthlyPnlCsv(taxed).trim().split("\r\n");
+    expect(lines.find((l) => l.startsWith("Налоги (оценка)"))).toBe("Налоги (оценка);-192,00;;ставка не задана;;-192,00;");
+    expect(lines.find((l) => l.startsWith("Результат после налогов"))).toBe("Результат после налогов (оценка);277,00;;ставка не задана;;277,00;");
+  });
+});
