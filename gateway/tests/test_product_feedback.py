@@ -42,6 +42,7 @@ class FeedbackTests(GatewayDbTestCase):
     def test_csrf_required_and_retry_upsert_keeps_zero_observed(self):
         self.client.get("/feedback")
         self.assertEqual(self.client.post("/feedback",data=self.payload(csrf_token="bad")).status_code,403)
+        self.assertEqual(self.client.post("/feedback",data=self.payload(csrf_token="☃")).status_code,403)
         self.assertEqual(self.count(),0)
         for _ in range(2):
             self.assertEqual(self.client.post("/feedback",data=self.payload(),follow_redirects=False).status_code,303)

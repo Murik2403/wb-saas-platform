@@ -50,7 +50,7 @@ def feedback_save(request:Request, scenario:str=Form(...,max_length=32), period_
     account = _owner(request)
     if account is None:
         return RedirectResponse("/login?next=%2Ffeedback",status_code=303)
-    if not csrf.verify(request,csrf_token):
+    if not csrf_token.isascii() or not csrf.verify(request,csrf_token):
         raise HTTPException(403,"Обновите страницу формы и повторите отправку.")
     if not limiter.is_allowed(f"feedback:{account['id']}"):
         raise HTTPException(429,"Слишком много отправок. Повторите через минуту.")
