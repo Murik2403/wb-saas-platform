@@ -321,4 +321,12 @@ def read_financial(*, omit_raw: bool = False) -> pd.DataFrame:
     from .core import connect, ensure_financial_schema, _table_projection
     ensure_financial_schema()
     with connect() as conn:
-        return pd.read_sql_query(f"SELECT {_table_projection(conn, 'financial_report', omit_raw=omit_raw)} FROM financial_report", conn)
+        # Keep the bounded reason even on fast reads that omit the large raw
+        # payload. This works for existing snake_case and new camelCase rows;
+        # no destructive rewrite or migration of historical reports is needed.
+        reason = """CASE WHEN json_valid(raw_json) THEN
+            COALESCE(json_extract(raw_json, '$.bonusTypeName'),
+                     json_extract(raw_json, '$.bonus_type_name'), '')
+            ELSE '' END AS deduction_reason"""
+        return pd.read_sql_query(
+            f"SELECT {_table_projection(conn, 'financial_report', omit_raw=omit_raw)}, {reason} FROM financial_report", conn)

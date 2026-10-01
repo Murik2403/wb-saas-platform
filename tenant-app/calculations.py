@@ -9,6 +9,7 @@ import pandas as pd
 from db import read_table, read_financial
 from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation
 from db.historical_cogs import project_historical_cogs
+from financial_operations import financial_event_type, is_return_document, is_promotion_settlement
 
 
 @dataclass
@@ -356,6 +357,10 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         "storage": 0.0,
         "penalties": 0.0,
         "deductions": 0.0,
+        "deductions_total": 0.0,
+        "advertising_settlements": 0.0,
+        "advertising_settlements_excluded": 0.0,
+        "advertising_cost_source": "none",
         "acceptance": 0.0,
         "additional_payment": 0.0,
         "to_pay": 0.0,
@@ -455,9 +460,32 @@ def build_dashboard(start: date, end: date) -> DashboardData:
                 f[col] = ""
             f[col] = f[col].fillna("").astype(str)
 
-        operation_text = (f["doc_type_name"] + " " + f["operation_name"]).str.lower()
-        is_return = operation_text.str.contains("возврат", regex=False)
-        is_sale = operation_text.str.contains("продаж", regex=False) & ~is_return
+        operation_rows = f[["doc_type_name", "operation_name"]].to_dict(orient="records")
+        event_types = pd.Series([financial_event_type(row) for row in operation_rows], index=f.index)
+        is_return = event_types.eq("return")
+        is_sale = event_types.eq("sale")
+        return_documents = pd.Series([is_return_document(row) for row in operation_rows], index=f.index)
+        # WB financial API returns magnitudes for returns in both API schemas.
+        # Old imports can already be negative. Apply the sign exactly once,
+        # before store/SKU aggregates; never negate service costs or raw data.
+        for col in ("retail_amount", "ppvz_for_pay", "ppvz_sales_commission",
+                    "commission", "ppvz_reward", "acquiring_fee"):
+            f.loc[return_documents, col] = -f.loc[return_documents, col].abs()
+
+        reasons = f.get("deduction_reason", pd.Series("", index=f.index))
+        promotion_settlements = reasons.map(is_promotion_settlement)
+        financial["deductions_total"] = float(f["deduction"].sum())
+        financial["advertising_settlements"] = float(f.loc[promotion_settlements, "deduction"].sum())
+        if not finance_ads_kpi.empty:
+            financial["advertising_cost_source"] = "campaign_spend"
+            financial["advertising_settlements_excluded"] = financial["advertising_settlements"]
+            # Settlement pays for promotion already recognized by campaign/day;
+            # it is not another P&L expense (often relates to the previous week).
+            f.loc[promotion_settlements, "deduction"] = 0.0
+        elif financial["advertising_settlements"]:
+            # No campaign data: keep the known charge rather than inventing a
+            # zero cost; expose that its period basis is settlement, not spend.
+            financial["advertising_cost_source"] = "settlement_fallback"
         quantity_abs = f["quantity"].abs()
 
         # Quantity is meaningful only on sale/return rows. Logistics, storage,

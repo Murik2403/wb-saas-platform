@@ -2047,6 +2047,11 @@ export function adaptFinanceReport(input: ApiFinanceResponse | undefined, fallba
     calculationEnd: text(f.financial_calculation_end, fallback.calculationEnd ?? ""),
     complete: Boolean(f.financial_period_complete ?? fallback.complete),
     lagDays: Number(f.financial_lag_days ?? fallback.lagDays ?? 0),
+    advertisingAccounting: input?.financial ? {
+      settlementsRub: Number(f.advertising_settlements ?? 0),
+      excludedRub: Number(f.advertising_settlements_excluded ?? 0),
+      source: String(f.advertising_cost_source ?? "none"),
+    } : fallback.advertisingAccounting,
     rows: rows.length ? rows : fallback.rows,
     fifoCosts: input?.fifo_cogs?.map((row) => ({
       nmId: Number(row.nm_id ?? 0),

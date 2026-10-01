@@ -48,12 +48,8 @@ def _json_srid(raw_json: Any) -> str:
 
 
 def _event_type(row: dict[str, Any]) -> str:
-    operation = f"{_text(row.get('doc_type_name'))} {_text(row.get('operation_name'))}".casefold()
-    if "возврат" in operation:
-        return "return"
-    if "продаж" in operation:
-        return "sale"
-    return ""
+    from financial_operations import financial_event_type
+    return financial_event_type(row)
 
 
 def _source_summary(values: Iterable[Any]) -> list[str]:

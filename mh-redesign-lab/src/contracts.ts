@@ -180,6 +180,7 @@ export type FinanceReportState = {
   calculationEnd?: string;
   complete?: boolean;
   lagDays?: number;
+  advertisingAccounting?: { settlementsRub: number; excludedRub: number; source: string };
   rows: FinanceExpenseRow[];
   fifoCosts?: FinanceFifoCostRow[];
   fifoPeriodBasis?: "sale_date";

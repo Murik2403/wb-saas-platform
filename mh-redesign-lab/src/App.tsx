@@ -1864,6 +1864,8 @@ export function FinanceView({
         <p className="form-hint finance-coverage-note">{financeCoverage.note}</p>
       </div>
       <MetricGrid metrics={financeMetrics} onMetricClick={(metric) => onAction("Отчет", metric.label)} />
+      {Number(financeReport.advertisingAccounting?.excludedRub ?? 0) !== 0 ? <p className="form-hint">Удержания WB за оплату продвижения: {financeReport.advertisingAccounting!.excludedRub.toLocaleString("ru-RU")} ₽. Рекламный расход учтён по кампаниям за выбранный период; его оплата не вычитается повторно.</p> : null}
+      {financeReport.advertisingAccounting?.source === "settlement_fallback" ? <p className="form-hint" role="status">Расходы рекламных кампаний не загружены. В расчёте сохранены удержания WB за продвижение; дата оплаты может отличаться от периода показа рекламы.</p> : null}
       {financeReport.balance !== undefined && financeReport.balance > 0 ? <div className="cash-grid finance-balance-grid"><div className="stat"><span>Баланс WB</span><strong>{Math.round(financeReport.balance).toLocaleString("ru-RU")} ₽</strong><small>текущий баланс продавца</small></div><div className="stat"><span>К выводу</span><strong>{Math.round(financeReport.forWithdraw ?? 0).toLocaleString("ru-RU")} ₽</strong><small>по данным Finance API</small></div></div> : null}
 
       {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <>
