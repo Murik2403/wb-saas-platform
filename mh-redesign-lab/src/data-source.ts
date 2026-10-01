@@ -2763,3 +2763,27 @@ export async function getProductsPrevious(period: DashboardPeriod, signal: Abort
     totals: t ? { revenue: numberValue(t.revenue), marginPct: numberValue(t.margin_pct), atRisk: numberValue(t.at_risk), skuCount: numberValue(t.sku_count) } : null,
   };
 }
+
+export type ProductGroup = { id: number; name: string; nmIds: number[]; count: number };
+
+type RawProductGroup = { id: number; name: string; nm_ids?: number[]; count?: number };
+const adaptProductGroup = (g: RawProductGroup): ProductGroup => ({ id: g.id, name: g.name, nmIds: g.nm_ids ?? [], count: g.count ?? g.nm_ids?.length ?? 0 });
+
+export async function getProductGroups(signal: AbortSignal): Promise<ProductGroup[]> {
+  const raw = await fetchJson<{ groups?: RawProductGroup[] }>("/api/v1/product-groups", signal);
+  return (raw.groups ?? []).map(adaptProductGroup);
+}
+
+async function productGroupRequest(method: string, path: string, body?: Record<string, unknown>): Promise<ProductGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/product-groups${path}`, { method, headers: apiHeaders(true), body: body ? JSON.stringify(body) : undefined });
+  if (!response.ok) {
+    let detail = "";
+    try { const parsed = await response.json() as { detail?: unknown }; detail = typeof parsed.detail === "string" ? parsed.detail : ""; } catch { /* not JSON */ }
+    throw new Error(detail || `Не удалось сохранить группу: HTTP ${response.status}`);
+  }
+  return adaptProductGroup(await response.json() as RawProductGroup);
+}
+
+export const createProductGroup = (name: string, nmIds: number[]) => productGroupRequest("POST", "", { name, nm_ids: nmIds });
+export const updateProductGroup = (id: number, name: string, nmIds: number[]) => productGroupRequest("PUT", `/${id}`, { name, nm_ids: nmIds });
+export const archiveProductGroup = (id: number) => productGroupRequest("DELETE", `/${id}`);
