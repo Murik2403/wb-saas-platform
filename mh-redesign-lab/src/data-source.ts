@@ -216,6 +216,22 @@ export type ManagementPnl = {
   expenses: { included: ManagementPnlExpense[]; excluded: ManagementPnlExpense[]; unknown_source: ManagementPnlExpense[] };
   attestation: "confirmed_by_tenant";
   note: string;
+  /** Equal-length window right before the selected one; null when it is empty. Absent unless requested. */
+  previous?: Omit<ManagementPnl, "expenses" | "previous"> | null;
+};
+export type MonthlyPnlLines = {
+  realization: number; spp_discount: number; sales: number; cost: number; logistics: number; commission: number;
+  acquiring: number; penalties: number; storage: number; advertising: number; other: number; result: number;
+  units: number; report_rows: number;
+};
+export type MonthlyPnlMonth = MonthlyPnlLines & { month: string; start: string; end: string; partial: boolean; data_incomplete: boolean };
+export type MonthlyPnl = {
+  period: { start: string; end: string };
+  data_status: "ok" | "no_financial_data";
+  data_through: string | null;
+  months: MonthlyPnlMonth[];
+  total: MonthlyPnlLines;
+  note: string;
 };
 export type ProductionNorm = { material_unit?: string; material_name?: string; nm_id: number; supplier_article: string; product_name: string; enabled: number; material_per_unit: number; min_batch: number; pack_size: number; blank_type: string };
 export type MaterialInventory = { material_key?: string; material_name: string; balance_known: number | boolean; full_rolls: number; partial_meters: number; roll_length: number; unit: string; tracking_mode: "packaged" | "quantity"; opening_rate_rub: number; note: string; updated_at?: string };
@@ -1055,13 +1071,23 @@ export async function getManagementEconomics(nmId: number, start: string, end: s
   return response.json() as Promise<ManagementEconomics>;
 }
 
-export async function getManagementPnl(period: DashboardPeriod, signal: AbortSignal = new AbortController().signal): Promise<ManagementPnl> {
+export async function getManagementPnl(period: DashboardPeriod, signal: AbortSignal = new AbortController().signal, comparePrevious = false): Promise<ManagementPnl> {
   const query = new URLSearchParams({ period: period.id });
   if (period.id === "custom") {
     if (period.start) query.set("start", period.start);
     if (period.end) query.set("end", period.end);
   }
+  if (comparePrevious) query.set("compare_previous", "true");
   return fetchJson<ManagementPnl>(`/api/v1/dashboard/management-pnl?${query.toString()}`, signal);
+}
+
+export async function getManagementPnlMonthly(period: DashboardPeriod, signal: AbortSignal = new AbortController().signal): Promise<MonthlyPnl> {
+  const query = new URLSearchParams({ period: period.id });
+  if (period.id === "custom") {
+    if (period.start) query.set("start", period.start);
+    if (period.end) query.set("end", period.end);
+  }
+  return fetchJson<MonthlyPnl>(`/api/v1/dashboard/management-pnl/monthly?${query.toString()}`, signal);
 }
 
 export async function getProductionNorms(): Promise<{ items: ProductionNorm[] }> {
