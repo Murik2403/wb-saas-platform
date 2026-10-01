@@ -90,6 +90,7 @@ from products_service import compute_products
 import price_advice
 from ads_analytics import compute_ads_analytics
 from products_trend import compute_products_trend, products_totals
+from products_heatmap import METRICS as HEATMAP_METRICS, compute_products_heatmap
 from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 from growth_delivery import deliver_pending_growth_events
 from growth_outbox_worker import delivery_worker_enabled, run_growth_outbox_worker
@@ -1443,6 +1444,23 @@ def get_products_trend(
     return _dashboard_response(
         f"products-trend:{period}:{window_start}:{window_end}",
         lambda: json_safe(compute_products_trend(window_start, window_end)),
+    )
+
+
+@app.get("/api/v1/dashboard/products/heatmap")
+def get_products_heatmap(
+    metric: str = "orders",
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """SKU x day matrix for one metric. Local SQLite only (no WB calls)."""
+    if metric not in HEATMAP_METRICS:
+        raise HTTPException(status_code=422, detail="unknown_metric")
+    window_start, window_end = _products_window(period, start, end)
+    return _dashboard_response(
+        f"products-heatmap:{metric}:{period}:{window_start}:{window_end}",
+        lambda: json_safe(compute_products_heatmap(metric, window_start, window_end)),
     )
 
 

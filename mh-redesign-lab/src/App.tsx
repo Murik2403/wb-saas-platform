@@ -13,6 +13,7 @@ import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { AdsAnalyticsPanel } from "./AdsAnalyticsPanel";
 import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
+import { ProductsHeatmap } from "./ProductsHeatmap";
 import { ProductGroupFilter, ProductGroupsPanel } from "./ProductGroupsPanel";
 import { useGroupSelection, useProductGroups, ALL_PRODUCTS } from "./useProductGroups";
 import { ProductCardsPanel } from "./ProductCardsPanel";
@@ -2179,6 +2180,7 @@ export function ProductsView({
       <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good", change: changes[0] }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn", change: changes[1] }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good", change: changes[2] }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info", change: changes[3] }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
       <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
       <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label><ProductGroupFilter groups={productGroups.groups} value={groupId} onChange={setGroupId} /><ProductGroupsPanel products={products} groups={productGroups.groups} error={productGroups.error} onChanged={productGroups.reload} />{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
+      <ProductsHeatmap period={period} />
       <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
       {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
       <ShopQualityPanel data={customerQuality} actions={qualityActions} />
