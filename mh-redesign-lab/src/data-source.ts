@@ -2833,3 +2833,36 @@ export async function getPriceAdvice(period: DashboardPeriod, targetMargin: numb
   if (!response.ok) throw new Error(`Рекомендации по ценам: HTTP ${response.status}`);
   return response.json() as Promise<PriceAdvice>;
 }
+
+export type AdsMetrics = {
+  spend: number | null; views: number | null; clicks: number | null; ctr: number | null; cpc: number | null; cpm: number | null;
+  carts: number | null; cartConversion: number | null; orders: number | null; orderConversion: number | null; cpo: number | null;
+  adRevenue: number | null; drr: number | null; canceled: number | null;
+};
+export type AdsAnalytics = {
+  start: string; end: string; previousStart: string; previousEnd: string; bucketDays: number;
+  hasData: boolean; hasPreviousData: boolean;
+  totals: AdsMetrics; previousTotals: AdsMetrics | null;
+  byDay: Array<AdsMetrics & { day: string }>; campaigns: Array<AdsMetrics & { campaignId: number }>;
+};
+
+type RawAdsMetrics = Record<string, number | null | undefined>;
+const adsMetrics = (r: RawAdsMetrics): AdsMetrics => {
+  const n = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    spend: n(r.spend), views: n(r.views), clicks: n(r.clicks), ctr: n(r.ctr), cpc: n(r.cpc), cpm: n(r.cpm), carts: n(r.carts),
+    cartConversion: n(r.cart_conversion), orders: n(r.orders), orderConversion: n(r.order_conversion), cpo: n(r.cpo),
+    adRevenue: n(r.ad_revenue), drr: n(r.drr), canceled: n(r.canceled),
+  };
+};
+
+export async function getAdsAnalytics(period: DashboardPeriod, signal: AbortSignal): Promise<AdsAnalytics> {
+  const raw = await fetchJson<Record<string, any>>(`/api/v1/dashboard/ads/analytics${periodQuery(period)}`, signal, 30000);
+  return {
+    start: raw.start ?? "", end: raw.end ?? "", previousStart: raw.previous_start ?? "", previousEnd: raw.previous_end ?? "",
+    bucketDays: raw.bucket_days ?? 1, hasData: raw.has_data === true, hasPreviousData: raw.has_previous_data === true,
+    totals: adsMetrics(raw.totals ?? {}), previousTotals: raw.previous_totals ? adsMetrics(raw.previous_totals) : null,
+    byDay: (raw.by_day ?? []).map((r: RawAdsMetrics & { day: string }) => ({ ...adsMetrics(r), day: r.day })),
+    campaigns: (raw.campaigns ?? []).map((r: RawAdsMetrics & { campaign_id: number }) => ({ ...adsMetrics(r), campaignId: r.campaign_id })),
+  };
+}

@@ -250,6 +250,7 @@ def test_new_cabinet_routes_are_explicitly_shop_local_and_registry_matches_front
     expected = {
         ('GET', '/api/v1/dashboard/products/trend'),
         ('GET', '/api/v1/dashboard/products/previous'),
+        ('GET', '/api/v1/dashboard/ads/analytics'),
         ('GET', '/api/v1/dashboard/management-pnl/monthly'),
         ('GET', '/api/v1/dashboard/products/price-advice'),
         ('POST', '/api/v1/dashboard/products/price-advice'),

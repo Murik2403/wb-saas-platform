@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getProductsPrevious, getProductsTrend, type DashboardPeriod, type ProductsPreviousTotals, type ProductsTrend } from "./data-source";
+import { getAdsAnalytics, getProductsPrevious, getProductsTrend, type AdsAnalytics, type DashboardPeriod, type ProductsPreviousTotals, type ProductsTrend } from "./data-source";
 
 type Lazy<T> = { data: T | null; loading: boolean; error: string | null };
 
@@ -22,3 +22,4 @@ function useLazy<T>(period: DashboardPeriod, load: (period: DashboardPeriod, sig
 
 export const useProductsTrend = (period: DashboardPeriod) => useLazy<ProductsTrend>(period, getProductsTrend);
 export const useProductsPrevious = (period: DashboardPeriod) => useLazy<ProductsPreviousTotals>(period, getProductsPrevious);
+export const useAdsAnalytics = (period: DashboardPeriod) => useLazy<AdsAnalytics>(period, getAdsAnalytics);

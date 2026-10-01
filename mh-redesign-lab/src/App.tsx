@@ -11,6 +11,7 @@ import { IncidentWorkflow } from "./IncidentWorkflow";
 import { WorkcenterCalendar } from "./WorkcenterCalendar";
 import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
+import { AdsAnalyticsPanel } from "./AdsAnalyticsPanel";
 import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
 import { ProductGroupFilter, ProductGroupsPanel } from "./ProductGroupsPanel";
 import { useGroupSelection, useProductGroups, ALL_PRODUCTS } from "./useProductGroups";
@@ -1810,6 +1811,8 @@ function AdsView({
           </section>
         </aside>
       </div>
+
+      <AdsAnalyticsPanel period={period} />
     </div>
   );
 }
