@@ -2833,3 +2833,15 @@ export async function getPriceAdvice(period: DashboardPeriod, targetMargin: numb
   if (!response.ok) throw new Error(`Рекомендации по ценам: HTTP ${response.status}`);
   return response.json() as Promise<PriceAdvice>;
 }
+
+export type HeatmapMetric = "orders" | "orders_rub" | "sales" | "revenue" | "ad_spend" | "ad_orders";
+export type ProductsHeatmapRow = { nm_id: number; vendor_code: string; name: string; total: number; values: number[] };
+export type ProductsHeatmap = {
+  metric: HeatmapMetric; label: string; unit: "pcs" | "rub"; start: string; end: string; bucket_days: number; dates: string[];
+  rows: ProductsHeatmapRow[]; other: { count: number; total: number; values: number[] } | null;
+  column_totals: number[]; grand_total: number; min: number; max: number; campaign_level_total: number | null;
+};
+
+export function getProductsHeatmap(metric: HeatmapMetric, period: DashboardPeriod, signal: AbortSignal): Promise<ProductsHeatmap> {
+  return fetchJson<ProductsHeatmap>(`/api/v1/dashboard/products/heatmap${periodQuery(period)}&metric=${metric}`, signal, 30000);
+}
