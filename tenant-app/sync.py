@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from config import get_token, load_settings
 from db import (
     finish_sync_log,
+    update_sync_progress,
     init_db,
     insert_stocks,
     clear_demo_data,
@@ -93,6 +94,18 @@ def sync_all() -> dict[str, int | str]:
         return _sync_all_locked()
 
 
+# Stage keys reported to the UI as "progress: N/7 <key>" while a full sync runs.
+SYNC_STAGES = ("products", "orders", "sales", "finance", "stocks", "fifo", "ads")
+
+
+def _progress(log_id: int, done: int) -> None:
+    """Tell the cabinet which stage just finished. Never allowed to break the sync."""
+    try:
+        update_sync_progress(log_id, done, len(SYNC_STAGES), SYNC_STAGES[done - 1])
+    except Exception:
+        pass
+
+
 def _sync_all_locked() -> dict[str, int | str]:
     init_db()
     ensure_financial_schema()
@@ -118,12 +131,15 @@ def _sync_all_locked() -> dict[str, int | str]:
         except Exception as exc:
             # Product catalogue is useful but must not block orders/finance sync.
             result["products_error"] = str(exc)[:180]
+        _progress(log_id, 1)
 
         orders = api.get_orders(_incremental_from("orders", history_days))
         result["orders"] = upsert_orders(orders)
+        _progress(log_id, 2)
 
         sales = api.get_sales(_incremental_from("sales", history_days))
         result["sales"] = upsert_sales(sales)
+        _progress(log_id, 3)
 
         # Finance used to be refreshed only by a separate manual button. That
         # allowed the finance page to look current while actually ending weeks
@@ -143,9 +159,11 @@ def _sync_all_locked() -> dict[str, int | str]:
             result["financial_to"] = finance_end.isoformat()
         except Exception as exc:
             result["financial_error"] = str(exc)[:180]
+        _progress(log_id, 4)
 
         stocks = api.get_stocks()
         result["stocks"] = insert_stocks(stocks)
+        _progress(log_id, 5)
 
         # v4.6: establish the current database as a historical baseline on the
         # first run, then consume FIFO finished-goods layers only for new sales
@@ -163,8 +181,10 @@ def _sync_all_locked() -> dict[str, int | str]:
         except Exception as exc:
             # COGS tracking must not block operational WB synchronization.
             result["fifo_error"] = str(exc)[:180]
+        _progress(log_id, 6)
 
         _sync_ads(api, settings, result)
+        _progress(log_id, 7)
         result["cleaned_cost_rows"] = cleanup_orphan_zero_costs()
 
         details = ", ".join(f"{k}: {v}" for k, v in result.items())

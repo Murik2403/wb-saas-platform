@@ -1410,6 +1410,19 @@ def start_sync_log() -> int:
         )
         return int(cur.lastrowid)
 
+def update_sync_progress(log_id: int, done: int, total: int, stage: str) -> None:
+    """Record live progress ("progress: 3/7 sales") on a run that is still going.
+
+    Only a row that is still 'running' is touched, so a late write can never
+    overwrite the final status/details written by finish_sync_log().
+    """
+    with connect() as conn:
+        conn.execute(
+            "UPDATE sync_log SET details=? WHERE id=? AND status='running'",
+            (f"progress: {done}/{total} {stage}", log_id),
+        )
+
+
 def finish_sync_log(log_id: int, status: str, details: str) -> None:
     with connect() as conn:
         conn.execute(

@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { trackMetrikaGoal } from "./metrika";
 vi.mock("./metrika", () => ({ trackMetrikaGoal: vi.fn() }));
-import { getActivationSummary, getFirstGrowthReport, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport } from "./data-source";
+import { getActivationSummary, getFirstGrowthReport, getTenantSyncHistory, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport } from "./data-source";
 
-vi.mock("./data-source", () => ({ getActivationSummary: vi.fn(), getFirstGrowthReport: vi.fn(), recordFirstReportViewed: vi.fn() }));
+vi.mock("./data-source", () => ({ getActivationSummary: vi.fn(), getFirstGrowthReport: vi.fn(), getTenantSyncHistory: vi.fn(), recordFirstReportViewed: vi.fn() }));
 const summary: ActivationSummary = { schema_version: 1, is_demo: false, wb_connected: true, sync: { state: "success", complete: true, successful_full_sync_at: "2026-09-18" }, selected_product: { nm_id: 123, cost_configured: true, has_financial_rows: true }, ready_for_report: true, next_step: "open_report", first_value_verified: false, first_value_at: null };
 const report: FirstGrowthReport = { nm_id: 123, product: "Тестовый товар", period: { start: "2026-08-19", end: "2026-09-17" }, revenue: 2400, sales: 2, unit_cost: 420, margin: 1100, margin_pct: 45.8, limitation: "Налоги и внешние расходы не включены", report_revision: "a".repeat(64) };
 const props = {
@@ -89,4 +89,36 @@ it("allows completed settings to reopen a verified report without automatic trac
   await userEvent.click(screen.getByRole("button", { name: "Открыть проверенный отчёт" }));
   await waitFor(() => expect(recordFirstReportViewed).toHaveBeenCalledWith(report));
   expect(trackMetrikaGoal).not.toHaveBeenCalled();
+});
+
+describe("first store load progress", () => {
+  const runningRun = { id: 2, started_at: "2026-09-18", finished_at: null, status: "running", details: "progress: 3/7 sales" };
+  const runningSummary = { ...summary, sync: { state: "running", complete: false, successful_full_sync_at: null }, ready_for_report: false, next_step: "sync" } as ActivationSummary;
+
+  it("shows how far the load has got and which stage is running", async () => {
+    vi.mocked(getActivationSummary).mockResolvedValue(runningSummary);
+    vi.mocked(getTenantSyncHistory).mockResolvedValue({ runs: [runningRun] });
+    render(<OnboardingPanel {...props} runs={[runningRun]} />);
+    expect(await screen.findByText("Выполнено 3 из 7 этапов. Сейчас: финансовый отчёт.")).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("value")).toBe("3");
+    expect(screen.queryByText(/Данные магазина загружены/)).toBeNull();
+  });
+
+  it("announces when a load the user was waiting for has finished", async () => {
+    vi.mocked(getActivationSummary).mockResolvedValue(runningSummary);
+    vi.mocked(getTenantSyncHistory).mockResolvedValue({ runs: [runningRun] });
+    const { rerender } = render(<OnboardingPanel {...props} runs={[runningRun]} />);
+    await screen.findByRole("progressbar");
+    vi.mocked(getActivationSummary).mockResolvedValue(summary);
+    rerender(<OnboardingPanel {...props} runs={props.runs} />);
+    expect(await screen.findByText("Данные магазина загружены. Теперь выберите товар и проверьте себестоимость.")).toBeTruthy();
+  });
+
+  it("stays quiet when the page opens with the load already complete", async () => {
+    render(<OnboardingPanel {...props} />);
+    await screen.findByText("Первый результат на ваших данных");
+    await waitFor(() => expect(getActivationSummary).toHaveBeenCalled());
+    expect(screen.queryByText(/Данные магазина загружены/)).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
 });

@@ -11,6 +11,7 @@ from .core import (
     max_value,
     start_sync_log,
     finish_sync_log,
+    update_sync_progress,
     last_sync,
     clear_demo_data,
     _table_columns,

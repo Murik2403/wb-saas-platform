@@ -18,7 +18,7 @@ export function syncSummary(status: string, details: string | null): { title: st
   if (/products_error:/.test(raw)) problems.push("Каталог товаров не обновился.");
   if (/fifo_error:|fifo_errors:\s*[1-9]/.test(raw)) problems.push("При учёте движения товаров возникли ошибки. Проверьте раздел «Контроль».");
   return {
-    title: status === "success" ? "Обновление завершено" : status === "partial" ? "Обновлено частично" : status === "running" ? "Загружаем данные WB" : "Не удалось завершить обновление",
+    title: status === "running" && /^progress:\s*\d+\/\d+/.test(raw) ? `Загружаем данные WB: ${raw.match(/^progress:\s*(\d+)\/(\d+)/)!.slice(1, 3).join(" из ")} этапов` : status === "success" ? "Обновление завершено" : status === "partial" ? "Обновлено частично" : status === "running" ? "Загружаем данные WB" : "Не удалось завершить обновление",
     counts,
     notice: problems.join(" ") || (status === "error" ? "Подробности сбоя доступны ниже." : status === "partial" ? "Некоторые этапы не завершены. Подробности ниже." : ""),
   };

@@ -7,7 +7,7 @@ import sync
 class PartialSyncTests(TestCase):
     def run_sync(self, fail_ads=False, fail_finance=False, empty_ads=False):
         with ExitStack() as stack:
-            names = ['init_db', 'ensure_financial_schema', 'clear_demo_data', 'replace_product_catalog', 'upsert_orders', 'upsert_sales', 'upsert_financial', 'insert_stocks', 'process_sales_fifo_events', 'delete_ads_period', 'upsert_ads', 'cleanup_orphan_zero_costs', 'finish_sync_log']
+            names = ['init_db', 'ensure_financial_schema', 'clear_demo_data', 'replace_product_catalog', 'upsert_orders', 'upsert_sales', 'upsert_financial', 'insert_stocks', 'process_sales_fifo_events', 'delete_ads_period', 'upsert_ads', 'cleanup_orphan_zero_costs', 'finish_sync_log', 'update_sync_progress']
             mocks = {name: stack.enter_context(mock.patch.object(sync, name, return_value=3)) for name in names}
             stack.enter_context(mock.patch.object(sync, 'get_token', return_value='test-only'))
             stack.enter_context(mock.patch.object(sync, 'load_settings', return_value={}))
