@@ -242,3 +242,62 @@ def test_management_economics_rejects_reversed_period():
     with pytest.raises(api.HTTPException) as error:
         api.get_management_economics(nm_id=123, start=date(2026, 9, 2), end=date(2026, 9, 1))
     assert error.value.status_code == 422
+
+
+def _seed_two_months():
+    from db.ingest import upsert_ads, upsert_financial
+
+    def row(rrd_id, day, kind, qty, **kw):
+        return dict(rrd_id=rrd_id, rr_dt=day, nm_id=100, doc_type_name=kind, quantity=qty, **kw)
+
+    upsert_financial([
+        row(1, "2026-08-10", "Продажа", 2, retail_price_withdisc_rub=1000, retail_amount=1800, ppvz_for_pay=1500,
+            ppvz_sales_commission=200, acquiring_fee=40, delivery_rub=100, storage_fee=20, penalty=10,
+            deduction=5, acceptance=3, additional_payment=7),
+        row(2, "2026-08-20", "Возврат", 1, retail_price_withdisc_rub=1000, retail_amount=-900, ppvz_for_pay=-750,
+            ppvz_sales_commission=-100, acquiring_fee=-20),
+        row(3, "2026-09-05", "Продажа", 3, retail_price_withdisc_rub=500, retail_amount=1400, ppvz_for_pay=1100,
+            ppvz_sales_commission=250, acquiring_fee=30, delivery_rub=60, rebill_logistic_cost=15),
+    ])
+    upsert_ads([dict(campaign_id=1, day="2026-08-12", nm_id=0, spend=50), dict(campaign_id=1, day="2026-09-04", nm_id=0, spend=70)])
+    api.dashboard_data_cache.clear()
+
+
+def test_management_pnl_previous_period_is_equal_window_before(monkeypatch):
+    _seed_two_months()
+    result = api.get_management_pnl(period="custom", start=date(2026, 9, 1), end=date(2026, 9, 30), compare_previous=True)
+    assert result["accounting_profit_rub"] == 1100 - 75 - 70
+    previous = result["previous"]
+    assert previous["period"] == {"start": "2026-08-02", "end": "2026-08-31"}
+    assert previous["revenue_rub"] == 900
+    assert previous["accounting_profit_rub"] == 569  # hand-checked in tenant-app/tests/test_monthly_pnl.py
+    assert "expenses" not in previous
+    assert "previous" not in api.get_management_pnl(period="custom", start=date(2026, 9, 1), end=date(2026, 9, 30))
+
+
+def test_management_pnl_previous_period_without_data(monkeypatch):
+    _seed_two_months()
+    result = api.get_management_pnl(period="custom", start=date(2026, 8, 1), end=date(2026, 8, 31), compare_previous=True)
+    assert result["previous"]["data_status"] == "no_financial_data"
+    assert result["previous"]["revenue_rub"] == 0
+
+
+def test_monthly_pnl_columns_add_up_to_management_pnl_totals():
+    _seed_two_months()
+    start, end = date(2026, 8, 1), date(2026, 9, 30)
+    total = api.get_management_pnl(period="custom", start=start, end=end)
+    monthly = api.get_management_pnl_monthly(period="custom", start=start, end=end)
+    assert [m["month"] for m in monthly["months"]] == ["2026-08", "2026-09"]
+    assert sum(m["result"] for m in monthly["months"]) == pytest.approx(total["accounting_profit_rub"])
+    assert monthly["total"]["result"] == pytest.approx(total["accounting_profit_rub"])
+    assert monthly["total"]["sales"] == pytest.approx(total["revenue_rub"])
+    assert monthly["total"]["units"] == pytest.approx(total["units"])
+
+
+def test_monthly_pnl_rejects_too_long_period_and_handles_empty_store():
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as err:
+        api.get_management_pnl_monthly(period="custom", start=date(2020, 1, 1), end=date(2026, 9, 30))
+    assert err.value.status_code == 422
+    empty = api.get_management_pnl_monthly(period="custom", start=date(2026, 9, 1), end=date(2026, 9, 30))
+    assert empty["data_status"] == "no_financial_data" and empty["total"]["result"] == 0

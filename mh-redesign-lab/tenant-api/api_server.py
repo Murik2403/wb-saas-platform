@@ -36,6 +36,7 @@ from pydantic import BaseModel, FiniteFloat, Field
 from ads_service import compute_ads
 from backup_tools import create_backup, latest_backup, list_backups
 from calculations import build_dashboard
+from monthly_pnl import monthly_pnl
 from config import (
     DB_PATH,
     INTERNAL_API_SECRET,
@@ -3327,12 +3328,15 @@ def get_management_pnl(
     period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
     start: date | None = None,
     end: date | None = None,
+    compare_previous: bool = False,
 ) -> dict:
     """Whole-store management P&L layered on the dashboard's hybrid result.
 
     Manual rows are deducted only when a recognized external source was
     explicitly confirmed by the tenant. WB commission is always excluded
     because it is already reflected in the marketplace financial result.
+    With compare_previous the same metrics for the equal-length window right
+    before the selected one are added as `previous` (None when it is empty).
     """
     try:
         window_start, window_end = resolve_window(period, datetime.now(ZoneInfo("Europe/Moscow")).date(), start, end)
@@ -3341,7 +3345,19 @@ def get_management_pnl(
     start, end = window_start, window_end
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
+    result = _management_pnl_result(start, end)
+    if compare_previous:
+        prev = previous_window(start, end)
+        if prev is None:
+            result["previous"] = None
+        else:
+            previous = _management_pnl_result(*prev)
+            previous.pop("expenses", None)
+            result["previous"] = previous
+    return result
 
+
+def _management_pnl_result(start: date, end: date) -> dict:
     snapshot = _build_dashboard_cached(start, end)
     products = getattr(snapshot, "financial_products", pd.DataFrame())
     if products is None:
@@ -3467,6 +3483,25 @@ def get_management_pnl(
     })
 
 
+
+
+@app.get("/api/v1/dashboard/management-pnl/monthly")
+def get_management_pnl_monthly(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """WB P&L by calendar month (local SQLite only); columns add up to the total."""
+    try:
+        window_start, window_end = resolve_window(period, datetime.now(ZoneInfo("Europe/Moscow")).date(), start, end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="custom_period_requires_start_and_end")
+    if window_end < window_start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+    try:
+        return json_safe(monthly_pnl(window_start, window_end))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="period_too_long")
 
 
 @app.patch("/api/v1/settings/product-costs")
