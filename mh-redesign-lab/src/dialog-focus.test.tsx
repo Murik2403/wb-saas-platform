@@ -4,6 +4,29 @@ import {afterEach,it,expect,vi} from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import {createDialogFocusScope,useDialogFocus} from './dialog-focus';
 afterEach(cleanup);
+it('wraps to a details summary while skipping controls in its collapsed content',()=>{
+ const root=document.createElement('section');root.innerHTML='<button>Close</button><details><summary>Details</summary><input aria-label="Collapsed"/></details>';document.body.append(root);
+ const dispose=createDialogFocusScope(root,vi.fn());
+ fireEvent.keyDown(document,{key:'Tab',shiftKey:true});expect(root.querySelector('summary')).toHaveFocus();
+ fireEvent.keyDown(document,{key:'Tab'});expect(root.querySelector('button')).toHaveFocus();dispose();root.remove();
+});
+it('makes the background inert and restores its previous state after closing',()=>{
+ const page=document.createElement('main');page.innerHTML='<button>Background</button>';
+ const existing=document.createElement('aside');existing.setAttribute('inert','');
+ const backdrop=document.createElement('div'),root=document.createElement('section');root.innerHTML='<button>Close</button>';backdrop.append(root);document.body.append(page,existing,backdrop);
+ const dispose=createDialogFocusScope(root,vi.fn());
+ expect(page).toHaveAttribute('inert');expect(backdrop).not.toHaveAttribute('inert');expect(root).not.toHaveAttribute('inert');
+ dispose();expect(page).not.toHaveAttribute('inert');expect(existing).toHaveAttribute('inert');page.remove();existing.remove();backdrop.remove();
+});
+it('recovers focus moved outside the dialog and keeps a nested modal isolated',()=>{
+ const background=document.createElement('button');document.body.append(background);
+ const parent=document.createElement('section');parent.innerHTML='<button>Parent</button>';document.body.append(parent);
+ const disposeParent=createDialogFocusScope(parent,vi.fn());
+ background.focus();expect(parent.querySelector('button')).toHaveFocus();
+ const child=document.createElement('section');child.innerHTML='<button>Child</button>';document.body.append(child);const disposeChild=createDialogFocusScope(child,vi.fn());
+ expect(parent).toHaveAttribute('inert');disposeChild();child.remove();expect(parent).not.toHaveAttribute('inert');expect(parent.querySelector('button')).toHaveFocus();
+ disposeParent();parent.remove();background.remove();
+});
 function Drawer({close}:{close:()=>void}){const ref=useDialogFocus(close);return <section role="dialog" aria-modal="true" aria-label="Проверка" ref={ref}><button onClick={close}>Закрыть</button><input aria-label="Комментарий"/><button disabled>Недоступно</button><button hidden>Скрыто</button><button>Последняя</button></section>;}
 function Harness(){const[open,setOpen]=useState(false);return <><button onClick={()=>setOpen(true)}>Открыть</button><button>Фон</button>{open&&<Drawer close={()=>setOpen(false)}/>}</>;}
 it('enters dialog, confines both Tab boundaries and restores opener after Escape',()=>{render(<Harness/>);const opener=screen.getByText('Открыть');opener.focus();fireEvent.click(opener);expect(screen.getByText('Закрыть')).toHaveFocus();fireEvent.keyDown(document,{key:'Tab',shiftKey:true});expect(screen.getByText('Последняя')).toHaveFocus();fireEvent.keyDown(document,{key:'Tab'});expect(screen.getByText('Закрыть')).toHaveFocus();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(opener).toHaveFocus();});
