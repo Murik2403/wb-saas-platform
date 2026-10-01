@@ -139,7 +139,7 @@ export function TaxSettingsPanel() {
     </div>
     <p className="form-hint">Месяц без ставок не считается: в ОПиУ будет «ставка не задана». Минимальный налог (1% от доходов) не применяется.</p>
     <div className="tax-actions">
-      <button className="primary-button" type="button" disabled={loading || busy} onClick={() => void save()}>{busy ? "Сохраняем" : "Сохранить"}</button>
+      <button className="primary-button" type="button" disabled={loading || busy} onClick={() => void save()}>{busy ? "Сохраняем" : "Сохранить ставки"}</button>
       {status ? <p className={status.kind === "ok" ? "form-hint tax-ok" : "operation-error"} role={status.kind === "ok" ? "status" : "alert"}>{status.text}</p> : null}
     </div>
   </section>;

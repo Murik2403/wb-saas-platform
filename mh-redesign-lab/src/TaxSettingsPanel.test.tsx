@@ -42,7 +42,7 @@ describe("TaxSettingsPanel", () => {
     expect(screen.getByLabelText("УСН, % — март")).toHaveValue(6);
     fireEvent.change(screen.getByLabelText("УСН, % — март"), { target: { value: "5" } });
     expect(screen.getByLabelText("УСН, % — I квартал")).toHaveValue(null);
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить ставки" }));
     await waitFor(() => expect(save).toHaveBeenCalled());
     const sent = save.mock.calls[0][0];
     expect(sent.regime).toBe("usn_income");
@@ -57,15 +57,15 @@ describe("TaxSettingsPanel", () => {
     expect(screen.queryByLabelText(/себестоимость товара/)).toBeNull();
     fireEvent.click(screen.getByLabelText(/Доходы−Расходы», НДС по ставке/));
     fireEvent.click(screen.getByLabelText(/себестоимость товара/));
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить ставки" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("пока не поддерживается");
     expect(save.mock.calls[0][0].cost_official).toBe(true);
   });
 
   it("does not call the API without a regime", async () => {
     render(<TaxSettingsPanel />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Сохранить" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Сохранить ставки" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить ставки" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Выберите режим");
     expect(save).not.toHaveBeenCalled();
   });
