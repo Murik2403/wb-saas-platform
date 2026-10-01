@@ -15,6 +15,16 @@ beforeEach(() => {
 });
 afterEach(() => {cleanup();clearShopContext();vi.unstubAllGlobals();});
 describe("Ozon accounting", () => {
+  it("renders malformed posting dates and reference fields as unknown without crashing", async () => {
+    vi.mocked(fetch).mockResolvedValue(response({...loaded,posting_accrual_evidence:{loaded:true,source_row_count:1,rows:[
+      {source_occurrence_key:"malformed",posting_number:{bad:"posting"},accrual_date:{bad:"date"},sku_text:{bad:"sku"},type_id_text:[],quantity_text:{bad:"quantity"},accrued_rub:null,seller_price_rub:null,reason:{bad:"reason"}}
+    ]}}));
+    render(<OzonAccounting />);
+    await screen.findByRole("heading",{name:"Исходные финансовые строки отправлений Ozon"});
+    expect(screen.getAllByText("не указано / не распознано").length).toBeGreaterThanOrEqual(5);
+    expect(screen.getByText(/Прибыль: не рассчитано/)).toBeInTheDocument();
+  });
+
   it("shows separate source quantities without pretending movements or returns are verified", async () => {
     vi.mocked(fetch).mockResolvedValue(response({...loaded,posting_accrual_evidence:{loaded:true,source_row_count:2,scope:{requested_number_count:1,missing_number_count:0},rows:[
       {source_occurrence_key:"one",posting_number:"fictional-posting",accrual_date:"2026-09-01",sku_text:"123",type_id_text:"1",quantity_text:"2",accrued_rub:"-12.34",seller_price_rub:"100.00"},

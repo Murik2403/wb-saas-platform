@@ -125,3 +125,17 @@ class PostingEvidenceDbTests(DbTestCase):
             assert conn.execute("SELECT COUNT(*) FROM ozon_document_events").fetchone()[0] == 0
             assert [tuple(r) for r in conn.execute("SELECT * FROM sales")] == before_sales
             assert conn.execute("SELECT COUNT(*) FROM ozon_accrual_ledger").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("value", [{"bad":"date"}, [], None, True, "2026-9-01", "2026-02-30", "not-date"])
+def test_malformed_accrual_date_is_unknown_safe_display(value):
+    source = group(); source["accruals"][0]["accrual_date"] = value
+    result = posting_evidence({"finance_postings":[source]})["rows"][0]
+    assert result["accrual_date"] is None
+    assert "Дата начисления не распознана" in result["reason"]
+    assert source["accruals"][0]["accrual_date"] == value
+
+
+def test_malformed_posting_reference_is_not_forwarded_to_display():
+    source = group({"bad":"posting"})
+    assert posting_evidence({"finance_postings":[source]})["rows"][0]["posting_number"] is None
