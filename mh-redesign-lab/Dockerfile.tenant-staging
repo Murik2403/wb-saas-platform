@@ -44,6 +44,7 @@ COPY mh-redesign-lab/tenant-api/cash_accounts_routes.py ./cash_accounts_routes.p
 COPY mh-redesign-lab/tenant-api/shop_schedules_api.py ./shop_schedules_api.py
 COPY mh-redesign-lab/tenant-api/shop_context_api.py mh-redesign-lab/tenant-api/shop_dispatch.py mh-redesign-lab/tenant-api/shared_warehouse_api.py ./
 COPY mh-redesign-lab/tenant-api/dashboard_cache.py ./dashboard_cache.py
+COPY mh-redesign-lab/tenant-api/product_groups_api.py ./product_groups_api.py
 COPY mh-redesign-lab/tenant-api/ozon_accounting_api.py ./ozon_accounting_api.py
 COPY mh-redesign-lab/tenant-api/migration_import_api.py ./migration_import_api.py
 COPY mh-redesign-lab/tenant-api/incident_workflow_api.py ./incident_workflow_api.py

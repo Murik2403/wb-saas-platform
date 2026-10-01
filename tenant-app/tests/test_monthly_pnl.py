@@ -16,6 +16,20 @@ def fin(rrd_id, day, kind, qty, **kw):
 
 
 class MonthlyPnlTests(DbTestCase):
+    def test_unsigned_returns_compensation_and_campaign_settlements_match_dashboard(self):
+        upsert_financial([
+            fin(101, '2026-09-10', 'Продажа', 2, retail_price_withdisc_rub=1000, retail_amount=2000, ppvz_for_pay=1500, ppvz_sales_commission=400, acquiring_fee=100),
+            fin(102, '2026-09-11', 'Возврат', 1, retail_price_withdisc_rub=1000, retail_amount=1000, ppvz_for_pay=750, ppvz_sales_commission=200, acquiring_fee=50),
+            fin(103, '2026-09-12', 'Продажа', 1, supplier_oper_name='Компенсация ущерба', retail_price_withdisc_rub=1000, ppvz_for_pay=90),
+            fin(104, '2026-09-13', '', 0, deduction=50, deduction_reason='Услуги продвижения'),
+        ])
+        upsert_ads([dict(campaign_id=1, day='2026-09-10', nm_id=0, spend=50)])
+        save_costs(pd.DataFrame([{'nm_id':100,'cost_per_wb_unit':100}]))
+        actual = monthly_pnl(date(2026,9,1), SEP)['total']
+        expected = build_dashboard(date(2026,9,1), SEP).financial
+        for monthly_key, dashboard_key in [('result','profit'),('sales','sales'),('realization','gross_sales'),('units','net_units'),('commission','commission'),('acquiring','acquiring')]:
+            self.assertAlmostEqual(actual[monthly_key], expected[dashboard_key], places=2, msg=monthly_key)
+
     def seed(self, with_cost=True):
         upsert_financial([
             fin(1, "2026-08-10", "Продажа", 2, retail_price_withdisc_rub=1000, retail_amount=1800, ppvz_for_pay=1500,

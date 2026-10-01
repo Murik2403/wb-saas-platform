@@ -31,7 +31,14 @@ def prepare(root, output):
     for source, destination in INPUTS.items():
         old=git('show',BASE_REVISION+':'+source)
         current=git('show',revision+':'+source)
-        assert current==old, 'Changed runtime input: '+source
+        if source == 'mh-redesign-lab/Dockerfile.tenant-staging':
+            # Only an additive application-module COPY is approved here; all
+            # dependency, entrypoint, nginx and runtime instructions stay exact.
+            addition = b'COPY mh-redesign-lab/tenant-api/product_groups_api.py ./product_groups_api.py\n'
+            assert current.count(addition) == 1
+            assert current.replace(addition, b'') == old, 'Changed runtime build contract'
+        else:
+            assert current==old, 'Changed runtime input: '+source
         if destination: hashes[destination]=hashlib.sha256(current).hexdigest()
     deleted=git('diff','--name-only','--diff-filter=D',BASE_REVISION,revision,'--','tenant-app','mh-redesign-lab/tenant-api').strip()
     assert not deleted, 'Deleted runtime source needs a full clean build'

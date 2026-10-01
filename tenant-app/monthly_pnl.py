@@ -15,6 +15,7 @@ import pandas as pd
 from db import read_financial, read_table
 from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation
 from db.historical_cogs import project_historical_cogs
+from financial_operations import financial_event_type, is_return_document, is_promotion_settlement
 
 MAX_MONTHS = 24
 _FIELDS = (
@@ -71,9 +72,20 @@ def monthly_pnl(start: date, end: date) -> dict:
         if col not in f.columns:
             f[col] = ""
         f[col] = f[col].fillna("").astype(str)
-    text = (f["doc_type_name"] + " " + f["operation_name"]).str.lower()
-    is_return = text.str.contains("возврат", regex=False)
-    is_sale = text.str.contains("продаж", regex=False) & ~is_return
+    operation_rows = f[["doc_type_name", "operation_name"]].to_dict(orient="records")
+    event_types = pd.Series([financial_event_type(row) for row in operation_rows], index=f.index, dtype=object)
+    is_return, is_sale = event_types.eq("return"), event_types.eq("sale")
+    return_documents = pd.Series([is_return_document(row) for row in operation_rows], index=f.index, dtype=bool)
+    for col in ("retail_amount", "ppvz_for_pay", "ppvz_sales_commission", "commission", "acquiring_fee"):
+        f.loc[return_documents, col] = -f.loc[return_documents, col].abs()
+    ads = _ad_spend_by_day(start, end)
+    if cutoff is not None and not ads.empty:
+        ads = ads[ads["day"] <= cutoff]
+    else:
+        ads = ads.iloc[0:0]
+    if not ads.empty:
+        settlements = f.get("deduction_reason", pd.Series("", index=f.index)).map(is_promotion_settlement)
+        f.loc[settlements, "deduction"] = 0.0
     units = f["quantity"].abs()
     f["signed_units"] = units.where(is_sale, 0).where(~is_return, -units)
     f["gross"] = f["retail_price_withdisc_rub"] * f["signed_units"]
@@ -86,12 +98,6 @@ def monthly_pnl(start: date, end: date) -> dict:
     row_counts = f.groupby("ym").size()
     # build_dashboard falls back to gross when the whole period has no retail_amount.
     use_gross_as_sales = abs(float(f["retail_amount"].sum())) < 0.01
-
-    ads = _ad_spend_by_day(start, end)
-    if cutoff is not None and not ads.empty:
-        ads = ads[ads["day"] <= cutoff]
-    elif cutoff is None:
-        ads = ads.iloc[0:0]
 
     rows = []
     for m_start, m_end in months:
@@ -132,4 +138,3 @@ def monthly_pnl(start: date, end: date) -> dict:
         "total": total,
         "note": "Управленческая оценка по отчётам WB, не бухгалтерский учёт. Внешние ручные расходы не включены.",
     }
-
