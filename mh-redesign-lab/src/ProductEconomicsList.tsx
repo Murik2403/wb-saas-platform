@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
-import { LayoutGrid, List, Table2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Columns3, Download, LayoutGrid, List, Table2 } from "lucide-react";
 import type { ProductEconomicsRow } from "./data-source";
+import { buildCsv } from "./csv";
 import "./ProductEconomicsList.css";
 
 export type ProductViewMode = "tiles" | "table" | "list";
@@ -11,16 +12,43 @@ const MODES: Array<{ id: ProductViewMode; label: string; Icon: typeof List }> = 
   { id: "list", label: "Список", Icon: List },
 ];
 const STORAGE_KEY = "mh.products.viewMode";
+const COLUMNS_KEY = "mh.products.columns";
 
-type SortKey = "product" | "revenue" | "margin" | "marginPct" | "drr" | "stock";
-const COLUMNS: Array<{ key: SortKey; label: string }> = [
-  { key: "product", label: "Товар" },
-  { key: "revenue", label: "Выручка" },
-  { key: "margin", label: "Расчётная прибыль" },
-  { key: "marginPct", label: "Маржа" },
-  { key: "drr", label: "ДРР" },
-  { key: "stock", label: "Запас" },
+const rub = (value: number) => `${Math.round(value).toLocaleString("ru-RU")} ₽`;
+const num = (value: number) => value.toLocaleString("ru-RU");
+const pct = (value: number) => `${value.toFixed(1)}%`;
+const marginOf = (item: ProductEconomicsRow) =>
+  Number.isFinite(item.marginPct ?? NaN) ? (item.marginPct ?? 0) : item.revenue > 0 ? (item.margin / item.revenue) * 100 : 0;
+const stockOf = (item: ProductEconomicsRow) =>
+  `${item.stock.toLocaleString("ru-RU")} шт.${item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}`;
+
+type ColumnKey = "product" | "revenue" | "margin" | "marginPct" | "drr" | "stock" | "orders" | "sales" | "buyout" | "adSpend" | "dailySales" | "daysOfStock" | "unitCost";
+type Column = {
+  key: ColumnKey;
+  label: string;
+  optional?: boolean; // hidden until the user turns it on
+  value: (item: ProductEconomicsRow) => string | number | null; // sorting and numeric CSV
+  text?: (item: ProductEconomicsRow) => string; // what the cell shows
+  csv?: "text"; // export the shown text instead of the raw number
+  negative?: (item: ProductEconomicsRow) => boolean;
+};
+const COLUMNS: Column[] = [
+  { key: "product", label: "Товар", value: (i) => i.product },
+  { key: "revenue", label: "Выручка", value: (i) => i.revenue, text: (i) => rub(i.revenue) },
+  { key: "margin", label: "Расчётная прибыль", value: (i) => i.margin, text: (i) => rub(i.margin), negative: (i) => i.margin < 0 },
+  { key: "marginPct", label: "Маржа", value: (i) => marginOf(i), text: (i) => pct(marginOf(i)), negative: (i) => marginOf(i) < 0 },
+  { key: "drr", label: "ДРР", value: (i) => i.drr, text: (i) => pct(i.drr) },
+  { key: "stock", label: "Запас", value: (i) => i.stock, text: stockOf, csv: "text" },
+  { key: "orders", label: "Заказы, шт.", optional: true, value: (i) => i.orders, text: (i) => num(i.orders) },
+  { key: "sales", label: "Продажи, шт.", optional: true, value: (i) => i.sales, text: (i) => num(i.sales) },
+  // buyout is a percent (the "Выкуп, %" column of the products report), not a count
+  { key: "buyout", label: "Выкуп, %", optional: true, value: (i) => i.buyout, text: (i) => pct(i.buyout) },
+  { key: "adSpend", label: "Расходы на рекламу", optional: true, value: (i) => i.adSpend, text: (i) => rub(i.adSpend) },
+  { key: "dailySales", label: "Продаж в день, шт.", optional: true, value: (i) => i.dailySales, text: (i) => num(Math.round(i.dailySales * 10) / 10) },
+  { key: "daysOfStock", label: "Хватит дней", optional: true, value: (i) => i.daysOfStock, text: (i) => (i.daysOfStock === null ? "—" : i.daysOfStock.toFixed(1)) },
+  { key: "unitCost", label: "Себестоимость за шт.", optional: true, value: (i) => i.unitCost, text: (i) => rub(i.unitCost) },
 ];
+const DEFAULT_COLUMNS = COLUMNS.filter((c) => !c.optional).map((c) => c.key);
 
 // localStorage can be blocked or throw (private window, cleared site data): the view must still work.
 function readMode(): ProductViewMode {
@@ -32,30 +60,52 @@ function readMode(): ProductViewMode {
   }
 }
 
-const rub = (value: number) => `${Math.round(value).toLocaleString("ru-RU")} ₽`;
-const marginOf = (item: ProductEconomicsRow) =>
-  Number.isFinite(item.marginPct ?? NaN) ? (item.marginPct ?? 0) : item.revenue > 0 ? (item.margin / item.revenue) * 100 : 0;
-const stockOf = (item: ProductEconomicsRow) =>
-  `${item.stock.toLocaleString("ru-RU")} шт.${item.daysOfStock !== null ? ` · ${item.daysOfStock.toFixed(1)} дн.` : " · прогноз недоступен"}`;
+// Anything that is not a JSON array falls back to the defaults; unknown keys are ignored; product is always on.
+function readColumns(): ColumnKey[] {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(COLUMNS_KEY) ?? "null");
+    if (!Array.isArray(saved)) return DEFAULT_COLUMNS;
+    return COLUMNS.filter((c) => c.key === "product" || saved.includes(c.key)).map((c) => c.key);
+  } catch {
+    return DEFAULT_COLUMNS;
+  }
+}
 
-const sortValue = (item: ProductEconomicsRow, key: SortKey): string | number =>
-  key === "product" ? item.product : key === "marginPct" ? marginOf(item) : item[key];
+function downloadCsv(content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `tovary-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomicsRow[]; onOpen: (item: ProductEconomicsRow) => void }) {
   const [mode, setMode] = useState<ProductViewMode>(readMode);
+  const [visible, setVisible] = useState<ColumnKey[]>(readColumns);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const pickerButtonRef = useRef<HTMLButtonElement>(null);
   // Sorting belongs to the table only; tiles and list keep the order the API returned.
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
+  const [sort, setSort] = useState<{ key: ColumnKey; dir: "asc" | "desc" } | null>(null);
+  const columns = COLUMNS.filter((c) => visible.includes(c.key));
+  // A column hidden while sorted by it must not keep reordering rows invisibly.
+  const activeSort = sort && visible.includes(sort.key) ? sort : null;
   const sorted = useMemo(() => {
-    if (!sort) return items;
-    const sign = sort.dir === "asc" ? 1 : -1;
+    if (!activeSort) return items;
+    const column = COLUMNS.find((c) => c.key === activeSort.key)!;
+    const sign = activeSort.dir === "asc" ? 1 : -1;
     return [...items].sort((a, b) => {
-      const x = sortValue(a, sort.key);
-      const y = sortValue(b, sort.key);
+      const x = column.value(a);
+      const y = column.value(b);
+      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1; // missing values go last in both directions
       return sign * (typeof x === "string" ? x.localeCompare(String(y), "ru") : x - Number(y));
     });
-  }, [items, sort]);
+  }, [items, activeSort]);
   // First click: text A-Z, numbers high-to-low (what people look for); second click reverses.
-  const toggleSort = (key: SortKey) =>
+  const toggleSort = (key: ColumnKey) =>
     setSort((current) => current?.key === key
       ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
       : { key, dir: key === "product" ? "asc" : "desc" });
@@ -63,16 +113,66 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
     setMode(next);
     try { window.localStorage.setItem(STORAGE_KEY, next); } catch { /* per-viewer convenience only */ }
   };
+  const saveColumns = (next: ColumnKey[]) => {
+    setVisible(next);
+    try { window.localStorage.setItem(COLUMNS_KEY, JSON.stringify(next)); } catch { /* per-viewer convenience only */ }
+  };
+  const toggleColumn = (key: ColumnKey) =>
+    saveColumns(COLUMNS.filter((c) => c.key === "product" || (c.key === key ? !visible.includes(key) : visible.includes(c.key))).map((c) => c.key));
+  const exportCsv = () => {
+    const headers = columns.flatMap((c) => (c.key === "product" ? [c.label, "Артикул"] : [c.label]));
+    const rows = sorted.map((item) => columns.flatMap((c) =>
+      c.key === "product" ? [item.product, item.article || item.nmId] : [c.csv === "text" ? c.text!(item) : c.value(item)]));
+    downloadCsv(buildCsv(headers, rows));
+  };
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setPickerOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setPickerOpen(false); pickerButtonRef.current?.focus(); }
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onPointer); document.removeEventListener("keydown", onKey); };
+  }, [pickerOpen]);
 
   return (
     <>
-      <div className="product-view-switch" role="group" aria-label="Вид списка товаров">
-        {MODES.map(({ id, label, Icon }) => (
-          <button key={id} type="button" className={mode === id ? "active" : ""} aria-pressed={mode === id} title={label} onClick={() => choose(id)}>
-            <Icon size={16} aria-hidden="true" />
-            <span>{label}</span>
-          </button>
-        ))}
+      <div className="product-list-toolbar">
+        <div className="product-view-switch" role="group" aria-label="Вид списка товаров">
+          {MODES.map(({ id, label, Icon }) => (
+            <button key={id} type="button" className={mode === id ? "active" : ""} aria-pressed={mode === id} title={label} onClick={() => choose(id)}>
+              <Icon size={16} aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+        {mode === "table" ? (
+          <div className="product-table-tools">
+            <div className="product-column-picker" ref={pickerRef}>
+              <button type="button" className="product-tool-button" aria-expanded={pickerOpen} aria-controls="product-column-menu" ref={pickerButtonRef} onClick={() => setPickerOpen((open) => !open)}>
+                <Columns3 size={16} aria-hidden="true" /><span>Колонки</span>
+              </button>
+              {pickerOpen ? (
+                <div className="product-column-menu" id="product-column-menu" role="group" aria-label="Колонки таблицы">
+                  {COLUMNS.map((c) => (
+                    <label key={c.key}>
+                      <input type="checkbox" checked={visible.includes(c.key)} disabled={c.key === "product"} onChange={() => toggleColumn(c.key)} />
+                      <span>{c.key === "product" ? "Товар и артикул" : c.label}</span>
+                    </label>
+                  ))}
+                  <button type="button" className="product-tool-button" onClick={() => saveColumns(DEFAULT_COLUMNS)}>Сбросить</button>
+                </div>
+              ) : null}
+            </div>
+            <button type="button" className="product-tool-button" onClick={exportCsv}>
+              <Download size={16} aria-hidden="true" /><span>Скачать CSV</span>
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {mode === "tiles" ? (
@@ -98,10 +198,10 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
           <table className="product-economics-table">
             <thead>
               <tr>
-                {COLUMNS.map(({ key, label }) => (
-                  <th key={key} aria-sort={sort?.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+                {columns.map(({ key, label }) => (
+                  <th key={key} aria-sort={activeSort?.key === key ? (activeSort.dir === "asc" ? "ascending" : "descending") : "none"}>
                     <button type="button" className="product-sort" onClick={() => toggleSort(key)}>
-                      {label}<span aria-hidden="true">{sort?.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}</span>
+                      {label}<span aria-hidden="true">{activeSort?.key === key ? (activeSort.dir === "asc" ? " ▲" : " ▼") : ""}</span>
                     </button>
                   </th>
                 ))}
@@ -110,16 +210,15 @@ export function ProductEconomicsList({ items, onOpen }: { items: ProductEconomic
             <tbody>
               {sorted.map((item) => (
                 <tr key={item.nmId} onClick={() => onOpen(item)}>
-                  <td>
-                    <button type="button" className="product-row-open" onClick={(event) => { event.stopPropagation(); onOpen(item); }}>
-                      <strong>{item.product}</strong><small>{item.article || item.nmId}</small>
-                    </button>
-                  </td>
-                  <td>{rub(item.revenue)}</td>
-                  <td className={item.margin < 0 ? "negative" : ""}>{rub(item.margin)}</td>
-                  <td className={marginOf(item) < 0 ? "negative" : ""}>{marginOf(item).toFixed(1)}%</td>
-                  <td>{item.drr.toFixed(1)}%</td>
-                  <td>{stockOf(item)}</td>
+                  {columns.map((c) => c.key === "product" ? (
+                    <td key={c.key}>
+                      <button type="button" className="product-row-open" onClick={(event) => { event.stopPropagation(); onOpen(item); }}>
+                        <strong>{item.product}</strong><small>{item.article || item.nmId}</small>
+                      </button>
+                    </td>
+                  ) : (
+                    <td key={c.key} className={c.negative?.(item) ? "negative" : ""}>{c.text!(item)}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>
