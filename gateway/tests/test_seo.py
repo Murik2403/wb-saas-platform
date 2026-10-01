@@ -49,7 +49,7 @@ class RobotsAndSitemapTests(unittest.TestCase):
         self.assertNotIn("Ozon подключается только в модуле рекомендаций", response.text)
         self.assertIn("API Ozon", response.text)
         self.assertIn("отдельный документальный журнал", response.text)
-        self.assertIn("Автоматическое преобразование начислений API в этот журнал пока не реализовано", response.text)
+        self.assertIn("Начисления API и документальный расчёт показываются отдельно", response.text)
         self.assertIn("налоги и внешние расходы", response.text)
 
     def test_robots_txt_points_at_the_sitemap(self) -> None:

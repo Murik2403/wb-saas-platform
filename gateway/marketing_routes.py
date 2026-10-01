@@ -47,7 +47,7 @@ GUIDE_DATES: dict[str, tuple[str, str]] = {
     "/guides/fifo-ili-srednyaya-v-akcii": ("2026-09-19", "2026-09-20"),
     "/guides/sverka-ostatkov-wb": ("2026-09-19", "2026-09-19"),
     "/guides/nezavershennoe-proizvodstvo": ("2026-09-19", "2026-09-19"),
-    "/guides/zamena-servisov-analitiki": ("2026-09-19", "2026-09-20"),
+    "/guides/zamena-servisov-analitiki": ("2026-09-19", "2026-10-01"),
 }
 
 # Guides the author page links to, in site order; derived so a new guide is
