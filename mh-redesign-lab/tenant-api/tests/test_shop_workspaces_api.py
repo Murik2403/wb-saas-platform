@@ -243,3 +243,72 @@ def test_selected_wb_shop_cannot_read_or_mutate_any_ozon_accounting_route(client
     primary=client.get('/api/v1/ozon-accounting/workspace?start_date=2026-09-01&end_date=2026-09-02')
     assert primary.status_code==200,primary.text
     assert primary.headers['x-mh-resource-scope']=='tenant_shared'
+
+
+def test_new_cabinet_routes_are_explicitly_shop_local_and_registry_matches_frontend():
+    import shop_context
+    expected = {
+        ('GET', '/api/v1/dashboard/products/trend'),
+        ('GET', '/api/v1/dashboard/products/previous'),
+        ('GET', '/api/v1/dashboard/management-pnl/monthly'),
+        ('GET', '/api/v1/dashboard/products/price-advice'),
+        ('POST', '/api/v1/dashboard/products/price-advice'),
+        ('GET', '/api/v1/settings/tax'), ('PUT', '/api/v1/settings/tax'),
+        ('GET', '/api/v1/product-groups'), ('POST', '/api/v1/product-groups'),
+        ('PUT', '/api/v1/product-groups/{group_id}'),
+        ('DELETE', '/api/v1/product-groups/{group_id}'),
+        ('GET', '/api/v1/products/price-uploads/{upload_id}'),
+    }
+    actual = {(method.upper(), path) for path, methods in api.app.openapi()['paths'].items() for method in methods}
+    assert expected <= actual
+    for method, path in expected:
+        assert shop_context.route_scope(method, path)['scope'] == 'shop_local'
+    fixture = API_DIR.parent / 'src' / 'test-fixtures' / 'shop-route-scopes-stage4.json'
+    assert json.loads(fixture.read_text(encoding='utf-8')) == shop_context.ROUTES
+
+
+def test_new_group_and_price_journal_use_selected_snapshot_not_primary(client, monkeypatch, tmp_path):
+    import db.core as core
+    import product_groups_api as groups
+    import uuid, sqlite3
+    main = core.DB_PATH
+    # Identical group/upload IDs in three databases must not cross shop boundaries.
+    groups.create_group(groups.GroupCreate(name='PRIMARY PRIVATE', nm_ids=[999]))
+    api._init_redesign_schema()
+    with core.connect() as conn:
+        conn.execute("INSERT INTO redesign_price_uploads(wb_upload_id,goods_count,status,created_at,updated_at,actor) VALUES(77,1,'ok','x','x','PRIMARY PRIVATE')")
+    ids = []
+    for number in (1, 2):
+        identifier = shops.create(str(number), 'unused', str(number)); ids.append(identifier)
+        path = tmp_path / f'new-child-{number}.sqlite'
+        monkeypatch.setattr(core, 'DB_PATH', path); core.init_db()
+        monkeypatch.setattr(api, 'DB_PATH', path); api._init_redesign_schema()
+        groups.create_group(groups.GroupCreate(name=f'SELECTED {number}', nm_ids=[number]))
+        with core.connect() as conn:
+            conn.execute("INSERT INTO redesign_price_uploads(wb_upload_id,goods_count,status,created_at,updated_at,actor) VALUES(77,1,'ok','x','x',?)", (f'SELECTED {number}',))
+            conn.execute("INSERT INTO price_upload_item(upload_id,nm_id,new_price,new_discount) VALUES(77,?,100,0)", (number,))
+        # Snapshot via backup includes WAL transactions, just like production.
+        snapshot = tmp_path / f'new-child-{number}-snapshot.sqlite'
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(snapshot)) as target:
+            source.backup(target)
+        monkeypatch.setattr(core, 'DB_PATH', main); monkeypatch.setattr(api, 'DB_PATH', main)
+        shops.store_snapshot(identifier, 0, snapshot.read_bytes())
+    for number, identifier in enumerate(ids, 1):
+        headers = {'x-mh-shop-id': str(identifier)}
+        response = client.get('/api/v1/product-groups', headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.headers['x-mh-resource-scope'] == 'shop_local'
+        assert response.json()['groups'][0]['name'] == f'SELECTED {number}'
+        journal = client.get('/api/v1/products/price-uploads/77', headers=headers)
+        assert journal.status_code == 200, journal.text
+        assert journal.json()['actor'] == f'SELECTED {number}'
+        assert journal.json()['items'][0]['nm_id'] == number
+    headers = {'x-mh-shop-id': str(ids[0]), 'x-mh-shop-revision': '1', 'x-mh-request-key': str(uuid.uuid4())}
+    updated = client.put('/api/v1/product-groups/1', headers=headers, json={'name': 'UPDATED SELECTED'})
+    assert updated.status_code == 200, updated.text
+    assert updated.headers['x-mh-shop-revision'] == '2'
+    assert client.put('/api/v1/product-groups/1', headers=headers, json={'name': 'UPDATED SELECTED'}).status_code == 200
+    assert shops.read(ids[0])['revision'] == 2
+    assert client.get('/api/v1/product-groups', headers={'x-mh-shop-id': str(ids[0])}).json()['groups'][0]['name'] == 'UPDATED SELECTED'
+    assert client.get('/api/v1/product-groups', headers={'x-mh-shop-id': str(ids[1])}).json()['groups'][0]['name'] == 'SELECTED 2'
+    assert client.get('/api/v1/product-groups').json()['groups'][0]['name'] == 'PRIMARY PRIVATE'

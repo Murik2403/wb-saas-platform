@@ -85,3 +85,16 @@ it('denies all Ozon routes for verified WB secondary shops before dispatch while
  for(const route of routes)expect(await(await scopedFetch(route.path,{method:route.method,...(route.method!=='GET'?{body:'{}'}:{})})).json()).toEqual({});
  expect(f).toHaveBeenCalledTimes(routes.length);
 });
+
+it('routes new cabinet reads to the selected shop with local response validation',async()=>{
+ const s=fixture();s.route_scopes=actualRegistry as ShopSession['route_scopes'];selectShop(s,2);
+ const paths=['/api/v1/dashboard/products/trend','/api/v1/dashboard/products/previous',
+  '/api/v1/dashboard/management-pnl/monthly','/api/v1/dashboard/products/price-advice',
+  '/api/v1/settings/tax','/api/v1/product-groups','/api/v1/products/price-uploads/77'];
+ const f=vi.fn().mockImplementation(()=>Promise.resolve(new Response('{}',{headers:{
+  'X-MH-Shop-ID':'2','X-MH-Resource-Scope':'shop_local','X-MH-Shop-Identity':identity,'X-MH-Shop-Revision':'4','X-MH-Shop-Fingerprint':identity}})));
+ vi.stubGlobal('fetch',f);
+ for(const path of paths)expect(await(await scopedFetch(path)).json()).toEqual({});
+ expect(f).toHaveBeenCalledTimes(paths.length);
+ for(const [,options] of f.mock.calls)expect(new Headers(options.headers).get('X-MH-Shop-ID')).toBe('2');
+});

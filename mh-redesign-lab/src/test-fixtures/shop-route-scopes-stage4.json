@@ -692,6 +692,16 @@
     "scope": "forbidden"
   },
   {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/realization",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/realization/load",
+    "scope": "forbidden"
+  },
+  {
     "method": "POST",
     "path": "/api/v1/ozon-accounting/sync",
     "scope": "forbidden"
@@ -995,5 +1005,65 @@
     "method": "POST",
     "path": "/api/v1/shared-warehouse/imported-basis/confirm",
     "scope": "tenant_shared"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/products/trend",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/products/previous",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/management-pnl/monthly",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/dashboard/products/price-advice",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/dashboard/products/price-advice",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/settings/tax",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/settings/tax",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/product-groups",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/product-groups",
+    "scope": "shop_local"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/product-groups/{group_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/product-groups/{group_id}",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/products/price-uploads/{upload_id}",
+    "scope": "shop_local"
   }
 ]
