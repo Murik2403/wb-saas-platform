@@ -902,6 +902,10 @@ def _clear_dashboard_caches() -> None:
     dashboard_data_cache.clear()
 
 
+# POST endpoints that only read (the body carries inputs): they must not drop the dashboard caches.
+READ_ONLY_POST_PATHS = {"/api/v1/dashboard/products/price-advice"}
+
+
 @app.middleware("http")
 async def invalidate_after_write(request, call_next):
     from production_permissions import ROLES, write_allowed
@@ -921,7 +925,7 @@ async def invalidate_after_write(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "Демо доступно только для просмотра"})
     from shop_dispatch import dispatch as dispatch_shop_request
     response = await dispatch_shop_request(request, call_next)
-    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400:
+    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and response.status_code < 400 and request.url.path not in READ_ONLY_POST_PATHS:
         _clear_dashboard_caches()
         context_response_cache.clear()
     return response

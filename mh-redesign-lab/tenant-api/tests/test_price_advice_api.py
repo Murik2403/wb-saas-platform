@@ -63,3 +63,22 @@ def test_validation_and_routes(env):
     with pytest.raises(HTTPException) as exc:
         api.get_products_price_advice(period="custom", start=None, end=None, target_margin=20)
     assert exc.value.status_code == 422
+
+
+def test_post_advice_does_not_wipe_dashboard_caches_but_real_writes_still_do(env, monkeypatch):
+    """The advice POST only reads: if it cleared the caches every click would force a full recompute of every page."""
+    from contextlib import closing
+    from fastapi.testclient import TestClient
+
+    wipes = []
+    monkeypatch.setattr(api, "IS_DEMO", False)
+    monkeypatch.setattr(api, "_clear_dashboard_caches", lambda: wipes.append(1))
+    url = "/api/v1/dashboard/products/price-advice?period=custom&start=2026-09-01&end=2026-09-30&target_margin=20"
+    with closing(TestClient(api.app, base_url="http://127.0.0.1")) as client:
+        r = client.post(url, json={"prices": [{"nm_id": 1, "price": 1000, "discount": 0}]}, headers={"x-tenant-role": "owner"})
+        assert r.status_code == 200, r.text
+        assert wipes == []                                    # read-only POST: caches stay warm
+        # a path outside the allow-list still wipes after a successful write
+        monkeypatch.setattr(api, "READ_ONLY_POST_PATHS", set())
+        r = client.post(url, json={"prices": [{"nm_id": 1, "price": 1000, "discount": 0}]}, headers={"x-tenant-role": "owner"})
+        assert r.status_code == 200 and wipes == [1]
