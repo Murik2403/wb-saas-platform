@@ -28,6 +28,18 @@ describe("Ozon accounting", () => {
     expect(screen.getByText(/запись в документальный учёт недоступна/)).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls.every(call=>(call[1] as RequestInit).method==="GET")).toBe(true);
   });
+  it("preserves every kopeck of large signed preview totals and components", async () => {
+    const amount = "-99999999999999999.99";
+    vi.mocked(fetch).mockResolvedValue(response({...loaded, fee_preview:{reconciled_total_rub:amount,rows:[
+      {source_occurrence_key:"large",accrual_id:7,date:"2026-09-01",category:"NON_ITEM",reconciled:true,component_sum_rub:amount,
+       components:[{source_path:"non_item_fee",type_id:1,name:"Большой сбор",sku:null,amount_rub:amount}]}
+    ]}}));
+    render(<OzonAccounting />);
+    await screen.findByRole("heading",{name:"Предварительная сверка сборов Ozon"});
+    expect(screen.getByText(/Сумма сборов, совпавших/)).toHaveTextContent("-99 999 999 999 999 999,99 ₽");
+    expect(screen.getByText(/Большой сбор:/)).toHaveTextContent("-99 999 999 999 999 999,99 ₽");
+    expect(screen.getAllByRole("cell").filter(cell => cell.textContent?.replace(/\u00a0/g, " ") === "-99 999 999 999 999 999,99 ₽")).toHaveLength(1);
+  });
   it("distinguishes a complete collection from unverified monetary interpretation", async () => {
     vi.mocked(fetch).mockResolvedValue(response({...loaded, source_complete:false, source_collection_complete:true, financial_normalization_verified:false}));
     render(<OzonAccounting />);
