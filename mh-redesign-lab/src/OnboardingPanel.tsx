@@ -20,7 +20,7 @@ type Props = {
   onEditCost: (cost: ProductCostSetting) => void;
 };
 
-function FirstReportCard({ report, onRecorded }: { report: FirstGrowthReport; onRecorded: () => void }) {
+function FirstReportCard({ report, onRecorded, trackFirstGoal }: { report: FirstGrowthReport; onRecorded: () => void; trackFirstGoal: boolean }) {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -29,7 +29,7 @@ function FirstReportCard({ report, onRecorded }: { report: FirstGrowthReport; on
     // Run only after this actual report has been committed to the screen.
     const frame = requestAnimationFrame(() => {
       void recordFirstReportViewed(report).then(() => {
-        if (current) { setSaved(true); setError(""); onRecorded(); void trackMetrikaGoal("first_useful_report"); }
+        if (current) { setSaved(true); setError(""); onRecorded(); if (trackFirstGoal) void trackMetrikaGoal("first_useful_report"); }
       }).catch(() => { if (current) setError("Отчёт открыт, но отметку первого результата сохранить не удалось. Повторите сохранение."); });
     });
     return () => { current = false; cancelAnimationFrame(frame); };
@@ -132,6 +132,6 @@ export function OnboardingPanel(props: Props) {
       </article>
     </div>
     {error ? <div role="status"><p className="operation-error">{error}</p><button className="ghost-button" type="button" onClick={() => setRefresh((value) => value + 1)}>Повторить проверку</button></div> : null}
-    {report ? <FirstReportCard key={report.report_revision} report={report} onRecorded={() => setSummary((current) => current ? { ...current, first_value_verified: true } : current)} /> : null}
+    {report ? <FirstReportCard key={report.report_revision} report={report} trackFirstGoal={!done} onRecorded={() => setSummary((current) => current ? { ...current, first_value_verified: true } : current)} /> : null}
   </section>;
 }

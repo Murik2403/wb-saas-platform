@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OnboardingPanel } from "./OnboardingPanel";
+import { trackMetrikaGoal } from "./metrika";
+vi.mock("./metrika", () => ({ trackMetrikaGoal: vi.fn() }));
 import { getActivationSummary, getFirstGrowthReport, recordFirstReportViewed, type ActivationSummary, type FirstGrowthReport } from "./data-source";
 
 vi.mock("./data-source", () => ({ getActivationSummary: vi.fn(), getFirstGrowthReport: vi.fn(), recordFirstReportViewed: vi.fn() }));
@@ -86,4 +88,5 @@ it("allows completed settings to reopen a verified report without automatic trac
   await waitFor(() => expect(screen.getByRole("button", { name: "Открыть проверенный отчёт" })).toBeEnabled());
   await userEvent.click(screen.getByRole("button", { name: "Открыть проверенный отчёт" }));
   await waitFor(() => expect(recordFirstReportViewed).toHaveBeenCalledWith(report));
+  expect(trackMetrikaGoal).not.toHaveBeenCalled();
 });
