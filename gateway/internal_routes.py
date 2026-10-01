@@ -198,3 +198,39 @@ async def send_report_telegram(
     pdf_bytes = await _read_report_pdf(file)
     deliver_report_telegram(slug, report_name, pdf_bytes, file.filename or "report.pdf")
     return JSONResponse({"status": "ok"})
+
+
+MAX_NOTIFY_TEXT_CHARS = 500
+
+
+def deliver_text_telegram(slug: str, text: str) -> None:
+    """Short plain-text notification to the chat linked to `slug`. Same error
+    contract as deliver_report_telegram; the text is capped, never parsed."""
+    text = (text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="empty text")
+    text = text[:MAX_NOTIFY_TEXT_CHARS]
+    with control_db.connect() as conn:
+        if accounts.get_tenant_by_slug(conn, slug) is None:
+            raise HTTPException(status_code=404, detail="unknown tenant")
+        chat_id = accounts.get_telegram_chat_id_for_slug(conn, slug)
+    if not chat_id:
+        raise HTTPException(status_code=409, detail="telegram not linked")
+    try:
+        result = telegram_bot.send_message(chat_id, text)
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            logger.error("Telegram rejected notification for slug %s", slug)
+            raise HTTPException(status_code=502, detail="telegram delivery failed")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to send Telegram notification for slug %s", slug)
+        raise HTTPException(status_code=502, detail="telegram delivery failed")
+
+
+@router.post("/internal/send-text-telegram")
+def send_text_telegram(request: Request, slug: str = Form(...), text: str = Form(...)):
+    if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
+        raise HTTPException(status_code=403, detail="forbidden")
+    deliver_text_telegram(slug, text)
+    return JSONResponse({"status": "ok"})

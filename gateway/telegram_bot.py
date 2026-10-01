@@ -65,6 +65,16 @@ def send_document(chat_id: str, file_bytes: bytes, filename: str, caption: str =
     return response.json()
 
 
+def send_message(chat_id: str, text: str) -> dict:
+    """Plain text on purpose (no parse_mode): nothing in `text` is interpreted
+    as markup, so there is nothing to escape. Short timeout -- a notification
+    must not hold a request open like a document upload may."""
+    url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method="sendMessage")
+    response = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=15)
+    response.raise_for_status()
+    return response.json()
+
+
 @lru_cache(maxsize=1)
 def get_bot_username() -> str:
     if not config.TELEGRAM_BOT_TOKEN:
