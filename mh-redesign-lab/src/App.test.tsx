@@ -175,6 +175,9 @@ vi.mock("./data-source", async () => {
     getProductionExecution: vi.fn().mockResolvedValue({}),
     getProductionNorms: vi.fn().mockResolvedValue({ items: [] }),
     getProductCostSettings: vi.fn().mockResolvedValue({ items: [] }),
+    getActivationSummary: vi.fn().mockResolvedValue(null),
+    getFirstGrowthReport: vi.fn(),
+    recordFirstReportViewed: vi.fn(),
     getReportDelivery: vi.fn().mockResolvedValue({ configured: false, email_configured: false }),
     getReportOperations: vi.fn().mockResolvedValue({ definitions: [], runs: [], metric_labels: {} }),
     getSuppliers: vi.fn().mockResolvedValue({ items: [] }),
@@ -706,3 +709,25 @@ describe("explicit reasons for settings edits", () => {
   });
 });
 vi.mock("./CashAccountsPanel",()=>({CashAccountsPanel:()=>null}));
+
+
+it("keeps completed onboarding reports reachable through the actual Settings mount", async () => {
+  window.history.replaceState({}, "", "/?view=settings");
+  const source = await import("./data-source");
+  vi.mocked(source.getProductCostSettings).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Повторный товар",cost_per_wb_unit:10,note:"",updated_at:"2026-09-18"}]});
+  vi.mocked(source.getActivationSummary).mockImplementation(async nmId => ({schema_version:1,is_demo:false,wb_connected:true,sync:{state:"success",complete:true,successful_full_sync_at:"2026-09-18"},selected_product:{nm_id:nmId??null,cost_configured:true,has_financial_rows:true},ready_for_report:Boolean(nmId),next_step:"open_report",first_value_verified:true,first_value_at:"2026-09-18"}));
+  const report = {nm_id:100,product:"Повторный товар",period:{start:"2026-08-19",end:"2026-09-17"},revenue:100,sales:1,unit_cost:10,margin:90,margin_pct:90,limitation:"Учебный отчёт",report_revision:"a".repeat(64)};
+  vi.mocked(source.getFirstGrowthReport).mockResolvedValue(report);
+  vi.mocked(source.recordFirstReportViewed).mockResolvedValue({first_value_verified:true,first_value_at:"2026-09-18"});
+  const {default:App} = await import("./App");
+  const user = userEvent.setup();
+  render(<App/>);
+  const selector = await screen.findByLabelText("Товар для повторного отчёта");
+  expect(source.recordFirstReportViewed).not.toHaveBeenCalled();
+  await user.selectOptions(selector,"100");
+  const button = screen.getByRole("button",{name:"Открыть проверенный отчёт"});
+  await waitFor(() => expect(button).toBeEnabled());
+  await user.click(button);
+  expect(await screen.findByRole("heading",{name:"Первый отчёт: Повторный товар"})).toBeVisible();
+  await waitFor(() => expect(source.recordFirstReportViewed).toHaveBeenCalledWith(report));
+});

@@ -2532,7 +2532,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
           <p>Токены остаются в защищённом хранилище кабинета. Резервные копии не содержат ключей доступа.</p>
         </div>
       </section>
-      <OnboardingPanel hideCompleted connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
+      <OnboardingPanel connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
         days={settings.initial_history_days} busy={busy !== null} token={wbToken}
         onTokenChange={setWbToken} onConnect={() => void saveWBToken()}
         onDaysChange={(days) => setSettings({ ...settings, initial_history_days: days })}
