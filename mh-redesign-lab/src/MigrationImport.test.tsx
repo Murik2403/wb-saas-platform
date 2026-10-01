@@ -6,6 +6,24 @@ const preview={rows:[{line:2,data:{source_id:'p1',nm_id:123,supplier_article:'AR
 const response=(value:unknown)=>({ok:true,json:async()=>value});
 describe('MigrationImport',()=>{
  beforeEach(()=>{vi.restoreAllMocks();vi.stubGlobal('fetch',vi.fn());vi.spyOn(window,'confirm').mockReturnValue(true);});
+ it('downloads attachment source version into mapping without inventing document evidence or confirming',async()=>{
+  render(<MigrationImport role='owner' onRefresh={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.change(screen.getByLabelText('Тип импорта'),{target:{value:'historical_attachments'}});
+  expect(screen.getByText(/Прикрепление сохраняет исходные строки WB/)).toBeInTheDocument();
+  const text='source_id;source_srid;financial_fingerprint;lot_source_id;document_proof\n;WB11;'+ 'a'.repeat(64)+';;';
+  vi.mocked(fetch).mockResolvedValueOnce({ok:true,text:async()=>text} as Response);
+  URL.createObjectURL=vi.fn(()=> 'blob:synthetic-template');URL.revokeObjectURL=vi.fn();
+  vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(()=>undefined);
+  fireEvent.click(screen.getByRole('button',{name:'Скачать исходные строки WB для прикрепления'}));
+  await waitFor(()=>expect(screen.getByLabelText('CSV: можно вставить текст')).toHaveValue(text));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/historical-attachments/template?start=');
+  expect(screen.queryByRole('button',{name:'Подтвердить импорт'})).not.toBeInTheDocument();
+  vi.mocked(fetch).mockResolvedValueOnce(response({...preview,can_confirm:false,errors:[{line:2,message:'Заполните документ и исходную партию'}]}) as Response);
+  fireEvent.click(screen.getByRole('button',{name:'Проверить без записи'}));
+  await screen.findByText('Строка 2: Заполните документ и исходную партию');
+  expect(screen.getByRole('button',{name:'Подтвердить импорт'})).toBeDisabled();
+ });
  async function ready(role='owner'){
   render(<MigrationImport role={role} onRefresh={vi.fn().mockResolvedValue(undefined)}/>);
   fireEvent.click(screen.getByRole('button',{name:'Заполнить пример шаблона'}));

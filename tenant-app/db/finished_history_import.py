@@ -9,6 +9,7 @@ FIELDS={
  'finished_lots':['source_id','nm_id','chrt_id','source_date','cutover_date','location','original_units','remaining_units','unit_cost_rub','remaining_cost_rub','document_proof'],
  'historical_documents':['source_id','document_id','rrd_id','nm_id','chrt_id','operation_date','sequence','event_type','quantity','lot_source_id','allocation_units','original_sale_document','retail_amount','ppvz_for_pay','commission','delivery_rub','storage_fee','deduction','penalty','acceptance','document_proof']}
 MONEY=['retail_amount','ppvz_for_pay','commission','delivery_rub','storage_fee','deduction','penalty','acceptance']
+FIELDS['historical_attachments']=FIELDS['historical_documents']+['source_srid','financial_fingerprint']
 
 def dump(v):return json.dumps(v,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)
 def digest(v):return hashlib.sha256(dump(v).encode()).hexdigest()
@@ -118,20 +119,25 @@ def preview(c,kind,text,mapping):
     for s in stocks:actual[int(s['chrt_id'] or 0)]+=int(s['quantity'] or 0)
     if dict(actual)!=dict(totals):error(items[0],'Остаток WB должен точно совпадать с текущим snapshot; таблица WB не заменяется')
  else:
-  try:plans=simulate(c,rows,state)
+  try:
+   if kind=='historical_attachments':
+    from .historical_attachments import validate_sources
+    state['financial_attachment_sources']=validate_sources(c,rows)
+   plans=simulate(c,rows,state,attach=kind=='historical_attachments')
   except ValueError as e:error(rows[0],e)
  fingerprint=digest({'kind':kind,'rows':rows,'errors':errors,'state':state,'cards':cards,'plans':plans})
  return {'kind':kind,'rows':rows,'errors':errors,'valid_count':len(rows),'can_confirm':bool(rows) and not errors,'preview_fingerprint':fingerprint,'manual_source':True,'physical_replay':False,'_plans':plans}
 
-def simulate(c,rows,state):
+def simulate(c,rows,state,attach=False):
  lots={r['source_id']:r for r in state['migration_finished_lots']};groups=defaultdict(list);rrds=set();used=set();plans=[]
  olddocs={r['document_id'] for r in state['migration_historical_documents']}
+ oldrrds={r['rrd_id'] for r in state['migration_historical_documents']}
  oldlots={r['lot_source_id'] for r in state['migration_historical_allocations']}
  for item in rows:groups[item['data']['document_id']].append(item['data'])
  balances={};sales={};sequences=set();returned=defaultdict(lambda:[0,0])
  for doc,group in sorted(groups.items(),key=lambda p:(p[1][0]['operation_date'],p[1][0]['sequence'],p[0])):
   r=group[0];header={k:v for k,v in r.items() if k not in ('source_id','lot_source_id','allocation_units')}
-  if doc in olddocs or r['rrd_id'] in rrds or (exists(c,'financial_report') and c.execute('SELECT 1 FROM financial_report WHERE rrd_id=?',(r['rrd_id'],)).fetchone()):raise ValueError('Документ/финансовый ID уже существует: источник WB не перезаписывается')
+  if doc in olddocs or r['rrd_id'] in oldrrds or r['rrd_id'] in rrds or (not attach and exists(c,'financial_report') and c.execute('SELECT 1 FROM financial_report WHERE rrd_id=?',(r['rrd_id'],)).fetchone()):raise ValueError('Документ/финансовый ID уже существует: источник WB не перезаписывается')
   rrds.add(r['rrd_id'])
   if (r['operation_date'],r['sequence']) in sequences:raise ValueError('Порядок документов в одной дате должен быть явным и уникальным')
   sequences.add((r['operation_date'],r['sequence']))
@@ -180,8 +186,10 @@ def apply(c,kind,rows,plans):
   for plan in plans:
    r=plan['header'];card=validate_catalog_identity(c,r['nm_id'],r['chrt_id'],True)
    values={'rrd_id':r['rrd_id'],'operation_date':r['operation_date'],'sale_date':r['operation_date'],'nm_id':r['nm_id'],'supplier_article':card['supplier_article'],'quantity':r['quantity'],'retail_price_withdisc_rub':float(abs(Decimal(r['retail_amount']))/r['quantity']),'operation_name':'Продажа' if r['event_type']=='sale' else 'Возврат','doc_type_name':'Продажа' if r['event_type']=='sale' else 'Возврат','raw_json':dump({'migration_shop_id':0,'migration_document':r,'chrt_id':r['chrt_id'],'srid':'migration:0:'+r['document_id']}),**{m:float(r[m]) for m in MONEY},'ppvz_sales_commission':float(r['commission'])}
-   c.execute('INSERT INTO financial_report('+','.join(values)+') VALUES('+','.join('?' for _ in values)+')',tuple(values.values()))
-   actual=dict(c.execute('SELECT * FROM financial_report WHERE rrd_id=?',(r['rrd_id'],)).fetchone());record(c,[actual],None)
+   if kind!='historical_attachments':
+    c.execute('INSERT INTO financial_report('+','.join(values)+') VALUES('+','.join('?' for _ in values)+')',tuple(values.values()))
+   actual=dict(c.execute('SELECT * FROM financial_report WHERE rrd_id=?',(r['rrd_id'],)).fetchone())
+   if kind!='historical_attachments':record(c,[actual],None)
    c.execute('INSERT INTO migration_historical_documents VALUES(?,?,0,?,?,?,?,?,?,?,?)',(r['document_id'],r['rrd_id'],r['nm_id'],r['chrt_id'],r['operation_date'],r['event_type'],r['quantity'],plan['cogs_cents'],fingerprint(actual),dump(r)))
    for a in plan['allocations']:c.execute('INSERT INTO migration_historical_allocations VALUES(?,?,?,?,?,?,?)',(a['source_id'],r['document_id'],a['lot_source_id'],a['units'],a['cost_cents'],a['original_sale_document'],a['snapshot_json']))
 
