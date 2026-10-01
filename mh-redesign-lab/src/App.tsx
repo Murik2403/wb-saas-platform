@@ -2143,7 +2143,7 @@ export function ProductsView({
     priceSubmitLock.current = true;
     setPriceSubmitting(true);
     try {
-      const result = await uploadProductPrices(goods);
+      const result = await uploadProductPrices(goods, goods.flatMap((row) => { const old = (prices ?? []).find((item) => item.nmId === row.nmID); return old ? [{ nmID: row.nmID, vendorCode: old.vendorCode, price: old.price, discount: old.discount }] : []; }));
       const data = result.data as Record<string, unknown> | undefined;
       const uploadId = Number(data?.id ?? data?.uploadID ?? 0);
       if (!uploadId || result.error) throw new Error(String(result.errorText || "WB не вернул номер загрузки. Результат не подтверждён; проверьте историю в ЛК WB перед повторной отправкой."));

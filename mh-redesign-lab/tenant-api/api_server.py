@@ -447,6 +447,22 @@ def _init_redesign_schema() -> None:
                 updated_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS price_upload_item (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                upload_id INTEGER NOT NULL,
+                nm_id INTEGER NOT NULL,
+                vendor_code TEXT,
+                old_price INTEGER,
+                old_discount INTEGER,
+                new_price INTEGER,
+                new_discount INTEGER,
+                result_error TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_price_upload_item_upload ON price_upload_item(upload_id)")
+        if "actor" not in {row[1] for row in conn.execute("PRAGMA table_info(redesign_price_uploads)").fetchall()}:
+            conn.execute("ALTER TABLE redesign_price_uploads ADD COLUMN actor TEXT")
         columns = {row[1] for row in conn.execute("PRAGMA table_info(redesign_action_plan)").fetchall()}
         for name, definition in (
             ("executor", "TEXT"), ("result", "TEXT"), ("started_at", "TEXT"), ("completed_at", "TEXT"),
@@ -1068,6 +1084,28 @@ class PriceGoodInput(BaseModel):
 
 class PriceUploadInput(BaseModel):
     goods: list[PriceGoodInput] = Field(min_length=1, max_length=1000)
+    # Journal only (never sent to WB): what the cabinet showed before the change.
+    previous: list[dict] | None = Field(default=None, max_length=1000)
+
+
+def _record_price_upload_items(upload_id: int, payload: PriceUploadInput, actor: str | None) -> None:
+    """Best-effort journal of an accepted upload; must never affect the upload itself."""
+    try:
+        before = {}
+        for row in payload.previous or []:
+            if isinstance(row, dict) and isinstance(row.get("nmID"), int):
+                before[row["nmID"]] = row
+        num = lambda v: v if isinstance(v, int) and not isinstance(v, bool) else None
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE redesign_price_uploads SET actor=? WHERE wb_upload_id=?", (actor, upload_id))
+            conn.executemany(
+                "INSERT INTO price_upload_item(upload_id, nm_id, vendor_code, old_price, old_discount, new_price, new_discount) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(upload_id, g.nmID, str(before.get(g.nmID, {}).get("vendorCode") or "")[:120] or None,
+                  num(before.get(g.nmID, {}).get("price")), num(before.get(g.nmID, {}).get("discount")), g.price, g.discount)
+                 for g in payload.goods],
+            )
+    except Exception:
+        logger.warning("price upload journal write failed", exc_info=True)
 
 
 class ProductCardUpdateInput(BaseModel):
@@ -1143,7 +1181,7 @@ def get_wb_product_prices() -> dict:
 
 
 @app.post("/api/v1/products/prices/upload")
-def upload_wb_product_prices(payload: PriceUploadInput) -> dict:
+def upload_wb_product_prices(payload: PriceUploadInput, request: Request = None) -> dict:
     token = get_token()
     if not token:
         raise HTTPException(status_code=409, detail="WB token не подключён")
@@ -1160,6 +1198,7 @@ def upload_wb_product_prices(payload: PriceUploadInput) -> dict:
             _init_redesign_schema()
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute("INSERT INTO redesign_price_uploads(wb_upload_id, goods_count, status, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?)", (upload_id, len(payload.goods), now, now))
+            _record_price_upload_items(upload_id, payload, (request.headers.get("x-tenant-account") or None) if request is not None else None)
         return json_safe(result)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Не удалось поставить цены WB в загрузку: {str(exc)[:300]}") from exc
@@ -1178,6 +1217,14 @@ def get_wb_price_upload_status(upload_id: int) -> dict:
         now = datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds")
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("UPDATE redesign_price_uploads SET status=?, updated_at=? WHERE wb_upload_id=?", (status, now, upload_id))
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                for row in result.get("items") or []:
+                    if isinstance(row, dict) and isinstance(row.get("nmID"), int):
+                        conn.execute("UPDATE price_upload_item SET result_error=? WHERE upload_id=? AND nm_id=?",
+                                     (str(row.get("errorText") or "")[:500], upload_id, row["nmID"]))
+        except Exception:
+            logger.warning("price upload item result write failed", exc_info=True)
         return result
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Не удалось получить статус загрузки цен: {str(exc)[:300]}") from exc
@@ -1188,8 +1235,23 @@ def list_wb_price_uploads() -> dict:
     _init_redesign_schema()
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT wb_upload_id, goods_count, status, error, created_at, updated_at FROM redesign_price_uploads ORDER BY id DESC LIMIT 20").fetchall()
+        rows = conn.execute("SELECT wb_upload_id, goods_count, status, error, created_at, updated_at, actor FROM redesign_price_uploads ORDER BY id DESC LIMIT 20").fetchall()
     return {"items": [dict(row) for row in rows]}
+
+
+@app.get("/api/v1/products/price-uploads/{upload_id}")
+def get_wb_price_upload_items(upload_id: int) -> dict:
+    """Per-SKU journal of one upload; `items` is empty for uploads recorded before the journal existed."""
+    _init_redesign_schema()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        head = conn.execute("SELECT wb_upload_id, goods_count, status, created_at, actor FROM redesign_price_uploads WHERE wb_upload_id=? ORDER BY id DESC LIMIT 1", (upload_id,)).fetchone()
+        if head is None:
+            raise HTTPException(status_code=404, detail="Загрузка не найдена")
+        rows = conn.execute("SELECT nm_id, vendor_code, old_price, old_discount, new_price, new_discount, result_error FROM price_upload_item WHERE upload_id=? ORDER BY id", (upload_id,)).fetchall()
+    items = [dict(row) for row in rows]
+    # Per-item result is known only after the status poll wrote it (None = not polled yet).
+    return {**dict(head), "items": items, "error_count": sum(1 for i in items if i["result_error"]), "item_count": len(items)}
 
 
 @app.get("/api/v1/sync/sections")
