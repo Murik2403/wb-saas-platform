@@ -238,7 +238,7 @@ export type MaterialInventory = { material_key?: string; material_name: string; 
 export type MaterialFifoRow = MaterialInventory & { physical_meters: number; fifo_meters: number; fifo_amount_rub: number; weighted_rate_rub_m: number; next_fifo_rate_rub_m: number; active_layers: number; difference_meters: number };
 export type MaterialInventoryData = { items: MaterialInventory[]; fifo: MaterialFifoRow[]; opening_rate_rub_m: number };
 export type SupplierRecord = { id: number; name: string; contact_person: string; phone: string; messenger: string; email: string; country: string; default_currency: string; payment_terms_days: number; lead_time_days: number; active: number; note: string; order_count?: number; last_order_date?: string | null };
-export type PriceUploadHistoryItem = { wb_upload_id: number; goods_count: number; status: string; error: string; created_at: string; updated_at: string };
+export type PriceUploadHistoryItem = { wb_upload_id: number; goods_count: number; status: string; error: string; created_at: string; updated_at: string; actor?: string | null };
 
 export async function startTenantSync(scope: "all" | "ads" | "finance" = "all", days = 90): Promise<void> {
   const endpoint = scope === "ads" ? "/ads" : scope === "finance" ? "/finance" : "";
@@ -249,8 +249,8 @@ export async function startTenantSync(scope: "all" | "ads" | "finance" = "all", 
   }
 }
 
-export async function uploadProductPrices(goods: Array<{ nmID: number; price: number; discount: number; clubDiscount?: number }>): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/products/prices/upload`, { method: "POST", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ goods }) });
+export async function uploadProductPrices(goods: Array<{ nmID: number; price: number; discount: number; clubDiscount?: number }>, previous?: Array<{ nmID: number; vendorCode: string; price: number; discount: number }>): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/prices/upload`, { method: "POST", headers: { ...apiHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(previous?.length ? { goods, previous } : { goods }) });
   if (!response.ok) throw new Error((await response.text()) || `Не удалось обновить цены: HTTP ${response.status}`);
   return response.json() as Promise<Record<string, unknown>>;
 }
@@ -2762,4 +2762,13 @@ export async function getProductsPrevious(period: DashboardPeriod, signal: Abort
     start: raw.start ?? null, end: raw.end ?? null, hasData: raw.has_data === true && !!t,
     totals: t ? { revenue: numberValue(t.revenue), marginPct: numberValue(t.margin_pct), atRisk: numberValue(t.at_risk), skuCount: numberValue(t.sku_count) } : null,
   };
+}
+
+export type PriceUploadDetailItem = { nm_id: number; vendor_code: string | null; old_price: number | null; old_discount: number | null; new_price: number; new_discount: number; result_error: string | null };
+export type PriceUploadDetail = { wb_upload_id: number; actor: string | null; item_count: number; error_count: number; items: PriceUploadDetailItem[] };
+
+export async function getPriceUploadDetail(uploadId: number): Promise<PriceUploadDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/products/price-uploads/${uploadId}`, { headers: apiHeaders() });
+  if (!response.ok) throw new Error(`Детали загрузки: HTTP ${response.status}`);
+  return response.json() as Promise<PriceUploadDetail>;
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PriceUploadHistoryItem, ProductPriceRow } from "./data-source";
+import { PriceUploadDetails } from "./PriceUploadDetails";
 import "./ProductWbSections.css";
 
 export type PriceDraft = { price: number; discount: number };
@@ -95,6 +96,7 @@ export function ProductPricesPanel({
               <article className="wbx-item" key={`${item.wb_upload_id}-${item.created_at}`}>
                 <div><strong>WB загрузка №{item.wb_upload_id}</strong><small>{item.goods_count} SKU · {item.created_at}</small></div>
                 <span className={`status-pill ${historyTone(item.status)}`}>{item.status}</span>
+                <PriceUploadDetails item={item} />
               </article>
             ))}
           </div>

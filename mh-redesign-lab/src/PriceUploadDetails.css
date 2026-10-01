@@ -1,0 +1,8 @@
+.pud { grid-column: 1 / -1; min-width: 0; display: block !important; }
+.pud-toggle { width: auto; padding: 4px 12px; font-size: 13px; }
+.pud-panel { margin-top: 8px; min-width: 0; }
+.pud-panel .form-hint { margin: 0 0 6px; opacity: 0.8; }
+.pud-panel .wbx-table-scroll { overflow-x: auto; max-width: 100%; }
+.pud-table td small { opacity: 0.6; margin-left: 4px; }
+.pud-table td { white-space: nowrap; }
+.pud-retry { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; padding: 0; font: inherit; }
