@@ -60,3 +60,14 @@ def test_previous_without_products_reports_no_data(monkeypatch):
     monkeypatch.setattr(api, "_build_dashboard_cached", lambda s, e: _Data([], []))
     r = api.get_products_previous(period="custom", start=date(2026, 9, 11), end=date(2026, 9, 20))
     assert r["has_data"] is False and r["totals"] is None
+
+
+def test_ads_analytics_route_and_window(monkeypatch):
+    assert "/api/v1/dashboard/ads/analytics" in api.app.openapi()["paths"]
+    calls = []
+    monkeypatch.setattr(api, "compute_ads_analytics", lambda s, e: calls.append((s, e)) or {"totals": {}})
+    api.get_ads_analytics(period="custom", start=date(2026, 9, 10), end=date(2026, 9, 1))
+    assert calls == [(date(2026, 9, 1), date(2026, 9, 10))]
+    with pytest.raises(HTTPException) as exc:
+        api.get_ads_analytics(period="custom", start=None, end=None)
+    assert exc.value.status_code == 422

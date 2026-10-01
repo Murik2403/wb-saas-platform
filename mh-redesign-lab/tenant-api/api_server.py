@@ -88,6 +88,7 @@ from overview_service import (
 )
 from products_service import compute_products
 import price_advice
+from ads_analytics import compute_ads_analytics
 from products_trend import compute_products_trend, products_totals
 from growth_activation import activation_summary, initialize_growth_schema, record_first_value, record_growth_event
 from growth_delivery import deliver_pending_growth_events
@@ -2838,6 +2839,20 @@ def apply_fifo_reconciliation(payload: FifoReconciliationApplyInput) -> dict:
         raise HTTPException(status_code=409, detail=str(guard.get("reason") or "Безопасная локальная сверка пока заблокирована"))
 
     return json_safe(apply_finished_goods_reconciliation(payload.note.strip()))
+
+
+@app.get("/api/v1/dashboard/ads/analytics")
+def get_ads_analytics(
+    period: str = Query(DEFAULT_PERIOD, pattern="^(today|7d|30d|90d|custom)$"),
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """Totals / previous window / per-day / per-campaign ad metrics, local ads_daily only."""
+    window_start, window_end = _products_window(period, start, end)
+    return _dashboard_response(
+        f"ads-analytics:{period}:{window_start}:{window_end}",
+        lambda: json_safe(compute_ads_analytics(window_start, window_end)),
+    )
 
 
 @app.get("/api/v1/dashboard/ads")
