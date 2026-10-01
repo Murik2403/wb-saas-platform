@@ -18,6 +18,7 @@ import { ProductCardsPanel } from "./ProductCardsPanel";
 import { ShopQualityPanel } from "./ShopQualityPanel";
 import { ProductPricesPanel } from "./ProductPricesPanel";
 import { PriceAdvisorPanel } from "./PriceAdvisorPanel";
+import { RnpPlanFact } from "./RnpPlanFact";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManagementPnlMonthly } from "./ManagementPnlMonthly";
 import { TaxSettingsPanel } from "./TaxSettingsPanel";
@@ -2183,6 +2184,7 @@ export function ProductsView({
       <ProductPricesPanel prices={prices ?? []} query={query} drafts={priceDrafts} onDraft={(nmId, draft) => setPriceDrafts((rows) => ({ ...rows, [nmId]: draft }))}
         onSubmit={() => void submitPrices()} busy={priceSubmitting || !!priceUploadId} message={priceMessage} uploadStatus={priceUploadStatus}
         results={priceResults} history={priceUploadHistory} hasErrors={productPriceErrors.length > 0} />
+      <RnpPlanFact products={products} />
     </div>
   );
 }

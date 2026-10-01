@@ -1,0 +1,38 @@
+.rnp { min-width: 0; }
+.rnp-banner { margin: 0.4rem 0; padding: 0.55rem 0.75rem; border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; font-size: 0.9rem; }
+.rnp-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.6rem 1.2rem; margin: 0.6rem 0; }
+.rnp-controls label { display: grid; gap: 0.25rem; font-size: 0.85rem; }
+.rnp-controls input, .rnp-controls select, .rnp-head input { padding: 0.35rem 0.5rem; color: inherit; font: inherit; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; }
+.rnp-pin { position: relative; display: grid; gap: 0.25rem; min-width: min(20rem, 100%); }
+.rnp-candidates { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 6px; max-height: 14rem; overflow-y: auto; }
+.rnp-candidates button { display: block; width: 100%; padding: 0.4rem 0.6rem; text-align: left; color: inherit; font: inherit; background: none; border: 0; cursor: pointer; }
+.rnp-candidates button:hover, .rnp-candidates button:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.rnp-candidates small { opacity: 0.7; }
+.rnp-article { margin: 1rem 0; min-width: 0; }
+.rnp-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.6rem 1.2rem; margin-bottom: 0.4rem; }
+.rnp-head h3 { margin: 0; }
+.rnp-head dl { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; margin: 0; }
+.rnp-head dt { font-size: 0.78rem; opacity: 0.7; }
+.rnp-head dd { margin: 0; }
+.rnp-head dd small { display: block; max-width: 16rem; opacity: 0.7; }
+.rnp-head input { width: 5.5rem; }
+.rnp-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+.rnp-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 0.85rem; }
+.rnp-table th, .rnp-table td { height: auto; line-height: 1.3; padding: 0.35rem 0.55rem; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; vertical-align: top; }
+.rnp-table thead th { position: sticky; top: 0; background: var(--surface-2); font-weight: 600; }
+.rnp-table th small { display: block; font-weight: 400; opacity: 0.7; }
+.rnp-table tbody th[scope="row"], .rnp-table thead th:first-child { position: sticky; left: 0; z-index: 1; min-width: 14rem; max-width: 16rem; white-space: normal; text-align: left; background: var(--surface-2); border-right: 1px solid var(--line); }
+.rnp-table thead th:first-child { z-index: 2; }
+.rnp-table td:last-child, .rnp-table th:last-child { font-weight: 600; border-left: 1px solid var(--line); }
+.rnp-future, .rnp-forecast { font-style: italic; }
+.rnp-today { background: rgba(121, 168, 255, 0.1); }
+.rnp-plan input { width: 5rem; text-align: right; padding: 0.25rem 0.35rem; color: inherit; font: inherit; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 4px; }
+.rnp-plan input[data-state="error"] { border-color: var(--danger); }
+.rnp-cell-state { display: block; min-height: 1.1em; font-size: 0.72rem; white-space: normal; max-width: 6rem; margin-left: auto; }
+.rnp-saved { color: var(--success); }
+.rnp-error { color: var(--danger); }
+.rnp-saving { opacity: 0.7; }
+.rnp-dev { font-variant-numeric: tabular-nums; }
+.rnp-up { color: var(--success); }
+.rnp-down { color: var(--danger); }
+@media (max-width: 640px) { .rnp-table { font-size: 0.78rem; } .rnp-table tbody th[scope="row"], .rnp-table thead th:first-child { min-width: 7rem; max-width: 7.5rem; } .rnp-head dl { gap: 0.4rem 1rem; } }
