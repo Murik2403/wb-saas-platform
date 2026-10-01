@@ -58,6 +58,13 @@ class VerifyTests(unittest.TestCase):
         request = _request_with_cookie("cookie-value")
         self.assertFalse(csrf.verify(request, ""))
 
+    def test_non_ascii_cookie_or_form_token_is_rejected_without_comparison_error(self) -> None:
+        # Request parses raw Cookie bytes; malformed client input must fail
+        # closed rather than raise TypeError in hmac.compare_digest.
+        for cookie, submitted in (("\u00ff", "ascii-token"), ("ascii-token", "\u2603"), ("\u00ff", "\u2603")):
+            with self.subTest(cookie=cookie, submitted=submitted):
+                self.assertFalse(csrf.verify(_request_with_cookie(cookie), submitted))
+
 
 class SetCookieTests(unittest.TestCase):
     def test_sets_the_expected_cookie_name_and_value(self) -> None:

@@ -64,6 +64,6 @@ def verify(request: Request, submitted_token: str) -> bool:
     """Constant-time comparison -- the token isn't secret in the sense a
     password is, but there's no reason to leak timing information either."""
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
-    if not cookie_token or not submitted_token:
+    if not cookie_token or not submitted_token or not cookie_token.isascii() or not submitted_token.isascii():
         return False
     return hmac.compare_digest(cookie_token, submitted_token)
