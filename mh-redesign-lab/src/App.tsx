@@ -28,6 +28,7 @@ import { FinanceProfitHeading } from "./FinanceProfitHeading";
 import { PriceScenarios } from "./PriceScenarios";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
+import { ProductFeedbackLink } from "./ProductFeedbackLink";
 import { RuntimeStatus } from "./RuntimeStatus";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -2538,6 +2539,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
         onDaysChange={(days) => setSettings({ ...settings, initial_history_days: days })}
         onSync={() => void startSync("all", settings.initial_history_days)}
         onEditCost={(item) => setEditingCost({ ...item })} />
+      <ProductFeedbackLink />
       {message ? <p className="operation-error" role="status">{message}</p> : null}
       <SettingsWorkspace sectionTarget={requestedSection}
         connections={<>      <div className="settings-connections-grid">
