@@ -118,4 +118,41 @@ class OzonAccountingClient:
                 raise OzonAccountingError("Превышен безопасный объём начислений Ozon.")
             completed_days.append(day.isoformat())
             day += timedelta(days=1)
-        return {"start_date": start, "end_date": end, "products": products, "stocks": stocks, "fbo": fbo, "fbs": fbs, "returns": returns, "types": dictionary, "accruals": accruals,"collection_provenance":{"schema_version":1,"completed_days":completed_days,"start_date":start,"end_date":end,"terminal_pages_checked":True,"financial_normalization_verified":False,"page_receipts":self.page_receipts.copy()}}
+        # Explicit posting numbers come from the separate order sources. Do not
+        # infer a posting number from by-day unit_number, or join financial rows
+        # by date/SKU. This endpoint returns its own history without a date filter.
+        posting_numbers = [row["posting_number"] for row in fbo + fbs
+                           if isinstance(row.get("posting_number"), str) and row["posting_number"]]
+        finance_postings = self.finance_postings(posting_numbers)
+        return {"start_date": start, "end_date": end, "products": products, "stocks": stocks, "fbo": fbo, "fbs": fbs, "returns": returns, "types": dictionary, "accruals": accruals,"finance_postings":finance_postings,"finance_postings_scope":{"requested_number_count":len(set(posting_numbers)),"date_filter_supported":False,"missing_number_count":len(set(posting_numbers)-{r["posting_number"] for r in finance_postings}),"normalization_verified":False},"collection_provenance":{"schema_version":1,"completed_days":completed_days,"start_date":start,"end_date":end,"terminal_pages_checked":True,"financial_normalization_verified":False,"page_receipts":self.page_receipts.copy()}}
+
+    def finance_postings(self, posting_numbers: list[str]) -> list[dict]:
+        """Official v1 raw financial rows, sequential requests of 1..200 numbers.
+
+        Duplicate request references are collapsed, never response occurrences.
+        Request/stream/time budgets apply; this does not certify ledger identity,
+        financial category signs, order movements, or returned coverage.
+        """
+        if not isinstance(posting_numbers, list) or any(not isinstance(n, str) or not n or len(n) > 128 for n in posting_numbers):
+            raise OzonAccountingError("Некорректный список номеров отправлений Ozon.")
+        numbers = list(dict.fromkeys(posting_numbers))
+        if len(numbers) > self.max_rows or (len(numbers) + 199) // 200 > self.max_pages:
+            raise OzonAccountingError("Превышен безопасный объём финансовых отправлений Ozon. Сократите период.")
+        collected = []
+        child_count = 0
+        for offset in range(0, len(numbers), 200):
+            batch = numbers[offset:offset + 200]
+            result = self._post("/v1/finance/accrual/postings", {"posting_numbers": batch})
+            groups = result.get("posting_accruals")
+            if not isinstance(groups, list):
+                raise OzonAccountingError("Неизвестная структура финансовых отправлений Ozon.")
+            for group in groups:
+                if (not isinstance(group, dict) or group.get("posting_number") not in batch
+                        or not isinstance(group.get("accruals"), list)
+                        or any(not isinstance(row, dict) for row in group["accruals"])):
+                    raise OzonAccountingError("Не распознана строка финансового отправления Ozon.")
+                child_count += len(group["accruals"])
+                if child_count > self.max_rows or len(collected) >= self.max_rows:
+                    raise OzonAccountingError("Превышен безопасный объём финансовых строк Ozon. Сократите период.")
+                collected.append(group)
+        return collected
