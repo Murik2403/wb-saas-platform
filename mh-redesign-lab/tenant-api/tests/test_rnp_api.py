@@ -149,3 +149,20 @@ def test_routes_are_shop_local_and_registered():
     for method, path in [("GET", URL), ("PUT", f"{URL}/favorites"), ("PUT", f"{URL}/plan"), ("PUT", f"{URL}/target")]:
         assert shop_context.route_scope(method, path)["scope"] == "shop_local"
     assert all(path in api.app.openapi()["paths"] for path in (URL, f"{URL}/favorites", f"{URL}/plan", f"{URL}/target"))
+
+
+def test_plan_edits_keep_shared_caches_and_the_cached_get_is_not_stale(client, monkeypatch):
+    """Every plan save used to wipe all dashboard caches (a cold recompute per edit); now only RNP's own cache version moves."""
+    rnp_api.configure(lambda s, e: SimpleNamespace(financial_products=pd.DataFrame([FIN])), api._dashboard_response, lambda: api._ADVICE_COLUMNS)
+    api.dashboard_response_cache.clear()
+    wipes = []
+    monkeypatch.setattr(api, "_clear_dashboard_caches", lambda: wipes.append(1))
+    assert client.put(f"{URL}/favorites", json={"nm_ids": [1]}).status_code == 200
+    before = get(client)["items"][0]["days"][0]
+    assert before["plan_orders"] is None
+    assert client.put(f"{URL}/plan", json={"nm_id": 1, "plan": {"2026-09-08": 7}}).status_code == 200
+    after = get(client)["items"][0]["days"][0]
+    assert after["plan_orders"] == 7                      # the cached GET was rebuilt after the write
+    assert client.put(f"{URL}/target", json={"nm_id": 1, "plan_margin_pct": 12.5}).status_code == 200
+    assert get(client)["items"][0]["plan_margin_pct"] == 12.5
+    assert wipes == []                                    # the shared dashboard caches were never wiped

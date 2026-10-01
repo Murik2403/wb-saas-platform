@@ -29,6 +29,15 @@ def configure(build_dashboard, cached_response, advice_columns) -> None:
     _deps.update(build=build_dashboard, cache=cached_response, columns=advice_columns)
 
 
+# Bumped after every successful write so the cached GET is rebuilt, without wiping the shared dashboard caches.
+_rev = 0
+
+
+def _bump() -> None:
+    global _rev
+    _rev += 1
+
+
 def _today() -> date:
     return datetime.now(ZoneInfo("Europe/Moscow")).date()
 
@@ -84,6 +93,7 @@ def put_favorites(payload: FavoritesInput) -> dict:
         with conn:
             conn.execute("DELETE FROM rnp_favorite")
             conn.executemany("INSERT INTO rnp_favorite (nm_id, position) VALUES (?, ?)", [(n, i) for i, n in enumerate(ids)])
+        _bump()
         return {"nm_ids": _pinned(conn)}
 
 
@@ -107,6 +117,7 @@ def put_plan(payload: PlanInput) -> dict:
                     conn.execute("INSERT INTO rnp_plan (nm_id, day, plan_orders) VALUES (?, ?, ?) "
                                  "ON CONFLICT(nm_id, day) DO UPDATE SET plan_orders = excluded.plan_orders",
                                  (payload.nm_id, day.isoformat(), value))
+    _bump()
     return {"nm_id": payload.nm_id, "saved": len(payload.plan)}
 
 
@@ -122,6 +133,7 @@ def put_target(payload: TargetInput) -> dict:
                 conn.execute("INSERT INTO rnp_target (nm_id, plan_margin_pct) VALUES (?, ?) "
                              "ON CONFLICT(nm_id) DO UPDATE SET plan_margin_pct = excluded.plan_margin_pct",
                              (payload.nm_id, payload.plan_margin_pct))
+    _bump()
     return {"nm_id": payload.nm_id, "plan_margin_pct": payload.plan_margin_pct}
 
 
@@ -240,4 +252,4 @@ def get_rnp(period: str = Query("14d", pattern="^(today|7d|14d|30d|90d|custom)$"
         hi, lo = today, today - timedelta(days=_PERIOD_DAYS[period] - 1)
     days = calc.window_days(lo, hi)
     capped = (hi - lo).days + 1 > len(days)
-    return _deps["cache"](f"rnp:{days[0]}:{days[-1]}", lambda: json_safe(build_rnp(days, capped)))
+    return _deps["cache"](f"rnp:{_rev}:{days[0]}:{days[-1]}", lambda: json_safe(build_rnp(days, capped)))

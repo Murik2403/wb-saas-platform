@@ -905,7 +905,14 @@ def _clear_dashboard_caches() -> None:
 
 
 # POST endpoints that only read (the body carries inputs): they must not drop the dashboard caches.
-READ_ONLY_POST_PATHS = {"/api/v1/dashboard/products/price-advice"}
+READ_ONLY_POST_PATHS = {
+    "/api/v1/dashboard/products/price-advice",
+    # RNP plan edits touch only their own tables and bump their own cache version (rnp_api._bump):
+    # wiping the shared dashboard caches on every keystroke-save would force a cold recompute each time.
+    "/api/v1/dashboard/rnp/favorites",
+    "/api/v1/dashboard/rnp/plan",
+    "/api/v1/dashboard/rnp/target",
+}
 
 
 @app.middleware("http")
