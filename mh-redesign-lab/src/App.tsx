@@ -3285,6 +3285,7 @@ function AssistantView({
             await onRefresh();
           } catch (error) {
             await notifyUser(error instanceof Error ? error.message : "Решение не выполнено");
+          } finally {
             setDecisionBusy(false);
           }
         }}
