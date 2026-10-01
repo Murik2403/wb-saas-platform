@@ -217,6 +217,11 @@ def build_finance_excel(
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             for row in ws.iter_rows():
                 for cell in row:
+                    # This workbook exports values, never executable formulas.
+                    # openpyxl infers '=...' external text as a formula; retain
+                    # the original text without altering numeric amounts.
+                    if cell.data_type == "f":
+                        cell.data_type = "s"
                     cell.border = Border(bottom=Side(style="hair", color=thin))
                     cell.alignment = Alignment(vertical="top", wrap_text=True)
             for col_cells in ws.columns:
