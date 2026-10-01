@@ -103,3 +103,23 @@ def test_template_formula_text_protection_and_partial_history_rejection():
     with core.connect() as c:c.execute('UPDATE financial_report SET raw_json=? WHERE rrd_id=11',(json.dumps({'srid':'=1+1','chrt_id':10}),))
     rows=list(csvlib.DictReader(io.StringIO(template(date(2026,8,1),date(2026,8,31))),delimiter=';'))
     assert rows[0]['source_srid']=="'=1+1"
+
+
+@pytest.mark.parametrize('quantity', [1.5, -1.5, 0, None, 'invalid'])
+def test_invalid_source_quantity_is_never_truncated_or_attached(quantity):
+    save('finished_lots',[lot(1,0,'10','0')],'opening');source()
+    with core.connect() as c:
+        c.execute('UPDATE financial_report SET quantity=? WHERE rrd_id=11',(quantity,))
+        fact=dict(c.execute('SELECT * FROM financial_report WHERE rrd_id=11').fetchone())
+    row=dict(attachments([fact,fact])[0], quantity=1, allocation_units=1)
+    assert not preview('historical_attachments',[row])['can_confirm']
+    exported=list(csvlib.DictReader(io.StringIO(template(date(2026,8,1),date(2026,8,31))),delimiter=';'))
+    assert exported[0]['quantity']==''
+    with core.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM migration_historical_documents').fetchone()[0]==0
+
+
+@pytest.mark.parametrize('value,expected', [(1.0,1),(-5,5),(True,None),('NaN',None),('Infinity',None),(10**9+1,None)])
+def test_source_quantity_preserves_whole_units_and_rejects_nonfinite(value,expected):
+    from db.historical_attachments import source_quantity
+    assert source_quantity(value)==expected
