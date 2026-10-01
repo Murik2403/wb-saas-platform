@@ -74,3 +74,16 @@ describe("first report onboarding", () => {
     expect(recordFirstReportViewed).not.toHaveBeenCalled();
   });
 });
+
+
+it("allows completed settings to reopen a verified report without automatic tracking", async () => {
+  vi.mocked(getActivationSummary).mockImplementation(async (nmId) => ({ ...summary, first_value_verified: true, ready_for_report: Boolean(nmId) }));
+  vi.mocked(getFirstGrowthReport).mockResolvedValue(report);
+  render(<OnboardingPanel {...props} />);
+  expect(await screen.findByText("Первый результат получен. Подключения и себестоимость можно изменить ниже.")).toBeVisible();
+  expect(recordFirstReportViewed).not.toHaveBeenCalled();
+  await userEvent.selectOptions(screen.getByLabelText("Товар для повторного отчёта"), "123");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Открыть проверенный отчёт" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "Открыть проверенный отчёт" }));
+  await waitFor(() => expect(recordFirstReportViewed).toHaveBeenCalledWith(report));
+});

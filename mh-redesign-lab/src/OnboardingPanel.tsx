@@ -99,7 +99,14 @@ export function OnboardingPanel(props: Props) {
   const costComplete = summary?.selected_product.cost_configured ?? evidence.costComplete;
   const done = summary?.first_value_verified;
   if (done && !report && props.hideCompleted) return null;
-  if (done && !report) return <section className="work-section"><p>Первый результат получен. Подключения и себестоимость можно изменить ниже.</p></section>;
+  if (done && !report) return <section className="work-section">
+    <p>Первый результат получен. Подключения и себестоимость можно изменить ниже.</p>
+    <label>Товар для повторного отчёта <select value={nmId ?? ""} disabled={loading} onChange={(event) => setNmId(event.target.value ? Number(event.target.value) : null)}>
+      <option value="">Выберите товар</option>{props.costs.map((cost) => <option key={cost.nm_id} value={cost.nm_id}>{cost.product_name || cost.supplier_article} · {cost.nm_id}</option>)}
+    </select></label>
+    <button className="secondary-button" type="button" disabled={!summary?.ready_for_report || loading || props.busy} onClick={() => void openReport()}>{loading ? "Рассчитываем…" : "Открыть проверенный отчёт"}</button>
+    {error ? <p role="status">{error}</p> : null}
+  </section>;
   return <section className="work-section onboarding-panel" id="onboarding" aria-labelledby="onboarding-title">
     <h2 id="onboarding-title">Первый результат на ваших данных</h2>
     <p className="form-hint">Загрузите историю, выберите один товар, сохраните полную себестоимость единицы и откройте расчёт.</p>

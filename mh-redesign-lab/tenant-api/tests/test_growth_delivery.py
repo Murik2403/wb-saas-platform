@@ -248,3 +248,13 @@ class TestCurrentUrlPolicy:
         configuration.INTERNAL_API_URL = url
         assert growth_delivery.deliver_pending_growth_events(outbox_db)["delivered"] == 1
         assert post.call_args.args[0] == url + "/internal/growth/event"
+
+
+def test_daily_use_outbox_is_delivered_with_original_key(outbox_db, transport):
+    _, post = transport
+    with sqlite3.connect(outbox_db) as conn:
+        conn.execute("DELETE FROM growth_event_outbox")
+        conn.execute("INSERT INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES(?, 'useful_use', ?)", ("2026-09-18:financial", OCCURRED_AT))
+    assert growth_delivery.deliver_pending_growth_events(outbox_db)["delivered"] == 1
+    assert post.call_args.kwargs["json"]["event_key"] == "2026-09-18:financial"
+    assert post.call_args.kwargs["json"]["event_name"] == "useful_use"

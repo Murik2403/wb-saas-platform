@@ -224,3 +224,27 @@ class GrowthTests(GatewayDbTestCase):
             accounts.delete_account(conn, account_id)
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM growth_sources").fetchone()["n"], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM growth_events").fetchone()["n"], 0)
+
+    def test_d7_requires_observed_first_day_and_full_seventh_day(self):
+        with self.connect() as conn:
+            first = NOW - timedelta(days=9)
+            seller = self.account(conn, "d7", at=first - timedelta(hours=1))
+            legacy = self.account(conn, "old", at=first)
+            young = self.account(conn, "pending", at=NOW - timedelta(days=2))
+            for who, stamp in ((seller, first), (legacy, first), (young, NOW - timedelta(days=2))):
+                growth.record_activation(conn, who, "financial", occurred_at=stamp)
+            for stamp in (first, first + timedelta(days=7)):
+                growth.record_useful_use(conn, seller, "financial", occurred_at=stamp)
+                growth.record_useful_use(conn, seller, "financial", occurred_at=stamp + timedelta(minutes=1))
+            growth.record_useful_use(conn, young, "financial", occurred_at=NOW - timedelta(days=2))
+            growth.record_event(conn, seller, "wb_connected", occurred_at=first)
+            result = growth.growth_summary(conn, now=NOW)
+            self.assertEqual(result["d7"], {"eligible": 1, "converted": 1, "pending": 1, "rate": 1.0, "unobserved": 1})
+            self.assertEqual(result["wb_connection"]["converted"], 1)
+            self.assertEqual(result["first_result"]["converted"], 3)
+            self.assertEqual(result["first_result_time"]["observed"], 3)
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM growth_events WHERE event_name='useful_use' AND account_id=?", (seller,)).fetchone()["n"], 2)
+            # Seeing a return before its UTC day has ended cannot mature D7.
+            pending = growth.growth_summary(conn, now=first + timedelta(days=7, hours=1))
+            self.assertEqual(pending["d7"]["eligible"], 0)
+            self.assertIsNone(pending["d7"]["rate"])

@@ -169,3 +169,14 @@ class GrowthIntegrationTests(GatewayDbTestCase):
                 (account_id,),
             ).fetchone()
         self.assertEqual(activation[0], '{"scenario": "production"}')
+
+    def test_daily_use_auth_key_validation_and_duplicate_retry(self):
+        account_id = self._tenant("daily@example.test", "daily")
+        stamp = datetime.now(timezone.utc)
+        key = stamp.date().isoformat() + ":financial"
+        for _ in range(2):
+            self.assertEqual(self._event("daily", event_name="useful_use", event_key=key, occurred_at=stamp.isoformat()).status_code, 204)
+        self.assertEqual(self._event("daily", event_name="useful_use", event_key="2020-01-01:financial", occurred_at=stamp.isoformat()).status_code, 422)
+        self.assertEqual(self._event("daily", credential_slug="other", event_name="useful_use", event_key=key, occurred_at=stamp.isoformat()).status_code, 403)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM growth_events WHERE account_id=? AND event_name='useful_use'", (account_id,)).fetchone()["n"], 1)

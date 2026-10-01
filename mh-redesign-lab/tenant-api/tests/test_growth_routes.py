@@ -50,7 +50,7 @@ def test_report_get_is_read_only_and_view_ack_is_durable_and_idempotent(client, 
     assert first.json()["first_value_verified"] is True
     assert client.post("/api/v1/growth/report-viewed", json=ack, headers=AUTH).json() == first.json()
     with sqlite3.connect(growth_db) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM growth_event_outbox").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM growth_event_outbox").fetchone()[0] == 2
 
 
 @pytest.mark.parametrize("change", ["error", "partial", "running", "zero_cost", "no_rows", "demo"])

@@ -14,7 +14,7 @@
   <table>
     <thead><tr><th>Показатель</th><th>Результат</th><th>Ещё не созрели</th></tr></thead>
     <tbody>
-      {% for title, metric in [('Активация за 7 дней (A7)', growth.a7), ('Первая оплата за 30 дней (P30)', growth.p30)] %}
+      {% for title, metric in [('Активация за 7 дней (A7)', growth.a7), ('Первая оплата за 30 дней (P30)', growth.p30), ('Повторное открытие проверенного отчёта (D7)', growth.d7)] %}
       <tr><td>{{ title }}</td><td>{{ metric.converted }} / {{ metric.eligible }}
         {% if metric.rate is not none %}({{ '%.1f'|format(metric.rate * 100) }}%){% else %}— нет созревших проб{% endif %}
       </td><td>{{ metric.pending }}</td></tr>
@@ -22,6 +22,14 @@
       <tr><td>Стоимость нового плательщика (CAC)</td><td colspan="2">Не рассчитана. {{ growth.cac_reason }}</td></tr>
     </tbody>
   </table>
+  <p>Подключили WB: {{ growth.wb_connection.converted }} / {{ growth.wb_connection.eligible }};
+    получили первый проверенный результат: {{ growth.first_result.converted }} / {{ growth.first_result.eligible }}.
+    Время от регистрации до первого результата: {% if growth.first_result_time.median_seconds is not none %}
+    медиана {{ '%.1f'|format(growth.first_result_time.median_seconds / 60) }} мин, {{ growth.first_result_time.observed }} наблюдений.
+    {% else %}нет наблюдений.{% endif %}</p>
+  <p>D7 — открытие проверенного финансового отчёта на седьмой календарный день UTC после первого результата;
+    знаменатель созревает после окончания этого дня. Старые активации без наблюдаемого использования в первый день:
+    {{ growth.d7.unobserved }}; они исключены из D7. A7 и D7 измеряют разные действия. D7 охватывает отчёт в настройках; прочие посещения, синхронизация и автоматические выпуски не считаются повторным использованием.</p>
   <p>Активация — проверенный полезный отчёт на своих данных или подтверждённый производственный результат.
     Подключение WB и готовность данных сами по себе не считаются активацией. P30 включает только положительные реальные платежи без известного возврата.</p>
   <p>Исключено служебных аккаунтов: {{ growth.excluded_accounts }}. Без наблюдаемого начала регистрации: {{ growth.untracked_accounts }}.

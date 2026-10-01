@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from statistics import median
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
@@ -20,7 +21,7 @@ _TAG = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 _SECRET_LIKE = re.compile(r"(?:sk[-_]|bearer|token[-_]|secret[-_]|eyj)|[a-f0-9]{24,}", re.IGNORECASE)
 EVENT_NAMES = frozenset({
     "account_created", "email_verified", "tenant_ready", "trial_started",
-    "wb_connected", "first_sync_succeeded", "cost_setup_completed",
+    "wb_connected", "first_sync_succeeded", "cost_setup_completed", "useful_use",
     "first_report_viewed", "first_useful_report", "first_production_result",
     "payment_succeeded", "renewal_succeeded", "subscription_cancelled",
 })
@@ -96,6 +97,11 @@ internal integer payments.id as their key (never a provider payment token).
         if not str(event_key).isdigit() or int(event_key) <= 0:
             raise ValueError("Payment event requires an internal payment id")
         event_key = str(int(event_key))
+    elif event_name == "useful_use":
+        stamp = _utc(occurred_at)
+        scenario = (metadata or {}).get("scenario")
+        if scenario != "financial" or event_key != f"{stamp.date().isoformat()}:{scenario}":
+            raise ValueError("Useful use requires its UTC date and verified scenario")
     elif event_key:
         raise ValueError("Lifecycle milestones do not accept variable keys")
     result = conn.execute(
@@ -177,6 +183,13 @@ def record_activation(conn, account_id: int, scenario: str, *, occurred_at: date
     if scenario not in events:
         raise ValueError("Unsupported activation scenario")
     return record_event(conn, account_id, events[scenario], occurred_at=occurred_at, metadata={"scenario": scenario})
+
+
+def record_useful_use(conn, account_id: int, scenario: str, *, occurred_at: datetime) -> bool:
+    """Trusted verified use, deduplicated per UTC date/scenario, never a page GET."""
+    at = _utc(occurred_at)
+    return record_event(conn, account_id, "useful_use", event_key=f"{at.date().isoformat()}:{scenario}",
+                        occurred_at=at, metadata={"scenario": scenario})
 
 
 def record_payment_success(conn, account_id: int, payment_id: int, *, is_test: bool = False, occurred_at: datetime | None = None) -> None:
@@ -286,8 +299,46 @@ payments. It is not a historical accounting reconstruction.
     def measures(subset: list[tuple[int, datetime]]) -> dict[str, Any]:
         return {"trials": len(subset), "a7": _metric(subset, activated, 7, cutoff), "p30": _metric(subset, paid_in_30, 30, cutoff)}
 
+    first_values = {}
+    first_durations = []
+    for account_id, row in included.items():
+        registered = _parse(row["registered_at"])
+        first = min((at for name in ACTIVATION_EVENTS for at, _ in events[account_id].get(name, [])
+                     if at >= registered), default=None)
+        if first:
+            first_values[account_id] = first
+            first_durations.append((first - registered).total_seconds())
+
+    def d7_measure(ids):
+        eligible = converted = pending = unobserved = 0
+        for account_id in ids:
+            first = first_values.get(account_id)
+            if first is None:
+                continue
+            uses = [at for at, _ in events[account_id].get("useful_use", [])]
+            if not any(at.date() == first.date() for at in uses):
+                unobserved += 1
+                continue
+            start = first.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=7)
+            end = start + timedelta(days=1)
+            if cutoff < end:
+                pending += 1
+                continue
+            eligible += 1
+            converted += any(start <= at < end for at in uses)
+        return {"eligible": eligible, "converted": converted, "pending": pending,
+                "rate": converted / eligible if eligible else None, "unobserved": unobserved}
+
+    def share(count):
+        return {"eligible": len(included), "converted": count,
+                "rate": count / len(included) if included else None}
+
     result = {
         "as_of": _iso(cutoff), "registered": len(included),
+        "wb_connection": share(sum(bool(events[i].get("wb_connected")) for i in included)),
+        "first_result": share(len(first_values)),
+        "first_result_time": {"observed": len(first_durations), "median_seconds": median(first_durations) if first_durations else None},
+        "d7": d7_measure(included),
         "email_verified": sum(bool(events[i].get("email_verified")) for i in included),
         "tenant_ready": sum(bool(events[i].get("tenant_ready")) for i in included),
         "paid": len(paid), "renewed": len(renewed),
@@ -300,6 +351,6 @@ payments. It is not a historical accounting reconstruction.
              **measures([trial for trial in trials if trial[0] in ids])}
             for source, ids in sorted(source_ids.items())
         ],
-        "cohorts": [{"week": week, **measures(subset)} for week, subset in sorted(cohort_trials.items(), reverse=True)],
+        "cohorts": [{"week": week, "d7": d7_measure([i for i, _ in subset]), **measures(subset)} for week, subset in sorted(cohort_trials.items(), reverse=True)],
     }
     return result

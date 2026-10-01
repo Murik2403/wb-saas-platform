@@ -15,8 +15,8 @@ router = APIRouter()
 class FirstValueEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
-    event_name: Literal["wb_connected", "first_sync_succeeded", "first_useful_report", "first_production_result"]
-    event_key: Literal["wb_connected", "first_sync_succeeded", "first_useful_report", "first_production_result"]
+    event_name: Literal["wb_connected", "first_sync_succeeded", "first_useful_report", "first_production_result", "useful_use"]
+    event_key: str = Field(min_length=1, max_length=32)
     occurred_at: datetime
 
 
@@ -30,14 +30,20 @@ def receive_first_value(payload: FirstValueEvent, request: Request):
     when = payload.occurred_at
     if when.tzinfo is None or when > now + timedelta(minutes=5) or when < now - timedelta(days=90):
         raise HTTPException(422, "invalid event time")
-    if payload.event_key != payload.event_name:
+    if payload.event_name == "useful_use":
+        parts = payload.event_key.split(":")
+        if len(parts) != 2 or parts[0] != when.astimezone(timezone.utc).date().isoformat() or parts[1] != "financial":
+            raise HTTPException(422, "invalid useful use key")
+    elif payload.event_key != payload.event_name:
         raise HTTPException(422, "event key mismatch")
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_by_slug(conn, payload.slug)
         if tenant is None:
             raise HTTPException(404, "unknown tenant")
         owner = int(tenant["account_id"])
-        if payload.event_name == "first_useful_report":
+        if payload.event_name == "useful_use":
+            growth.record_useful_use(conn, owner, parts[1], occurred_at=when)
+        elif payload.event_name == "first_useful_report":
             growth.record_event(conn, owner, "first_report_viewed", occurred_at=when)
             growth.record_activation(conn, owner, "financial", occurred_at=when)
         elif payload.event_name == "first_production_result":

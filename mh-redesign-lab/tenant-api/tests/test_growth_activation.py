@@ -136,3 +136,14 @@ def test_first_production_result_is_a_durable_idempotent_event(growth_db):
             "SELECT event_key,event_name,occurred_at FROM growth_event_outbox WHERE event_key=?",
             ("first_production_result",),
         ).fetchone() == ("first_production_result", "first_production_result", occurred)
+
+
+def test_useful_use_repeats_per_day_while_first_value_stays_fixed(growth_db):
+    first = record_first_value(growth_db, nm_id=123, occurred_at="2026-09-18T11:00:00+00:00")
+    assert record_first_value(growth_db, nm_id=123, occurred_at="2026-09-18T12:00:00+00:00") == first
+    assert record_first_value(growth_db, nm_id=123, occurred_at="2026-09-25T11:00:00+00:00") == first
+    record_growth_event(growth_db, event_name="first_production_result", occurred_at="2026-09-25T12:00:00+00:00")
+    record_growth_event(growth_db, event_name="first_production_result", occurred_at="2026-09-25T13:00:00+00:00")
+    with sqlite3.connect(growth_db) as conn:
+        uses = conn.execute("SELECT event_key FROM growth_event_outbox WHERE event_name='useful_use' ORDER BY event_key").fetchall()
+    assert uses == [("2026-09-18:financial",), ("2026-09-25:financial",)]

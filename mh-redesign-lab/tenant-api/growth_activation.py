@@ -1,7 +1,7 @@
 """Local readiness evidence. A read never creates or backdates an activation."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import math
 from pathlib import Path
 import re
@@ -33,6 +33,15 @@ def initialize_growth_schema(db_path: str | Path) -> None:
                 last_attempt_at TEXT
             );
         """)
+
+
+def _queue_use(conn, scenario: str, occurred_at: str) -> None:
+    at = datetime.fromisoformat(occurred_at)
+    if at.tzinfo is None:
+        raise ValueError("Useful use requires a timezone")
+    at = at.astimezone(timezone.utc)
+    conn.execute("INSERT OR IGNORE INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES(?,'useful_use',?)",
+                 (f"{at.date().isoformat()}:{scenario}", at.isoformat()))
 
 
 def record_growth_event(db_path: str | Path, *, event_name: str, occurred_at: str) -> bool:
@@ -149,4 +158,5 @@ def record_first_value(db_path: str | Path, *, nm_id: int, occurred_at: str) -> 
         conn.execute("INSERT OR IGNORE INTO growth_first_value(event_key,nm_id,occurred_at) VALUES('first_useful_report',?,?)", (nm_id, occurred_at))
         row = conn.execute("SELECT nm_id,occurred_at FROM growth_first_value WHERE event_key='first_useful_report'").fetchone()
         conn.execute("INSERT OR IGNORE INTO growth_event_outbox(event_key,event_name,occurred_at) VALUES('first_useful_report','first_useful_report',?)", (row[1],))
+        _queue_use(conn, "financial", occurred_at)
         return {"nm_id": row[0], "occurred_at": row[1]}
