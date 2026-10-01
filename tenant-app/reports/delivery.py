@@ -145,3 +145,25 @@ def send_report_telegram(report_name: str, pdf_bytes: bytes, filename: str) -> b
     except Exception:
         logger.exception("Failed to reach gateway internal API for report Telegram delivery")
         return False
+
+
+def send_text_telegram(text: str) -> bool:
+    """Short plain-text Telegram message to the linked chat. Never raises;
+    False when the internal API is not configured, Telegram is not linked
+    (gateway answers 409) or anything else fails."""
+    if not internal_api_is_configured():
+        return False
+    try:
+        response = requests.post(
+            f"{config.INTERNAL_API_URL}/internal/send-text-telegram",
+            headers={"X-Internal-Secret": config.INTERNAL_API_SECRET},
+            data={"slug": config.TENANT_SLUG, "text": text},
+            timeout=20,
+        )
+        if response.status_code != 200:
+            logger.warning("Gateway rejected Telegram notification: %s", response.status_code)
+            return False
+        return True
+    except Exception:
+        logger.warning("Failed to reach gateway for Telegram notification", exc_info=False)
+        return False
