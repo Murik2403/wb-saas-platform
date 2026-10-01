@@ -692,6 +692,16 @@
     "scope": "forbidden"
   },
   {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/realization",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/realization/load",
+    "scope": "forbidden"
+  },
+  {
     "method": "POST",
     "path": "/api/v1/ozon-accounting/sync",
     "scope": "forbidden"

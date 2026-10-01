@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from config import get_ozon_credentials
 from db.ozon_accounting import import_snapshot, workspace, save_cost_mapping
-from ozon_accounting_client import OzonAccountingClient, checked_period
+from ozon_accounting_client import OzonAccountingClient, checked_period, checked_realization_month
 
 router = APIRouter(prefix="/api/v1/ozon-accounting", tags=["Учёт Ozon"])
 sync_lock = Lock()
@@ -16,6 +16,12 @@ class Period(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start_date: date
     end_date: date
+
+
+class RealizationMonth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    month: StrictInt
+    year: StrictInt
 
 
 class Cost(BaseModel):
@@ -75,6 +81,29 @@ def save_cost(payload: Cost, request: Request):
         return {"saved": True}
     except ValueError as exc:
         raise HTTPException(422,str(exc)) from exc
+
+
+@router.get("/realization")
+def realization_preview(month: int, year: int):
+    from db.ozon_realization_source import saved
+    try: return saved(month,year)
+    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+
+
+@router.post("/realization/load")
+def realization_load(payload: RealizationMonth, request: Request):
+    allow_write(request)
+    from db.ozon_realization_source import save
+    try: checked_realization_month(payload.month,payload.year)
+    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+    credentials=get_ozon_credentials()
+    if not credentials: raise HTTPException(409,"Подключите Ozon в настройках кабинета.")
+    if not sync_lock.acquire(blocking=False): raise HTTPException(409,"Загрузка Ozon уже выполняется.")
+    try:
+        client_id,api_key=(credentials['client_id'],credentials['api_key']) if isinstance(credentials,dict) else credentials
+        return save(OzonAccountingClient(client_id,api_key).realization_source(payload.month,payload.year))
+    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+    finally: sync_lock.release()
 
 
 class DocumentImport(BaseModel):

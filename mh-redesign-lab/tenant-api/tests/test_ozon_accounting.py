@@ -25,6 +25,44 @@ def test_workspace_without_snapshot_does_not_show_zero_profit(env):
     assert result.json()["profit_rub"] is None
 
 
+def test_monthly_saved_get_never_calls_remote_and_load_requires_trusted_write_role(env,monkeypatch):
+    monkeypatch.setattr(api,'OzonAccountingClient',lambda *args:pytest.fail('no remote on read or invalid request'))
+    assert env.get('/api/v1/ozon-accounting/realization?month=9&year=2026').json()['loaded'] is False
+    for role in ('viewer','warehouse','technologist','integration_reader',''):
+        assert env.post('/api/v1/ozon-accounting/realization/load',headers={'x-tenant-role':role},json={'month':9,'year':2026}).status_code==403
+    for body in ({'month':True,'year':2026},{'month':9,'year':3000},{'month':7,'year':2023}):
+        assert env.post('/api/v1/ozon-accounting/realization/load',headers={'x-tenant-role':'owner'},json=body).status_code==422
+
+
+@pytest.mark.parametrize('status',[403,404])
+def test_monthly_failure_preserves_previous_saved_document(env,monkeypatch,status):
+    from db.ozon_realization_source import save
+    raw={'source_kind':'ozon-realization-v1','month':9,'year':2026,'report':{'header':{'number':'Synthetic','doc_date':'2026-10-01','start_date':'2026-09-01','stop_date':'2026-09-30','currency_sys_name':'RUB'},'rows':[]}}
+    before=save(raw)
+    calls=[]
+    class Failed:
+        def __init__(self,*args):pass
+        def realization_source(self,*args):calls.append(args);raise ValueError(f'Ozon: HTTP {status}')
+    monkeypatch.setattr(api,'OzonAccountingClient',Failed)
+    result=env.post('/api/v1/ozon-accounting/realization/load',headers={'x-tenant-role':'owner'},json={'month':9,'year':2026})
+    assert result.status_code==422 and len(calls)==1
+    assert env.get('/api/v1/ozon-accounting/realization?month=9&year=2026').json()==before
+
+
+def test_monthly_real_middleware_rejects_demo_foreign_origin_and_read_roles(monkeypatch,tmp_path):
+    from test_management_economics import api as application
+    monkeypatch.setattr(core,'DB_PATH',tmp_path/'monthly-private.sqlite');core.init_db()
+    monkeypatch.setattr(application,'IS_DEMO',False)
+    monkeypatch.setattr(api,'OzonAccountingClient',lambda *args:pytest.fail('middleware denial must precede upstream read'))
+    with TestClient(application.app,base_url='http://127.0.0.1') as client:
+        url='/api/v1/ozon-accounting/realization/load';payload={'month':9,'year':2026}
+        for role in ('viewer','warehouse','production'):
+            assert client.post(url,json=payload,headers={'x-tenant-role':role}).status_code==403
+        assert client.post(url,json=payload,headers={'x-tenant-role':'owner','origin':'https://evil.example'}).status_code==403
+        monkeypatch.setattr(application,'IS_DEMO',True)
+        assert client.post(url,json=payload,headers={'x-tenant-role':'owner'}).status_code==403
+
+
 @pytest.mark.parametrize("role",["viewer","warehouse","technologist","integration_reader",""])
 def test_non_manager_cannot_save_cost_or_trigger_sync(env,role):
     headers={"x-tenant-role":role}
