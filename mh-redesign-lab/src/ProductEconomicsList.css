@@ -113,3 +113,5 @@
   .product-table-tools { margin-left: 0; }
   .product-column-menu { right: auto; left: 0; }
 }
+
+.product-abc-summary { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--muted, #5b6472); }
