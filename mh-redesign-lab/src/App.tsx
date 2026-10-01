@@ -12,6 +12,8 @@ import { WorkcenterCalendar } from "./WorkcenterCalendar";
 import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
+import { ProductGroupFilter, ProductGroupsPanel } from "./ProductGroupsPanel";
+import { useGroupSelection, useProductGroups, ALL_PRODUCTS } from "./useProductGroups";
 import { ProductCardsPanel } from "./ProductCardsPanel";
 import { ShopQualityPanel } from "./ShopQualityPanel";
 import { ProductPricesPanel } from "./ProductPricesPanel";
@@ -2091,7 +2093,10 @@ export function ProductsView({
   const [priceUploadHistory, setPriceUploadHistory] = useState<PriceUploadHistoryItem[]>([]);
   const [editingCard, setEditingCard] = useState<ProductCard | null>(null);
   const normalized = query.trim().toLocaleLowerCase("ru-RU");
-  const visible = products.filter((item) => !normalized || `${item.article} ${item.product} ${item.nmId}`.toLocaleLowerCase("ru-RU").includes(normalized));
+  const productGroups = useProductGroups();
+  const [groupId, setGroupId] = useGroupSelection(productGroups.groups, productGroups.loaded);
+  const groupMembers = groupId === ALL_PRODUCTS ? null : new Set(productGroups.groups.find((g) => String(g.id) === groupId)?.nmIds);
+  const visible = products.filter((item) => (!groupMembers || groupMembers.has(Number(item.nmId))) && (!normalized || `${item.article} ${item.product} ${item.nmId}`.toLocaleLowerCase("ru-RU").includes(normalized)));
   const revenue = products.reduce((sum, item) => sum + item.revenue, 0);
   const netProfit = products.reduce((sum, item) => sum + item.margin, 0);
   const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
@@ -2164,7 +2169,7 @@ export function ProductsView({
       <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и чистая маржинальность по каждому артикулу WB.</p></div></section>
       <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good", change: changes[0] }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn", change: changes[1] }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good", change: changes[2] }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info", change: changes[3] }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
       <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
-      <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label>{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
+      <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label><ProductGroupFilter groups={productGroups.groups} value={groupId} onChange={setGroupId} /><ProductGroupsPanel products={products} groups={productGroups.groups} error={productGroups.error} onChanged={productGroups.reload} />{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
       <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
       {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
       <ShopQualityPanel data={customerQuality} actions={qualityActions} />
