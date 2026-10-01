@@ -47,6 +47,8 @@ export type DashboardMetric = {
   delta: string;
   detail: string;
   tone: Tone;
+  /** Optional comparison with the previous period, shown under the value. */
+  change?: { text: string; tone: "good" | "bad" | "neutral" };
 };
 
 export type ActionRecommendation = {

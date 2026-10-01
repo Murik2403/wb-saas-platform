@@ -2706,3 +2706,36 @@ export async function getExpenseCoverage(nmId: number, start: string, end: strin
 export function saveExpenseCoverage(payload: { nm_id: number; start: string; end: string; article: string; state: string; source_ref: string; reason: string; request_key: string; expected_fingerprint: string }): Promise<{ id: number }> {
   return postOperation("/api/v1/settings/expense-coverage", payload);
 }
+
+export type ProductsTrend = {
+  start: string;
+  end: string;
+  /** Days per point; 1 unless the window is longer than 60 days. */
+  bucketDays: number;
+  dates: string[];
+  /** Keyed by nm_id; absent nm_id means no sales in the window. */
+  series: Record<string, { revenue: number[]; units: number[] }>;
+};
+
+export type ProductsPreviousTotals = {
+  start: string | null;
+  end: string | null;
+  hasData: boolean;
+  totals: { revenue: number; marginPct: number; atRisk: number; skuCount: number } | null;
+};
+
+export async function getProductsTrend(period: DashboardPeriod, signal: AbortSignal): Promise<ProductsTrend> {
+  const raw = await fetchJson<{ start?: string; end?: string; bucket_days?: number; dates?: string[]; items?: Array<{ nm_id: number; revenue: number[]; units: number[] }> }>(`/api/v1/dashboard/products/trend${periodQuery(period)}`, signal, 30000);
+  const series: ProductsTrend["series"] = {};
+  for (const item of raw.items ?? []) series[String(item.nm_id)] = { revenue: item.revenue ?? [], units: item.units ?? [] };
+  return { start: raw.start ?? "", end: raw.end ?? "", bucketDays: raw.bucket_days ?? 1, dates: raw.dates ?? [], series };
+}
+
+export async function getProductsPrevious(period: DashboardPeriod, signal: AbortSignal): Promise<ProductsPreviousTotals> {
+  const raw = await fetchJson<{ start?: string | null; end?: string | null; has_data?: boolean; totals?: { revenue: number; margin_pct: number; at_risk: number; sku_count: number } | null }>(`/api/v1/dashboard/products/previous${periodQuery(period)}`, signal, 30000);
+  const t = raw.totals;
+  return {
+    start: raw.start ?? null, end: raw.end ?? null, hasData: raw.has_data === true && !!t,
+    totals: t ? { revenue: numberValue(t.revenue), marginPct: numberValue(t.margin_pct), atRisk: numberValue(t.at_risk), skuCount: numberValue(t.sku_count) } : null,
+  };
+}
