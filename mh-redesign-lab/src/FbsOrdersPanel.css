@@ -1,0 +1,21 @@
+.fbs-panel { display: grid; gap: 12px; min-width: 0; }
+.fbs-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fbs-updated { flex: 1 1 12rem; font-size: 13px; color: var(--text-muted); }
+.fbs-body { display: grid; gap: 12px; min-width: 0; }
+.fbs-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; }
+.fbs-strip > div { border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; align-content: start; min-width: 0; }
+.fbs-strip dt { font-size: 12px; color: var(--text-muted); }
+.fbs-strip dd { margin: 0; font-size: 18px; font-weight: 700; }
+.fbs-strip small, .fbs-note { font-size: 12px; color: var(--text-muted); margin: 0; }
+.fbs-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.fbs-filters label { display: grid; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.fbs-filters .fbs-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.fbs-scroll { overflow-x: auto; max-width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; }
+.fbs-table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 13px; }
+.fbs-table th, .fbs-table td { padding: 8px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.fbs-table small { color: var(--text-muted); }
+.fbs-overdue td { background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.fbs-flag { color: var(--text); border: 1px solid var(--warning); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+.fbs-pager { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.fbs-days summary { cursor: pointer; font-size: 13px; margin-bottom: 6px; }
+.fbs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
