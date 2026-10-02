@@ -14,8 +14,12 @@
 - Собрать только закоммиченный HEAD, выкатить demo и mvvorokov с 1536 MiB после encrypted backup и live-проверок.
 
 ## Шаги
-- [ ] Журнал tenant-app/tax_reconciliation.py: Decimal, контроль суммы, календарный месяц, optimistic lock, идемпотентный повтор, история.
-- [ ] API GET/PUT /api/v1/settings/tax-reconciliation: схемы, ограничения, owner/manager, shop_local в реестре и фикстуре.
-- [ ] UI TaxReconciliationPanel: месяц, расшифровка базы, отсутствующие данные, оценка/ФНС/оплата/дельта, до/после налога, история и CSV; доступ из Финансов и Настроек.
-- [ ] Проверки: отсутствующие поля, нули, округление, возвраты больше базы, история/повтор/conflict, права и изоляция, UI сохранение/смена месяца/CSV.
-- [ ] Проверка типов, frontend/tenant tests, committed image byte gate, candidate, encrypted backups, deploy и live evidence.
+- [x] Журнал tenant-app/tax_reconciliation.py: Decimal, контроль суммы, календарный месяц, optimistic lock, идемпотентный повтор, история.
+- [x] API GET/PUT /api/v1/settings/tax-reconciliation: схемы, ограничения, owner/manager, shop_local в реестре и фикстуре.
+- [x] UI TaxReconciliationPanel: месяц, расшифровка базы, отсутствующие данные, оценка/ФНС/оплата/дельта, до/после налога, история и CSV; доступ из Финансов и Настроек.
+- [x] Проверки: отсутствующие поля, нули, округление, возвраты больше базы, история/повтор/conflict, права и изоляция, UI сохранение/смена месяца/CSV.
+- [x] Проверка типов, frontend/tenant tests, committed image byte gate, candidate, encrypted backups, deploy и live evidence.
+
+## Приёмка 2026-10-03
+
+Runtime e791d8df9748fc5c21d36152adce8139bc31ce59 выложен demo и mvvorokov. 425 frontend; 833 tenant-app (1 skipped, 10 subtests); 478 tenant-api плюс отдельная новая проверка изоляции второго магазина. Build/tsc чистые. Подтверждены 255 runtime files и 9 assets, candidate synthetic calculation, encrypted backups, четыре business probes на тенанта, три public healthz. Реальный авторизованный интерфейс открыт, месяц переключается, исходные поля пустые — не нули. Полноценный автоматический налоговый учёт, общий налог нескольких магазинов и ОСНО не реализованы; USN gate сохранён.
