@@ -8,8 +8,8 @@ Tech stack: React, TypeScript, CSS variables, Jinja, plain JavaScript. Без н
 
 Global constraints: тёмная тема по умолчанию; блокировка localStorage не ломает переключатель; финансовые данные и настройки магазинов не изменяются; чужие файлы не включать в коммиты; выкатывать только закоммиченный HEAD.
 
-- [ ] Кабинет: ThemeToggle, ранняя инициализация index.html, палитра и читаемость самостоятельных рабочих панелей.
-- [ ] Главная: base.html/home.html/theme.js, ранняя инициализация, кнопка, адаптивные поверхности и графики (агент landing_light_theme).
-- [ ] Проверки: сохранение/перезагрузка/недоступность storage, frontend tests/build, gateway tests, Graphify update.
-- [ ] Релиз: точный Git HEAD, проверенные образы, резервная копия и rollback, gateway и оба tenant, pin provisioner.
-- [ ] Приёмка: действующая главная и кабинет в обеих темах, мобильная навигация, скриншоты.
+- [x] Кабинет: ThemeToggle, ранняя инициализация index.html, палитра и читаемость самостоятельных рабочих панелей.
+- [x] Главная: base.html/home.html/theme.js, ранняя инициализация, кнопка, адаптивные поверхности и графики (агент landing_light_theme).
+- [x] Проверки: сохранение/перезагрузка/недоступность storage, frontend tests/build, gateway tests, Graphify update.
+- [x] Релиз: точный Git HEAD, проверенные образы, резервная копия и rollback, gateway и оба tenant, pin provisioner.
+- [x] Приёмка: действующая главная и кабинет в обеих темах, мобильная навигация, скриншоты.
