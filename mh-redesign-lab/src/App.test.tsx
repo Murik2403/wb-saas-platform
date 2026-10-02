@@ -211,6 +211,7 @@ vi.mock("./data-source", async () => {
 describe("operational detail drawer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     setChecks(defaultChecks);
     mockedDashboard.financeReport = { rows: [] };
     mockedDashboard.supplyShipments = [];
@@ -342,6 +343,30 @@ describe("operational detail drawer", () => {
     expect(vi.mocked(createActionPlanItem)).not.toHaveBeenCalled();
   });
 
+  it("opens the campaigns tab for an ads deep link even if Аналитика РК was remembered", async () => {
+    mockedDashboard.actions = [{
+      id: "ads-action",
+      sku: "WB-118-07",
+      title: "Футболка oversize молочная",
+      issue: "CTR просел после смены главного фото",
+      impact: "+41 000 ₽",
+      owner: "Вернуть фото A",
+      due: "сегодня",
+      tone: "warn",
+      iconKey: "ads",
+    }];
+    window.localStorage.setItem("mh.tab.ads", "analytics");
+    window.history.replaceState({}, "", "/?view=today");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click((await screen.findAllByRole("button", { name: "Открыть действие" }))[0]);
+
+    expect(new URL(window.location.href).searchParams.get("view")).toBe("ads");
+    expect(document.getElementById("ads-campaigns")).toBeInTheDocument();
+  });
+
   it("shows a Content API error instead of an empty cards state", async () => {
     mockedDashboard.productCardErrors = ["/api/v1/products/cards: HTTP 403"];
     window.history.replaceState({}, "", "/?view=products");
@@ -352,12 +377,48 @@ describe("operational detail drawer", () => {
     expect(screen.getByText("После исправления доступа обновите раздел.")).toBeInTheDocument();
   });
 
+  it("splits the ads page into tabs, shows only the selected one and remembers it", async () => {
+    window.history.replaceState({}, "", "/?view=ads");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    const first = render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "Разделы рекламы" });
+    expect(screen.getByText("Где менять ставки")).toBeInTheDocument();
+    expect(document.getElementById("ads-analytics")).toBeNull();
+    await user.click(within(nav).getByRole("button", { name: "Аналитика РК" }));
+    expect(document.getElementById("ads-analytics")).not.toBeNull();
+    expect(screen.queryByText("Где менять ставки")).toBeNull();
+    first.unmount();
+    render(<App />);
+    await screen.findByRole("navigation", { name: "Разделы рекламы" });
+    expect(document.getElementById("ads-analytics")).not.toBeNull();
+  });
+
+  it("splits the reports page into tabs with each block in exactly one tab", async () => {
+    window.history.replaceState({}, "", "/?view=reports");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "Разделы отчётов" });
+    expect(screen.getByText("Быстрые отчёты")).toBeInTheDocument();
+    expect(screen.queryByText("Email и Telegram")).toBeNull();
+    expect(screen.queryByText("Файлы и ошибки")).toBeNull();
+    await user.click(within(nav).getByRole("button", { name: "Расписания и запуски" }));
+    expect(screen.getByText("Файлы и ошибки")).toBeInTheDocument();
+    expect(screen.queryByText("Быстрые отчёты")).toBeNull();
+    await user.click(within(nav).getByRole("button", { name: "Доставка" }));
+    expect(screen.getByText("Email и Telegram")).toBeInTheDocument();
+    expect(screen.queryByText("Файлы и ошибки")).toBeNull();
+  });
+
   it("shows a delivery error instead of silently disabling report channels", async () => {
     vi.mocked(getReportDelivery).mockRejectedValueOnce(new Error("SMTP не настроен"));
     window.history.replaceState({}, "", "/?view=reports");
     const { default: App } = await import("./App");
+    const user = userEvent.setup();
     render(<App />);
 
+    await user.click(within(await screen.findByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Доставка" }));
     expect(await screen.findByText("Настройки доставки недоступны: SMTP не настроен")).toBeInTheDocument();
   });
 
@@ -370,6 +431,7 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(within(await screen.findByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Доставка" }));
     await user.click(await screen.findByRole("button", { name: "Привязать Telegram" }));
     expect(await screen.findByText("Как привязать Telegram:")).toBeInTheDocument();
     expect(screen.getByText("@marketshelper_support_bot")).toBeInTheDocument();
@@ -382,10 +444,13 @@ describe("operational detail drawer", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Analytics timeout")));
     window.history.replaceState({}, "", "/?view=reports");
     const { default: App } = await import("./App");
+    const user = userEvent.setup();
     render(<App />);
 
-    expect(await screen.findByText("Расписания недоступны: API расписаний недоступно")).toBeInTheDocument();
     expect(await screen.findByText("Аналитика WB недоступна: Analytics timeout")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Расписания и запуски" }));
+    expect(await screen.findByText("Расписания недоступны: API расписаний недоступно")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Отчёты" }));
     expect(screen.getByText("После восстановления доступа обновите аналитику.")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });

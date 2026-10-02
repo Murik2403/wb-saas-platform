@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ProductsView, ReportsView } from "./App";
 import type { CustomerQualityData } from "./data-source";
 
@@ -53,6 +53,7 @@ describe("reports presentation", () => {
     expect(screen.queryByText("настройки tenant")).toBeNull();
     expect(screen.getByText("5 разделов · 30 дней")).toBeVisible();
     expect(screen.getAllByText("4 раздела · 30 дней")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Расписания и запуски" }));
     expect(await screen.findByRole("button", { name: "Создать расписание" })).toBeVisible();
   });
 });

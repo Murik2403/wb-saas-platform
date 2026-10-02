@@ -13,6 +13,7 @@ import { WorkcenterCalendar } from "./WorkcenterCalendar";
 import { ProductionWorkspace } from "./ProductionWorkspace";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { AdsAnalyticsPanel } from "./AdsAnalyticsPanel";
+import { WorkspaceTabs } from "./WorkspaceTabs";
 import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
 import { ProductsHeatmap } from "./ProductsHeatmap";
 import { ProductGroupFilter, ProductGroupsPanel } from "./ProductGroupsPanel";
@@ -1102,6 +1103,7 @@ function App() {
             onAction={handleAction}
             period={dashboardPeriod}
             setPeriod={setDashboardPeriod}
+            target={pendingScrollTarget}
           />
         ) : null}
 
@@ -1739,6 +1741,9 @@ function StockView({
   );
 }
 
+const adsTabs = [{ id: "campaigns", label: "Кампании" }, { id: "analytics", label: "Аналитика РК" }] as const;
+const reportsTabs = [{ id: "reports", label: "Отчёты" }, { id: "schedules", label: "Расписания и запуски" }, { id: "delivery", label: "Доставка" }] as const;
+
 function AdsView({
   adsFunnel,
   adsHero,
@@ -1748,6 +1753,7 @@ function AdsView({
   onAction,
   period,
   setPeriod,
+  target,
 }: {
   adsFunnel: FunnelStage[];
   adsHero: AdsHero;
@@ -1757,9 +1763,9 @@ function AdsView({
   onAction: (label: string, itemLabel: string) => void;
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
+  target?: string | null;
 }) {
-  return (
-    <div className="workspace-view">
+  const campaignsPanel = (<>
       <section className={cx("hero-strip", "ads-hero", adsHero.tone)} aria-label="Рекламный сигнал">
         <div>
           <div className="eyebrow">
@@ -1816,8 +1822,17 @@ function AdsView({
           </section>
         </aside>
       </div>
-
-      <AdsAnalyticsPanel period={period} />
+  </>);
+  return (
+    <div className="workspace-view">
+      <WorkspaceTabs
+        tabs={adsTabs}
+        ariaLabel="Разделы рекламы"
+        storageKey="mh.tab.ads"
+        target={target}
+        targetMap={{ "ads-campaigns": "campaigns", "ads-funnel": "campaigns", "ads-signals": "campaigns", "ads-analytics": "analytics" }}
+        panels={{ campaigns: campaignsPanel, analytics: <AdsAnalyticsPanel period={period} /> }}
+      />
     </div>
   );
 }
@@ -3419,12 +3434,14 @@ export function ReportsView({
   onQuickReport,
   reportCards,
   reportMetrics,
+  target,
 }: {
   exportItems: ExportItem[];
   onAction: (label: string, itemLabel: string) => void;
   onQuickReport: (name: string, days: number, metrics: string[]) => Promise<void>;
   reportCards: ReportCard[];
   reportMetrics: DashboardMetric[];
+  target?: string | null;
 }) {
   const [operations, setOperations] = useState<ReportOperations | null>(null);
   const [delivery, setDelivery] = useState<ReportDelivery>({ configured: false, email_configured: false, telegram_configured: false, telegram_linked: false });
@@ -3494,8 +3511,7 @@ export function ReportsView({
   const runTone = (status: string): Tone => status === "ok" ? "good" : status === "error" ? "danger" : "info";
   const runLabel = (status: string) => status === "ok" ? "готов" : status === "error" ? "ошибка" : status === "running" ? "формируется" : "в очереди";
   const deliveryLabel = (status?: string) => status === "ok" ? "доставка выполнена" : status === "error" ? "ошибка доставки" : status === "not_requested" ? "без доставки" : status || "доставка ожидается";
-  return (
-    <div className="workspace-view">
+  const reportsPanel = (<>
       <section className="hero-strip reports-hero" aria-label="Отчеты">
         <div>
           <div className="eyebrow">
@@ -3522,14 +3538,14 @@ export function ReportsView({
 
       {analytics || analyticsError ? <section className="work-section report-analytics-section"><SectionHeader kicker="WB Analytics" title="Воронка продаж и история остатков"><BarChart3 size={18} /></SectionHeader>{analyticsError ? <div className="data-banner stale" role="status">Аналитика WB недоступна: {analyticsError}</div> : null}{analytics ? <>{analytics.errors.sales_funnel ? <p className="form-hint">{analytics.errors.sales_funnel}</p> : null}<div className="analytics-funnel-grid">{analytics.sales_funnel.stages.map((stage) => <div className="analytics-funnel-card" key={stage.key}><span>{stage.label}</span><strong>{Number(stage.value).toLocaleString("ru-RU")}</strong></div>)}</div>{analytics.stock_history.length ? <div className="analytics-history-list"><strong>Снимки остатков WB</strong>{analytics.stock_history.slice(-14).map((row) => <div className="analytics-history-row" key={row.date}><span>{row.date}</span><b>{Number(row.quantity).toLocaleString("ru-RU")} шт.</b><small>{row.rows} строк</small></div>)}</div> : <p className="plan-empty">История появится после первой синхронизации WB.</p>}</> : <p className="plan-empty">После восстановления доступа обновите аналитику.</p>}</section> : null}
 
-      {message ? <p className="operation-error" role="status">{message}</p> : null}
-      {showForm ? <section className="work-section report-form-section"><SectionHeader kicker="Расписание" title="Новый отчёт"><CalendarDays size={18} /></SectionHeader><form className="settings-form" onSubmit={(event) => { event.preventDefault(); void createDefinition(event.currentTarget); }}><label className="operation-field"><span>Название</span><input name="name" required placeholder="Еженедельная сводка" /></label><label className="operation-field"><span>Периодичность</span><select className="filter-select" name="schedule_type" value={scheduleType} onChange={(event) => setScheduleType(event.target.value as "daily" | "weekly" | "monthly")}><option value="daily">Ежедневно</option><option value="weekly">Еженедельно</option><option value="monthly">Ежемесячно</option></select></label><label className="operation-field"><span>Время МСК</span><input name="schedule_time" required type="time" defaultValue="09:00" /></label>{scheduleType === "weekly" ? <label className="operation-field"><span>День недели</span><select className="filter-select" name="schedule_weekday" defaultValue="0"><option value="0">Понедельник</option><option value="1">Вторник</option><option value="2">Среда</option><option value="3">Четверг</option><option value="4">Пятница</option><option value="5">Суббота</option><option value="6">Воскресенье</option></select></label> : null}{scheduleType === "monthly" ? <label className="operation-field"><span>Число месяца</span><input name="schedule_day" min="1" max="28" type="number" defaultValue="1" /></label> : null}<fieldset className="report-metrics"><legend>Что включить</legend>{metricOptions.map(([code, label]) => <label key={code}><input defaultChecked name="metrics" type="checkbox" value={code} />{label}</label>)}</fieldset><fieldset className="report-metrics"><legend>Доставка</legend><label><input defaultChecked={delivery.email_configured} disabled={!delivery.email_configured} name="email_enabled" type="checkbox" />Email{delivery.email_configured ? ` · ${delivery.email || "аккаунт"}` : " · не настроен"}</label><label><input defaultChecked={delivery.telegram_linked} disabled={!delivery.telegram_linked} name="telegram_enabled" type="checkbox" />Telegram{delivery.telegram_linked ? " · привязан" : " · сначала привяжите чат"}</label></fieldset><div className="operation-actions"><button className="ghost-button" type="button" onClick={() => setShowForm(false)}>Отмена</button><button className="primary-button" disabled={busyId === -1} type="submit"><CheckCircle2 size={16} />{busyId === -1 ? "Сохраняем" : "Сохранить расписание"}</button></div></form></section> : null}
 
-      <div className="content-grid">
-        <section className="work-section">
+      <section className="work-section">
           <SectionHeader kicker="Без расписания" title="Быстрые отчёты"><span className="muted-count">3</span></SectionHeader>
           <div className="report-list compact-report-list">{["Операционный отчёт", "Остатки и пополнение", "Реклама и эффективность"].map((name) => <button className="report-row detail-trigger" key={name} type="button" disabled={busyId === -2} onClick={() => void runQuickReport(name)}><div><span>{quickReportMetrics[name].length} {plural(quickReportMetrics[name].length, ["раздел", "раздела", "разделов"])} · {quickDays} {plural(quickDays, ["день", "дня", "дней"])}</span><h3>{name}</h3><p>Сформировать PDF и сохранить в архив</p></div><Download size={18} /></button>)}</div>
-
+      </section>
+  </>);
+  const schedulesPanel = (<div className="content-grid">
+        <section className="work-section">
           <div className={cx("report-subsection", operations && !operationsError && !operations.definitions.length && "cabinet-empty-row")}>
             <SectionHeader kicker="Автоматическая отправка" title="Расписания"><span className="muted-count">{operations?.definitions.length ?? reportCards.length}</span></SectionHeader>
             {operationsError ? <div className="data-banner stale" role="status">Расписания недоступны: {operationsError}</div> : operations ? (operations.definitions.length ? <div className="report-list">{operations.definitions.map((report) => <article className={cx("report-row", report.enabled ? "good" : "paused")} key={report.id}><div><span>{report.schedule_type === "daily" ? "Ежедневно" : report.schedule_type === "weekly" ? "Еженедельно" : "Ежемесячно"} · {report.schedule_time} МСК · {definitionMetricCount(report)} разделов</span><h3>{report.name}</h3><p>Последний запуск: {cabinetDate(report.last_run_at)} · {report.email_enabled ? "Email" : "без email"} · {report.telegram_enabled ? "Telegram" : "без Telegram"}</p></div><StatusPill tone={report.enabled ? "good" : "warn"}>{report.enabled ? "включён" : "пауза"}</StatusPill><div className="action-controls"><button className="icon-button" aria-label={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} title={report.enabled ? "Поставить на паузу" : "Возобновить расписание"} disabled={busyId === report.id} type="button" onClick={() => void toggleDefinition(report)}><Play size={16} /></button><button className="icon-button" aria-label="Изменить расписание" title="Изменить расписание" disabled={busyId === report.id} type="button" onClick={() => void editDefinition(report)}><Pencil size={16} /></button><button className="icon-button" aria-label="Сформировать PDF сейчас" title="Сформировать PDF сейчас" disabled={busyId === report.id} type="button" onClick={() => void runDefinition(report.id)}><Play size={16} /></button><button className="icon-button" aria-label="Удалить расписание" title="Удалить расписание" disabled={busyId === report.id} type="button" onClick={() => void removeDefinition(report.id)}><Trash2 size={16} /></button></div></article>)}</div> : <p className="plan-empty">Расписаний пока нет.</p>) : <p className="plan-empty">Загружаем расписания…</p>}
@@ -3543,7 +3559,10 @@ export function ReportsView({
             {operationsError ? <p className="plan-empty">История запусков недоступна до восстановления API.</p> : operations ? (operations.runs.length ? <div className="export-list">{operations.runs.map((run) => <article className={cx("export-row", `run-${run.status}`)} key={run.id}><div><strong>{run.definition_name || `Отчёт #${run.definition_id}`}</strong><span>{run.metric_count ?? 0} разделов · {cabinetDate(run.finished_at ?? run.started_at)}</span>{run.error ? <small className="run-error-text">{run.error}</small> : null}{run.delivery_error ? <small className="run-error-text">{run.delivery_error}</small> : null}</div><div className="run-actions"><StatusPill tone={runTone(run.status)}>{runLabel(run.status)}</StatusPill>{run.delivery_requested ? <small className={run.delivery_status === "error" ? "run-error-text" : "muted"}>{deliveryLabel(run.delivery_status)}</small> : null}{run.status === "ok" && run.file_available ? <button className="icon-button" aria-label="Скачать PDF" title="Скачать PDF" type="button" onClick={() => void downloadSavedReport(run.id)}><Download size={16} /></button> : null}</div></article>)}</div> : exportItems.length ? <div className="export-list">{exportItems.map((item) => <ExportRow item={item} key={item.name} />)}</div> : <p className="plan-empty">Запусков ещё не было</p>) : <p className="plan-empty">Загружаем историю запусков…</p>}
             {operations && !operationsError && !operations.runs.length && !exportItems.length ? <button className="ghost-button" disabled={busyId === -2} type="button" onClick={() => void runQuickReport("Операционный отчёт")}>Сформировать первый PDF</button> : null}
           </section>
-
+        </aside>
+      </div>);
+  const deliveryPanel = (<div className="content-grid">
+        <aside className="insight-column">
           <section className="panel">
             <SectionHeader compact kicker="Доставка" title="Email и Telegram"><Bell size={20} /></SectionHeader>
             {deliveryError ? <div className="data-banner stale" role="status">Настройки доставки недоступны: {deliveryError}</div> : null}
@@ -3555,7 +3574,19 @@ export function ReportsView({
             {delivery.telegram_configured ? <div className="telegram-link-box"><button className="secondary-button" type="button" onClick={() => void linkTelegram()}>{delivery.telegram_linked ? "Привязать другой Telegram" : "Привязать Telegram"}</button>{telegramCode ? <><p className="form-hint">Как привязать Telegram:</p><ol className="form-hint telegram-link-steps"><li>Нажмите «Открыть Telegram и привязать» — откроется чат бота <strong>@{delivery.telegram_bot_username}</strong>.</li><li>В Telegram нажмите «Запустить» (Start). Ссылка передаст код боту. Если ссылка не открылась, в чате этого же бота отправьте <code>/link {telegramCode.code}</code>.</li><li>Нажмите «Обновить статус» после ответа бота. Код одноразовый и действует {telegramCode.ttl} минут; оператору или в личные сообщения его отправлять не нужно.</li></ol>{telegramCode.link ? <a className="primary-link-button" href={telegramCode.link} rel="noreferrer" target="_blank">Открыть Telegram и привязать</a> : <p className="form-hint">Откройте чат бота <strong>@{delivery.telegram_bot_username}</strong> и отправьте <code>/link {telegramCode.code}</code>.</p>}</> : null}<button className="ghost-button" type="button" onClick={() => void refreshDelivery()}>Обновить статус</button></div> : null}
           </section>
         </aside>
-      </div>
+      </div>);
+  return (
+    <div className="workspace-view">
+      {message ? <p className="operation-error" role="status">{message}</p> : null}
+      {showForm ? <section className="work-section report-form-section"><SectionHeader kicker="Расписание" title="Новый отчёт"><CalendarDays size={18} /></SectionHeader><form className="settings-form" onSubmit={(event) => { event.preventDefault(); void createDefinition(event.currentTarget); }}><label className="operation-field"><span>Название</span><input name="name" required placeholder="Еженедельная сводка" /></label><label className="operation-field"><span>Периодичность</span><select className="filter-select" name="schedule_type" value={scheduleType} onChange={(event) => setScheduleType(event.target.value as "daily" | "weekly" | "monthly")}><option value="daily">Ежедневно</option><option value="weekly">Еженедельно</option><option value="monthly">Ежемесячно</option></select></label><label className="operation-field"><span>Время МСК</span><input name="schedule_time" required type="time" defaultValue="09:00" /></label>{scheduleType === "weekly" ? <label className="operation-field"><span>День недели</span><select className="filter-select" name="schedule_weekday" defaultValue="0"><option value="0">Понедельник</option><option value="1">Вторник</option><option value="2">Среда</option><option value="3">Четверг</option><option value="4">Пятница</option><option value="5">Суббота</option><option value="6">Воскресенье</option></select></label> : null}{scheduleType === "monthly" ? <label className="operation-field"><span>Число месяца</span><input name="schedule_day" min="1" max="28" type="number" defaultValue="1" /></label> : null}<fieldset className="report-metrics"><legend>Что включить</legend>{metricOptions.map(([code, label]) => <label key={code}><input defaultChecked name="metrics" type="checkbox" value={code} />{label}</label>)}</fieldset><fieldset className="report-metrics"><legend>Доставка</legend><label><input defaultChecked={delivery.email_configured} disabled={!delivery.email_configured} name="email_enabled" type="checkbox" />Email{delivery.email_configured ? ` · ${delivery.email || "аккаунт"}` : " · не настроен"}</label><label><input defaultChecked={delivery.telegram_linked} disabled={!delivery.telegram_linked} name="telegram_enabled" type="checkbox" />Telegram{delivery.telegram_linked ? " · привязан" : " · сначала привяжите чат"}</label></fieldset><div className="operation-actions"><button className="ghost-button" type="button" onClick={() => setShowForm(false)}>Отмена</button><button className="primary-button" disabled={busyId === -1} type="submit"><CheckCircle2 size={16} />{busyId === -1 ? "Сохраняем" : "Сохранить расписание"}</button></div></form></section> : null}
+      <WorkspaceTabs
+        tabs={reportsTabs}
+        ariaLabel="Разделы отчётов"
+        storageKey="mh.tab.reports"
+        target={target}
+        targetMap={{ "reports-quick": "reports", "reports-schedules": "schedules", "reports-runs": "schedules", "reports-delivery": "delivery" }}
+        panels={{ reports: reportsPanel, schedules: schedulesPanel, delivery: deliveryPanel }}
+      />
     </div>
   );
 }
