@@ -556,7 +556,7 @@ function App() {
       return;
     }
     if (label === "Налоги") {
-      selectPage("settings", "tax-settings");
+      selectPage("finance", "tax-reconciliation");
       return;
     }
     if (label === "Производственные нормы") {
@@ -2735,7 +2735,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
         <ManualStoreExpenseManager />
         <ExpenseCoveragePanel products={productCosts} />
         <TaxSettingsPanel />
-        <TaxReconciliationPanel />
+        <a className="secondary-button" href="?view=finance#tax-reconciliation">Финансы → Налоги: расчёт, сверка и история</a>
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
 </>}

@@ -49,7 +49,7 @@ class TaxReconciliationTests(DbTestCase):
         self.assertEqual(read_month("2024-02")["period"]["end"], "2024-02-29")
 
     def test_validation(self):
-        for key, value in [("received", -1), ("received", float("inf")), ("received", .001), ("regime", "usn_income"), ("confirmed", False), ("source", " "), ("month", "2026-13")]:
+        for key, value in [("received", -1), ("received", float("inf")), ("received", .001), ("regime", "unknown"), ("confirmed", False), ("source", " "), ("month", "2026-13")]:
             data = values(); data[key] = value
             with self.assertRaises(ValueError): validate(data)
         data = values(); data["profit_before_tax"] = -100

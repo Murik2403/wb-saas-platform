@@ -1,4 +1,4 @@
-"""Manual monthly AUSN reconciliation; never derives taxable income from WB sales."""
+"""Versioned tax worksheets, using manually confirmed tax data per shop."""
 from __future__ import annotations
 
 import calendar
@@ -8,20 +8,19 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from db import connect
+from tax_calculator import EXTRA_MONEY, normalize_options, calculate_tax
 
 BASE_FIELDS = ("received", "offset", "compensation", "other_income", "refunds")
-MONEY_FIELDS = (*BASE_FIELDS, "profit_before_tax", "fns_assessed", "paid")
+MONEY_FIELDS = (*BASE_FIELDS, "profit_before_tax", "fns_assessed", "paid", *EXTRA_MONEY)
 
 
 def validate(payload: dict) -> dict:
     month = payload.get("month", "")
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", month):
         raise ValueError("Нужен календарный месяц в формате ГГГГ-ММ (2000–2099)")
-    if payload.get("regime") != "ausn_income":
-        raise ValueError("Поддерживается АУСН «Доходы» 8%")
     if not payload.get("confirmed") or not str(payload.get("source", "")).strip():
         raise ValueError("Укажите основание и подтвердите состав налоговой базы")
-    result = {"month": month, "regime": "ausn_income", "confirmed": True,
+    result = {"month": month, "regime": payload.get("regime", "ausn_income"), "confirmed": True,
               "source": str(payload["source"]).strip()}
     if len(result["source"]) > 500:
         raise ValueError("Основание: не больше 500 символов")
@@ -38,21 +37,26 @@ def validate(payload: dict) -> dict:
         if number != number.quantize(Decimal("0.01")):
             raise ValueError("Сумма должна содержать не больше двух знаков после запятой")
         result[field] = float(number)
+    for field in ("period_mode", "rate", "has_staff", "vat_mode", "taxpayer_type"):
+        result[field] = payload.get(field)
+    result["taxpayer_type"] = result["taxpayer_type"] or ("company" if result["regime"] == "osno_company" else "ip")
+    result["vat_mode"] = result["vat_mode"] or "exempt"
+    result = normalize_options(result)
+    # Reject incompatible nonzero fields rather than quietly ignoring them.
+    for field, allowed in (("insurance", {"usn_income"}), ("other_ndfl_base", {"osno_ip"}),
+                           ("loss", {"ausn_income_expense", "usn_income_expense", "osno_company"})):
+        if result.get(field) and result["regime"] not in allowed:
+            raise ValueError("Поле " + field + " не применяется в выбранном режиме")
     return result
 
 
 def calculate(values: dict) -> dict:
-    missing = [key for key in BASE_FIELDS if values.get(key) is None]
-    result = {"status": "incomplete" if missing else "estimate", "missing": missing,
-              "rate": 8, "base": None, "estimate": None, "after_estimate": None,
-              "fns_difference": None, "after_fns": None, "assessed_minus_paid": None,
-              "negative_base": False}
+    result = calculate_tax(values)
+    result.update(after_estimate=None, fns_difference=None, after_fns=None, assessed_minus_paid=None)
     money = lambda key: Decimal(str(values[key]))
     rounded = lambda value: float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-    if not missing:
-        base = sum((money(key) for key in BASE_FIELDS[:-1]), Decimal(0)) - money("refunds")
-        tax = (max(base, Decimal(0)) * Decimal("0.08")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        result.update(base=rounded(base), estimate=float(tax), negative_base=base < 0)
+    if result["estimate"] is not None:
+        tax = Decimal(str(result["estimate"]))
         if values.get("profit_before_tax") is not None:
             result["after_estimate"] = rounded(money("profit_before_tax") - tax)
         if values.get("fns_assessed") is not None:
@@ -81,7 +85,7 @@ def read_month(month: str) -> dict:
     current = json.loads(rows[0]["values_json"]) if rows else {"month": month, "regime": "ausn_income", "confirmed": False, "source": "", **dict.fromkeys(MONEY_FIELDS)}
     year, number = map(int, month.split("-"))
     return {"values": current, "revision": rows[0]["revision"] if rows else 0,
-            "period": {"start": month + "-01", "end": f"{month}-{calendar.monthrange(year, number)[1]:02d}"},
+            "period": {"start": (month[:4] + "-01-01") if current.get("period_mode") == "ytd" else month + "-01", "end": f"{month}-{calendar.monthrange(year, number)[1]:02d}"},
             "calculation": calculate(current),
             "history": [{"revision": row["revision"], "actor": row["actor"], "created_at": row["created_at"],
                          "values": json.loads(row["values_json"])} for row in rows],

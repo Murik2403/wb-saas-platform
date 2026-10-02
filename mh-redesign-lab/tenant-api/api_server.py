@@ -3769,8 +3769,20 @@ class TaxRateInput(BaseModel):
 
 
 class TaxReconciliationInput(BaseModel):
+    taxpayer_type: str | None = None
     month: str = Field(pattern=r"^20\d{2}-(0[1-9]|1[0-2])$")
     regime: str = "ausn_income"
+    period_mode: str | None = None
+    rate: FiniteFloat | None = None
+    has_staff: bool = False
+    vat_mode: str = "exempt"
+    expenses: FiniteFloat | None = None
+    loss: FiniteFloat | None = None
+    insurance: FiniteFloat | None = None
+    vat_output: FiniteFloat | None = None
+    vat_input: FiniteFloat | None = None
+    advances: FiniteFloat | None = None
+    other_ndfl_base: FiniteFloat | None = None
     revision: int = Field(ge=0, strict=True)
     received: FiniteFloat | None = None
     offset: FiniteFloat | None = None
