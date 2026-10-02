@@ -27,14 +27,14 @@ Owner: project_landing_audit. Output: `docs/marketing/PROJECT_LANDING_PARITY_202
 - [x] Build evidence matrix for all cabinet/public/admin/integration sections.
 - [x] Identify recent shipped features, omissions and unsupported claims.
 - [x] Distinguish code/test evidence, deployed UI and real-data acceptance.
-- [ ] Root checks runtime health, release identity, public SEO/security headers and media integrity.
+- [x] Root checks runtime health, release identity, public SEO/security headers and media integrity. Limits/findings recorded in release receipt.
 
 ## Work package 2 — landing and catalog
 
 Owner: landing_refresh. Files: gateway templates, training catalog and focused gateway tests.
 
 - [x] Update feature cards, onboarding explanation, CTA/FAQ and new training links.
-- [ ] Keep public claims grounded and mobile/light/dark presentation coherent.
+- [x] Keep public claims grounded and existing responsive/light/dark styles coherent. Desktop visually accepted; mobile browser viewport did not apply, so full mobile visual acceptance remains unverified.
 - [x] Add lesson metadata from video owner and preserve old lessons; media acceptance remains a separate gate.
 - [x] Run relevant gateway tests and render actual public pages for visual acceptance. Local desktop light/dark accepted; responsive viewport control did not apply, so mobile visual acceptance is not claimed.
 
@@ -52,6 +52,6 @@ Owner: root.
 
 - [x] Inspect every delegated change, fix material issues and update Graphify. 9505 nodes, 24808 edges; no paid labeling.
 - [x] Verify gateway suite, public pages, media manifest and clean release source. Gateway 432 passed/2 skipped/203 subtests; frontend 483 passed and tsc/build; actual pack 16 MP4+16 VTT hash/range checks passed.
-- [ ] Publish reviewed assets, deploy gateway from committed HEAD with backup/rollback.
-- [ ] Check live landing/training URLs, media bytes/range requests, health and screenshots.
-- [ ] Record receipt and remaining real-data/product limitations; only then report completion.
+- [x] Publish reviewed assets, deploy gateway from committed HEAD with backup/rollback. Runtime revision6ffee61; five new lessons, eleven preserved.
+- [x] Check live landing/training URLs, media bytes/range requests, health and screenshots. HTTPS32 assets checked; video playback observed in browser; SEO488/0/0.
+- [x] Record receipt and remaining real-data/product limitations; only then report completion. See docs/releases/PROJECT_LANDING_TRAINING_2026-10-03.md; dependency findings and business evidence gates are open, not claimed fixed.
