@@ -1,0 +1,23 @@
+/* Page sub-navigation: same look as the production page tabs (ProductionWorkspace.css .production-tabs). */
+.workspace-tabs-root { display: grid; gap: 20px; min-width: 0; }
+.workspace-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.workspace-tabs button {
+  font: inherit;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--border, #34414e);
+  border-radius: 10px;
+  color: var(--text, #edf3f8);
+  background: var(--panel, #11151d);
+  cursor: pointer;
+}
+.workspace-tabs button[aria-pressed="true"] { color: #061711; background: #22dfbb; border-color: #22dfbb; font-weight: 700; }
+.workspace-tabs button:focus-visible { outline: 3px solid #22dfbb; outline-offset: 3px; }
+.workspace-tab-panel { display: grid; gap: 20px; min-width: 0; }
+
+:root[data-theme="light"] .workspace-tabs button[aria-pressed="true"] { background: var(--teal); color: var(--teal-ink); border-color: var(--teal); }
+
+@media (max-width: 600px) {
+  .workspace-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+  .workspace-tabs button { padding: 10px; }
+}
