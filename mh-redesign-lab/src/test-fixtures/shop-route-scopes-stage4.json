@@ -1095,5 +1095,25 @@
     "method": "GET",
     "path": "/api/v1/products/price-uploads/{upload_id}",
     "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/self-buyouts",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/self-buyouts",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/self-buyouts/update",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/self-buyouts/delete",
+    "scope": "shop_local"
   }
 ]
