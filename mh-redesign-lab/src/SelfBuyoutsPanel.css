@@ -1,0 +1,29 @@
+.self-buyouts { margin-block: 12px; }
+.self-buyouts .sb-note, .self-buyouts .sb-window { color: var(--muted); font-size: 0.9rem; margin: 10px 0; }
+.sb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-block: 12px; }
+.sb-card { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2, transparent); min-width: 0; }
+.sb-card span { color: var(--muted); font-size: 0.85rem; }
+.sb-card strong { font-size: 1.25rem; overflow-wrap: anywhere; }
+.sb-card small { color: var(--muted); }
+.sb-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-block: 14px; }
+.sb-toolbar > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.sb-toolbar [aria-pressed="true"] { border-color: var(--teal); font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+.sb-scroll { overflow-x: auto; margin-block: 12px; max-width: 100%; }
+.sb-scroll table { width: 100%; min-width: 560px; border-collapse: collapse; }
+.sb-scroll th, .sb-scroll td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+.sb-scroll thead th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+.sb-scroll td small { color: var(--muted); }
+.sb-scroll td.sb-actions .ghost-button + .ghost-button { margin-left: 6px; }
+.sb-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 16px; padding: 14px; border: 1px solid var(--line-strong); border-radius: 10px; }
+.sb-form > strong, .sb-form > .sb-form-actions, .sb-form > .operation-error { grid-column: 1 / -1; }
+.sb-form label { display: grid; gap: 6px; min-width: 0; }
+.sb-form input, .sb-form select { width: 100%; box-sizing: border-box; min-width: 0; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text); background: var(--surface); font: inherit; }
+.sb-form [aria-invalid="true"] { border-color: var(--rose); }
+.sb-error { color: var(--rose); font-size: 0.85rem; }
+.sb-error::before { content: "Ошибка: "; font-weight: 700; }
+.sb-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.self-buyouts :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+@media (max-width: 700px) { .sb-form { padding: 10px; } }
+.sb-scroll tbody th { font-size: inherit; font-weight: 400; color: var(--text); text-transform: none; letter-spacing: 0; }
+.sb-scroll td:nth-child(8) { white-space: normal; min-width: 160px; max-width: 240px; }
+.sb-actions .ghost-button { padding: 6px 10px; min-height: 0; font-size: 0.85rem; }

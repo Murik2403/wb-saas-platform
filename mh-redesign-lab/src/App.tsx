@@ -29,6 +29,7 @@ import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { SupplyPlanning } from "./SupplyPlanning";
+import { SelfBuyoutsPanel } from "./SelfBuyoutsPanel";
 import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
@@ -1106,6 +1107,7 @@ function App() {
 
         {activeNav === "finance" ? (
           <><FinanceView cashflow={<CashflowPanel compact role={session?.user.role ?? "viewer"} />}
+            selfBuyouts={<SelfBuyoutsPanel role={session?.user.role ?? "viewer"} period={dashboardPeriod} confirm={askConfirm} products={dashboard.productEconomics.map((p) => ({ nmId: p.nmId, article: p.article, product: p.product }))} />}
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
@@ -1824,6 +1826,7 @@ function AdsView({
 export function FinanceView({
   cashWindows,
   cashflow,
+  selfBuyouts,
   expenseSplit,
   financeLedger,
   financeReport,
@@ -1833,6 +1836,7 @@ export function FinanceView({
   setPeriod,
 }: {
   cashflow?: ReactNode;
+  selfBuyouts?: ReactNode;
   cashWindows: Array<{ label: string; value: string; detail: string }>;
   expenseSplit: ExpenseSplit[];
   financeLedger: FinanceLedgerItem[];
@@ -1980,6 +1984,7 @@ export function FinanceView({
       <details className="cabinet-disclosure"><summary>Магазины WB</summary><ShopWorkspaces /></details>
       <details className="cabinet-disclosure"><summary>Учёт Ozon</summary><OzonAccounting /></details>
       <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><PriceScenarios /></details>
+      {selfBuyouts}
     </div>
   );
 }
