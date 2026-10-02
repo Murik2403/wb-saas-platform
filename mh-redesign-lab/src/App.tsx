@@ -1112,7 +1112,7 @@ function App() {
         ) : null}
 
         {activeNav === "finance" ? (
-          <><FinanceView cashflow={<CashflowPanel compact role={session?.user.role ?? "viewer"} />}
+          <><FinanceView target={pendingScrollTarget} cashflow={<CashflowPanel compact role={session?.user.role ?? "viewer"} />}
             selfBuyouts={<SelfBuyoutsPanel role={session?.user.role ?? "viewer"} period={dashboardPeriod} confirm={askConfirm} products={dashboard.productEconomics.map((p) => ({ nmId: p.nmId, article: p.article, product: p.product }))} />}
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
@@ -1876,7 +1876,11 @@ function AdsView({
   );
 }
 
+const financeTabs = [{ id: "overview", label: "Обзор" }, { id: "money", label: "Счета и кассовые окна" }, { id: "tax", label: "Налоги" }, { id: "costs", label: "Расходы и себестоимость" }, { id: "accounts", label: "Магазины и сценарии" }] as const;
+const financeTargetMap: Record<string, string> = { "tax-reconciliation": "tax" };
+
 export function FinanceView({
+  target,
   cashWindows,
   cashflow,
   selfBuyouts,
@@ -1888,6 +1892,7 @@ export function FinanceView({
   period,
   setPeriod,
 }: {
+  target?: string | null;
   cashflow?: ReactNode;
   selfBuyouts?: ReactNode;
   cashWindows: Array<{ label: string; value: string; detail: string }>;
@@ -1899,6 +1904,8 @@ export function FinanceView({
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
 }) {
+  // ?view=finance#tax-reconciliation arrives without an in-app target, so fall back to the URL hash.
+  const tabTarget = target ?? (typeof window !== "undefined" && window.location.hash === "#tax-reconciliation" ? "tax-reconciliation" : null);
   const [exportError,setExportError] = useState("");
   const [exportBusy,setExportBusy] = useState(false);
   const exportFinance=async(format:"xlsx"|"csv")=>{setExportBusy(true);setExportError("");try{await downloadScoped(financeExportUrl(period,format),`marketshelper-finance.${format}`);}catch(reason){setExportError(reason instanceof Error?reason.message:"Экспорт выбранного магазина недоступен");}finally{setExportBusy(false);}};
@@ -1946,10 +1953,9 @@ export function FinanceView({
       {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <>
         {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
       </> : null}
+      <WorkspaceTabs tabs={financeTabs} ariaLabel="Разделы финансов" storageKey="mh.tab.finance" target={tabTarget} targetMap={financeTargetMap} keepMounted={["tax", "accounts"]} panels={{
+        overview: <>
       <ManagementPnlSummary period={period} />
-      <TaxReconciliationPanel />
-      <ManagementPnlMonthly period={period} onOpenTaxSettings={() => onAction("Налоги", "")} />
-      {cashflow}
       <section className="work-section finance-movement-panel" aria-label="Денежное движение">
         <SectionHeader kicker="P&L" title="Денежное движение">
           <DashboardPeriodControl period={period} setPeriod={setPeriod} />
@@ -1958,6 +1964,21 @@ export function FinanceView({
             {financeLedger.map((item) => <FinanceLedgerRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
           </div> : <p className="plan-empty">Нет данных о движении денег</p>}
       </section>
+      <ManagementPnlMonthly period={period} onOpenTaxSettings={() => onAction("Налоги", "")} />
+        </>,
+        money: <>
+      {cashflow}
+          <section className="panel">
+            <SectionHeader compact kicker="Контроль" title="Кассовые окна">
+              <button className="icon-button" type="button" aria-label="Сформировать финансовый отчёт" onClick={() => onAction("Отчет", "финансы")}><ShieldCheck size={20} /></button>
+            </SectionHeader>
+            {cashWindows.length ? <div className="cash-grid">{cashWindows.map((item) => <button className="stat detail-trigger" type="button" key={item.label} onClick={() => onAction("Отчет", item.label)}><span>{item.label}</span><strong>{item.value}</strong><small>{item.detail}</small></button>)}</div> : <p className="plan-empty">Нет загруженных финансовых операций</p>}
+          </section>
+        </>,
+        tax: <>
+      <TaxReconciliationPanel />
+        </>,
+        costs: <>
       <div className="content-grid finance-expenses-grid" aria-label="Расходы и их структура">
           <section className="panel finance-expenses-panel">
             <SectionHeader compact kicker="WB реализация" title="Статьи расходов">
@@ -1978,12 +1999,6 @@ export function FinanceView({
 
         </aside>
       </div>
-          <section className="panel">
-            <SectionHeader compact kicker="Контроль" title="Кассовые окна">
-              <button className="icon-button" type="button" aria-label="Сформировать финансовый отчёт" onClick={() => onAction("Отчет", "финансы")}><ShieldCheck size={20} /></button>
-            </SectionHeader>
-            {cashWindows.length ? <div className="cash-grid">{cashWindows.map((item) => <button className="stat detail-trigger" type="button" key={item.label} onClick={() => onAction("Отчет", item.label)}><span>{item.label}</span><strong>{item.value}</strong><small>{item.detail}</small></button>)}</div> : <p className="plan-empty">Нет загруженных финансовых операций</p>}
-          </section>
       <details className="panel finance-cost-review" aria-label="Проверка себестоимости">
         <summary><h3>Проверка себестоимости</h3><span className="form-hint">Источники стоимости, сверка партий и подробные строки</span></summary>
       {financeReport.cogsEvidence && financeReport.cogsEvidence.totalUnits > 0 ? <section className={`panel finance-cogs-evidence ${financeReport.cogsEvidence.complete ? "" : "finance-cogs-incomplete"}`} aria-label="Покрытие себестоимости в прибыли">
@@ -2035,10 +2050,14 @@ export function FinanceView({
           </section> : null}
           <FinanceFifoDetailTable period={period} />
       </details>
+        </>,
+        accounts: <>
       <details className="cabinet-disclosure"><summary>Магазины WB</summary><ShopWorkspaces /></details>
       <details className="cabinet-disclosure"><summary>Учёт Ozon</summary><OzonAccounting /></details>
       <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><PriceScenarios /></details>
       {selfBuyouts}
+        </>,
+      }} />
     </div>
   );
 }

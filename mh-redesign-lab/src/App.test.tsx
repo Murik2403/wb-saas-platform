@@ -689,6 +689,7 @@ describe("operational detail drawer", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Расходы и себестоимость" }));
     fireEvent.click(screen.getByText("Проверка себестоимости"));
     expect(await screen.findByText("3 / 9 ед.")).toBeInTheDocument();
     expect(screen.getByText("33,33% единиц продаж и возвратов")).toBeInTheDocument();
@@ -710,6 +711,7 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(screen.getByRole("button", { name: "Расходы и себестоимость" }));
     await user.click(screen.getByText("Проверка себестоимости"));
     await user.click(await screen.findByRole("button", { name: "Показать строки" }));
     expect(await within(screen.getByRole("region", { name: "Детальные строки FIFO-сверки" })).findByRole("status")).toHaveTextContent("Загружаю FIFO-сверку");
@@ -730,6 +732,7 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(screen.getByRole("button", { name: "Расходы и себестоимость" }));
     await user.click(screen.getByText("Проверка себестоимости"));
     await user.click(await screen.findByRole("button", { name: "Показать строки" }));
     expect(await within(screen.getByRole("region", { name: "Детальные строки FIFO-сверки" })).findByRole("alert")).toHaveTextContent("API недоступен");
