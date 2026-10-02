@@ -55,3 +55,16 @@ describe("WorkspaceTabs", () => {
     expect(screen.getByText("Содержимое A")).toBeTruthy();
   });
 });
+
+describe("WorkspaceTabs keepMounted", () => {
+  it("keeps a visited keepMounted panel alive (hidden) so its state survives a tab switch", () => {
+    const panels2 = { a: <p>A</p>, b: <input aria-label="draft" /> };
+    render(<WorkspaceTabs tabs={tabs.slice(0, 2)} panels={panels2} ariaLabel="Разделы" keepMounted={["b"]} />);
+    expect(screen.queryByLabelText("draft")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Вторая" }));
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "черновик" } });
+    fireEvent.click(screen.getByRole("button", { name: "Первая" }));
+    expect((document.querySelector("input[aria-label=draft]") as HTMLInputElement).value).toBe("черновик");
+    expect(document.querySelector("input[aria-label=draft]")!.closest("[hidden]")).not.toBeNull();
+  });
+});

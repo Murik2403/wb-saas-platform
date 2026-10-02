@@ -11,6 +11,7 @@ import { ShopContextBoundary } from "./ShopContextBoundary";
 import { IncidentWorkflow } from "./IncidentWorkflow";
 import { WorkcenterCalendar } from "./WorkcenterCalendar";
 import { ProductionWorkspace } from "./ProductionWorkspace";
+import { WorkspaceTabs } from "./WorkspaceTabs";
 import { ManufacturingCosts } from "./ManufacturingCosts";
 import { AdsAnalyticsPanel } from "./AdsAnalyticsPanel";
 import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
@@ -1071,6 +1072,7 @@ function App() {
             onAction={handleAction}
             period={trendPeriod}
             setPeriod={setTrendPeriod}
+            target={pendingScrollTarget}
             todayMetrics={dashboard.todayMetrics}
             topAction={topAction}
           />
@@ -1190,6 +1192,7 @@ function App() {
         {activeNav === "control" ? (
           <ControlView
             data={dashboard.dataQuality}
+            target={pendingScrollTarget}
             onNavigate={selectPage}
             onOpenFifo={() => handleAction("Открыть сверку FIFO", "")}
             onOpenCheck={(row) => openControlCheckDetail(row)}
@@ -1478,6 +1481,7 @@ export function TodayView({
   onAction,
   period,
   setPeriod,
+  target,
   todayMetrics,
   topAction,
 }: {
@@ -1488,6 +1492,7 @@ export function TodayView({
   onAction: (label: string, itemLabel: string) => void;
   period: "day" | "week";
   setPeriod: (value: "day" | "week") => void;
+  target?: string | null;
   todayMetrics: DashboardMetric[];
   topAction?: ActionRecommendation;
 }) {
@@ -1500,8 +1505,8 @@ export function TodayView({
     ? `${topAction.issue}${topAction.impact ? `. Потенциальный эффект: ${topAction.impact}.` : ""}`
     : "API не передал рекомендации для текущего периода.";
 
-  return (
-    <div className="workspace-view">
+  const overview = (
+    <>
       <MetricGrid metrics={todayMetrics} onMetricClick={(metric) => onAction(metric.label, metric.label)} />
       <section className="hero-strip" aria-label="Главный сигнал">
         <div>
@@ -1552,11 +1557,30 @@ export function TodayView({
         </aside>
       </div>
 
-      <InventoryTable inventory={inventory} onOpen={(row) => onAction("Контроль", row.sku)} />
-      <StockIncidentsPanelV2 />
+    </>
+  );
+  return (
+    <div className="workspace-view">
+      <WorkspaceTabs
+        ariaLabel="Разделы страницы Сегодня"
+        storageKey="mh.tab.today"
+        tabs={TODAY_TABS}
+        target={target}
+        targetMap={TODAY_TARGETS}
+        keepMounted={["incidents"]}
+        panels={{
+          overview,
+          stock: <InventoryTable inventory={inventory} onOpen={(row) => onAction("Контроль", row.sku)} />,
+          incidents: <StockIncidentsPanelV2 />,
+        }}
+      />
     </div>
   );
 }
+
+const TODAY_TABS = [{ id: "overview", label: "Сегодня" }, { id: "stock", label: "Остатки и маржа" }, { id: "incidents", label: "Инциденты" }] as const;
+const TODAY_TARGETS: Record<string, string> = { "stock-reorder-plan": "overview", "inventory-watch": "stock", "wb-incidents": "incidents" };
+
 
 function StockIncidentsPanel() {
   const [data, setData] = useState<IncidentOperations | null>(null);
@@ -1582,7 +1606,7 @@ function StockIncidentsPanelV2() {
   const cases = data?.cases ?? [];
   const today = new Date().toISOString().slice(0, 10);
   const caseOptions = cases.map((item) => <option key={String(item.id)} value={String(item.id)}>#{String(item.id)} · {String(item.incident_name)}</option>);
-  return <section className="work-section">
+  return <section className="work-section" id="wb-incidents">
     <SectionHeader kicker="WB" title="Инциденты и компенсации"><AlertTriangle size={18} /></SectionHeader>
     {message ? <p className="operation-error" role="status">{message}</p> : null}
     <details className="cabinet-disclosure"><summary>Создать инцидент или записать компенсацию</summary><div className="incident-forms">
@@ -2280,13 +2304,15 @@ function DetailDrawer({
   );
 }
 
-function ControlView({
+export function ControlView({
   data,
+  target,
   onNavigate,
   onOpenCheck,
   onOpenFifo,
 }: {
   data: DataQualityData | null;
+  target?: string | null;
   onNavigate: (page: PageId, target?: string) => void;
   onOpenCheck: (row: Record<string, unknown>) => void;
   onOpenFifo: () => void;
@@ -2300,7 +2326,7 @@ function ControlView({
   const tone: Tone = Number(summary.critical ?? 0) > 0 ? "danger" : Number(summary.warnings ?? 0) > 0 ? "warn" : "good";
   const checkTone = (status: string): Tone => checkPriority(status) === 0 ? "danger" : checkPriority(status) === 1 ? "warn" : checkPriority(status) === 3 ? "good" : "info";
   const openCheck = (row: Record<string, unknown>) => onOpenCheck(row);
-  return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:cabinetText(String(data.fifo_guard.guard_mode ?? "")),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><p className="form-hint">Нормы материала и себестоимость можно проверить в <button className="ghost-button" type="button" onClick={() => onNavigate("settings")}>настройках производства</button>.</p><section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{checks.length ? <div className="data-quality-list">{actionableChecks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{cabinetText(String(row.Модуль ?? "Контроль"))}</span><strong>{cabinetText(String(row.Проверка ?? ""))}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">Проверок пока нет</p>}{readyChecks.length ? <details className="cabinet-disclosure"><summary>{readyChecks.length} {plural(readyChecks.length,["проверка","проверки","проверок"])} в порядке</summary><div className="data-quality-list">{readyChecks.map((row,index) => <button className="data-quality-card detail-trigger" type="button" key={index} onClick={() => openCheck(row)}><strong>{cabinetText(String(row.Проверка ?? ""))}</strong><p>{String(row.Детали ?? "—")}</p></button>)}</div></details> : null}</section></div>;
+  return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:cabinetText(String(data.fifo_guard.guard_mode ?? "")),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><p className="form-hint">Нормы материала и себестоимость можно проверить в <button className="ghost-button" type="button" onClick={() => onNavigate("settings")}>настройках производства</button>.</p><WorkspaceTabs ariaLabel="Разделы страницы Контроль" storageKey="mh.tab.control" tabs={[{id:"attention",label:`Требует внимания · ${actionableChecks.length}`},{id:"ok",label:`В порядке · ${readyChecks.length}`}]} target={target} targetMap={{"control-checks":"attention"}} initial={actionableChecks.length ? "attention" : "ok"} panels={{attention:<section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{actionableChecks.length ? <div className="data-quality-list">{actionableChecks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{cabinetText(String(row.Модуль ?? "Контроль"))}</span><strong>{cabinetText(String(row.Проверка ?? ""))}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">{checks.length ? "Проверок, требующих внимания, нет" : "Проверок пока нет"}</p>}</section>,ok:<section className="work-section"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{readyChecks.length ? <div className="data-quality-list">{readyChecks.map((row,index) => <button className="data-quality-card detail-trigger" type="button" key={index} onClick={() => openCheck(row)}><strong>{cabinetText(String(row.Проверка ?? ""))}</strong><p>{String(row.Детали ?? "—")}</p></button>)}</div> : <p className="plan-empty">Проверок в порядке пока нет</p>}</section>}} /></div>;
 }
 
 function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () => Promise<void>; migration: React.ReactNode; sectionTarget?: string | null }) {
@@ -3926,7 +3952,7 @@ function InventoryTable({ inventory, onOpen }: { inventory: InventoryWatchRow[];
   const sharedSignal = inventory.length > 1 && inventory.every(row => row.signal === inventory[0].signal) ? inventory[0].signal : null;
   const displayRows = sharedSignal ? inventory.map(row => ({...row,signal:"—"})) : inventory;
   return (
-    <section className="table-section">
+    <section className="table-section" id="inventory-watch">
       <SectionHeader kicker="SKU под наблюдением" title="Остатки, маржа, сигнал">
         <button className="ghost-button desktop-only" type="button" disabled={!onOpen} onClick={() => { if (onOpen && inventory[0]) onOpen(inventory[0]); }}>
           <Sparkles size={17} />

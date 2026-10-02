@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./WorkspaceTabs.css";
 
 export type WorkspaceTab = { id: string; label: string };
@@ -16,6 +16,8 @@ type Props = {
   targetMap?: Record<string, string>;
   /** Tab to open when nothing is remembered; defaults to the first one. */
   initial?: string;
+  /** Tabs that keep their panel mounted (hidden) after the first visit, so typed form input survives a tab switch. */
+  keepMounted?: string[];
 };
 
 function readStored(key: string | undefined, ids: string[]): string | null {
@@ -29,7 +31,7 @@ function readStored(key: string | undefined, ids: string[]): string | null {
 }
 
 /** Same look and behaviour as the production page tabs (nav of toggle buttons), reusable on any page. */
-export function WorkspaceTabs({ tabs, ariaLabel, panels, storageKey, target, targetMap, initial }: Props) {
+export function WorkspaceTabs({ tabs, ariaLabel, panels, storageKey, target, targetMap, initial, keepMounted }: Props) {
   const ids = tabs.map((tab) => tab.id);
   const fromTarget = (value?: string | null) => (value && targetMap && ids.includes(targetMap[value]) ? targetMap[value] : null);
   const [selected, setSelected] = useState<string>(() => fromTarget(target) ?? readStored(storageKey, ids) ?? (initial && ids.includes(initial) ? initial : ids[0]));
@@ -47,6 +49,8 @@ export function WorkspaceTabs({ tabs, ariaLabel, panels, storageKey, target, tar
   };
 
   const active = ids.includes(selected) ? selected : ids[0];
+  const visited = useRef(new Set<string>());
+  visited.current.add(active);
   return (
     <div className="workspace-tabs-root">
       <nav className="workspace-tabs" aria-label={ariaLabel}>
@@ -56,9 +60,11 @@ export function WorkspaceTabs({ tabs, ariaLabel, panels, storageKey, target, tar
           </button>
         ))}
       </nav>
-      <div className="workspace-tab-panel" id={`workspace-panel-${active}`} role="region" aria-label={tabs.find((tab) => tab.id === active)?.label}>
-        {panels[active]}
-      </div>
+      {ids.filter((id) => id === active || (keepMounted?.includes(id) && visited.current.has(id))).map((id) => (
+        <div className="workspace-tab-panel" id={`workspace-panel-${id}`} key={id} role="region" aria-label={tabs.find((tab) => tab.id === id)?.label} hidden={id !== active}>
+          {panels[id]}
+        </div>
+      ))}
     </div>
   );
 }

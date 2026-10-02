@@ -25,6 +25,7 @@ describe('remaining cabinet audit acceptance', () => {
   });
   it('collapses the active incident creation form and exposes it on request', async () => {
     render(<App/>);
+    fireEvent.click(await screen.findByRole('button',{name:'Инциденты'}));
     const create = await screen.findByRole('button',{name:'Создать карточку'});
     expect(create).not.toBeVisible();
     const disclosure = create.closest('details');
@@ -46,6 +47,8 @@ describe('remaining cabinet audit acceptance', () => {
     render(<App/>);
     expect(screen.getByText('Неопределённая проверка')).toBeVisible();
     expect(screen.getByText('Неизвестно')).not.toHaveClass('good');
-    expect(screen.getByText('Успешная проверка')).not.toBeVisible();
+    expect(screen.queryByText('Успешная проверка')).toBeNull();
+    fireEvent.click(screen.getByRole('button',{name:'В порядке · 1'}));
+    expect(screen.getByText('Успешная проверка')).toBeVisible();
   });
 });

@@ -21,3 +21,4 @@
   .workspace-tabs { display: grid; grid-template-columns: 1fr 1fr; }
   .workspace-tabs button { padding: 10px; }
 }
+.workspace-tab-panel[hidden] { display: none; }
