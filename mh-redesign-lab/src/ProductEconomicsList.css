@@ -6,7 +6,7 @@
   margin: 0.6rem 0 0.8rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(20, 25, 34, 0.7);
+  background: var(--row-bg);
 }
 .product-view-switch button {
   display: inline-flex;
@@ -48,7 +48,7 @@
   padding: 0.55rem 0.8rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(20, 25, 34, 0.7);
+  background: var(--row-bg);
   color: var(--text, #eef0f7);
   font: inherit;
   text-align: left;
@@ -80,7 +80,7 @@
   padding: 0.5rem 0.8rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(20, 25, 34, 0.7);
+  background: var(--row-bg);
   color: var(--text, #eef0f7);
   font: inherit;
   cursor: pointer;

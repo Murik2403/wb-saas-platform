@@ -1,0 +1,49 @@
+/* Semantic aliases also cover independent accounting/workspace components. */
+:root {
+  --panel: var(--surface); --bg-surface: var(--surface); --surface-color: var(--surface);
+  --text-primary: var(--text); --text-secondary: var(--text-muted); --border: var(--line); --border-color: var(--line);
+  --accent: var(--action); --accent-strong: var(--focus); --warn: var(--warning);
+  --rail-bg: rgba(7,9,13,.92); --header-bg: rgba(7,9,13,.86);
+  --floating-bg: rgba(13,17,24,.98); --row-bg: rgba(20,25,34,.7); --panel-bg: rgba(13,17,24,.9);
+  --mobile-bg: #090c12; --subtle-text: #b8c2d2;
+  --status-good-ink: #18340c; --status-warn-ink: #352408; --status-bad-ink: #390d16; --status-info-ink: #071e37;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f3f6f8; --surface: #fff; --surface-2: #eef3f6; --surface-3: #e3ebf0;
+  --line: rgba(25,47,65,.16); --line-strong: rgba(25,47,65,.3);
+  --text: #192c3b; --text-muted: #506374; --text-faint: #586d7e;
+  --action: #007c64; --focus: #006854; --teal-ink: #fff;
+  --success: #27710c; --warning: #8c5900; --danger: #be2944; --blue: #235fae;
+  --rail-bg: rgba(255,255,255,.96); --header-bg: rgba(243,246,248,.94);
+  --floating-bg: #fff; --row-bg: #eef3f6; --panel-bg: #fff; --mobile-bg: #fff; --subtle-text: #506374;
+  --status-good-ink: #fff; --status-warn-ink: #fff; --status-bad-ink: #fff; --status-info-ink: #fff;
+  --shadow: 0 12px 40px rgba(25,47,65,.12);
+}
+.theme-toggle svg { width: 20px; height: 20px; flex-shrink: 0; }
+:root[data-theme="light"] .brand-mark { background: #e0f3ed; }
+:root[data-theme="light"] .nav-item.active { background: #e8eef2; }
+:root[data-theme="light"] .production-workspace { background: var(--surface); color: var(--text); border-color: var(--line); }
+:root[data-theme="light"] .production-workspace :is(p,caption) { color: var(--muted); }
+:root[data-theme="light"] .production-workspace strong { color: var(--text); }
+:root[data-theme="light"] :is(.production-workspace,.workcenter-calendar,.manufacturing-costs) :is(input,select) { background: var(--surface); color: var(--text); border-color: var(--line-strong); }
+:root[data-theme="light"] :is(.production-workspace,.workcenter-calendar,.manufacturing-costs) button { background: var(--surface-2); color: var(--text); border-color: var(--line-strong); }
+:root[data-theme="light"] .production-tabs button[aria-pressed="true"] { background: var(--teal); color: var(--teal-ink); border-color: var(--teal); }
+:root[data-theme="light"] .production-workspace :is(form,.pw-batch,th,td), :root[data-theme="light"] .manufacturing-costs :is(form,.mfg-journal) { border-color: var(--line); }
+:root[data-theme="light"] .pw-read-only { background: var(--surface-2); color: var(--text) !important; border-color: var(--line); }
+:root[data-theme="light"] .pw-overload { background: #fff0db; }
+:root[data-theme="light"] :is(.pw-error,.supply-plan-blockers,.ads-delta.bad) { color: var(--danger) !important; }
+:root[data-theme="light"] :is(.pw-notice,.ads-delta.good,.onboarding-step-number) { color: var(--teal) !important; }
+:root[data-theme="light"] :is(.sync-history-notice,.supply-plan-warnings) { color: var(--warning); }
+:root[data-theme="light"] .sync-history-details summary:hover { color: var(--text); }
+:root[data-theme="light"] .history-badge.running { background: #d9ebfc; color: #235fae; }
+:root[data-theme="light"] .sync-history-log { background: var(--surface-2); }
+:root[data-theme="light"] .product-column-menu { background: var(--surface); box-shadow: var(--shadow); }
+:root[data-theme="light"] .manufacturing-costs .mfg-component-provenance ul { color: var(--muted); }
+:root[data-theme="light"] .manufacturing-costs .mfg-read-only { background: var(--surface-2); color: var(--text); border-color: var(--line); }
+:root[data-theme="light"] .manufacturing-costs .mfg-error { background: #fff0f2; color: var(--danger); }
+:root[data-theme="light"] .manufacturing-costs .mfg-success { background: #e5f5ee; color: var(--teal); }
+:root[data-theme="light"] .pg-error { color: var(--danger); }
+:root[data-theme="light"] :is(.pg-panel,.pg-editor,.pg-picker) { border-color: var(--line); }
+:root[data-theme="light"] :is(.pg-filter select,.pg-field input) { background: var(--surface); border-color: var(--line-strong); }
+:root[data-theme="light"] :is(.production-workspace,.workcenter-calendar,.manufacturing-costs,.pg-panel,.pg-picker) :focus-visible { outline-color: var(--focus); }

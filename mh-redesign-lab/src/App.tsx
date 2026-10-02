@@ -1,3 +1,4 @@
+import { ThemeToggle } from "./ThemeToggle";
 import { secondaryActions } from "./CabinetSupplementary";
 import { plural, cabinetDate, cabinetText, checkPriority, wbAvailabilityMessage } from "./cabinet-copy";
 import { SettingsWorkspace } from "./SettingsWorkspace";
@@ -985,6 +986,7 @@ function App() {
           </div>
 
           <div className="topbar-actions">
+            <ThemeToggle />
             {installPrompt ? <button className="secondary-button install-button" aria-label="Установить приложение" title="Установить приложение" type="button" onClick={() => void installApp()}><Download size={17} /><span>Установить</span></button> : null}
             <button
               className="secondary-button home-button" aria-label="На главную" title="На главную"
