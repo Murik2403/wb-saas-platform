@@ -30,6 +30,7 @@ import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { SupplyPlanning } from "./SupplyPlanning";
+import { WorkspaceTabs } from "./WorkspaceTabs";
 import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
@@ -1090,6 +1091,7 @@ function App() {
             stockMetrics={dashboard.stockMetrics}
             stockRules={dashboard.stockRules}
             sellerWarehouses={dashboard.sellerWarehouses}
+            target={pendingScrollTarget}
           /></>
         ) : null}
         {activeNav === "ads" ? (
@@ -1147,6 +1149,7 @@ function App() {
             transitTariffs={dashboard.transitTariffs}
             supplyErrors={dashboard.supplyErrors}
             onOpenShipment={openSupplyShipmentDetail}
+            target={pendingScrollTarget}
           />
         ) : null}
 
@@ -1620,6 +1623,9 @@ function StockIncidentsPanelV2() {
   </section>;
 }
 
+const stockTabs = [{ id: "stock", label: "Остатки" }, { id: "reorder", label: "Пополнение" }] as const;
+const stockTabTargets: Record<string, string> = { "stock-coverage": "stock", "seller-warehouses": "stock", "reorder-plan": "reorder", "stock-reorder-plan": "reorder" };
+
 function StockView({
   inventory,
   onAction,
@@ -1633,6 +1639,7 @@ function StockView({
   stockMetrics,
   stockRules,
   sellerWarehouses,
+  target,
 }: {
   inventory: InventoryWatchRow[];
   onAction: (label: string, itemLabel: string) => void;
@@ -1646,6 +1653,7 @@ function StockView({
   stockMetrics: DashboardMetric[];
   stockRules: StockRule[];
   sellerWarehouses: Array<{ id?: number; name?: string; office_id?: number; quantity?: number; processing?: boolean }>;
+  target?: string | null;
 }) {
   return (
     <div className="workspace-view">
@@ -1671,8 +1679,28 @@ function StockView({
 
       <MetricGrid metrics={stockMetrics} onMetricClick={(metric) => onAction("Контроль", metric.label)} />
 
+      <WorkspaceTabs ariaLabel="Разделы склада" storageKey="mh.tab.stock" target={target} targetMap={stockTabTargets} tabs={stockTabs} panels={{
+        stock: (<>
       <InventoryTable inventory={inventory} onOpen={(row) => onOpenStockRow(row)} />
+      <div className="stock-panels">
+          <section className="panel" id="stock-coverage">
+            <SectionHeader compact kicker="Контур" title="Запасы WB">
+              <button className="icon-button" type="button" aria-label="Открыть контроль запасов" onClick={() => onAction("Контроль", "Запасы WB")}><Package size={20} /></button>
+            </SectionHeader>
+            <div className="warehouse-list">
+              {stockCoverage.map((row) => (
+                <CoverageRow key={row.label} row={row} onOpen={() => onOpenCoverage(row)} />
+              ))}
+            </div>
+          </section>
 
+          <section className="panel" id="seller-warehouses">
+            <SectionHeader compact kicker="FBS / DBS" title="Склады продавца"><Truck size={20} /></SectionHeader>
+            {sellerWarehouses.length ? <div className="warehouse-list">{sellerWarehouses.map((warehouse) => <button className="warehouse-row detail-trigger" type="button" key={String(warehouse.id ?? warehouse.name)} onClick={() => onAction("Поставка", String(warehouse.name ?? "Склад продавца"))}><span><strong>{warehouse.name ?? "Склад продавца"}</strong><small>{warehouse.processing ? "обновляется" : "остатки продавца"}</small></span><b>{Number(warehouse.quantity ?? 0).toLocaleString("ru-RU")} шт.</b></button>)}</div> : <p className="plan-empty">Склады продавца не заведены или у токена нет категории «Маркетплейс».</p>}
+          </section>
+      </div>
+        </>),
+        reorder: (<>
       <div className="stock-grid">
         <section className="work-section" id="reorder-plan">
           <SectionHeader kicker="План пополнения" title="Что отгружать первым">
@@ -1701,24 +1729,7 @@ function StockView({
             ))}
           </div>
         </section>
-
         <aside className="insight-column">
-          <section className="panel" id="stock-coverage">
-            <SectionHeader compact kicker="Контур" title="Запасы WB">
-              <button className="icon-button" type="button" aria-label="Открыть контроль запасов" onClick={() => onAction("Контроль", "Запасы WB")}><Package size={20} /></button>
-            </SectionHeader>
-            <div className="warehouse-list">
-              {stockCoverage.map((row) => (
-                <CoverageRow key={row.label} row={row} onOpen={() => onOpenCoverage(row)} />
-              ))}
-            </div>
-          </section>
-
-          <section className="panel" id="seller-warehouses">
-            <SectionHeader compact kicker="FBS / DBS" title="Склады продавца"><Truck size={20} /></SectionHeader>
-            {sellerWarehouses.length ? <div className="warehouse-list">{sellerWarehouses.map((warehouse) => <button className="warehouse-row detail-trigger" type="button" key={String(warehouse.id ?? warehouse.name)} onClick={() => onAction("Поставка", String(warehouse.name ?? "Склад продавца"))}><span><strong>{warehouse.name ?? "Склад продавца"}</strong><small>{warehouse.processing ? "обновляется" : "остатки продавца"}</small></span><b>{Number(warehouse.quantity ?? 0).toLocaleString("ru-RU")} шт.</b></button>)}</div> : <p className="plan-empty">Склады продавца не заведены или у токена нет категории «Маркетплейс».</p>}
-          </section>
-
           <section className="panel">
             <SectionHeader compact kicker="Правила" title="Пополнение">
               <button className="icon-button" type="button" aria-label="Открыть поставки для пополнения" onClick={() => onAction("Поставка", "Пополнение")}><Zap size={20} /></button>
@@ -1734,6 +1745,8 @@ function StockView({
           </section>
         </aside>
       </div>
+        </>),
+      }} />
 
     </div>
   );
@@ -2956,6 +2969,9 @@ function ProductionExecutionPanel({ onRefresh }: { onRefresh: () => Promise<void
   </section>;
 }
 
+const supplyTabs = [{ id: "orders", label: "Заявки и приёмка" }, { id: "suppliers", label: "Поставщики" }, { id: "plan", label: "План закупок" }, { id: "fbs", label: "FBS" }] as const;
+const supplyTabTargets: Record<string, string> = { "supply-orders": "orders", "supplier-directory": "suppliers", "supply-planning": "plan", "supply-fbs": "fbs" };
+
 function SupplyView({
   onAction,
   onRefresh,
@@ -2969,6 +2985,7 @@ function SupplyView({
   transitTariffs,
   supplyErrors,
   onOpenShipment,
+  target,
 }: {
   onAction: (label: string, itemLabel: string) => void;
   onRefresh: () => Promise<void>;
@@ -2982,6 +2999,7 @@ function SupplyView({
   transitTariffs: Array<Record<string, unknown>>;
   supplyErrors: Record<string, string>;
   onOpenShipment: (shipment: SupplyShipment) => void;
+  target?: string | null;
 }) {
   const [busyOrder, setBusyOrder] = useState<number | null>(null);
   const [paymentOrder, setPaymentOrder] = useState<Record<string, unknown> | null>(null);
@@ -3109,18 +3127,8 @@ function SupplyView({
 
       <MetricGrid metrics={supplyMetrics} onMetricClick={(metric) => onAction("Поставка", metric.label)} />
 
-      <SupplyPlanning
-        readOnly={!session || session.mode === "demo" || !["owner", "manager"].includes(session.user.role.toLowerCase())}
-        onRefresh={onRefresh}
-      />
-
-      <section className="work-section supplier-directory-section">
-        <SectionHeader kicker="Справочник" title="Поставщик">
-          <button className="secondary-button" type="button" onClick={() => setEditingSupplier({ id: 0, name: "", contact_person: "", phone: "", messenger: "", email: "", country: "", default_currency: "RUB", payment_terms_days: 3, lead_time_days: 7, active: 1, note: "" })}><Plus size={16} />Добавить поставщика</button>
-        </SectionHeader>
-        {suppliers.length ? <div className="supplier-directory-grid">{suppliers.map((supplier) => <article className="supplier-directory-card detail-trigger" key={supplier.id} tabIndex={0} role="button" onClick={() => setEditingSupplier(supplier)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setEditingSupplier(supplier); } }}><div><span>{supplier.country || "Поставщик"}</span><h3>{supplier.name}</h3></div><p>{supplier.contact_person || "Контактное лицо не указано"}</p><div className="supplier-contact-list">{supplier.phone ? <span>Телефон: {supplier.phone}</span> : null}{supplier.email ? <span>Email: {supplier.email}</span> : null}{supplier.messenger ? <span>Мессенджер: {supplier.messenger}</span> : null}</div><div className="supplier-card-footer"><small>Срок поставки: {supplier.lead_time_days} дн.</small><button className="icon-button" type="button" aria-label={`Изменить поставщика ${supplier.name}`} onClick={(event) => { event.stopPropagation(); setEditingSupplier(supplier); }}><Pencil size={16} /></button></div></article>)}</div> : <p className="plan-empty">Поставщиков пока нет. Добавьте первого поставщика с контактами.</p>}
-      </section>
-
+      <WorkspaceTabs ariaLabel="Разделы поставок" storageKey="mh.tab.supply" target={target} targetMap={supplyTabTargets} tabs={supplyTabs} panels={{
+        orders: (<>
       <div className="content-grid compact-flow">
         <section className="work-section" id="supply-orders">
           <SectionHeader kicker="Очередь" title="Поставки и заявки">
@@ -3133,17 +3141,7 @@ function SupplyView({
             {supplyShipments.map((shipment) => <SupplyShipmentRow key={shipment.id} onAction={onAction} onOpen={() => onOpenShipment(shipment)} onOpenFbs={shipment.amount === "WB FBS" ? openFbsSupply : undefined} shipment={shipment} />)}
           </div> : <p className="plan-empty">Нет активных поставок</p>}
         </section>
-
         <aside className="insight-column">
-          <section className="panel">
-            <SectionHeader compact kicker="Поставщики" title="Пульс">
-              <button className="icon-button" type="button" aria-label="Создать заявку поставщику" onClick={() => onAction("Заявка", "поставщики")}><ShieldCheck size={20} /></button>
-            </SectionHeader>
-            {supplierPulse.length ? <div className="supplier-list">
-              {supplierPulse.map((supplier) => <SupplierPulseRow item={supplier} key={supplier.name} onOpen={() => onAction("Поставщик", supplier.name)} />)}
-            </div> : <p className="plan-empty">Нет данных о поставщиках</p>}
-          </section>
-
           <section className="panel">
             <SectionHeader compact kicker="Окна" title="Приемка WB">
               <button className="icon-button" type="button" aria-label="Открыть поставки" onClick={() => onAction("Поставка", "Приёмка WB")}><CalendarDays size={20} /></button>
@@ -3171,10 +3169,6 @@ function SupplyView({
         </aside>
       </div>
       <section className="work-section">
-        <SectionHeader kicker="WB FBS" title="Новые сборочные задания"><PackageCheck size={18} /></SectionHeader>
-        {supplyNewOrders.length ? <div className="shipment-list">{supplyNewOrders.slice(0, 12).map((order, index) => <article className="shipment-row" key={String(order.orderId ?? order.id ?? index)}><div><strong>Заказ {String(order.orderId ?? order.id ?? "WB")}</strong><span>{String(order.address ?? order.deliveryType ?? "Новое сборочное задание")}</span></div><StatusPill tone="warn">ожидает сборки</StatusPill></article>)}</div> : <p className="plan-empty">Новых сборочных заданий FBS нет или раздел недоступен для токена.</p>}
-      </section>
-      <section className="work-section">
         <SectionHeader kicker="Журнал" title="Закупочные документы"><Truck size={18} /></SectionHeader>
         {operationError ? <p className="operation-error" role="alert">{operationError}</p> : null}
         {procurementOrders.length ? <div className="procurement-order-list">{procurementOrders.map((order) => {
@@ -3196,6 +3190,39 @@ function SupplyView({
           </article>;
         })}</div> : <p className="plan-empty">Закупочных документов пока нет</p>}
       </section>
+        </>),
+        suppliers: (<>
+      <section className="work-section supplier-directory-section">
+        <SectionHeader kicker="Справочник" title="Поставщик">
+          <button className="secondary-button" type="button" onClick={() => setEditingSupplier({ id: 0, name: "", contact_person: "", phone: "", messenger: "", email: "", country: "", default_currency: "RUB", payment_terms_days: 3, lead_time_days: 7, active: 1, note: "" })}><Plus size={16} />Добавить поставщика</button>
+        </SectionHeader>
+        {suppliers.length ? <div className="supplier-directory-grid">{suppliers.map((supplier) => <article className="supplier-directory-card detail-trigger" key={supplier.id} tabIndex={0} role="button" onClick={() => setEditingSupplier(supplier)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setEditingSupplier(supplier); } }}><div><span>{supplier.country || "Поставщик"}</span><h3>{supplier.name}</h3></div><p>{supplier.contact_person || "Контактное лицо не указано"}</p><div className="supplier-contact-list">{supplier.phone ? <span>Телефон: {supplier.phone}</span> : null}{supplier.email ? <span>Email: {supplier.email}</span> : null}{supplier.messenger ? <span>Мессенджер: {supplier.messenger}</span> : null}</div><div className="supplier-card-footer"><small>Срок поставки: {supplier.lead_time_days} дн.</small><button className="icon-button" type="button" aria-label={`Изменить поставщика ${supplier.name}`} onClick={(event) => { event.stopPropagation(); setEditingSupplier(supplier); }}><Pencil size={16} /></button></div></article>)}</div> : <p className="plan-empty">Поставщиков пока нет. Добавьте первого поставщика с контактами.</p>}
+      </section>
+        <div className="insight-column">
+          <section className="panel">
+            <SectionHeader compact kicker="Поставщики" title="Пульс">
+              <button className="icon-button" type="button" aria-label="Создать заявку поставщику" onClick={() => onAction("Заявка", "поставщики")}><ShieldCheck size={20} /></button>
+            </SectionHeader>
+            {supplierPulse.length ? <div className="supplier-list">
+              {supplierPulse.map((supplier) => <SupplierPulseRow item={supplier} key={supplier.name} onOpen={() => onAction("Поставщик", supplier.name)} />)}
+            </div> : <p className="plan-empty">Нет данных о поставщиках</p>}
+          </section>
+
+        </div>
+        </>),
+        plan: (<>
+      <SupplyPlanning
+        readOnly={!session || session.mode === "demo" || !["owner", "manager"].includes(session.user.role.toLowerCase())}
+        onRefresh={onRefresh}
+      />
+        </>),
+        fbs: (<>
+      <section className="work-section">
+        <SectionHeader kicker="WB FBS" title="Новые сборочные задания"><PackageCheck size={18} /></SectionHeader>
+        {supplyNewOrders.length ? <div className="shipment-list">{supplyNewOrders.slice(0, 12).map((order, index) => <article className="shipment-row" key={String(order.orderId ?? order.id ?? index)}><div><strong>Заказ {String(order.orderId ?? order.id ?? "WB")}</strong><span>{String(order.address ?? order.deliveryType ?? "Новое сборочное задание")}</span></div><StatusPill tone="warn">ожидает сборки</StatusPill></article>)}</div> : <p className="plan-empty">Новых сборочных заданий FBS нет или раздел недоступен для токена.</p>}
+      </section>
+        </>),
+      }} />
       {paymentOrder ? <ProcurementPaymentDialog busy={busyOrder === Number(paymentOrder.id)} order={paymentOrder} onClose={() => { if (!busyOrder) setPaymentOrder(null); }} onSubmit={submitPayment} /> : null}
       {editingSupplier ? <SupplierDialog busy={supplierBusy} item={editingSupplier} onClose={() => { if (!supplierBusy) setEditingSupplier(null); }} onSubmit={saveSupplierRecord} /> : null}
       {receiptOrder ? <ProcurementReceiptDialog busy={busyOrder === Number(receiptOrder.id)} items={procurementItems.filter((item) => Number(item.order_id) === Number(receiptOrder.id) && Number(item.quantity ?? 0) > Number(item.posted_quantity ?? 0))} order={receiptOrder} onClose={() => { if (!busyOrder) setReceiptOrder(null); }} onSubmit={submitReceipt} /> : null}

@@ -9,6 +9,7 @@ vi.mock("./cashflow-source", () => ({
 }));
 // This suite tests App/FIFO behavior; shop networking is covered in its own suite.
 vi.mock("./ShopWorkspaces", () => ({ ShopWorkspaces: () => null }));
+vi.mock("./SharedWarehouse", () => ({ SharedWarehouse: () => null }));
 
 import type { DashboardDataState } from "./data-source";
 import type { PageId } from "./contracts";
@@ -420,6 +421,79 @@ describe("operational detail drawer", () => {
     expect(await screen.findByRole("heading", { name: "Поставка WB-123" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Получить QR / стикер" }));
     expect(getFbsSupplyBarcode).toHaveBeenCalledWith("WB-123");
+  });
+
+  it("splits the supply page into tabs that show only their own blocks and remember the last one", async () => {
+    window.localStorage.clear();
+    mockedDashboard.supplierPulse = [{ name: "Пульс-поставщик", metric: "ок", detail: "в срок", tone: "good" }];
+    window.history.replaceState({}, "", "/?view=supply");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    const view = render(<App />);
+    const tab = (name: string) => screen.getByRole("button", { name });
+
+    expect(await screen.findByText("Поставки и заявки")).toBeInTheDocument();
+    expect(screen.getByText("Закупочные документы")).toBeInTheDocument();
+    expect(screen.getByText("Приемка WB")).toBeInTheDocument();
+    expect(screen.queryByText("Новые сборочные задания")).toBeNull();
+    expect(screen.queryByText("Добавить поставщика")).toBeNull();
+    expect(tab("Заявки и приёмка")).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(tab("Поставщики"));
+    expect(screen.getByText("Добавить поставщика")).toBeInTheDocument();
+    expect(screen.getByText("Пульс-поставщик")).toBeInTheDocument();
+    expect(screen.queryByText("Поставки и заявки")).toBeNull();
+
+    await user.click(tab("FBS"));
+    expect(screen.getByText("Новые сборочные задания")).toBeInTheDocument();
+    expect(screen.queryByText("Добавить поставщика")).toBeNull();
+
+    view.unmount();
+    render(<App />);
+    expect(await screen.findByText("Новые сборочные задания")).toBeInTheDocument();
+    expect(tab("FBS")).toHaveAttribute("aria-pressed", "true");
+    window.localStorage.clear();
+  });
+
+  it("opens the orders tab for a supply deep link even when another tab was remembered", async () => {
+    window.localStorage.setItem("mh.tab.supply", "suppliers");
+    window.localStorage.setItem("mh.tab.stock", "reorder");
+    mockedDashboard.stockRules = [{ id: "r1", title: "Правило А", description: "Описание" }];
+    window.history.replaceState({}, "", "/?view=stock");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Правило А/ }));
+    await user.click(screen.getByRole("button", { name: "Перейти в поставки" }));
+    expect(await screen.findByText("Поставки и заявки")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Заявки и приёмка" })).toHaveAttribute("aria-pressed", "true");
+    mockedDashboard.stockRules = [];
+    window.localStorage.clear();
+  });
+
+  it("splits the stock page and routes the replenishment deep link to its tab", async () => {
+    window.localStorage.clear();
+    mockedDashboard.reorderPlan = [{ sku: "SKU-9", name: "Товар на пополнение", days: "3 дн.", qty: "40 шт.", warehouse: "Коледино", risk: "Скоро закончится", tone: "danger" }];
+    window.history.replaceState({}, "", "/?view=stock");
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    render(<App />);
+    const tab = (name: string) => screen.getByRole("button", { name });
+
+    expect(await screen.findByText("Запасы WB")).toBeInTheDocument();
+    expect(screen.getByText("Склады продавца")).toBeInTheDocument();
+    expect(screen.queryByText("Что отгружать первым")).toBeNull();
+
+    await user.click(tab("Пополнение"));
+    await user.click(screen.getByText("Товар на пополнение"));
+    await user.click(tab("Остатки"));
+    expect(screen.queryByText("Что отгружать первым")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Открыть план пополнения" }));
+    expect(await screen.findByText("Что отгружать первым")).toBeInTheDocument();
+    expect(tab("Пополнение")).toHaveAttribute("aria-pressed", "true");
+    mockedDashboard.reorderPlan = [];
+    window.localStorage.clear();
   });
 
   it("persists edited shift execution before closing the shift", async () => {
