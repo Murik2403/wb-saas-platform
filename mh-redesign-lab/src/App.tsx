@@ -15,6 +15,7 @@ import { ManufacturingCosts } from "./ManufacturingCosts";
 import { AdsAnalyticsPanel } from "./AdsAnalyticsPanel";
 import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
 import { ProductsHeatmap } from "./ProductsHeatmap";
+import { WorkspaceTabs } from "./WorkspaceTabs";
 import { ProductGroupFilter, ProductGroupsPanel } from "./ProductGroupsPanel";
 import { useGroupSelection, useProductGroups, ALL_PRODUCTS } from "./useProductGroups";
 import { ProductCardsPanel } from "./ProductCardsPanel";
@@ -1184,6 +1185,7 @@ function App() {
             onRefresh={dashboard.refresh}
             setPeriod={setDashboardPeriod}
             onOpenProduct={openProductDetail}
+            target={pendingScrollTarget}
           />
         ) : null}
 
@@ -2074,6 +2076,9 @@ function FinanceFifoDetailTable({ period }: { period: DashboardPeriod }) {
   );
 }
 
+const productTabs = [{ id: "products", label: "Товары" }, { id: "analytics", label: "Аналитика" }, { id: "content", label: "Контент и качество" }, { id: "prices", label: "Цены" }] as const;
+const productTargetMap: Record<string, string> = { "products-heatmap": "analytics", "rnp-plan-fact": "analytics", "product-cards": "content", "shop-quality": "content", "price-advisor": "prices", "product-prices": "prices", "price-uploads": "prices" };
+
 export function ProductsView({
   period,
   productCards,
@@ -2085,6 +2090,7 @@ export function ProductsView({
   onRefresh,
   setPeriod,
   onOpenProduct,
+  target,
 }: {
   period: DashboardPeriod;
   productCards: import("./data-source").ProductCard[];
@@ -2096,6 +2102,7 @@ export function ProductsView({
   onRefresh: () => Promise<void>;
   setPeriod: (period: DashboardPeriod) => void;
   onOpenProduct: (item: ProductEconomicsRow) => void;
+  target?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [priceDrafts, setPriceDrafts] = useState<Record<number, { price: number; discount: number }>>({});
@@ -2181,19 +2188,29 @@ export function ProductsView({
   return (
     <div className="workspace-view">
       {(customerQuality?.errors?.length || productCardErrors.length || productPriceErrors.length) ? <p className="data-banner stale" role="status">{wbAvailabilityMessage([...(customerQuality?.errors ?? []), ...productCardErrors, ...productPriceErrors])}</p> : null}
-      <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и чистая маржинальность по каждому артикулу WB.</p></div></section>
-      <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good", change: changes[0] }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn", change: changes[1] }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good", change: changes[2] }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info", change: changes[3] }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
-      <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
-      <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label><ProductGroupFilter groups={productGroups.groups} value={groupId} onChange={setGroupId} /><ProductGroupsPanel products={products} groups={productGroups.groups} error={productGroups.error} onChanged={productGroups.reload} />{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
-      <ProductsHeatmap period={period} />
-      <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
+      <WorkspaceTabs tabs={productTabs} ariaLabel="Разделы товаров" storageKey="mh.tab.products" target={target} targetMap={productTargetMap} panels={{
+        products: <>
+          <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и чистая маржинальность по каждому артикулу WB.</p></div></section>
+          <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good", change: changes[0] }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn", change: changes[1] }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good", change: changes[2] }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info", change: changes[3] }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
+          <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
+          <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label><ProductGroupFilter groups={productGroups.groups} value={groupId} onChange={setGroupId} /><ProductGroupsPanel products={products} groups={productGroups.groups} error={productGroups.error} onChanged={productGroups.reload} />{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
+        </>,
+        analytics: <>
+          <ProductsHeatmap period={period} />
+          <RnpPlanFact products={products} />
+        </>,
+        content: <>
+          <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
+          <ShopQualityPanel data={customerQuality} actions={qualityActions} />
+        </>,
+        prices: <>
+          <PriceAdvisorPanel period={period} prices={prices ?? []} onApply={(items) => setPriceDrafts((rows) => ({ ...rows, ...Object.fromEntries(items.map((i) => [i.nmId, { price: i.price, discount: i.discount }])) }))} />
+          <ProductPricesPanel prices={prices ?? []} query={query} drafts={priceDrafts} onDraft={(nmId, draft) => setPriceDrafts((rows) => ({ ...rows, [nmId]: draft }))}
+            onSubmit={() => void submitPrices()} busy={priceSubmitting || !!priceUploadId} message={priceMessage} uploadStatus={priceUploadStatus}
+            results={priceResults} history={priceUploadHistory} hasErrors={productPriceErrors.length > 0} />
+        </>,
+      }} />
       {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
-      <ShopQualityPanel data={customerQuality} actions={qualityActions} />
-      <PriceAdvisorPanel period={period} prices={prices ?? []} onApply={(items) => setPriceDrafts((rows) => ({ ...rows, ...Object.fromEntries(items.map((i) => [i.nmId, { price: i.price, discount: i.discount }])) }))} />
-      <ProductPricesPanel prices={prices ?? []} query={query} drafts={priceDrafts} onDraft={(nmId, draft) => setPriceDrafts((rows) => ({ ...rows, [nmId]: draft }))}
-        onSubmit={() => void submitPrices()} busy={priceSubmitting || !!priceUploadId} message={priceMessage} uploadStatus={priceUploadStatus}
-        results={priceResults} history={priceUploadHistory} hasErrors={productPriceErrors.length > 0} />
-      <RnpPlanFact products={products} />
     </div>
   );
 }

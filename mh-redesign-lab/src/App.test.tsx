@@ -347,6 +347,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=products");
     const { default: App } = await import("./App");
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Контент и качество" }));
 
     expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
     expect(screen.getByText("После исправления доступа обновите раздел.")).toBeInTheDocument();
@@ -503,6 +504,7 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(await screen.findByRole("button", { name: "Контент и качество" }));
     await user.click(await screen.findByRole("button", { name: "Ответить" }));
     expect(screen.getByRole("dialog",{name:"Сообщение покупателю"})).toBeInTheDocument();
     const editor = document.querySelector("dialog textarea") as HTMLTextAreaElement;
