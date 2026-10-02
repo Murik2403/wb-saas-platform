@@ -808,6 +808,8 @@ app.include_router(production_workspace_router)
 app.include_router(manufacturing_costs_router)
 app.include_router(integration_router)
 app.include_router(supply_planning_router)
+from fbs_api import router as fbs_router
+app.include_router(fbs_router)
 from shop_workspaces_api import router as shop_workspaces_router
 app.include_router(shop_workspaces_router)
 from shop_schedules_api import router as shop_schedules_router
@@ -907,6 +909,8 @@ def _clear_dashboard_caches() -> None:
 # POST endpoints that only read (the body carries inputs): they must not drop the dashboard caches.
 READ_ONLY_POST_PATHS = {
     "/api/v1/dashboard/products/price-advice",
+    # FBS refresh only fills its own fbs_* tables, which no cached dashboard shows.
+    "/api/v1/fbs/refresh",
     # RNP plan edits touch only their own tables and bump their own cache version (rnp_api._bump):
     # wiping the shared dashboard caches on every keystroke-save would force a cold recompute each time.
     "/api/v1/dashboard/rnp/favorites",
