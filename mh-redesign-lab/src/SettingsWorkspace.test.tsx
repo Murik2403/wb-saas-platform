@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { BackupHistory } from "./SyncHistory";
 
+beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
 
 describe("Settings categories", () => {
@@ -31,7 +32,7 @@ describe("Settings categories", () => {
     expect(screen.queryByRole("textbox", { name: "Черновик CSV" })).toBeNull();
     fireEvent.click(dataButton);
     expect(screen.getByRole("textbox", { name: "Черновик CSV" })).toHaveValue("не сохранено");
-    fireEvent.click(screen.getByRole("button", { name: "Резервные копии" }));
+    expect(screen.queryByRole("button", { name: "Резервные копии" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Список копий" })).toBeVisible();
   });
 
@@ -43,7 +44,7 @@ describe("Settings categories", () => {
     expect(screen.getByRole("button", { name: "Подключения" })).toHaveFocus();
     await user.tab(); await user.keyboard("{Enter}");
     expect(screen.getByRole("button", { name: "Данные" })).toHaveAttribute("aria-pressed", "true");
-    await user.tab(); await user.tab(); await user.tab();
+    await user.tab(); await user.tab();
     expect(screen.getByRole("textbox", { name: "CSV" })).toHaveFocus();
   });
 });

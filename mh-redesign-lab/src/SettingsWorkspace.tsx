@@ -1,30 +1,23 @@
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { WorkspaceTabs } from "./WorkspaceTabs";
 import "./SettingsWorkspace.css";
 
-const categories = [
+const tabs = [
   { id: "connections", label: "Подключения" },
   { id: "data", label: "Данные" },
   { id: "production", label: "Производство" },
-  { id: "backups", label: "Резервные копии" },
 ] as const;
 
-export function SettingsWorkspace(props: Record<(typeof categories)[number]["id"], ReactNode> & { sectionTarget?: string | null }) {
-  const targetCategory = (target?: string | null): (typeof categories)[number]["id"] | null =>
-    ["production-norms", "product-costs", "material-inventory", "manual-expenses", "tax-settings"].includes(target ?? "") ? "production" : null;
-  const [selected, setSelected] = useState<(typeof categories)[number]["id"]>(() => targetCategory(props.sectionTarget) ?? "connections");
-  useEffect(() => {
-    const category = targetCategory(props.sectionTarget);
-    if (category) setSelected(category);
-  }, [props.sectionTarget]);
+// in-app deep-link targets (selectPage("settings", target)) -> owning tab
+const targetMap = Object.fromEntries(["production-norms", "product-costs", "material-inventory", "manual-expenses", "tax-settings"].map((id) => [id, "production"]));
+
+type Props = { connections: ReactNode; data: ReactNode; production: ReactNode; backups: ReactNode; sectionTarget?: string | null };
+
+/** Backups are one small block, so they live at the end of the «Данные» tab next to sync and import. */
+export function SettingsWorkspace({ connections, data, production, backups, sectionTarget }: Props) {
   return <div className="settings-workspace">
-    <nav className="settings-category-navigation" aria-label="Разделы настроек">
-      {categories.map((category) => <button className={selected === category.id ? "selected" : ""} type="button" key={category.id}
-        aria-pressed={selected === category.id} aria-controls={`settings-${category.id}`}
-        onClick={() => setSelected(category.id)}>{category.label}</button>)}
-    </nav>
-    {categories.map((category) => <div className="settings-category-panel" id={`settings-${category.id}`} key={category.id}
-      hidden={selected !== category.id} role="region" aria-label={category.label}>
-      {props[category.id]}
-    </div>)}
+    <WorkspaceTabs tabs={tabs} ariaLabel="Разделы настроек" storageKey="mh.tab.settings" target={sectionTarget} targetMap={targetMap}
+      keepMounted={tabs.map((tab) => tab.id)}
+      panels={{ connections, data: <>{data}{backups}</>, production }} />
   </div>;
 }
