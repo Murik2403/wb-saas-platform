@@ -916,6 +916,10 @@ READ_ONLY_POST_PATHS = {
     "/api/v1/dashboard/rnp/favorites",
     "/api/v1/dashboard/rnp/plan",
     "/api/v1/dashboard/rnp/target",
+    # Manual self-buyout ledger: its own table, shown nowhere else, so no dashboard cache goes stale.
+    "/api/v1/self-buyouts",
+    "/api/v1/self-buyouts/update",
+    "/api/v1/self-buyouts/delete",
 }
 
 
@@ -4041,3 +4045,5 @@ def save_expense_article_coverage(payload: ExpenseArticleAttestationInput, reque
 import rnp_api  # noqa: E402  (plan-fact "РНП": local SQLite, reuses the price-advice economics rows)
 rnp_api.configure(lambda s, e: _build_dashboard_cached(s, e), lambda k, b: _dashboard_response(k, b), lambda: _ADVICE_COLUMNS)
 app.include_router(rnp_api.router)
+import self_buyouts_api  # noqa: E402  (manual self-buyout cost ledger: local SQLite only)
+app.include_router(self_buyouts_api.router)
