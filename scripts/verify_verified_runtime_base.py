@@ -34,9 +34,12 @@ def prepare(root, output):
         if source == 'mh-redesign-lab/Dockerfile.tenant-staging':
             # Only an additive application-module COPY is approved here; all
             # dependency, entrypoint, nginx and runtime instructions stay exact.
-            addition = b'COPY mh-redesign-lab/tenant-api/product_groups_api.py ./product_groups_api.py\n'
-            assert current.count(addition) == 1
-            assert current.replace(addition, b'') == old, 'Changed runtime build contract'
+            stripped = current
+            for module in ('product_groups_api', 'rnp_api'):
+                addition = f'COPY mh-redesign-lab/tenant-api/{module}.py ./{module}.py\n'.encode()
+                assert stripped.count(addition) == 1
+                stripped = stripped.replace(addition, b'')
+            assert stripped == old, 'Changed runtime build contract'
         else:
             assert current==old, 'Changed runtime input: '+source
         if destination: hashes[destination]=hashlib.sha256(current).hexdigest()

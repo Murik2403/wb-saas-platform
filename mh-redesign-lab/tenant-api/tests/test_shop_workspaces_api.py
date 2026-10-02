@@ -251,6 +251,11 @@ def test_new_cabinet_routes_are_explicitly_shop_local_and_registry_matches_front
         ('GET', '/api/v1/dashboard/products/trend'),
         ('GET', '/api/v1/dashboard/products/previous'),
         ('GET', '/api/v1/dashboard/ads/analytics'),
+        ('GET', '/api/v1/dashboard/products/heatmap'),
+        ('GET', '/api/v1/dashboard/rnp'),
+        ('PUT', '/api/v1/dashboard/rnp/favorites'),
+        ('PUT', '/api/v1/dashboard/rnp/plan'),
+        ('PUT', '/api/v1/dashboard/rnp/target'),
         ('GET', '/api/v1/dashboard/management-pnl/monthly'),
         ('GET', '/api/v1/dashboard/products/price-advice'),
         ('POST', '/api/v1/dashboard/products/price-advice'),
@@ -266,6 +271,53 @@ def test_new_cabinet_routes_are_explicitly_shop_local_and_registry_matches_front
         assert shop_context.route_scope(method, path)['scope'] == 'shop_local'
     fixture = API_DIR.parent / 'src' / 'test-fixtures' / 'shop-route-scopes-stage4.json'
     assert json.loads(fixture.read_text(encoding='utf-8')) == shop_context.ROUTES
+
+
+def test_rnp_puts_commit_only_selected_shop_and_replay_once(client, monkeypatch, tmp_path):
+    import db.core as core
+    import rnp_api as rnp
+    import uuid, sqlite3
+    from datetime import date
+    main = core.DB_PATH
+    with core.connect() as conn:
+        rnp._init(conn)
+        conn.execute('INSERT INTO rnp_favorite VALUES(999,0)')
+    ids = []
+    for number in (1, 2):
+        identifier = shops.create(str(number), 'unused', str(number)); ids.append(identifier)
+        path = tmp_path / f'rnp-child-{number}.sqlite'
+        monkeypatch.setattr(core, 'DB_PATH', path); core.init_db()
+        with core.connect() as conn:
+            conn.execute("INSERT INTO products_catalog(nm_id,supplier_article,raw_json) VALUES(1,'A','{}')")
+            rnp._init(conn)
+        snapshot = tmp_path / f'rnp-child-{number}-snapshot.sqlite'
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(snapshot)) as target:
+            source.backup(target)
+        monkeypatch.setattr(core, 'DB_PATH', main)
+        shops.store_snapshot(identifier, 0, snapshot.read_bytes())
+    day = date.today().isoformat()
+    edits = [('favorites', {'nm_ids': [1]}), ('plan', {'nm_id': 1, 'plan': {day: 7}}),
+             ('target', {'nm_id': 1, 'plan_margin_pct': 25})]
+    for revision, (route, payload) in enumerate(edits, 1):
+        headers = {'x-mh-shop-id': str(ids[0]), 'x-mh-shop-revision': str(revision),
+                   'x-mh-request-key': str(uuid.uuid4())}
+        response = client.put('/api/v1/dashboard/rnp/' + route, headers=headers, json=payload)
+        assert response.status_code == 200, response.text
+        assert response.headers['x-mh-resource-scope'] == 'shop_local'
+        assert shops.read(ids[0])['revision'] == revision + 1
+        replay = client.put('/api/v1/dashboard/rnp/' + route, headers=headers, json=payload)
+        assert replay.status_code == 200, replay.text
+        assert shops.read(ids[0])['revision'] == revision + 1
+    for number, identifier in enumerate(ids, 1):
+        snapshot = tmp_path / f'rnp-result-{number}.sqlite'
+        snapshot.write_bytes(shops.worker_input(identifier)['snapshot'])
+        with closing(sqlite3.connect(snapshot)) as conn:
+            assert conn.execute('SELECT nm_id FROM rnp_favorite').fetchall() == ([(1,)] if number == 1 else [])
+            assert conn.execute('SELECT plan_orders FROM rnp_plan').fetchall() == ([(7,)] if number == 1 else [])
+            assert conn.execute('SELECT plan_margin_pct FROM rnp_target').fetchall() == ([(25.0,)] if number == 1 else [])
+    with core.connect() as conn:
+        assert conn.execute('SELECT nm_id FROM rnp_favorite').fetchall()[0][0] == 999
+        assert conn.execute('SELECT COUNT(*) FROM rnp_plan').fetchone()[0] == 0
 
 
 def test_new_group_and_price_journal_use_selected_snapshot_not_primary(client, monkeypatch, tmp_path):
