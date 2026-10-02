@@ -31,6 +31,7 @@ import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
 import { SupplyPlanning } from "./SupplyPlanning";
+import { SelfBuyoutsPanel } from "./SelfBuyoutsPanel";
 import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
@@ -111,6 +112,7 @@ import type {
 } from "./contracts";
 import { financeExportUrl, getFinanceFifoReconciliationPage, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, getManualExpenses, createManualExpense, deleteManualExpense, updateManualExpenseInclusion, getManagementEconomics, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type FinanceFifoDetailPage, type IncidentOperations, type ManagementEconomics, type ManualExpense, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
 import { useProductsPrevious, useProductsTrend } from "./useProductsTrend";
+import { FbsOrdersPanel } from "./FbsOrdersPanel";
 import { compareAmount, compareCount, comparePoints } from "./productsDelta";
 import { navItems as fallbackNavItems } from "./mock-dashboard";
 
@@ -1111,6 +1113,7 @@ function App() {
 
         {activeNav === "finance" ? (
           <><FinanceView cashflow={<CashflowPanel compact role={session?.user.role ?? "viewer"} />}
+            selfBuyouts={<SelfBuyoutsPanel role={session?.user.role ?? "viewer"} period={dashboardPeriod} confirm={askConfirm} products={dashboard.productEconomics.map((p) => ({ nmId: p.nmId, article: p.article, product: p.product }))} />}
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
@@ -1876,6 +1879,7 @@ function AdsView({
 export function FinanceView({
   cashWindows,
   cashflow,
+  selfBuyouts,
   expenseSplit,
   financeLedger,
   financeReport,
@@ -1885,6 +1889,7 @@ export function FinanceView({
   setPeriod,
 }: {
   cashflow?: ReactNode;
+  selfBuyouts?: ReactNode;
   cashWindows: Array<{ label: string; value: string; detail: string }>;
   expenseSplit: ExpenseSplit[];
   financeLedger: FinanceLedgerItem[];
@@ -2033,6 +2038,7 @@ export function FinanceView({
       <details className="cabinet-disclosure"><summary>Магазины WB</summary><ShopWorkspaces /></details>
       <details className="cabinet-disclosure"><summary>Учёт Ozon</summary><OzonAccounting /></details>
       <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><PriceScenarios /></details>
+      {selfBuyouts}
     </div>
   );
 }
@@ -3276,6 +3282,7 @@ function SupplyView({
         <SectionHeader kicker="WB FBS" title="Новые сборочные задания"><PackageCheck size={18} /></SectionHeader>
         {supplyNewOrders.length ? <div className="shipment-list">{supplyNewOrders.slice(0, 12).map((order, index) => <article className="shipment-row" key={String(order.orderId ?? order.id ?? index)}><div><strong>Заказ {String(order.orderId ?? order.id ?? "WB")}</strong><span>{String(order.address ?? order.deliveryType ?? "Новое сборочное задание")}</span></div><StatusPill tone="warn">ожидает сборки</StatusPill></article>)}</div> : <p className="plan-empty">Новых сборочных заданий FBS нет или раздел недоступен для токена.</p>}
       </section>
+      <FbsOrdersPanel canWrite={!!session && session.mode !== "demo" && ["owner", "manager"].includes(session.user.role.toLowerCase())} />
         </>),
       }} />
       {paymentOrder ? <ProcurementPaymentDialog busy={busyOrder === Number(paymentOrder.id)} order={paymentOrder} onClose={() => { if (!busyOrder) setPaymentOrder(null); }} onSubmit={submitPayment} /> : null}

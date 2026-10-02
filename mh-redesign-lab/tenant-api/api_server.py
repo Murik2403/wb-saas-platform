@@ -809,6 +809,8 @@ app.include_router(production_workspace_router)
 app.include_router(manufacturing_costs_router)
 app.include_router(integration_router)
 app.include_router(supply_planning_router)
+from fbs_api import router as fbs_router
+app.include_router(fbs_router)
 from shop_workspaces_api import router as shop_workspaces_router
 app.include_router(shop_workspaces_router)
 from shop_schedules_api import router as shop_schedules_router
@@ -908,11 +910,17 @@ def _clear_dashboard_caches() -> None:
 # POST endpoints that only read (the body carries inputs): they must not drop the dashboard caches.
 READ_ONLY_POST_PATHS = {
     "/api/v1/dashboard/products/price-advice",
+    # FBS refresh only fills its own fbs_* tables, which no cached dashboard shows.
+    "/api/v1/fbs/refresh",
     # RNP plan edits touch only their own tables and bump their own cache version (rnp_api._bump):
     # wiping the shared dashboard caches on every keystroke-save would force a cold recompute each time.
     "/api/v1/dashboard/rnp/favorites",
     "/api/v1/dashboard/rnp/plan",
     "/api/v1/dashboard/rnp/target",
+    # Manual self-buyout ledger: its own table, shown nowhere else, so no dashboard cache goes stale.
+    "/api/v1/self-buyouts",
+    "/api/v1/self-buyouts/update",
+    "/api/v1/self-buyouts/delete",
 }
 
 
@@ -4070,3 +4078,5 @@ def save_expense_article_coverage(payload: ExpenseArticleAttestationInput, reque
 import rnp_api  # noqa: E402  (plan-fact "РНП": local SQLite, reuses the price-advice economics rows)
 rnp_api.configure(lambda s, e: _build_dashboard_cached(s, e), lambda k, b: _dashboard_response(k, b), lambda: _ADVICE_COLUMNS)
 app.include_router(rnp_api.router)
+import self_buyouts_api  # noqa: E402  (manual self-buyout cost ledger: local SQLite only)
+app.include_router(self_buyouts_api.router)

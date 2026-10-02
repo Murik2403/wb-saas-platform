@@ -1063,6 +1063,26 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/fbs/orders",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/fbs/analytics",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/fbs/state",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/fbs/refresh",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/settings/tax",
     "scope": "shop_local"
   },
@@ -1104,6 +1124,26 @@
   {
     "method": "PUT",
     "path": "/api/v1/settings/tax-reconciliation",
+    "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/self-buyouts",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/self-buyouts",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/self-buyouts/update",
+    "scope": "shop_local"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/self-buyouts/delete",
     "scope": "shop_local"
   }
 ]
