@@ -25,6 +25,7 @@ import { RnpPlanFact } from "./RnpPlanFact";
 import { ManagementPnlSummary } from "./ManagementPnlSummary";
 import { ManagementPnlMonthly } from "./ManagementPnlMonthly";
 import { TaxSettingsPanel } from "./TaxSettingsPanel";
+import { TaxReconciliationPanel } from "./TaxReconciliationPanel";
 import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
 import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
 import { SettingsChangeHistory } from "./SettingsChangeHistory";
@@ -1890,6 +1891,7 @@ export function FinanceView({
         {financeReport.cogsEvidence.quality === "insufficient" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть продаж или возвратов не имеет ни подтверждённого FIFO, ни положительной текущей себестоимости. Для этих единиц нельзя считать себестоимость равной нулю.</p> : financeReport.cogsEvidence.quality !== "exact" ? <p className="form-hint" role="status">Сумма прибыли предварительная: часть себестоимости оценена по текущей ставке товара и может отличаться от стоимости партии на дату продажи.</p> : null}
       </> : null}
       <ManagementPnlSummary period={period} />
+      <TaxReconciliationPanel />
       <ManagementPnlMonthly period={period} onOpenTaxSettings={() => onAction("Налоги", "")} />
       {cashflow}
       <section className="work-section finance-movement-panel" aria-label="Денежное движение">
@@ -2659,6 +2661,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
         <ManualStoreExpenseManager />
         <ExpenseCoveragePanel products={productCosts} />
         <TaxSettingsPanel />
+        <TaxReconciliationPanel />
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
 </>}

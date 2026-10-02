@@ -1,0 +1,9 @@
+.tax-reconciliation summary{cursor:pointer;font-weight:700;padding:.7rem 0}
+.tax-reconciliation label{display:flex;flex-direction:column;gap:.4rem;margin:.7rem 0}
+.tax-reconciliation input:not([type=checkbox]){padding:.7rem;border:1px solid var(--border-color,#627080);border-radius:8px;background:transparent;color:inherit;max-width:100%;min-width:0}
+.tax-reconciliation input:focus-visible{outline:2px solid #00a88a;outline-offset:2px}
+.tax-reconciliation small{opacity:.8;line-height:1.5}
+.tax-reconciliation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:1rem}
+.tax-reconciliation-confirm{flex-direction:row!important;align-items:flex-start}
+.tax-reconciliation dt{opacity:.8}.tax-reconciliation dd{margin:.4rem 0;font-weight:700}
+.tax-reconciliation [role=alert]{color:#e34c67}

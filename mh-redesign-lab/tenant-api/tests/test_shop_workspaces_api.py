@@ -27,6 +27,38 @@ def client(monkeypatch,tmp_path):
 
 def token(sid):return 'header.'+base64.urlsafe_b64encode(json.dumps({'sid':sid}).encode()).decode().rstrip('=')+'.signature'
 
+
+def test_tax_reconciliation_isolated_secondary_write_and_replay(client, monkeypatch, tmp_path):
+    import db.core as core
+    import tax_reconciliation as tax
+    import sqlite3, uuid
+    main = core.DB_PATH
+    data = dict(month='2026-09', regime='ausn_income', source='primary private', confirmed=True,
+                received=999, offset=0, compensation=0, other_income=0, refunds=0)
+    tax.save_month(data, 0, 'owner')
+    ids = []
+    for number in (1, 2):
+        identifier = shops.create(str(number), 'unused', str(number)); ids.append(identifier)
+        path = tmp_path / f'tax-child-{number}.sqlite'
+        monkeypatch.setattr(core, 'DB_PATH', path); core.init_db()
+        snapshot = tmp_path / f'tax-snapshot-{number}.sqlite'
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(snapshot)) as target: source.backup(target)
+        monkeypatch.setattr(core, 'DB_PATH', main)
+        shops.store_snapshot(identifier, 0, snapshot.read_bytes())
+    url = '/api/v1/settings/tax-reconciliation'
+    headers = {'x-mh-shop-id': str(ids[0]), 'x-mh-shop-revision': '1', 'x-mh-request-key': str(uuid.uuid4())}
+    payload = dict(data, received=100, source='secondary', revision=0)
+    response = client.put(url, headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()['calculation']['estimate'] == 8
+    assert response.headers['x-mh-resource-scope'] == 'shop_local'
+    assert client.put(url, headers=headers, json=payload).status_code == 200
+    assert shops.read(ids[0])['revision'] == 2
+    other = client.get(url + '?month=2026-09', headers={'x-mh-shop-id': str(ids[1])})
+    assert other.status_code == 200, other.text
+    assert other.json()['history'] == []
+    assert tax.read_month('2026-09')['values']['received'] == 999
+
 def test_owner_registration_no_secret_and_roles(client):
     with patch.object(routes.WBAPI,'test_statistics',return_value=True),patch.object(routes,'get_token',return_value=None):
         response=client.post('/api/v1/shop-workspaces',json={'name':'shop','token':token('one')})

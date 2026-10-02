@@ -38,6 +38,7 @@ from backup_tools import create_backup, latest_backup, list_backups
 from calculations import build_dashboard
 from monthly_pnl import monthly_pnl
 from tax_estimate import REGIMES as TAX_REGIMES, add_tax_block, read_tax_settings, save_tax_settings
+from tax_reconciliation import read_month as read_tax_month, save_month as save_tax_month
 from config import (
     DB_PATH,
     INTERNAL_API_SECRET,
@@ -3757,6 +3758,38 @@ class TaxRateInput(BaseModel):
     month: int
     usn_pct: FiniteFloat
     vat_pct: FiniteFloat
+
+
+class TaxReconciliationInput(BaseModel):
+    month: str = Field(pattern=r"^20\d{2}-(0[1-9]|1[0-2])$")
+    regime: str = "ausn_income"
+    revision: int = Field(ge=0, strict=True)
+    received: FiniteFloat | None = None
+    offset: FiniteFloat | None = None
+    compensation: FiniteFloat | None = None
+    other_income: FiniteFloat | None = None
+    refunds: FiniteFloat | None = None
+    profit_before_tax: FiniteFloat | None = None
+    fns_assessed: FiniteFloat | None = None
+    paid: FiniteFloat | None = None
+    source: str = Field(min_length=1, max_length=500)
+    confirmed: bool = False
+
+
+@app.get("/api/v1/settings/tax-reconciliation")
+def get_tax_reconciliation(request: Request, month: str = Query(pattern=r"^20\d{2}-(0[1-9]|1[0-2])$")) -> dict:
+    return {**read_tax_month(month), "can_write": request.headers.get("x-tenant-role", "owner") in {"owner", "manager"}}
+
+
+@app.put("/api/v1/settings/tax-reconciliation")
+def put_tax_reconciliation(payload: TaxReconciliationInput, request: Request) -> dict:
+    try:
+        result = save_tax_month(payload.model_dump(), payload.revision, request.headers.get("x-tenant-account", "local-owner"))
+    except ValueError as exc:
+        if str(exc) == "revision_conflict":
+            raise HTTPException(409, "Запись изменена. Загрузите актуальную версию перед сохранением.") from exc
+        raise HTTPException(422, str(exc)) from exc
+    return {**result, "can_write": True}
 
 
 class TaxSettingsInput(BaseModel):
