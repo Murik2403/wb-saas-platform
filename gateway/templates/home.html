@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% block title %}MARKETSHELPER — учёт себестоимости и остатков для продавцов Wildberries{% endblock %}
-{% block description %}Продажи WB, себестоимость товара, остатки FIFO, нормы материалов и план-факт производственной смены. {{ trial_days }} дней пробного периода без карты.{% endblock %}
+{% block title %}MARKETSHELPER — финансы, товары и производство для продавцов Wildberries{% endblock %}
+{% block description %}Продажи и прибыль WB, себестоимость FIFO, аналитика товаров и рекламы, план-факт, налоговый расчёт и производство. {{ trial_days }} дней пробного периода без карты.{% endblock %}
+
 {% block body_class %}landing{% endblock %}
 {% block layout %}
 <div class="landing-wrap">
@@ -11,6 +12,7 @@
       <a class="section-link" href="#features">Возможности</a>
       <a class="section-link" href="#calculator">Калькулятор</a>
       <a href="/guides">Руководства</a>
+      <a href="/training">Видеоуроки</a>
       <a class="section-link" href="#faq">Вопросы</a>
       <a href="/pricing">Тарифы</a>
       <a href="/login">Войти</a>
@@ -40,8 +42,8 @@
     </div>
     <div class="hero-content">
       <div class="hero-badge">Продавцам WB — и тем, кто производит свой товар</div>
-      <h1>Себестоимость, остатки и производственные смены для продавцов Wildberries</h1>
-      <p class="lead">Продажи WB, остатки и выпуск — в одном рабочем контуре. Проверяйте остатки сырья, настраивайте нормы и ведите план и факт смены. Себестоимость для расчёта маржи задаётся отдельно: начните с одного товара и сверьте результат на своих данных.</p>
+      <h1>Финансы, товары и производство — в одном кабинете Wildberries</h1>
+      <p class="lead">Свяжите продажи и расходы WB с себестоимостью партий. Находите изменения в товарах и рекламе, ведите план продаж, остатки и выпуск. Отдельный налоговый раздел помогает рассчитать и сверить суммы по вашим документам.</p>
       <div class="btn-row">
         <a class="btn btn-primary" href="/register">Начать бесплатно</a>
         <a class="btn btn-ghost" href="/dlya-proizvoditeley-wb#one-batch">Посмотреть пример на одной партии</a>
@@ -59,38 +61,30 @@
     </div>
   </div>
 
-  <div class="feature-row" id="features">
-    <div class="feature reveal tile-1">
-      <div class="ic">FI</div>
-      <h3>Остатки FIFO</h3>
-      <p>Стоимость списания учитывается по порядку поступлений. Учётные слои FIFO помогают проверить стоимость оставшегося запаса.</p>
+  <section class="section" id="features" aria-labelledby="workspace-title">
+    <div class="section-head"><div class="eyebrow">Рабочий кабинет</div><h2 id="workspace-title">От продажи до финансового результата</h2><p>Разделы организованы по задачам: выбирайте магазин, период и нужную вкладку. Начните с одного товара, затем расширяйте учёт на ассортимент.</p></div>
+    <div class="workspace-grid">
+      <article class="workspace-card"><div class="eyebrow">Финансы</div><h3>Понимайте, из чего складывается прибыль</h3><p>Сводка P&amp;L, сравнение периодов, ОПиУ по месяцам и движение денег. Себестоимость — по подтверждённому FIFO; где сопоставления не хватает, видно оценку и покрытие данных.</p><a href="/capabilities">Источники финансового результата →</a></article>
+      <article class="workspace-card"><div class="eyebrow">Товары</div><h3>Находите рост и проблемные SKU</h3><p>Плитка, таблица или список, сортировка и колонки на выбор. Группы товаров, динамика выручки, тепловая карта по дням и РНП: план, факт и простой прогноз по последним продажам.</p><a href="/training#lesson-13-product-analysis">Урок по анализу товаров →</a></article>
+      <article class="workspace-card"><div class="eyebrow">Реклама</div><h3>Разбирайте эффективность кампаний</h3><p>Показы, клики, CTR, CPC, CPM, CPO, конверсии и ДРР по рекламным заказам. Сравнивайте кампании и дни с прошлым периодом, выгружайте CSV.</p><a href="/training#lesson-14-ads-analytics">Урок по рекламной аналитике →</a></article>
+      <article class="workspace-card"><div class="eyebrow">Финансы / Налоги</div><h3>Рассчитывайте и сверяйте налоги</h3><p>Шесть вариантов: АУСН и УСН с двумя объектами, ОСНО для ИП и организаций. Документальные суммы, НДС, начисление и оплата, история версий и CSV. Расчёт ведётся отдельно от P&amp;L.</p><a href="/training#lesson-12-tax">Урок по налоговому разделу →</a></article>
+      <article class="workspace-card"><div class="eyebrow">Поставки и товары</div><h3>Контролируйте FBS и изменения цен</h3><p>Список FBS-заказов, статусы и результаты загрузки. Рекомендация цены заполняет черновик; отправка в WB — отдельное действие. Журнал сохраняет результаты отправок.</p><a href="/training#lesson-15-fbs">Урок по FBS-заказам →</a></article>
+      <article class="workspace-card"><div class="eyebrow">Склад и производство</div><h3>Сохраняйте происхождение себестоимости</h3><p>Материалы в своих единицах, состав изделия, партии FIFO, полуфабрикаты и выпуск. Планируйте потребность в сырье, загрузку рабочих центров и закупки.</p><a href="/dlya-proizvoditeley-wb">Сценарий производителя →</a></article>
     </div>
-    <div class="feature reveal tile-2">
-      <div class="ic">PR</div>
-      <h3>Производство</h3>
-      <p>Комплекты, партии и минимальные объёмы — по заданным нормам и рабочим заданиям смены.</p>
-    </div>
-    <div class="feature reveal tile-3">
-      <div class="ic">СВ</div>
-      <h3>Сверка остатков</h3>
-      <p>Сопоставьте остатки с данными WB и проверьте товары в пути. Перед проведением сверки сервис проверяет допустимость локальных изменений и показывает, какие расхождения требуют разбора.</p>
-    </div>
-    <div class="feature reveal tile-4">
-      <div class="ic">ЗК</div>
-      <h3>Заявки поставщикам</h3>
-      <p>Создавайте заявки на закупку товара, указывайте сроки и поставщика. Отмечайте оплату и принимайте поступившие позиции.</p>
-    </div>
-    <div class="feature reveal tile-5">
-      <div class="ic">ПФ</div>
-      <h3>План и факт выпуска</h3>
-      <p>В рабочей смене видно задание, фактический выпуск и связанные материалы до закрытия партии.</p>
-    </div>
-    <div class="feature reveal tile-6">
-      <div class="ic">НМ</div>
-      <h3>Нормы материалов</h3>
-      <p>Для товара можно задать расход материала на комплект и использовать его в производственном плане.</p>
-    </div>
-  </div>
+    <p class="workspace-note">WB передаёт данные по вашему API-токену. Стоимость партий и внешние расходы вносите из своего учёта; налоговые суммы — из документов. Незагруженные данные остаются неизвестными. FBS обновляется по отдельному запросу, а налоговый раздел не отправляет декларации.</p>
+  </section>
+
+  <section class="section" id="learning" aria-labelledby="learning-title">
+    <div class="section-head"><div class="eyebrow">Обучение</div><h2 id="learning-title">Освойте новые возможности по шагам</h2><p>Видеоуроки и текстовые инструкции показывают, где открыть функцию, какие данные нужны и как проверить результат. Все примеры — учебные.</p></div>
+    <ul class="learning-links">
+      <li><a href="/training#lesson-12-tax">Налоги: режим, расчёт и сверка →</a></li>
+      <li><a href="/training#lesson-13-product-analysis">Товары: тепловая карта и РНП →</a></li>
+      <li><a href="/training#lesson-14-ads-analytics">Реклама: метрики и сравнение периодов →</a></li>
+      <li><a href="/training#lesson-15-fbs">FBS: заказы, статусы и обновление →</a></li>
+      <li><a href="/training#lesson-16-self-buyouts">Самовыкупы: ручной журнал затрат →</a></li>
+      <li><a href="/training">Все уроки по разделам кабинета →</a></li>
+    </ul>
+  </section>
 
   <div class="trust-line reveal">
     <p>Работайте командой: приглашайте сотрудников по email и назначайте роли. Наблюдатель просматривает данные, менеджер ведёт операции, а владелец управляет доступом.</p>
@@ -176,7 +170,7 @@
     <div class="section-head">
       <div class="eyebrow">Калькулятор</div>
       <h2>Оцените маржу по выбранным расходам</h2>
-      <p>Введите цену, себестоимость, комиссию, логистику и рекламу на единицу. Получится предварительная маржа после этих статей, а не чистая прибыль. Введённые суммы считаются в браузере и не отправляются на сервер. <a href="/calculator">Открыть калькулятор отдельно →</a></p>
+      <p>Введите цену и девять статей расходов: себестоимость, комиссию, логистику, приёмку, хранение, рекламу, упаковку, брак и налог. Получится предварительный результат по указанным значениям. Суммы считаются в браузере и не отправляются на сервер. <a href="/calculator">Открыть калькулятор отдельно →</a></p>
     </div>
     {% include "marketing_calculator.html" %}
   </div>
@@ -185,7 +179,7 @@
     <div class="section-head">
       <div class="eyebrow">Проверьте свой сценарий</div>
       <h2>Один товар, понятные исходные данные, проверяемый результат</h2>
-      <p>Сервисы аналитики и системы учёта решают разные задачи, а их возможности могут пересекаться. Выбирайте по своему процессу: состав изделия, партии сырья, выпуск и данные WB. Сравните результат на одном товаре до переноса всего ассортимента.</p>
+      <p>Подключите WB и выберите один товар, по которому у вас есть документы закупки или выпуска. Проверьте себестоимость партии, расходы продажи и остаток, затем расширяйте учёт на весь ассортимент.</p>
     </div>
     <div class="feature-row">
       <article class="feature"><h3>Себестоимость товара</h3><p>Разделите стоимость производства и расходы продажи. Узнайте, что включено в итог.</p><a href="/sebestoimost-wb">Разобрать состав расчёта →</a></article>
@@ -211,7 +205,7 @@
       </details>
       <details class="faq-item">
         <summary>В каких единицах можно учитывать сырьё?</summary>
-        <p>Доступны режимы учёта упаковками и по количеству. Формы остатков и норм материала сейчас рассчитаны на метры и рулоны; проверьте свой сценарий в демо.</p>
+        <p>Материалы учитываются в собственных единицах измерения. Укажите единицу, количество и стоимость партии, затем используйте ту же единицу в спецификации изделия.</p>
       </details>
       <details class="faq-item">
         <summary>Данные разных продавцов где-то пересекаются?</summary>
@@ -236,6 +230,8 @@
       <a href="/pricing">Тарифы</a>
       <a href="/dlya-proizvoditeley-wb">Производителям WB</a>
       <a href="/guides">Руководства</a>
+      <a href="/training">Видеоуроки</a>
+      <a href="/capabilities">Все возможности</a>
       <a href="/dlya-proizvoditeley-wb">Производство на WB</a>
       <a href="/ob-avtore">Об авторе</a>
       <a href="/offer">Оферта</a>
@@ -393,6 +389,22 @@
    #faq <details> list) -- Yandex and Google both drop FAQ rich results when
    the markup describes content a visitor cannot see. #}
 {% block head %}
+
+<style>
+.workspace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.workspace-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:24px;min-width:0}
+.workspace-card h3{margin:10px 0;font-size:1.12rem;color:var(--text);text-wrap:balance}
+.workspace-card p{color:var(--text-muted);font-size:.9rem;line-height:1.6;margin:0 0 16px}
+.workspace-card .eyebrow{margin:0;color:var(--accent-strong)}
+.workspace-card a{display:inline-block;min-height:44px;padding:10px 0;color:var(--accent-strong)}
+.workspace-card a:focus-visible{outline:3px solid var(--focus);outline-offset:4px;border-radius:4px}
+.workspace-note{color:var(--text-muted);line-height:1.6;font-size:.9rem;margin-top:20px}
+.learning-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:0;list-style:none}
+.learning-links a{display:block;padding:18px 20px;min-height:44px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);text-decoration:none}
+.learning-links a:hover{border-color:var(--accent)}
+.learning-links a:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+@media(max-width:760px){.workspace-grid,.learning-links{grid-template-columns:1fr}.workspace-card{padding:22px}}
+</style>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -421,14 +433,23 @@
       "operatingSystem": "Web",
       "inLanguage": "ru",
       "publisher": { "@id": "{{ site_base_url() }}/#organization" },
-      "description": "Сервис для продавцов Wildberries: финансовые показатели по загруженным данным, себестоимость товара, остатки FIFO, нормы материалов и производственные смены.",
+      "description": "Кабинет продавца Wildberries: финансы и себестоимость FIFO, аналитика товаров и рекламы, план-факт, документальный налоговый расчёт и производство.",
       "featureList": [
         "Остатки и учётные слои FIFO",
         "Нормы материалов и задания производственной смены",
         "Сверка остатков с Wildberries",
         "Заявки на закупку товара и приёмка",
         "План и факт выпуска партии",
-        "Юнит-экономика по внесённым данным"
+        "Юнит-экономика по внесённым данным",
+        "Сводка P&L, сравнение периодов и ОПиУ по месяцам",
+        "Таблица товаров, группы, тепловая карта и РНП",
+        "Аналитика рекламных кампаний и CSV",
+        "Документальный налоговый расчёт: шесть вариантов, НДС и сверка",
+        "FBS-заказы с отдельным обновлением",
+        "Журнал самовыкупов по ручным записям",
+        "Рекомендации цены в черновик и журнал отправок",
+        "Вкладки разделов, светлая и тёмная темы",
+        "Обучающие видео и текстовые инструкции"
       ],
       "offers": {
         "@type": "Offer",
@@ -464,7 +485,7 @@
           "name": "В каких единицах можно учитывать сырьё?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Доступны режимы учёта упаковками и по количеству. Формы остатков и норм материала сейчас рассчитаны на метры и рулоны; проверьте свой сценарий в демо."
+            "text": "Материалы учитываются в собственных единицах измерения. Укажите единицу, количество и стоимость партии, затем используйте ту же единицу в спецификации изделия."
           }
         },
         {

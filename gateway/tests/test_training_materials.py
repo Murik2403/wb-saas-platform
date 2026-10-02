@@ -32,14 +32,30 @@ class TrainingTests(unittest.TestCase):
         manifest = {"version":1,"approved":True,"videos":{"lesson-01-today":{"filename":name,"sha256":digest,"bytes":len(body)}}}
         (self.root/"manifest.json").write_text(json.dumps(manifest))
         return name, manifest
-    def test_missing_assets_keep_eleven_text_instructions_without_broken_media(self):
+    def test_missing_assets_keep_all_text_instructions_without_broken_media(self):
         response = self.client.get('/training')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.text.count('Текстовая инструкция и проверка результата'), 11)
+        self.assertEqual(response.text.count('Текстовая инструкция и проверка результата'), 16)
         self.assertNotIn('<source ', response.text)
         self.assertIn('учебные', response.text)
         self.assertIn('/training', PUBLIC_MARKETING_PATHS)
         self.assertIn('/training:', llms_txt('https://marketshelper.ru'))
+        for slug in ['lesson-12-tax', 'lesson-13-product-analysis', 'lesson-14-ads-analytics', 'lesson-15-fbs', 'lesson-16-self-buyouts']:
+            self.assertIn(f'id="{slug}"', response.text)
+        self.assertIn('не декларация и не отправка в ФНС', response.text)
+
+    def test_new_lesson_is_served_only_when_its_actual_asset_is_approved(self):
+        body = b'approved-test-media'
+        digest = hashlib.sha256(body).hexdigest()
+        name = f'lesson-12-tax.{digest}.mp4'
+        (self.root/name).write_bytes(body)
+        manifest = {'version': 1, 'approved': True, 'videos': {'lesson-12-tax': {'filename': name, 'sha256': digest, 'bytes': len(body)}}}
+        (self.root/'manifest.json').write_text(json.dumps(manifest))
+        html = self.client.get('/training').text
+        self.assertEqual(html.count('<source '), 1)
+        self.assertIn(f'src="/training/media/{name}"', html)
+        self.assertIn('Видео · 2 мин', html)
+        self.assertEqual(self.client.get('/training/media/'+name).content, body)
     def test_verified_public_manifest_serves_seekable_immutable_video(self):
         name, _ = self.published()
         self.assertIn(f'/training/media/{name}', self.client.get('/training').text)

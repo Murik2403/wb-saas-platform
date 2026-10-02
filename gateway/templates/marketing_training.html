@@ -9,7 +9,7 @@
 </style>{% endblock %}
 {% block marketing_content %}
 <section class="mk-hero"><p class="mk-kicker">Обучение работе в кабинете</p><h1>Откройте нужный раздел и проверьте результат</h1>
-<p class="mk-lead">11 вводных уроков по разделам MARKETSHELPER: короткие видео и текстовые шаги для чтения экранов и проверки данных. Все цифры в записи — учебные. Они не относятся к вашему магазину.</p>
+<p class="mk-lead">{{ training_lessons|length }} уроков по разделам MARKETSHELPER: короткие видео и текстовые шаги для чтения экранов и проверки данных. Все цифры в записи — учебные. Они не относятся к вашему магазину.</p>
 <p>Видео без озвучки: инструкции показаны на экране и доступны текстом под каждым уроком. Перед действием проверьте выбранный магазин, период, данные и свои права.</p></section>
 <p>В записи внешние операции WB не выполняются. Уроки знакомят с разделами; они не заменяют подробный разбор выпуска, платежей, импорта и других операций на ваших данных.</p>
 {% if training_overview %}<section class="mk-section mk-card" aria-labelledby="overview-title"><h2 id="overview-title">Краткий обзор кабинета</h2>
@@ -18,11 +18,13 @@
 <nav class="mk-toc" aria-label="Содержание обучения"><h2>Выберите задачу</h2><ol>{% for lesson in training_lessons %}<li><a href="#{{ lesson.slug }}">{{ lesson.title }}</a></li>{% endfor %}</ol></nav>
 {% for lesson in training_lessons %}<article class="mk-card training-lesson" id="{{ lesson.slug }}" aria-labelledby="{{ lesson.slug }}-title">
 <h2 id="{{ lesson.slug }}-title">{{ lesson.id }}. {{ lesson.title }}</h2>
+{% if lesson.expected %}<p><strong>После урока:</strong> {{ lesson.expected }}</p>{% endif %}
 {% if lesson.media %}<p>Видео · {{ lesson.duration // 60 }} мин · учебные данные</p>
 <video class="training-video" controls playsinline preload="none" aria-label="{{ lesson.title }}: учебное видео"><source src="{{ lesson.media.url }}" type="video/mp4">{% if lesson.media.captions %}<track kind="subtitles" src="{{ lesson.media.captions.url }}" srclang="ru" label="Русские инструкции" default>{% endif %}Ваш браузер не поддерживает видео. Инструкция доступна ниже.</video>
 <a href="{{ lesson.media.url }}" download>Скачать урок MP4</a>
 {% else %}<p>Видео готовится к публикации. Текстовая инструкция доступна ниже.</p>{% endif %}
 <details><summary>Текстовая инструкция и проверка результата</summary><ol>{% for heading, lines in lesson.steps %}<li><h3>{{ heading }}</h3><ul>{% for line in lines %}<li>{{ line }}</li>{% endfor %}</ul></li>{% endfor %}</ol></details>
+{% if lesson.cautions %}<p class="mk-note">{% for caution in lesson.cautions %}{{ caution }}{% if not loop.last %} {% endif %}{% endfor %}</p>{% endif %}
 </article>{% endfor %}
 <section class="mk-section mk-note"><h2>Если данных или прав не хватает</h2><p>Учебный пример не подтверждает полноту расчётов вашего магазина. Неизвестные расходы не равны нулю, начисления WB не равны поступлению денег, а ручные документы Ozon не подтверждают полноту API. Свяжитесь с <a href="/contacts">поддержкой</a>, прежде чем менять реальные данные.</p></section>
 {% endblock %}
