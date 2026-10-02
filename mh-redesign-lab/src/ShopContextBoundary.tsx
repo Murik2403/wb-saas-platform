@@ -4,6 +4,7 @@ import './ShopContextBoundary.css';
 
 export function ShopContextBoundary({children,navigate=(url:string)=>window.location.replace(url)}:{children:ReactNode;navigate?:(url:string)=>void}){
  const [session,setSession]=useState<ShopSession|null>(null),[id,setId]=useState<number|null>(null),[error,setError]=useState(''),[attempt,setAttempt]=useState(0);
+ useEffect(()=>{const invalidated=(event:Event)=>{setSession(null);setId(null);setError((event as CustomEvent<string>).detail||'Контекст магазина требует повторной проверки');};window.addEventListener('mh-shop-context-invalidated',invalidated);return()=>window.removeEventListener('mh-shop-context-invalidated',invalidated);},[]);
  useEffect(()=>{const refresh=()=>{clearShopContext();setSession(null);setId(null);navigate(window.location.href);};window.addEventListener('mh-shop-revision-changed',refresh);return()=>window.removeEventListener('mh-shop-revision-changed',refresh);},[]);
  useEffect(()=>{
   requireShopContext();clearShopContext();setSession(null);setId(null);setError('');

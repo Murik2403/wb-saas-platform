@@ -141,8 +141,11 @@ export async function bindPrimaryWarehouse(base:string,headers:Record<string,str
  try{
  const fixed=new URL(base+'/api/v1/shared-warehouse/primary-binding',window.location.origin);
  if(fixed.origin!==window.location.origin)throw new Error('Недопустимый адрес кабинета');
- const response=await globalThis.fetch(fixed,{method:'POST',headers:{...headers,'Content-Type':'application/json','X-MH-Shop-ID':'0','X-MH-Request-Key':crypto.randomUUID()},body:'{}'});stillCurrent(version);
+ const bindingHeaders=new Headers(headers);
+ bindingHeaders.set('Content-Type','application/json');bindingHeaders.set('X-MH-Shop-ID','0');bindingHeaders.set('X-MH-Request-Key',crypto.randomUUID());
+ const response=await globalThis.fetch(fixed,{method:'POST',headers:bindingHeaders,body:'{}'});stillCurrent(version);
  const value=await response.json();stillCurrent(version);
+ if(!response.ok){const detail=value?.detail;const message=typeof detail==='string'?detail:detail?.message;throw new Error(typeof message==='string'&&message.length<=600?message:`Подтверждение магазина не выполнено (код ${response.status})`);}
  if(!response.ok||response.headers.get('X-MH-Shop-ID')!=='0'||response.headers.get('X-MH-Resource-Scope')!=='tenant_shared'||value?.shop_id!==0||value?.refresh_session!==true||!isFingerprint(value?.verified_identity)||response.headers.get('X-MH-Shop-Identity')!==value.verified_identity)throw new Error('Основной магазин не подтверждён; обновите страницу');
  const freshResponse=await globalThis.fetch(base+'/api/v1/shop-context/session',{headers:{...headers,'X-MH-Shop-ID':'0'}});stillCurrent(version);
  if(!freshResponse.ok||freshResponse.headers.get('X-MH-Shop-ID')!=='0'||freshResponse.headers.get('X-MH-Shop-Identity')!==value.verified_identity)throw new Error('Обновите страницу для подтверждения магазина');
@@ -150,5 +153,5 @@ export async function bindPrimaryWarehouse(base:string,headers:Record<string,str
  const primary=fresh.shops.find(shop=>shop.id===0);
  if(fresh.role!=='owner'||fresh.selected_shop_id!==0||!primary?.active||primary.verified_identity!==value.verified_identity)throw new Error('Контекст основного магазина изменился; обновите страницу');
  clearShopContext();window.location.replace(window.location.href);
- }catch(reason){if(epoch===version)clearShopContext();throw reason;}
+ }catch(reason){if(epoch===version){clearShopContext();window.dispatchEvent(new CustomEvent('mh-shop-context-invalidated',{detail:reason instanceof Error?reason.message:'Подтверждение магазина не выполнено'}));}throw reason;}
 }
