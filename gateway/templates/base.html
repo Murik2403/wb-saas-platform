@@ -26,6 +26,8 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0a0b12">
+{# Blocking, first-party initialization restores the palette before CSS paints. #}
+<script src="/static/theme.js"></script>
 {% if yandex_verification %}<meta name="yandex-verification" content="{{ yandex_verification }}">{% endif %}
 {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
 <style>
@@ -35,7 +37,8 @@
        wildbox/WB-analytics-tool niche, but with a single accent reserved
        for interactive elements and a separate semantic set (good/warn/
        critical) so "brand" and "needs attention" never look the same. */
-    --bg:#0a0b12; --surface:#12141e; --surface-2:#1a1d2c;
+    color-scheme: dark;
+    --bg:#0a0b12; --surface:#12141e; --surface-2:#1a1d2c; --on-accent:#0a0b12;
     --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
     --text:#eef0f7; --text-muted:#8d94aa; --text-faint:#858ba1;
     --focus:#9a8bff; --accent:#7c6cf6; --accent-strong:#9a8bff; --accent-soft:rgba(124,108,246,.14);
@@ -45,6 +48,31 @@
     --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     --font-mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
   }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg:#f6f7fb; --surface:#ffffff; --surface-2:#edf0f8; --on-accent:#ffffff;
+    --border:rgba(27,35,57,.13); --border-strong:rgba(27,35,57,.24);
+    --text:#1b2339; --text-muted:#515e76; --text-faint:#5f6b82;
+    --focus:#6752d6; --accent:#6752d6; --accent-strong:#5741bd; --accent-soft:rgba(103,82,214,.09);
+    --good:#167247; --good-soft:rgba(22,114,71,.09);
+    --warn:#8f5700; --warn-soft:rgba(143,87,0,.09);
+    --critical:#bb2942; --critical-soft:rgba(187,41,66,.09);
+  }
+  :root[data-theme="light"] .card,
+  :root[data-theme="light"] .calc-wrap,
+  :root[data-theme="light"] .mini-dash,
+  :root[data-theme="light"] .shot-card,
+  :root[data-theme="light"] .device-frame { box-shadow: 0 12px 32px rgba(27,35,57,.08); }
+  :root[data-theme="light"] .lightbox { background: rgba(237,240,248,.92); }
+  :root[data-theme="light"] .feature.tile-3 { background: #167247; }
+  :root[data-theme="light"] .feature.tile-6 { background: #8f5700; }
+  .theme-toggle {
+    width: auto; margin: 0; padding: 8px 12px; border: 1px solid var(--border-strong);
+    border-radius: 9px; background: var(--surface); color: var(--text); font-size: .85rem;
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  }
+  .theme-toggle:hover { background: var(--surface-2); border-color: var(--accent); }
+  .theme-toggle:active { transform: scale(.97); }
   * { box-sizing: border-box; }
   /* Without this, iOS Safari silently boosts font-size inside narrow,
      horizontally-scrollable content (exactly .compare-table's columns on a
@@ -104,7 +132,7 @@
   .checkbox-line a { color: var(--accent-strong); }
   button {
     width: 100%; margin-top: 22px; padding: 11px; border: none; border-radius: 12px;
-    background: var(--accent); color: #0a0b12; font-weight: 600; font-size: .95rem; cursor: pointer;
+    background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: .95rem; cursor: pointer;
     font-family: var(--font-display);
   }
   button:hover { background: var(--accent-strong); }
@@ -131,7 +159,7 @@
   .nav-bar .links { display: flex; gap: 22px; align-items: center; font-size: .89rem; flex-wrap: wrap; row-gap: 8px; }
   .nav-bar .links a { color: var(--text-muted); text-decoration: none; }
   .nav-bar .links a:hover { color: var(--text); }
-  .nav-bar .links a.cta { color: #0a0b12; background: var(--accent); padding: 8px 16px; border-radius: 9px; font-weight: 600; }
+  .nav-bar .links a.cta { color: var(--on-accent); background: var(--accent); padding: 8px 16px; border-radius: 9px; font-weight: 600; }
   .nav-bar .links a.cta:hover { background: var(--accent-strong); }
 
   .hero {
@@ -232,7 +260,7 @@
   .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 22px;
     border-radius: 11px; font-weight: 600; font-size: .93rem; text-decoration: none; border: 1px solid transparent; cursor: pointer; }
-  .btn-primary { background: var(--accent); color: #0a0b12; }
+  .btn-primary { background: var(--accent); color: var(--on-accent); }
   .btn-primary:hover { background: var(--accent-strong); }
   .btn-ghost { color: var(--text); border-color: var(--border-strong); }
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent-strong); }
@@ -360,7 +388,7 @@
     transition: transform .15s ease, background .15s ease; }
   .video-play-btn:hover .ic { transform: scale(1.06); background: var(--accent-strong); }
   .video-play-btn .ic::after { content: ''; border-style: solid; border-width: 13px 0 13px 21px;
-    border-color: transparent transparent transparent #0a0b12; margin-left: 5px; }
+    border-color: transparent transparent transparent var(--on-accent); margin-left: 5px; }
   .video-frame-media.playing .video-play-btn { display: none; }
 
   /* ---------- lightbox for real product screenshots ---------- */
@@ -443,7 +471,7 @@
   .at-btn { padding: 8px 16px; border: none; border-radius: 9px; background: transparent; color: var(--text-muted);
     font-family: var(--font-display); font-size: .84rem; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease; }
   .at-btn:hover { color: var(--text); }
-  .at-btn.active { background: var(--accent); color: #0a0b12; }
+  .at-btn.active { background: var(--accent); color: var(--on-accent); }
   .audience-card { transition: opacity .2s ease, border-color .2s ease; }
   .audience-card.muted { opacity: .55; }
 
@@ -474,7 +502,7 @@
 
   /* ---------- landing: floating CTA for a long page ---------- */
   .floating-cta { position: fixed; bottom: 22px; right: 22px; z-index: 40;
-    padding: 13px 22px; border-radius: 12px; background: var(--accent); color: #0a0b12;
+    padding: 13px 22px; border-radius: 12px; background: var(--accent); color: var(--on-accent);
     font-weight: 700; font-size: .89rem; text-decoration: none; box-shadow: 0 14px 34px rgba(0,0,0,.45);
     opacity: 0; transform: translateY(14px); pointer-events: none; transition: opacity .25s ease, transform .25s ease, background .15s ease; }
   .floating-cta.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
