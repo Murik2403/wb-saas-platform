@@ -45,7 +45,11 @@ def available_media():
 
 def training_context():
     media = available_media()
-    return {"training_lessons": [{**item, "media": media.get(item["slug"])} for item in catalog()], "training_overview": media.get("overview")}
+    lessons = []
+    for item in catalog():
+        seconds = round(item["duration"])
+        lessons.append({**item, "duration_label": f"{seconds // 60}:{seconds % 60:02d}", "media": media.get(item["slug"])})
+    return {"training_lessons": lessons, "training_overview": media.get("overview")}
 
 def create_training_media_router():
     router = APIRouter()

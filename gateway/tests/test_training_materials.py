@@ -54,7 +54,7 @@ class TrainingTests(unittest.TestCase):
         html = self.client.get('/training').text
         self.assertEqual(html.count('<source '), 1)
         self.assertIn(f'src="/training/media/{name}"', html)
-        self.assertIn('Видео · 2 мин', html)
+        self.assertIn('Видео · 1:07 · без озвучки', html)
         self.assertEqual(self.client.get('/training/media/'+name).content, body)
     def test_verified_public_manifest_serves_seekable_immutable_video(self):
         name, _ = self.published()
@@ -66,6 +66,14 @@ class TrainingTests(unittest.TestCase):
         self.assertEqual(response.headers['content-range'],'bytes 0-31/128')
         self.assertIn('immutable',response.headers['cache-control'])
         self.assertEqual(response.headers['x-content-type-options'],'nosniff')
+
+    def test_all_silent_course_durations_use_minutes_and_seconds(self):
+        lessons = training.training_context()['training_lessons']
+        self.assertEqual(len(lessons), 16)
+        self.assertEqual(lessons[0]['duration_label'], '1:15')
+        self.assertTrue(all(row['duration_label'] == '1:41' for row in lessons[1:11]))
+        self.assertTrue(all(row['duration_label'] == '1:07' for row in lessons[11:]))
+        self.assertAlmostEqual(sum(row['duration'] for row in lessons), 1419.0666666667)
     def test_unlisted_files_and_manifest_are_never_served(self):
         (self.root/'private.mp4').write_bytes(b'not-approved')
         for name in ['private.mp4','manifest.json','unknown.'+'a'*64+'.mp4']:
