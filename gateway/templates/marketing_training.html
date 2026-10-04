@@ -20,7 +20,7 @@
 <h2 id="{{ lesson.slug }}-title">{{ lesson.id }}. {{ lesson.title }}</h2>
 {% if lesson.expected %}<p><strong>После урока:</strong> {{ lesson.expected }}</p>{% endif %}
 {% if lesson.media %}<p>Видео · {{ lesson.duration_label }} · без озвучки · учебные данные</p>
-<video class="training-video" controls playsinline preload="none" aria-label="{{ lesson.title }}: учебное видео"><source src="{{ lesson.media.url }}" type="video/mp4">{% if lesson.media.captions %}<track kind="subtitles" src="{{ lesson.media.captions.url }}" srclang="ru" label="Русские инструкции" default>{% endif %}Ваш браузер не поддерживает видео. Инструкция доступна ниже.</video>
+<video class="training-video" controls playsinline preload="none" aria-label="{{ lesson.title }}: учебное видео"><source src="{{ lesson.media.url }}" type="video/mp4">{% if lesson.media.captions %}<track kind="subtitles" src="{{ lesson.media.captions.url }}" srclang="ru" label="Русские инструкции">{% endif %}Ваш браузер не поддерживает видео. Инструкция доступна ниже.</video>
 <a href="{{ lesson.media.url }}" download>Скачать урок MP4</a>
 {% else %}<p>Видео готовится к публикации. Текстовая инструкция доступна ниже.</p>{% endif %}
 <details><summary>Текстовая инструкция и проверка результата</summary><ol>{% for heading, lines in lesson.steps %}<li><h3>{{ heading }}</h3><ul>{% for line in lines %}<li>{{ line }}</li>{% endfor %}</ul></li>{% endfor %}</ol></details>

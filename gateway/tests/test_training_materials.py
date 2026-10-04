@@ -92,6 +92,7 @@ class TrainingTests(unittest.TestCase):
         self.assertTrue(response.headers['content-type'].startswith('text/vtt'))
         self.assertIn(f'src="/training/media/{name}"',self.client.get('/training').text)
         self.assertIn('srclang="ru"',self.client.get('/training').text)
+        self.assertNotIn('label="Русские инструкции" default',self.client.get('/training').text)
         (self.root/name).unlink()
         self.assertNotIn('<source ',self.client.get('/training').text)
     def test_unapproved_or_wrong_size_manifest_is_not_published(self):
