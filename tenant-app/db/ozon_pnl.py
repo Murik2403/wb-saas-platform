@@ -12,6 +12,8 @@ from .core import connect
 
 MSK = ZoneInfo('Europe/Moscow')
 COLUMNS = ('external_event_id','accrued_at','movement_at','kind','sku','posting_ref','return_of','quantity','revenue_rub','commission_rub','logistics_rub','other_rub','source_total_rub','currency','document_ref')
+PNL_MAX_ROWS = 20000
+PNL_MAX_BYTES = 16 * 1024 * 1024
 
 
 def canonical(value):
@@ -248,11 +250,28 @@ def add_cost_lot(*,namespace,sku,received_at,quantity_units,unit_cost_rub,docume
         return {'id':int(cursor.lastrowid),'projection_revision':_projection(conn,actor)}
 
 
+def _pnl_read_budget(conn):
+    """Preflight the existing global history/projection without changing FIFO semantics.
+
+    Reject before Python materialization; no partial history may masquerade as
+    complete FIFO. Write/import helpers retain their original transaction logic.
+    """
+    total_bytes = 0
+    for table in ('ozon_document_events', 'ozon_document_cost_lots'):
+        count, size = conn.execute(f'SELECT COUNT(*),COALESCE(SUM(length(CAST(payload_json AS BLOB))),0) FROM {table}').fetchone()
+        if count > PNL_MAX_ROWS: raise ValueError('Реестр Ozon превышает безопасный объём расчёта; требуется ограниченный архив/проекция.')
+        total_bytes += size
+    saved_size = conn.execute('SELECT length(CAST(payload_json AS BLOB)) FROM ozon_cost_projections ORDER BY id DESC LIMIT 1').fetchone()
+    if saved_size: total_bytes += saved_size[0]
+    if total_bytes > PNL_MAX_BYTES: raise ValueError('История/проекция Ozon превышает безопасный объём расчёта; требуется ограниченный архив/проекция.')
+
+
 def pnl(start,end,namespace="main"):
     namespace=text(namespace,'Магазин/реестр',80)
     with connect() as conn:
         ensure_schema(conn)
         conn.execute('BEGIN')
+        _pnl_read_budget(conn)
         events=_rows(conn,'ozon_document_events');lots=_rows(conn,'ozon_document_cost_lots')
         saved=conn.execute('SELECT id,payload_json,created_at FROM ozon_cost_projections ORDER BY id DESC LIMIT 1').fetchone()
         raw_count=conn.execute('SELECT COUNT(*) FROM ozon_raw_source_versions').fetchone()[0]

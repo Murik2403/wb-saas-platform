@@ -1,0 +1,27 @@
+.ozon-ads-panel {display:grid;gap:16px;min-width:0;color:inherit}
+.ozon-ads-panel header {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ozon-ads-panel h2,.ozon-ads-panel p {margin:0}
+.ozon-ads-panel header p,.ozon-ads-note {font-size:13px;line-height:1.6;opacity:.85}
+.ozon-ads-connect,.ozon-ads-report-form {border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:12px;padding:16px;min-width:0}
+.ozon-ads-connect summary {cursor:pointer;font-weight:650;min-height:36px;display:list-item}
+.ozon-ads-connect form,.ozon-ads-report-form {display:grid;gap:12px}
+.ozon-ads-connect form {margin:14px 0;grid-template-columns:repeat(2,minmax(0,1fr))}
+.ozon-ads-panel label {display:grid;gap:6px;font-size:13px;min-width:0}
+.ozon-ads-panel input {box-sizing:border-box;width:100%;min-width:0;min-height:44px;border:1px solid color-mix(in srgb,currentColor 28%,transparent);border-radius:8px;padding:10px 12px;background:transparent;color:inherit;font:inherit}
+.ozon-ads-panel button {min-height:44px;border:1px solid color-mix(in srgb,currentColor 30%,transparent);border-radius:8px;padding:10px 14px;background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer}
+.ozon-ads-panel button:disabled {opacity:.45;cursor:default}
+.ozon-ads-panel button:not(:disabled):hover {background:color-mix(in srgb,currentColor 7%,transparent)}
+.ozon-ads-panel :is(button,input,summary,[tabindex]):focus-visible {outline:2px solid var(--accent,#00ad93);outline-offset:3px}
+.ozon-ads-error {color:var(--danger,#d73552);overflow-wrap:anywhere}
+.ozon-ads-notice,.ozon-ads-empty {padding:12px 14px;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:10px;font-size:14px;line-height:1.5}
+.ozon-ads-kpis {display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:0}
+.ozon-ads-kpis div {border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:10px;padding:12px;min-width:0}
+.ozon-ads-kpis dt {font-size:12px;line-height:1.5;opacity:.8}
+.ozon-ads-kpis dd {font-weight:700;font-size:19px;margin:6px 0 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.ozon-ads-scroll {max-width:100%;min-width:0;overflow-x:auto;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:10px}
+.ozon-ads-scroll table {border-collapse:collapse;min-width:1100px;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+.ozon-ads-scroll caption {text-align:left;padding:12px;font-weight:650}
+.ozon-ads-scroll th,.ozon-ads-scroll td {padding:10px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,currentColor 15%,transparent)}
+.ozon-ads-scroll th:first-child {text-align:left}
+.ozon-ads-job {display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+@media(max-width:600px) {.ozon-ads-connect form {grid-template-columns:minmax(0,1fr)}.ozon-ads-panel header button,.ozon-ads-report-form button {width:100%}.ozon-ads-kpis {grid-template-columns:repeat(2,minmax(0,1fr))}.ozon-ads-kpis dd {font-size:17px}}

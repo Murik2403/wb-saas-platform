@@ -1,0 +1,30 @@
+.ozon-normalization { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text); }
+.ozon-normalization-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.ozon-normalization h3,.ozon-normalization h4 { margin: 0 0 12px; }
+.ozon-normalization p { color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
+.ozon-normalization .ozon-normalization-eyebrow { margin: 0 0 8px; color: var(--action); font-size: 12px; font-weight: 700; }
+.ozon-normalization-scope { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin-block: 20px; }
+.ozon-normalization-scope > label { flex: 1 1 220px; }
+.ozon-normalization label { display: grid; gap: 8px; min-width: 0; }
+.ozon-normalization input,.ozon-normalization select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.ozon-normalization :is(input,select,button,summary,[tabindex]):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.ozon-normalization button { min-height: 44px; white-space: normal; }
+.ozon-normalization-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.ozon-normalization-metrics > div { padding: 16px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.ozon-normalization-metrics span { color: var(--muted); font-size: 13px; }
+.ozon-normalization-metrics strong { display: block; margin-top: 10px; font-size: 22px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ozon-normalization-table { width: 100%; min-width: 0; overflow-x: auto; margin-block: 20px; border: 1px solid var(--line); border-radius: 10px; }
+.ozon-normalization-table table { width: 100%; min-width: 680px; border-collapse: collapse; }
+.ozon-normalization-table :is(th,td) { padding: 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ozon-normalization-table td { max-width: 340px; overflow-wrap: anywhere; }
+.ozon-normalization-link { margin-top: 24px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; }
+.ozon-normalization fieldset { margin-block: 16px; border: 1px solid var(--line); border-radius: 8px; max-height: 320px; overflow-y: auto; }
+.ozon-normalization .ozon-normalization-document { display: flex; align-items: flex-start; gap: 10px; margin-block: 12px; }
+.ozon-normalization-document input { width: 20px; height: 20px; flex: 0 0 20px; accent-color: var(--action); }
+.ozon-normalization-document span { overflow-wrap: anywhere; min-width: 0; }
+.ozon-normalization-document small { display: block; margin-top: 5px; color: var(--muted); }
+.ozon-normalization-details { margin-top: 20px; }
+.ozon-normalization-details summary { cursor: pointer; padding-block: 10px; }
+.ozon-normalization-details code { overflow-wrap: anywhere; }
+.ozon-normalization .ozon-normalization-error { color: var(--danger); }
+@media (max-width: 700px) { .ozon-normalization { padding: 16px; } .ozon-normalization-metrics { grid-template-columns: 1fr; } .ozon-normalization-link { padding: 12px; } .ozon-normalization-heading > button,.ozon-normalization-scope > button { width: 100%; } }

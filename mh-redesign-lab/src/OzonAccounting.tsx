@@ -3,6 +3,11 @@ import { scopedFetch as fetch, currentShop, navigateToShop } from "./selected-sh
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders, getDashboardSession } from "./data-source";
 import "./OzonAccounting.css";
+import { WorkspaceTabs } from "./WorkspaceTabs";
+import { OzonProductInsights } from "./OzonProductInsights";
+import { OzonNormalizationPanel } from "./OzonNormalizationPanel";
+import { OzonMonthlyPanel } from "./OzonMonthlyPanel";
+import { OzonAdsAnalyticsPanel } from "./OzonAdsAnalyticsPanel";
 import { OzonHistoricalPnl } from "./OzonHistoricalPnl";
 import { OzonRealizationSource } from "./OzonRealizationSource";
 
@@ -37,6 +42,7 @@ function PrimaryOzonAccounting() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canWrite, setCanWrite] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, { mode: string; value: string }>>({});
   const generation = useRef(0);
   const period = `?start_date=${start}&end_date=${end}`;
@@ -47,7 +53,7 @@ function PrimaryOzonAccounting() {
     catch (caught) { if (current === generation.current) setError(caught instanceof Error ? caught.message : "Не удалось прочитать Ozon"); }
     finally { if (current === generation.current) setBusy(false); }
   };
-  useEffect(() => { void getDashboardSession().then(session => setCanWrite(session.mode !== "demo" && ["owner", "manager"].includes(session.user.role.toLowerCase()))).catch(() => setCanWrite(false)); }, []);
+  useEffect(() => { void getDashboardSession().then(session => { setCanWrite(session.mode !== "demo" && ["owner", "manager"].includes(session.user.role.toLowerCase())); setIsOwner(session.mode !== "demo" && session.user.role.toLowerCase() === "owner"); }).catch(() => setCanWrite(false)); }, []);
   useEffect(() => { setData(null); void refresh(); return () => { ++generation.current; }; }, [start, end]);
   const sync = async () => {
     if (busy || !canWrite) return;
@@ -69,6 +75,8 @@ function PrimaryOzonAccounting() {
     {error ? <p role="alert" className="operation-error">{error} Сохранённые данные не заменены частично.</p> : null}
     {data?.configured === false ? <p>Подключите Ozon в разделе «Настройки».</p> : null}
     {!canWrite ? <p>Загрузка и изменение себестоимости доступны владельцу и менеджеру.</p> : null}
+    <WorkspaceTabs ariaLabel="Разделы учёта Ozon" initial="ozon-source" tabs={[{id:"ozon-source",label:"Данные и документы"},{id:"ozon-reconciliation",label:"Сверка и FIFO"},{id:"ozon-products",label:"Товары и план"},{id:"ozon-monthly",label:"ОПиУ и налоги"},{id:"ozon-advertising",label:"Реклама"}]} panels={{
+    "ozon-source": <>
     {data?.loaded ? <>
       <p role="status">Загрузка API: {data.source_collection_complete === true ? "все страницы загружены" : "полнота не подтверждена"}. Денежная расшифровка API: {data.financial_normalization_verified === true ? "подтверждена" : "не подтверждена"}. Расчёт: {data.accounting_complete ? "по загруженным данным" : "предварительный"}. Последняя загрузка: {data.synced_at ? new Date(data.synced_at).toLocaleString("ru-RU") : "—"}.</p>
       <div className="ozon-metrics"><div>Итог начислений Ozon<strong>{money(data.net_accrual_rub)}</strong></div><div>Оценочная себестоимость продаж и возвратов<strong>{money(data.estimated_cogs_rub)}</strong></div><div>Покрытие себестоимости<strong>{data.known_cost_units ?? 0} / {data.sales_and_return_units ?? 0} ед.</strong></div></div>
@@ -101,5 +109,11 @@ function PrimaryOzonAccounting() {
     </> : data ? <p>{data.blockers.join(" ")}</p> : <p>Читаем сохранённый отчёт…</p>}
     <OzonRealizationSource canWrite={canWrite} />
     <OzonHistoricalPnl key={`${start}:${end}`} start={start} end={end} canWrite={canWrite} />
+    </>,
+    "ozon-reconciliation": <OzonNormalizationPanel start={start} end={end} canWrite={canWrite} />,
+    "ozon-products": <OzonProductInsights start={start} end={end} canWrite={canWrite} />,
+    "ozon-monthly": <OzonMonthlyPanel start={start} end={end} canWrite={canWrite} />,
+    "ozon-advertising": <OzonAdsAnalyticsPanel start={start} end={end} canWrite={canWrite} isOwner={isOwner} />,
+    }} />
   </section>;
 }

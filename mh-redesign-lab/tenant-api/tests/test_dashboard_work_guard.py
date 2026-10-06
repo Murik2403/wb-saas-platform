@@ -28,9 +28,18 @@ async def discard(message):
     ("/api/v1/dashboard/products/price-advice", "POST"),
     ("/api/overview", "GET"), ("/api/today", "GET"), ("/api/products", "GET"),
     ("/api/v1/settings/expense-coverage", "POST"),
+    ("/api/v1/ozon-insights/products", "GET"),
+    ("/api/v1/ozon-insights/monthly", "GET"),
+    ("/api/v1/ozon-accounting/normalization/preview", "GET"),
+    ("/api/v1/ozon-insights/tax-input", "POST"),
 ])
 def test_heavy_route_coverage(path, method):
     assert guarded_request(scope(path, method))
+
+
+def test_ozon_upstream_reports_do_not_block_local_finance():
+    for path, method in [("/api/v1/ozon-accounting/sync", "POST"), ("/api/v1/ozon-accounting/advertising/reports/id/poll", "POST")]:
+        assert not guarded_request(scope(path, method))
 
 
 def test_gateway_wiring_surrounds_selected_shop_dispatch():

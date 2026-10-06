@@ -28,6 +28,27 @@ def client(monkeypatch,tmp_path):
 def token(sid):return 'header.'+base64.urlsafe_b64encode(json.dumps({'sid':sid}).encode()).decode().rstrip('=')+'.signature'
 
 
+@pytest.mark.parametrize('path', [
+    '/api/v1/ozon-insights/products', '/api/v1/ozon-insights/heatmap',
+    '/api/v1/ozon-insights/rnp', '/api/v1/ozon-insights/monthly',
+    '/api/v1/ozon-accounting/normalization/preview',
+    '/api/v1/ozon-accounting/normalization/documents',
+    '/api/v1/ozon-accounting/advertising',
+])
+def test_ozon_new_reports_never_fall_back_to_primary_for_secondary_shop(client, path):
+    shop = shops.create('secondary', 'unused', 'verified')
+    response = client.get(path+'?start_date=2026-09-01&end_date=2026-09-30', headers={'x-mh-shop-id': str(shop)})
+    assert response.status_code == 409
+    assert response.json()['detail']['code'] == 'SHOP_ROUTE_FORBIDDEN'
+
+
+def test_ozon_plan_write_secondary_denied_before_main_mutation(client):
+    shop = shops.create('secondary', 'unused', 'verified')
+    response = client.put('/api/v1/ozon-insights/rnp/plan', headers={'x-mh-shop-id': str(shop)}, json={'namespace':'main','sku':'123','day':'2026-09-01','units':1})
+    assert response.status_code == 409
+    assert response.json()['detail']['code'] == 'SHOP_ROUTE_FORBIDDEN'
+
+
 def test_tax_reconciliation_isolated_secondary_write_and_replay(client, monkeypatch, tmp_path):
     import db.core as core
     import tax_reconciliation as tax
@@ -111,7 +132,9 @@ def test_shop_session_acl_unknown_selector_and_no_primary_fallback(client):
     assert owner['shops'][0]['snapshot_revision'] is None
     assert owner['shops'][1]['snapshot_revision']==0
     assert owner['shops'][1]['snapshot_available'] is False
-    assert 'credential' not in str(owner) and 'unused' not in str(owner)
+    # Public route names can contain 'credentials'; credential values cannot.
+    assert 'unused' not in str(owner)
+    assert all(not any(key in row for key in ('credentials', 'api_key', 'client_secret', 'token')) for row in owner['shops'])
     headers={'x-tenant-role':'manager','x-tenant-account':'member@test','x-mh-shop-id':str(shop)}
     assert client.get('/api/v1/settings/product-costs',headers=headers).status_code==403
     assert client.get('/api/v1/shop-workspaces',headers={'x-tenant-role':'manager','x-tenant-account':'member@test'}).json()['items']==[]

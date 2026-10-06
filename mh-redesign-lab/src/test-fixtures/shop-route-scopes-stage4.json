@@ -1145,5 +1145,100 @@
     "method": "POST",
     "path": "/api/v1/self-buyouts/delete",
     "scope": "shop_local"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/normalization/preview",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/normalization/link",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-insights/products",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-insights/heatmap",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-insights/rnp",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/ozon-insights/rnp/plan",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/ozon-insights/rnp/favorite",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-insights/monthly",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-insights/monthly.csv",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-insights/tax-input",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/advertising",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/advertising/export.csv",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/advertising/credentials",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/ozon-accounting/advertising/credentials",
+    "scope": "forbidden"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/ozon-accounting/advertising/credentials",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/advertising/reports",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/advertising/reports/{identifier}",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-accounting/advertising/reports/{identifier}/poll",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-accounting/normalization/documents",
+    "scope": "forbidden"
   }
 ]

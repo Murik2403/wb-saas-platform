@@ -909,6 +909,11 @@ def _clear_dashboard_caches() -> None:
 
 # POST endpoints that only read (the body carries inputs): they must not drop the dashboard caches.
 READ_ONLY_POST_PATHS = {
+    "/api/v1/ozon-insights/tax-input",
+    # Ozon local revisions do not affect cached WB dashboards.
+    "/api/v1/ozon-accounting/normalization/link",
+    "/api/v1/ozon-insights/rnp/plan",
+    "/api/v1/ozon-insights/rnp/favorite",
     "/api/v1/dashboard/products/price-advice",
     # FBS refresh only fills its own fbs_* tables, which no cached dashboard shows.
     "/api/v1/fbs/refresh",
@@ -4092,6 +4097,13 @@ rnp_api.configure(lambda s, e: _build_dashboard_cached(s, e), lambda k, b: _dash
 app.include_router(rnp_api.router)
 import self_buyouts_api  # noqa: E402  (manual self-buyout cost ledger: local SQLite only)
 app.include_router(self_buyouts_api.router)
+
+from ozon_normalization_api import router as ozon_normalization_router
+from ozon_insights_api import router as ozon_insights_router
+from ozon_ads_api import router as ozon_ads_router
+app.include_router(ozon_normalization_router)
+app.include_router(ozon_insights_router)
+app.include_router(ozon_ads_router)
 
 # Must surround shop dispatch as well as local handlers: a cache miss lock
 # alone cannot bound DataFrames retained by overlapping response consumers.

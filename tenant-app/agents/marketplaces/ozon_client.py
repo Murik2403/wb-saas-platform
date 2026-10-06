@@ -1,15 +1,8 @@
-"""Ozon Seller API + Performance API client for the price/ad agents.
+"""Ozon Seller price client. Advertising automation is deliberately unavailable.
 
-Two separate credential systems, per Ozon's own architecture:
-- Seller API (product/pricing) — Client-Id + Api-Key headers, from the seller cabinet.
-- Performance API (advertising) — OAuth2 client_credentials against
-  api-performance.ozon.ru/api/client/token. As of 2026-04-06 Ozon requires OAuth
-  here even for RU sellers; the credentials for this token exchange are commonly
-  the same Client-Id/Api-Key from the seller cabinet, but Ozon also lets sellers
-  mint separate Performance API credentials in the advertising cabinet — if the
-  token exchange fails with the seller Client-Id/Api-Key, that's likely why.
-
-No Ozon integration existed anywhere in this repo before this file.
+Performance API uses separate credentials and asynchronous reports, exposed
+by ozon_ads_analytics. Seller credentials must never be exchanged for a
+Performance token, and unknown campaign statistics must never become zeros.
 """
 from __future__ import annotations
 
@@ -36,8 +29,6 @@ class OzonAgentClient:
         self.api_key = api_key.strip()
         self.timeout = timeout
         self.session = requests.Session()
-        self._perf_token: str | None = None
-        self._perf_token_expires_at: float = 0.0
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -75,26 +66,18 @@ class OzonAgentClient:
         raise OzonAgentClientError("Ozon API временно недоступен")
 
     def _performance_token(self) -> str:
-        """POST /api/client/token — OAuth2 client_credentials exchange."""
-        if self._perf_token and time.time() < self._perf_token_expires_at:
-            return self._perf_token
-        result = self._request(
-            "POST", f"{self.PERFORMANCE_URL}/api/client/token",
-            headers={"Content-Type": "application/json"},
-            json={"client_id": self.client_id, "client_secret": self.api_key, "grant_type": "client_credentials"},
-        )
-        if not isinstance(result, dict) or "access_token" not in result:
-            raise OzonAgentClientError(
-                f"Ozon Performance API: не удалось получить OAuth-токен по Client-Id/Api-Key ({result}). "
-                "Возможно, для рекламного API нужны отдельные учётные данные из рекламного кабинета Ozon, "
-                "а не из Seller API."
-            )
-        self._perf_token = result["access_token"]
-        self._perf_token_expires_at = time.time() + float(result.get("expires_in", 1800)) - 60
-        return self._perf_token
+        raise NotImplementedError(self._advertising_guidance())
 
     def _performance_headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._performance_token()}", "Content-Type": "application/json"}
+        raise NotImplementedError(self._advertising_guidance())
+
+    @staticmethod
+    def _advertising_guidance() -> str:
+        return (
+            "Реклама Ozon в агенте пока недоступна: нужен отдельный Performance API "
+            "и подтверждённые отчёты. Аналитика доступна в блоке «Реклама Ozon»; "
+            "изменение бюджетов и запуск/остановка кампаний не подключены."
+        )
 
     def get_prices(self) -> list[PriceRow]:
         """POST /v5/product/info/prices — cursor-paginated (last_id)."""
@@ -135,44 +118,13 @@ class OzonAgentClient:
         return ApplyResult(ok=ok, dry_run=False, detail=f"POST {endpoint} price={price} sku={sku} -> {result}")
 
     def get_campaigns(self) -> list[Campaign]:
-        """GET /api/client/campaign (Performance API, needs OAuth token)."""
-        headers = self._performance_headers()
-        result = self._request("GET", f"{self.PERFORMANCE_URL}/api/client/campaign", headers=headers)
-        items = (result.get("list") if isinstance(result, dict) else None) or []
-        campaigns: list[Campaign] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            state = str(item.get("state", "")).upper()
-            campaigns.append(
-                Campaign(
-                    campaign_id=str(item.get("id")),
-                    name=item.get("title") or f"Кампания {item.get('id')}",
-                    status="active" if "RUNNING" in state else "paused",
-                    daily_budget=float(item["dailyBudget"]) / 1_000_000 if item.get("dailyBudget") else None,
-                    spend_7d=0.0,  # требует отдельного вызова /api/client/statistics (асинхронный отчёт)
-                    revenue_7d=0.0,
-                )
-            )
-        return campaigns
+        raise NotImplementedError(self._advertising_guidance())
 
     def set_campaign_budget(self, campaign_id: str, budget: float, *, dry_run: bool = True) -> ApplyResult:
-        endpoint = f"{self.PERFORMANCE_URL}/api/client/campaign/{campaign_id}/budget"
-        if dry_run:
-            return ApplyResult(ok=True, dry_run=True, detail=f"[dry-run] POST {endpoint} budget={budget}")
-        result = self._request("POST", endpoint, headers=self._performance_headers(), json={"dailyBudget": int(budget * 1_000_000)})
-        return ApplyResult(ok=True, dry_run=False, detail=f"POST {endpoint} budget={budget} -> {result}")
+        raise NotImplementedError(self._advertising_guidance())
 
     def pause_campaign(self, campaign_id: str, *, dry_run: bool = True) -> ApplyResult:
-        endpoint = f"{self.PERFORMANCE_URL}/api/client/campaign/{campaign_id}/stop"
-        if dry_run:
-            return ApplyResult(ok=True, dry_run=True, detail=f"[dry-run] POST {endpoint}")
-        result = self._request("POST", endpoint, headers=self._performance_headers())
-        return ApplyResult(ok=True, dry_run=False, detail=f"POST {endpoint} -> {result}")
+        raise NotImplementedError(self._advertising_guidance())
 
     def resume_campaign(self, campaign_id: str, *, dry_run: bool = True) -> ApplyResult:
-        endpoint = f"{self.PERFORMANCE_URL}/api/client/campaign/{campaign_id}/start"
-        if dry_run:
-            return ApplyResult(ok=True, dry_run=True, detail=f"[dry-run] POST {endpoint}")
-        result = self._request("POST", endpoint, headers=self._performance_headers())
-        return ApplyResult(ok=True, dry_run=False, detail=f"POST {endpoint} -> {result}")
+        raise NotImplementedError(self._advertising_guidance())
