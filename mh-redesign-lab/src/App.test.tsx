@@ -830,6 +830,25 @@ describe("custom dashboard date range", () => {
 
 
 describe("explicit reasons for settings edits", () => {
+  it.each(["manager", "viewer", "demo"] as const)("keeps settings readable without owner-only backup requests for %s", async (kind) => {
+    window.history.replaceState({}, "", "/?view=settings");
+    const source = await import("./data-source");
+    const session = { user: { id: "u1", name: "Restricted user", role: kind === "demo" ? "owner" as const : kind }, tenant: { id: "t1", name: "Test tenant" }, mode: kind === "demo" ? "demo" as const : "mock" as const };
+    vi.mocked(source.getDashboardSession).mockResolvedValueOnce(session);
+    const disconnect = vi.spyOn(source, "disconnectWBToken").mockResolvedValue({connected:false,scopes:[],missing_scopes:[]});
+    const connect = vi.spyOn(source, "connectOzonCredentials").mockResolvedValue({connected:true});
+    const { default: App } = await import("./App");
+    const user = userEvent.setup();
+    await renderAuthorizedWb(<App />);
+    await user.click(await screen.findByRole("button", { name: "Подключения" }));
+    expect(await screen.findByRole("button", { name: "Отключить WB" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Сохранить Ozon" })).toBeDisabled();
+    expect(source.getTenantBackups).not.toHaveBeenCalled();
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    disconnect.mockRestore();
+    connect.mockRestore();
+  });
   it("sends cost reason separately from product note", async () => {
     window.history.replaceState({}, "", "/?view=settings");
     const source = await import("./data-source");

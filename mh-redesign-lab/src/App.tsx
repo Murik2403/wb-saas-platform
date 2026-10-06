@@ -1207,7 +1207,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <SettingsViewV2 sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} />} />) : null}
+        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <SettingsViewV2 canManage={session?.mode !== "demo" && session?.user.role === "owner"} sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} />} />) : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">
@@ -2398,7 +2398,7 @@ export function ControlView({
   return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:cabinetText(String(data.fifo_guard.guard_mode ?? "")),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><p className="form-hint">Нормы материала и себестоимость можно проверить в <button className="ghost-button" type="button" onClick={() => onNavigate("settings")}>настройках производства</button>.</p><WorkspaceTabs ariaLabel="Разделы страницы Контроль" storageKey="mh.tab.control" tabs={[{id:"attention",label:`Требует внимания · ${actionableChecks.length}`},{id:"ok",label:`В порядке · ${readyChecks.length}`}]} target={target} targetMap={{"control-checks":"attention"}} initial={actionableChecks.length ? "attention" : "ok"} panels={{attention:<section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{actionableChecks.length ? <div className="data-quality-list">{actionableChecks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{cabinetText(String(row.Модуль ?? "Контроль"))}</span><strong>{cabinetText(String(row.Проверка ?? ""))}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">{checks.length ? "Проверок, требующих внимания, нет" : "Проверок пока нет"}</p>}</section>,ok:<section className="work-section"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{readyChecks.length ? <div className="data-quality-list">{readyChecks.map((row,index) => <button className="data-quality-card detail-trigger" type="button" key={index} onClick={() => openCheck(row)}><strong>{cabinetText(String(row.Проверка ?? ""))}</strong><p>{String(row.Детали ?? "—")}</p></button>)}</div> : <p className="plan-empty">Проверок в порядке пока нет</p>}</section>}} /></div>;
 }
 
-function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () => Promise<void>; migration: React.ReactNode; sectionTarget?: string | null }) {
+function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false }: { onSynced: () => Promise<void>; migration: React.ReactNode; sectionTarget?: string | null; canManage?: boolean }) {
   const [requestedSection, setRequestedSection] = useState(sectionTarget);
   useEffect(() => { if (sectionTarget) setRequestedSection(sectionTarget); }, [sectionTarget]);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
@@ -2425,10 +2425,13 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
   const [message, setMessage] = useState("");
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [busy, setBusy] = useState<"settings" | "backup" | "sync" | "cost" | "material" | "expense" | "wb-token" | null>(null);
+  const loadVersion = useRef(0);
 
   const load = async () => {
+    const version = ++loadVersion.current;
     try {
-      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus, expenseData] = await Promise.all([getTenantSettings(), getTenantBackups(), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), getWBTokenStatus(), getManualExpenses().catch(() => ({ items: [] as ManualExpense[] }))]);
+      const [nextSettings, backupData, syncData, costData, normsData, materialData, wbStatus, expenseData] = await Promise.all([getTenantSettings(), canManage ? getTenantBackups() : Promise.resolve({backups:[]}), getTenantSyncHistory(), getProductCostSettings(), getProductionNorms(), getMaterialInventory(), getWBTokenStatus(), getManualExpenses().catch(() => ({ items: [] as ManualExpense[] }))]);
+      if (version !== loadVersion.current) return;
       setSettings(nextSettings);
       setBackups(backupData.backups);
       setSyncRuns(syncData.runs);
@@ -2444,11 +2447,11 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
       setWbReadOnly(Boolean(wbStatus.read_only));
       setWbExpiresAt(wbStatus.expires_at ?? null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось загрузить параметры кабинета");
+      if (version === loadVersion.current) setMessage(error instanceof Error ? error.message : "Не удалось загрузить параметры кабинета");
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [canManage]);
 
   const saveSettings = async () => {
     if (!settings) return;
@@ -2464,6 +2467,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
   };
 
   const saveWBToken = async () => {
+    if (!canManage) return;
     if (!wbToken.trim()) { setMessage("Введите WB-токен"); return; }
     setBusy("wb-token");
     try {
@@ -2481,6 +2485,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
   };
 
   const removeWBToken = async () => {
+    if (!canManage) return;
     setBusy("wb-token");
     try {
       await disconnectWBToken();
@@ -2493,6 +2498,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
   };
 
   const saveOzon = async () => {
+    if (!canManage) return;
     if (!ozonClientId.trim() || !ozonApiKey.trim()) { setMessage("Введите Client-Id и Api-Key Ozon"); return; }
     setBusy("wb-token");
     try {
@@ -2505,6 +2511,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
   };
 
   const removeOzon = async () => {
+    if (!canManage) return;
     setBusy("wb-token");
     try { await disconnectOzonCredentials(); setSettings((current) => current ? { ...current, ozon_connected: false } : current); setMessage("Ozon отключён"); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось отключить Ozon"); }
@@ -2512,6 +2519,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
   };
 
   const createBackup = async () => {
+    if (!canManage) return;
     setBusy("backup");
     try {
       const result = await createTenantBackup();
@@ -2688,13 +2696,13 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
         <div className="settings-connection-panel">
           <section className="panel">
             <SectionHeader compact kicker="Подключения" title="Статус API"><ShieldCheck size={20} /></SectionHeader>
-            {!settings.wb_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Wildberries"><p className="form-hint">Подключите WB-токен, чтобы загрузить продажи, остатки, финансы и отчёты.</p><label className="operation-field"><span>WB API-токен</span><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="Вставьте токен WB" /></label><button className="primary-button" disabled={busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : null}
+            {!settings.wb_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Wildberries"><p className="form-hint">Подключите WB-токен, чтобы загрузить продажи, остатки, финансы и отчёты.</p><label className="operation-field"><span>WB API-токен</span><input autoComplete="off" type="password" value={wbToken} onChange={(event) => setWbToken(event.target.value)} placeholder="Вставьте токен WB" /></label><button className="primary-button" disabled={!canManage || busy !== null} type="button" onClick={() => void saveWBToken()}>{busy === "wb-token" ? "Проверяем" : "Проверить и сохранить"}</button></div> : null}
             <div className="automation-list">
               <AutomationRow item={{ title: "Wildberries API", detail: "Данные и операции кабинета", status: settings.wb_connected ? "подключён" : "не подключён", tone: settings.wb_connected ? "good" : "warn" }} />
               <AutomationRow item={{ title: "Ozon Seller API", detail: "Используется агентом цен", status: settings.ozon_connected ? "подключён" : "не подключён", tone: settings.ozon_connected ? "good" : "info" }} />
             </div>
-            {!settings.ozon_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Ozon"><p className="form-hint">Подключите Ozon для ценовых рекомендаций.</p><label className="operation-field"><span>Client-Id</span><input autoComplete="off" value={ozonClientId} onChange={(event) => setOzonClientId(event.target.value)} /></label><label className="operation-field"><span>Api-Key</span><input autoComplete="off" type="password" value={ozonApiKey} onChange={(event) => setOzonApiKey(event.target.value)} /></label><button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void saveOzon()}>{busy === "wb-token" ? "Сохраняем" : "Сохранить Ozon"}</button></div> : <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeOzon()}>Отключить Ozon</button>}
-            {settings.wb_connected ? <div className="connection-actions"><span className="form-hint">Токен хранится зашифрованно и не показывается повторно.</span><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeWBToken()}>Отключить WB</button></div> : null}
+            {!settings.ozon_connected ? <div className="settings-form connection-form" role="group" aria-label="Подключение Ozon"><p className="form-hint">Подключите Ozon для ценовых рекомендаций.</p><label className="operation-field"><span>Client-Id</span><input autoComplete="off" value={ozonClientId} onChange={(event) => setOzonClientId(event.target.value)} /></label><label className="operation-field"><span>Api-Key</span><input autoComplete="off" type="password" value={ozonApiKey} onChange={(event) => setOzonApiKey(event.target.value)} /></label><button className="secondary-button" disabled={!canManage || busy !== null} type="button" onClick={() => void saveOzon()}>{busy === "wb-token" ? "Сохраняем" : "Сохранить Ozon"}</button></div> : <button className="ghost-button" disabled={!canManage || busy !== null} type="button" onClick={() => void removeOzon()}>Отключить Ozon</button>}
+            {settings.wb_connected ? <div className="connection-actions"><span className="form-hint">Токен хранится зашифрованно и не показывается повторно.</span><button className="ghost-button" disabled={!canManage || busy !== null} type="button" onClick={() => void removeWBToken()}>Отключить WB</button></div> : null}
             {wbScopes.length || wbMissingScopes.length ? <p className="form-hint">Проверено: {wbScopes.join(", ") || "—"}. Для полного функционала добавьте категории: {wbMissingScopes.join(", ")}.</p> : null}
             {wbReadOnly ? <p className="form-hint warning-text">Токен WB доступен только для чтения: операции изменения и печати в кабинете могут быть недоступны.</p> : null}
             {wbScopeMetadataAvailable && wbExpiresAt ? <p className="form-hint">Срок действия токена: {new Date(wbExpiresAt * 1000).toLocaleString("ru-RU")}</p> : null}
@@ -2764,9 +2772,9 @@ function SettingsViewV2({ onSynced, migration, sectionTarget }: { onSynced: () =
         <SectionHeader kicker="Обслуживание" title="Резервные копии"><ShieldCheck size={18} /></SectionHeader>
         <div className="operation-actions">
           <p className="plan-empty">Копируется база кабинета и настройки без токенов. Хранится до 14 последних копий.</p>
-          <button className="secondary-button" disabled={busy !== null} type="button" onClick={() => void createBackup()}><Download size={17} />{busy === "backup" ? "Создаём копию" : "Создать резервную копию"}</button>
+          <button className="secondary-button" disabled={!canManage || busy !== null} type="button" onClick={() => void createBackup()}><Download size={17} />{busy === "backup" ? "Создаём копию" : "Создать резервную копию"}</button>
         </div>
-        <BackupHistory backups={backups} />
+        {canManage ? <BackupHistory backups={backups} /> : <p className="plan-empty">Резервные копии доступны владельцу кабинета.</p>}
       </section>
 </>}
       />
