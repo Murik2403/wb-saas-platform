@@ -1001,7 +1001,7 @@ def get_dashboard_session(request: Request) -> dict:
     return {
         "user": {"id": request.headers.get("x-tenant-account", slug), "name": "Пользователь", "role": request.headers.get("x-tenant-role", "owner")},
         "tenant": {"id": slug, "name": tenant_name},
-        "mode": "tenant",
+        "mode": "demo" if IS_DEMO else "tenant",
     }
 
 
