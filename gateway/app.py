@@ -33,6 +33,7 @@ import growth_web
 from client_ip import client_ip as _client_ip
 from admin_routes import router as admin_router
 from billing_routes import router as billing_router
+from body_limit import BodyLimitMiddleware
 from internal_routes import router as internal_router
 from growth_internal import router as growth_internal_router
 from product_feedback_routes import router as product_feedback_router
@@ -60,6 +61,7 @@ app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(growth_web.AcquisitionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(BodyLimitMiddleware)
 app.include_router(growth_web.router)
 app.include_router(billing_router)
 app.include_router(admin_router)

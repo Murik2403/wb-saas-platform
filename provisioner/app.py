@@ -7,6 +7,7 @@ new endpoint is a security-sensitive change, not a convenience wrapper.
 """
 from __future__ import annotations
 
+import hmac
 import os
 import json
 import re
@@ -348,13 +349,28 @@ def _prune_old_backups(slug: str, keep_days: int) -> int:
     tenant_dir.mkdir(parents=True, exist_ok=True)
     cutoff = time.time() - keep_days * 86400
     removed = 0
+    fresh_enc = False
     for path in tenant_dir.glob("*.tar.gz.enc"):
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
                 removed += 1
+            else:
+                fresh_enc = True
         except OSError:
             continue
+    # Legacy plaintext archives and abandoned partials: age out only once a
+    # fresh encrypted backup exists, so rotation never leaves a group empty.
+    patterns = ["*.tar.gz", ".*.partial"] if fresh_enc else [".*.partial"]
+    for pattern in patterns:
+        for path in tenant_dir.glob(pattern):
+            try:
+                limit = cutoff if pattern == "*.tar.gz" else time.time() - 3600
+                if path.is_file() and not path.is_symlink() and path.stat().st_mtime < limit:
+                    path.unlink()
+                    removed += 1
+            except OSError:
+                continue
     return removed
 
 
@@ -928,7 +944,7 @@ def verify_internal_secret(slug: str, request: CredentialCheckRequest) -> dict[s
         container = _client().containers.get(_container_name(slug))
         environment = container.attrs.get("Config", {}).get("Env", [])
         actual = next((value.split("=", 1)[1] for value in environment if value.startswith("WB_SAAS_INTERNAL_API_SECRET=")), "")
-        return {"valid": actual == request.expected_secret}
+        return {"valid": hmac.compare_digest(actual.encode(), request.expected_secret.encode())}
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Tenant not found: {exc}") from exc
 
