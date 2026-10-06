@@ -138,3 +138,64 @@ def test_tolerant_parsing():
     assert fbs.map_order({}) is None
     m = fbs.map_order({"id": "7", "createdAt": "garbage", "price": "x"})
     assert m["order_id"] == 7 and m["created_at"] is None and m["price"] is None
+
+@pytest.mark.parametrize('failure', ['429', 'timeout'])
+def test_failed_refresh_preserves_previous_snapshot_and_success(conn, failure):
+    from wb_api import WBAPI
+    from unittest.mock import Mock
+    import requests
+    fbs.refresh(conn, FakeApi(), now=NOW, pause=0)
+    old_rows = conn.execute('SELECT * FROM fbs_order ORDER BY order_id').fetchall()
+    api = WBAPI('fixture-token', timeout=15)
+    api.session.request = (Mock(side_effect=requests.Timeout('private token detail')) if failure == 'timeout'
+                           else Mock(return_value=Mock(status_code=429, headers={'Retry-After': '60'})))
+    st = fbs.refresh(conn, api, now=NOW + timedelta(seconds=301), pause=0)
+    assert st['last_error'] and 'private' not in st['last_error']
+    assert st['last_success_at'] == fbs._iso(NOW)
+    assert conn.execute('SELECT * FROM fbs_order ORDER BY order_id').fetchall() == old_rows
+    assert api.session.request.call_count == 1
+
+@pytest.mark.parametrize('raw, expected', [
+    # Currency example from the official GET /api/v3/orders response.
+    ({'id':13833711,'price':1014,'currencyCode':933,'convertedPrice':28322,'convertedCurrencyCode':643},283.22),
+    ({'id':1,'price':1014,'currencyCode':643},10.14),
+    ({'id':1,'price':1014,'currencyCode':933},None),
+    ({'id':1,'price':1014,'currencyCode':933,'convertedPrice':28322,'convertedCurrencyCode':933},None),
+])
+def test_fbs_prices_are_rubles_only(raw, expected):
+    assert fbs.map_order(raw)['price'] == expected
+
+
+@pytest.mark.parametrize('supplier, wb, expected', [
+    ('cancel_carrier','waiting','cancelled'),
+    ('complete','canceled_by_carrier','cancelled'),
+    (None,'accepted_by_carrier','in_transit'),
+    (None,'sent_to_carrier','in_transit'),
+    (None,'postponed_delivery','in_transit'),
+])
+def test_official_crossborder_statuses(supplier, wb, expected):
+    assert fbs.state_of(supplier, wb) == expected
+
+@pytest.mark.parametrize('supplier', ['new', 'confirm'])
+@pytest.mark.parametrize('wb, state', [
+    ('accepted_by_carrier', 'in_transit'),
+    ('sent_to_carrier', 'in_transit'),
+    ('postponed_delivery', 'in_transit'),
+    ('sorted', 'in_transit'),
+    ('ready_for_pickup', 'at_pickup'),
+])
+def test_wb_delivery_status_overrides_stale_assembly_and_is_not_overdue(conn, supplier, wb, state):
+    put(conn, 99, '2026-09-08T12:00:00Z', supplier, wb)
+    result = fbs.list_orders(conn, now=NOW)['items'][0]
+    assert result['age_hours'] == 48
+    assert result['state'] == state
+    assert result['overdue'] is False
+    assert fbs.list_orders(conn, now=NOW, overdue=True)['items'] == []
+    assert fbs.analytics(conn, now=NOW)['overdue_count'] == 0
+
+
+@pytest.mark.parametrize('supplier', ['new', 'confirm'])
+def test_waiting_assembly_over_24_hours_remains_overdue(conn, supplier):
+    put(conn, 99, '2026-09-08T12:00:00Z', supplier, 'waiting')
+    result = fbs.list_orders(conn, now=NOW)['items'][0]
+    assert result['state'] == 'processing' and result['overdue'] is True

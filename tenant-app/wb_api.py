@@ -347,14 +347,16 @@ class WBAPI:
     def get_fbs_orders(self, date_from: int, date_to: int, limit: int = 1000, next_cursor: int = 0) -> dict[str, Any]:
         """One page of GET /api/v3/orders (FBS assembly tasks); dates are unix seconds. Returns {"orders": [...], "next": int|None}."""
         params = {"limit": max(1, min(int(limit), 1000)), "next": int(next_cursor), "dateFrom": int(date_from), "dateTo": int(date_to)}
-        result = self._request("GET", f"{self.MARKETPLACE_URL}/api/v3/orders", params=params)
+        # Manual refresh has its own five-minute retry slot. Do not keep its
+        # HTTP response waiting on shared 429 backoff or repeated timeouts.
+        result = self._request("GET", f"{self.MARKETPLACE_URL}/api/v3/orders", params=params, retry_safe=False)
         rows = result.get("orders") if isinstance(result, dict) else result
         cursor = result.get("next") if isinstance(result, dict) else None
         return {"orders": [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else [], "next": cursor}
 
     def get_fbs_order_statuses(self, order_ids: list[int]) -> list[dict[str, Any]]:
         """POST /api/v3/orders/status for up to 1000 ids -> [{"id", "supplierStatus", "wbStatus"}]. Read-only despite POST."""
-        result = self._request("POST", f"{self.MARKETPLACE_URL}/api/v3/orders/status", json={"orders": [int(i) for i in order_ids[:1000]]})
+        result = self._request("POST", f"{self.MARKETPLACE_URL}/api/v3/orders/status", json={"orders": [int(i) for i in order_ids[:1000]]}, retry_safe=False)
         rows = result.get("orders") if isinstance(result, dict) else result
         return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 

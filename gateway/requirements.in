@@ -11,3 +11,5 @@ psycopg[binary]>=3.1,<4
 testcontainers[postgres]>=4,<5
 sentry-sdk>=2.0,<3
 argon2-cffi>=25,<26
+# Security floor for the HTTP clients used by requests and sentry-sdk.
+urllib3>=2.8.0,<3

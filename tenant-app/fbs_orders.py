@@ -9,7 +9,8 @@ WB endpoints (marketplace-api.wildberries.ru, token category "Маркетпле
 
 Field mapping (every field optional, parsing is tolerant):
   id -> order_id | nmId -> nm_id | article (or vendorCode) -> article | createdAt (ISO 8601) -> created_at
-  price (kopecks, seller currency) / 100 -> price (rubles) | warehouseId -> warehouse_id | supplyId -> supply_id
+  convertedPrice / 100 when convertedCurrencyCode=643, otherwise price / 100 for RUB -> price (rubles)
+  | warehouseId -> warehouse_id | supplyId -> supply_id
   supplierStatus -> supplier_status: new, confirm (on assembly), complete (in a supply), cancel
   wbStatus -> wb_status: waiting, sorted, ready_for_pickup, sold, canceled, canceled_by_client, declined_by_client, defect
 
@@ -19,7 +20,7 @@ Derived state (state_of): delivered (wb sold) | cancelled (supplier cancel, wb c
 FINAL states: delivered, cancelled, defect. Statuses are refreshed for non-final orders only.
 
 ESTIMATES: WB gives no status timestamps. status_updated_at = our fetch time when the status pair changed
-(or first seen), so durations are accurate to the refresh interval. "Overdue" = supplier status new/confirm and
+(or first seen), so durations are accurate to the refresh interval. "Overdue" = derived processing state and
 older than OVERDUE_HOURS since createdAt (a constant of ours, not a WB rule).
 """
 from __future__ import annotations
@@ -92,15 +93,19 @@ def state_of(supplier_status: str | None, wb_status: str | None) -> str:
     sup, wb = (supplier_status or "").lower(), (wb_status or "").lower()
     if wb == "sold":
         return "delivered"
-    if sup == "cancel" or wb in {"canceled", "canceled_by_client", "declined_by_client"}:
+    if sup in {"cancel", "cancel_carrier"} or wb in {"canceled", "canceled_by_client", "declined_by_client", "canceled_by_carrier"}:
         return "cancelled"
     if wb == "defect":
         return "defect"
     if wb == "ready_for_pickup":
         return "at_pickup"
+    # Explicit WB delivery evidence takes precedence over a stale supplier
+    # assembly status; waiting alone does not prove handover to delivery.
+    if wb in {"sorted", "accepted_by_carrier", "sent_to_carrier", "postponed_delivery"}:
+        return "in_transit"
     if sup in {"new", "confirm"}:
         return "processing"
-    if sup == "complete" or wb in {"waiting", "sorted"}:
+    if sup == "complete" or wb == "waiting":
         return "in_transit"
     return "unknown"
 
@@ -109,7 +114,12 @@ def map_order(raw: dict) -> dict | None:
     order_id = _int(raw.get("id", raw.get("orderId")))
     if order_id is None:
         return None
-    price = raw.get("price")
+    # WB returns sale and seller-country currencies separately. The UI labels
+    # this amount in rubles; a known foreign amount must never receive ₽.
+    # Missing currencyCode remains compatible with older domestic snapshots.
+    price = raw.get("price") if raw.get("currencyCode") in {None, 643} else None
+    if raw.get("convertedCurrencyCode") == 643 and isinstance(raw.get("convertedPrice"), (int, float)) and not isinstance(raw.get("convertedPrice"), bool):
+        price = raw["convertedPrice"]
     return {
         "order_id": order_id, "nm_id": _int(raw.get("nmId")), "article": raw.get("article") or raw.get("vendorCode"),
         "created_at": raw.get("createdAt") if parse_ts(raw.get("createdAt")) else None,
@@ -260,7 +270,7 @@ def _decorate(row: sqlite3.Row | tuple, now: datetime) -> dict:
     final = state in FINAL_STATES
     end = changed if final else now
     age = round((end - start).total_seconds() / 3600, 1) if start and end and end >= start else None
-    overdue = (not final) and sup in {"new", "confirm"} and age is not None and age > OVERDUE_HOURS
+    overdue = state == "processing" and age is not None and age > OVERDUE_HOURS
     return {"order_id": oid, "nm_id": nm, "article": art, "created_at": created, "price": price, "warehouse_id": wh,
             "supply_id": supply, "supplier_status": sup, "wb_status": wb, "state": state, "state_label": STATE_LABELS[state],
             "age_hours": age, "overdue": overdue, "_start": start, "_changed": changed}

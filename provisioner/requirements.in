@@ -5,3 +5,5 @@ uvicorn[standard]>=0.52,<0.53
 docker>=7.0,<8
 cryptography>=42,<51
 pytest>=9.0.3,<10
+# Security floor for the HTTP clients used by requests.
+urllib3>=2.8.0,<3

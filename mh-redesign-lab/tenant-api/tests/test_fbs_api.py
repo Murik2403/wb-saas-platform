@@ -117,3 +117,27 @@ def test_refresh_keeps_dashboard_caches_and_is_shop_local(setup):
     import shop_context
     for method, path in [("GET", "/api/v1/fbs/orders"), ("GET", "/api/v1/fbs/analytics"), ("GET", "/api/v1/fbs/state"), ("POST", "/api/v1/fbs/refresh")]:
         assert shop_context.route_scope(method, path)["scope"] == "shop_local"
+
+
+def test_refresh_wb_429_returns_without_waiting_and_reads_keep_snapshot(setup):
+    from unittest.mock import Mock
+    import time
+    import wb_api
+    c = client()
+    assert c.post('/api/v1/fbs/refresh').status_code == 200
+    previous = c.get('/api/v1/fbs/orders').json()['items']
+    with core.connect() as conn:
+        conn.execute('UPDATE fbs_sync_state SET last_run_at = ?', ('2000-01-01T00:00:00Z',))
+        conn.commit()
+    setup.setattr(fbs_api, 'WBAPI', WBAPI)
+    request = Mock(return_value=Mock(status_code=429, headers={'Retry-After': '60'}))
+    setup.setattr(wb_api.requests.Session, 'request', request)
+    sleep = Mock()
+    setup.setattr(wb_api.time, 'sleep', sleep)
+    started = time.monotonic()
+    response = c.post('/api/v1/fbs/refresh')
+    assert time.monotonic() - started < 1
+    assert response.status_code == 200 and response.json()['last_error']
+    assert request.call_count == 1
+    sleep.assert_not_called()
+    assert c.get('/api/v1/fbs/orders').json()['items'] == previous

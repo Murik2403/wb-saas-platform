@@ -39,6 +39,7 @@ from product_feedback_routes import router as product_feedback_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
 from logic import accounts, compliance, csrf, db as control_db, password_reset, growth, trial_emails
 from rate_limiter import RateLimiter
+from security_headers import SecurityHeadersMiddleware
 from sentry_integration import initialize as initialize_sentry
 from template_setup import create_templates
 from marketing_routes import create_marketing_router, llms_txt, PUBLIC_MARKETING_PATHS
@@ -58,6 +59,7 @@ async def _lifespan(_app: FastAPI):
 app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(growth_web.AcquisitionMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(growth_web.router)
 app.include_router(billing_router)
 app.include_router(admin_router)
