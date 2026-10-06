@@ -86,3 +86,35 @@ def test_mutation_timeout_is_unknown_no_retry():
 def test_unknown_result_rows_never_success(env,monkeypatch):
     fp,rows=prepared(env);monkeypatch.setattr(env[0],'send_once',lambda _: {'result':[]})
     assert p.confirm(rows,fp,'unique-request-key-6',True)['status']=='unknown_outcome'
+
+def _insert_pending(key,age,account=None):
+    import time
+    acct=account or p.identity()[0]
+    with p.connection() as db:db.execute("INSERT INTO ozon_price_operation (request_key,account,draft_hash,status,payload,actor,created_at) VALUES (?,?,?,?,?,?,?)",(key,acct,'x','in_progress',json.dumps({'request_key':key,'status':'in_progress','items':[],'automatic_retry':False}),'',time.time()-age))
+
+def test_fresh_in_progress_blocks_new_send(env):
+    fp,rows=prepared(env);_insert_pending('fresh-pending-key-0001',30)
+    with pytest.raises(p.PriceError) as caught:p.confirm(rows,fp,'unique-request-key-6',True)
+    assert caught.value.code=='operation_pending' and not env[0].writes
+
+def test_stale_in_progress_becomes_unknown_and_does_not_block(env):
+    fp,rows=prepared(env);_insert_pending('stale-pending-key-0001',p.PENDING_TTL_SECONDS+5)
+    assert p.confirm(rows,fp,'unique-request-key-7',True)['status']=='completed' and len(env[0].writes)==1
+    # replaying the abandoned key reports unknown_outcome, never a running send
+    with p.connection() as db:assert db.execute("SELECT status FROM ozon_price_operation WHERE request_key='stale-pending-key-0001'").fetchone()[0]=='unknown_outcome'
+
+def test_legacy_table_without_created_at_is_migrated(env):
+    import sqlite3
+    db=sqlite3.connect(p.config.DB_PATH);db.executescript("CREATE TABLE ozon_price_operation (request_key TEXT PRIMARY KEY,account TEXT NOT NULL,draft_hash TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL,actor TEXT NOT NULL DEFAULT '');INSERT INTO ozon_price_operation VALUES ('legacy-key-0000000001','a','h','in_progress','{}','');");db.commit();db.close()
+    with p.connection() as db:assert db.execute("SELECT created_at FROM ozon_price_operation").fetchone()[0]==0
+
+def test_large_price_change_needs_explicit_allowance(env):
+    fp,rows=prepared(env);rows[0]['price']='300.00'
+    assert p.preview(rows,fp)['large_changes']==['1']
+    with pytest.raises(p.PriceError) as caught:p.confirm(rows,fp,'unique-request-key-8',True)
+    assert caught.value.code=='price_change_too_large' and not env[0].writes
+    assert p.confirm(rows,fp,'unique-request-key-8',True,allow_large_change=True)['status']=='completed'
+
+def test_boundary_70_percent_change_is_not_large(env):
+    fp,rows=prepared(env);rows[0]['price']='209.86'
+    assert p.preview(rows,fp)['large_changes']==[]

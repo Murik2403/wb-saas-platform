@@ -9,4 +9,4 @@ def test_session_mode_matches_server_write_boundary():
         with patch.object(api, 'IS_DEMO', demo):
             session = api.get_dashboard_session(request)
             assert session['mode'] == mode
-            assert session['user']['role'] == 'owner'
+            assert session['user']['role'] == ('viewer' if demo else 'owner')

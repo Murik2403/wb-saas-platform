@@ -345,10 +345,10 @@ def test_tax_block_is_additive_and_settings_roundtrip(monkeypatch):
     assert api.get_tax_settings(year=2026)["regime"] == "usn_income"  # failed saves changed nothing
 
 
-def test_tax_settings_write_is_owner_and_manager_only():
+def test_tax_settings_write_is_owner_only():
     from production_permissions import ROLES, write_allowed
     for role in ROLES:
-        assert write_allowed(role, "PUT", "/api/v1/settings/tax") == (role in {"owner", "manager"})
+        assert write_allowed(role, "PUT", "/api/v1/settings/tax") == (role == "owner")
         if role != "integration_reader":
             assert write_allowed(role, "GET", "/api/v1/settings/tax")
 

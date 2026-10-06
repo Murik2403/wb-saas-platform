@@ -23,7 +23,23 @@ def connection():
     if 'actor' not in {row[1] for row in db.execute('PRAGMA table_info(ozon_price_operation)')}:
         db.execute("ALTER TABLE ozon_price_operation ADD COLUMN actor TEXT NOT NULL DEFAULT ''")
         db.commit()
+    if 'created_at' not in {row[1] for row in db.execute('PRAGMA table_info(ozon_price_operation)')}:
+        # Old rows get 0, i.e. "older than any TTL": a stuck in_progress row from before the upgrade is released.
+        db.execute("ALTER TABLE ozon_price_operation ADD COLUMN created_at REAL NOT NULL DEFAULT 0")
+        db.commit()
     return db
+
+PENDING_TTL_SECONDS=600
+MAX_PRICE_CHANGE=Decimal('0.70')
+
+def large_changes(items):
+    """product_ids whose new price deviates from the previous one by more than MAX_PRICE_CHANGE."""
+    out=[]
+    for r in items:
+        try:old=Decimal(str(r['previous_price']))
+        except (InvalidOperation,TypeError,ValueError):continue
+        if old>0 and abs(Decimal(r['price'])-old)/old>MAX_PRICE_CHANGE:out.append(r['product_id'])
+    return out
 
 def money(value):
     if isinstance(value,(bool,float)) or value is None:raise PriceError('Цена должна быть точной десятичной строкой RUB.')
@@ -90,14 +106,17 @@ def preview(rows,source_fingerprint):
         pid=str(row['product_id']);source=sources.get(pid)
         if not source or pid in seen or source['currency_code']!='RUB':raise PriceError('Товар не найден, повторён или валюта не RUB.')
         seen.add(pid);out.append({'product_id':pid,'offer_id':source['offer_id'],'previous_price':source['price'],'price':money(row['price']),'currency_code':'RUB'})
-    return {'items':sorted(out,key=lambda r:r['product_id']),'source_fingerprint':source_fingerprint,'draft_fingerprint':fingerprint(sorted(out,key=lambda r:r['product_id'])),'external_write':False}
+    return {'items':sorted(out,key=lambda r:r['product_id']),'source_fingerprint':source_fingerprint,'draft_fingerprint':fingerprint(sorted(out,key=lambda r:r['product_id'])),'large_changes':large_changes(out),'external_write':False}
 
-def confirm(rows,source_fingerprint,request_key,confirmed,actor=''):
+def confirm(rows,source_fingerprint,request_key,confirmed,actor='',allow_large_change=False):
     if confirmed is not True:raise PriceError('Подтвердите изменение цен в Ozon.')
     if not isinstance(request_key,str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,128}',request_key):raise PriceError('Укажите уникальный ключ операции.')
     account,creds=identity();draft_hash=fingerprint({'rows':rows,'source':source_fingerprint})
     with connection() as db:
         db.execute('BEGIN IMMEDIATE')
+        # A process killed mid-send leaves in_progress forever: past the TTL the outcome is unknown, not pending.
+        for stale in db.execute("SELECT request_key,payload FROM ozon_price_operation WHERE status='in_progress' AND created_at<?",(time.time()-PENDING_TTL_SECONDS,)).fetchall():
+            db.execute("UPDATE ozon_price_operation SET status='unknown_outcome',payload=? WHERE request_key=?",(json.dumps({**json.loads(stale['payload']),'status':'unknown_outcome'}),stale['request_key']))
         existing=db.execute('SELECT * FROM ozon_price_operation WHERE request_key=?',(request_key,)).fetchone()
         if existing:
             if existing['account']!=account or existing['draft_hash']!=draft_hash:raise PriceError('Ключ операции уже использован для другого черновика.','idempotency_conflict',409)
@@ -105,8 +124,9 @@ def confirm(rows,source_fingerprint,request_key,confirmed,actor=''):
         if db.execute("SELECT 1 FROM ozon_price_operation WHERE account=? AND status='in_progress'",(account,)).fetchone():
             raise PriceError('Другая отправка цен ещё не завершена. Проверьте её результат; новая отправка заблокирована.','operation_pending',409)
         checked=preview(rows,source_fingerprint)
+        if checked['large_changes'] and allow_large_change is not True:raise PriceError('Цена меняется больше чем на 70%. Подтвердите большое изменение.','price_change_too_large',422)
         initial={'request_key':request_key,'status':'in_progress','items':[],'automatic_retry':False}
-        db.execute('INSERT INTO ozon_price_operation (request_key,account,draft_hash,status,payload,actor) VALUES (?,?,?,?,?,?)',(request_key,account,draft_hash,'in_progress',json.dumps(initial),str(actor)[:320]));db.commit()
+        db.execute('INSERT INTO ozon_price_operation (request_key,account,draft_hash,status,payload,actor,created_at) VALUES (?,?,?,?,?,?,?)',(request_key,account,draft_hash,'in_progress',json.dumps(initial),str(actor)[:320],time.time()));db.commit()
     outcome={'request_key':request_key,'status':'unknown_outcome','items':[],'automatic_retry':False}
     try:
         transport=client(creds);latest=transport.prices()
