@@ -49,7 +49,9 @@ def training_context():
     for item in catalog():
         seconds = round(item["duration"])
         lessons.append({**item, "duration_label": f"{seconds // 60}:{seconds % 60:02d}", "media": media.get(item["slug"])})
-    return {"training_lessons": lessons, "training_overview": media.get("overview")}
+    return {"training_lessons": lessons, "training_overview": media.get("overview"),
+            "training_has_narration": any(entry.get("narrated") is True for entry in media.values()),
+            "training_has_silent_media": any(entry.get("narrated") is not True for entry in media.values())}
 
 def create_training_media_router():
     router = APIRouter()

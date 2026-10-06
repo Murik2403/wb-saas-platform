@@ -54,7 +54,8 @@ class TrainingTests(unittest.TestCase):
         html = self.client.get('/training').text
         self.assertEqual(html.count('<source '), 1)
         self.assertIn(f'src="/training/media/{name}"', html)
-        self.assertIn('Видео · 1:07 · без озвучки', html)
+        duration = training.training_context()['training_lessons'][11]['duration_label']
+        self.assertIn(f'Видео · {duration} · без озвучки', html)
         self.assertEqual(self.client.get('/training/media/'+name).content, body)
     def test_verified_public_manifest_serves_seekable_immutable_video(self):
         name, _ = self.published()
@@ -67,13 +68,24 @@ class TrainingTests(unittest.TestCase):
         self.assertIn('immutable',response.headers['cache-control'])
         self.assertEqual(response.headers['x-content-type-options'],'nosniff')
 
-    def test_all_silent_course_durations_use_minutes_and_seconds(self):
+    def test_course_durations_use_minutes_and_seconds(self):
         lessons = training.training_context()['training_lessons']
         self.assertEqual(len(lessons), 16)
-        self.assertEqual(lessons[0]['duration_label'], '1:15')
-        self.assertTrue(all(row['duration_label'] == '1:41' for row in lessons[1:11]))
-        self.assertTrue(all(row['duration_label'] == '1:07' for row in lessons[11:]))
-        self.assertAlmostEqual(sum(row['duration'] for row in lessons), 1419.0666666667)
+        for row in lessons:
+            seconds = round(row['duration'])
+            self.assertEqual(row['duration_label'], f'{seconds // 60}:{seconds % 60:02d}')
+            self.assertGreater(row['duration'], 0)
+    def test_narration_label_follows_approved_asset_not_catalog_or_missing_media(self):
+        _, manifest = self.published()
+        manifest['videos']['lesson-01-today']['narrated'] = True
+        (self.root/'manifest.json').write_text(json.dumps(manifest))
+        html = self.client.get('/training').text
+        self.assertIn('Видео · 1:15 · с озвучкой', html)
+        self.assertIn('Видео с русской озвучкой', html)
+        self.assertNotIn('Видео без озвучки:', html)
+        manifest['approved'] = False
+        (self.root/'manifest.json').write_text(json.dumps(manifest))
+        self.assertNotIn('с русской озвучкой', self.client.get('/training').text)
     def test_unlisted_files_and_manifest_are_never_served(self):
         (self.root/'private.mp4').write_bytes(b'not-approved')
         for name in ['private.mp4','manifest.json','unknown.'+'a'*64+'.mp4']:

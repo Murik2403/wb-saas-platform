@@ -10,7 +10,7 @@
 {% block marketing_content %}
 <section class="mk-hero"><p class="mk-kicker">Обучение работе в кабинете</p><h1>Откройте нужный раздел и проверьте результат</h1>
 <p class="mk-lead">{{ training_lessons|length }} уроков по разделам MARKETSHELPER: короткие видео и текстовые шаги для чтения экранов и проверки данных. Все цифры в записи — учебные. Они не относятся к вашему магазину.</p>
-<p>Видео без озвучки: инструкции показаны на экране и доступны текстом под каждым уроком. Перед действием проверьте выбранный магазин, период, данные и свои права.</p></section>
+<p>{% if training_has_narration %}Видео с русской озвучкой. {% endif %}{% if training_has_silent_media %}Для видео без озвучки инструкции показаны на экране. {% endif %}Текстовые инструкции доступны под каждым уроком. Перед действием проверьте выбранный магазин, период, данные и свои права.</p></section>
 <p>В записи внешние операции WB не выполняются. Уроки знакомят с разделами; они не заменяют подробный разбор выпуска, платежей, импорта и других операций на ваших данных.</p>
 {% if training_overview %}<section class="mk-section mk-card" aria-labelledby="overview-title"><h2 id="overview-title">Краткий обзор кабинета</h2>
 <video class="training-video" controls playsinline preload="none" aria-label="Краткий обзор кабинета на учебных данных"><source src="{{ training_overview.url }}" type="video/mp4">Ваш браузер не поддерживает видео. Используйте ссылку для скачивания.</video>
@@ -19,7 +19,7 @@
 {% for lesson in training_lessons %}<article class="mk-card training-lesson" id="{{ lesson.slug }}" aria-labelledby="{{ lesson.slug }}-title">
 <h2 id="{{ lesson.slug }}-title">{{ lesson.id }}. {{ lesson.title }}</h2>
 {% if lesson.expected %}<p><strong>После урока:</strong> {{ lesson.expected }}</p>{% endif %}
-{% if lesson.media %}<p>Видео · {{ lesson.duration_label }} · без озвучки · учебные данные</p>
+{% if lesson.media %}<p>Видео · {{ lesson.duration_label }} · {% if lesson.media.narrated is sameas true %}с озвучкой{% else %}без озвучки{% endif %} · учебные данные</p>
 <video class="training-video" controls playsinline preload="none" aria-label="{{ lesson.title }}: учебное видео"><source src="{{ lesson.media.url }}" type="video/mp4">{% if lesson.media.captions %}<track kind="subtitles" src="{{ lesson.media.captions.url }}" srclang="ru" label="Русские инструкции">{% endif %}Ваш браузер не поддерживает видео. Инструкция доступна ниже.</video>
 <a href="{{ lesson.media.url }}" download>Скачать урок MP4</a>
 {% else %}<p>Видео готовится к публикации. Текстовая инструкция доступна ниже.</p>{% endif %}
