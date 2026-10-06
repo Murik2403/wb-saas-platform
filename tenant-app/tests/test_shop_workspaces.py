@@ -148,7 +148,7 @@ def test_native_encrypted_backup_contains_secondary_snapshot(database,monkeypatc
     blob=child.read_bytes();shops.store_snapshot(shop,0,blob,synced=True)
     backup_dir=database/'backups';backup_dir.mkdir(exist_ok=True)
     for name,value in {'DATA_DIR':database,'DB_PATH':core.DB_PATH,'SETTINGS_PATH':database/'settings.json','BACKUP_DIR':backup_dir,'DATA_ENCRYPTION_KEY':config.DATA_ENCRYPTION_KEY,'DATA_ENCRYPTION_KEY_ID':'current','DATA_ENCRYPTION_KEYRING':''}.items():monkeypatch.setattr(backups,name,value)
-    archive=backups.create_backup(keep=1000000).read_bytes()
+    archive=backups.create_backup(keep=5).read_bytes()
     assert archive.startswith(b'mh-backup-enc:')
     decoded=backups._maybe_decrypt_backup(archive)
     with zipfile.ZipFile(io.BytesIO(decoded)) as z:restored=z.read('wb_dashboard.sqlite3')
