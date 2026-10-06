@@ -44,7 +44,7 @@ Interface: OzonCabinetViews({page,start,end,canWrite,isOwner,role}) renders matc
 Files: new MarketplaceBoundary/OzonCabinetShell and tests/CSS; App.tsx entrypoint; api_server middleware/router; Docker copies; shop scopes/fixture; memory guard.
 - [x] Selector present in WB/Ozon, URL/deep-link preservation, independent reload-safe period and page state; no WB hooks/dialogs in Ozon shell.
 - [x] Integrate interfaces, independent review, full tests and browser navigation/transport acceptance.
-- [ ] Commit, clean frontend build, exact immutable image bases, backup restoration/rehearsals, deploy demo/mvvorokov and future pin.
+- [x] Commit, clean frontend build, exact immutable image bases, backup restoration/rehearsals, deploy demo/mvvorokov and future pin.
 - [x] Record actual supported operations and remaining real-data/API acceptance explicitly; no claim of full platform operation parity from a selector alone.
 
 ### Task5: Ozon price drafts and explicit operations
