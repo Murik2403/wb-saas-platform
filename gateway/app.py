@@ -937,7 +937,8 @@ def provisioning_status(request: Request):
         return RedirectResponse("/login", status_code=303)
     with control_db.connect() as conn:
         tenant = accounts.get_accessible_tenant_for_account(conn, account["id"])
-    if tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant):
+        can_access = accounts.tenant_has_access(conn, tenant)
+    if tenant is not None and tenant["status"] == "running" and can_access:
         return RedirectResponse(f"{config.tenant_url(tenant['slug'])}?mh_goal=trial_started", status_code=303)
     status = tenant["status"] if tenant is not None else "provisioning"
     goals = ["trial_started"] if status == "trialing" else []

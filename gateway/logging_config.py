@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -25,6 +26,51 @@ from typing import Optional
 request_id_ctx: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
 account_id_ctx: ContextVar[Optional[str]] = ContextVar("account_id", default=None)
 tenant_slug_ctx: ContextVar[Optional[str]] = ContextVar("tenant_slug", default=None)
+
+_REDACTED = "[REDACTED]"
+_BOT_TOKEN = re.compile(r"\bbot\d+(?::|%3[aA])[\w%-]+|\b\d{5,}:[\w-]{20,}", re.IGNORECASE)
+_BEARER = re.compile(r"\bBearer\s+[^\s\"'<>,;}]+", re.IGNORECASE)
+_SECRET_FIELD = re.compile(r"(?i)\b(authorization|api[-_]?key|client[-_]?id|password|access_token|refresh_token|bot_token|token|secret)[\"']?\s*[:=]\s*[\"']?([^\"'\r\n,;}]+)")
+_SECRET_KEYS = frozenset({"authorization", "proxyauthorization", "apikey", "clientid", "password", "passwd", "secret", "token", "bottoken", "accesstoken", "refreshtoken", "cookie", "setcookie", "credentials", "encryptionkey", "dataencryptionkey", "keyring"})
+
+
+def _secret_key(key) -> bool:
+    text = key.decode("utf-8", errors="replace") if isinstance(key, bytes) else str(key)
+    normalized = re.sub(r"[^a-z0-9]", "", text.lower())
+    return normalized in _SECRET_KEYS or normalized.endswith(("password", "secret", "token", "apikey", "clientid", "encryptionkey", "encryptionkeyring"))
+
+
+def redact_text(value: str) -> str:
+    """Sanitize rendered messages too: HTTP libraries put credentials in URLs."""
+    text = _BOT_TOKEN.sub(_REDACTED, value)
+    text = _BEARER.sub("Bearer " + _REDACTED, text)
+    return _SECRET_FIELD.sub(lambda match: match.group(1) + "=" + _REDACTED, text)
+
+
+def redact_data(value, _seen=None, _depth=0):
+    """Copy telemetry with credential keys redacted at every nesting level.
+
+    Header pairs (Sentry sometimes uses lists) and arbitrary object reprs are
+    covered too. Cyclic/overdeep extras cannot disable logging or leak values.
+    """
+    if isinstance(value, str):
+        return redact_text(value)
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    seen = set() if _seen is None else _seen
+    if _depth >= 30 or id(value) in seen:
+        return _REDACTED
+    seen.add(id(value))
+    try:
+        if isinstance(value, dict):
+            return {redact_text(str(key)): _REDACTED if _secret_key(key) else redact_data(item, seen, _depth + 1) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            if len(value) == 2 and isinstance(value[0], (str, bytes)) and _secret_key(value[0]):
+                return [str(value[0]), _REDACTED]
+            return [redact_data(item, seen, _depth + 1) for item in value]
+        return redact_text(str(value))
+    finally:
+        seen.remove(id(value))
 
 # LogRecord attributes that are never useful as extra JSON fields -- either
 # already surfaced explicitly below (message, levelname, ...) or internal
@@ -69,7 +115,7 @@ class JSONFormatter(logging.Formatter):
         if extra:
             payload["extra"] = extra
 
-        return json.dumps(payload, ensure_ascii=False, default=str)
+        return json.dumps(redact_data(payload), ensure_ascii=False, default=str)
 
 
 def setup_logging(level: str = "INFO") -> None:

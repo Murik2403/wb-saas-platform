@@ -68,6 +68,18 @@ class JSONFormatterTests(unittest.TestCase):
         self.assertEqual(payload["level"], "ERROR")
         self.assertIn("ValueError: boom", payload["exception"])
 
+    def test_redacts_httpx_telegram_url_exception_and_nested_credentials(self):
+        secret = "123456:synthetic_abcdefghijklmnopqrstuvwxyz"
+        try:
+            raise ValueError("failed https://api.telegram.org/bot" + secret + "/getUpdates")
+        except ValueError:
+            self.logger.exception("HTTP Request: GET %s", "https://api.telegram.org/bot" + secret + "/getUpdates", extra={"request":{"headers":{"Authorization":"Bearer synthetic-secret","Api-Key":"synthetic-api","Client-Id":"synthetic-client"}}})
+        rendered = self.stream.getvalue()
+        for value in (secret,"synthetic-secret","synthetic-api","synthetic-client"):
+            self.assertNotIn(value, rendered)
+        self.assertIn("getUpdates", rendered)
+        self.assertIn("ValueError", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
