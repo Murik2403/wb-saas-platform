@@ -58,6 +58,8 @@ class HandleLinkCommandTests(GatewayDbTestCase):
             self.slug = accounts.generate_unique_slug(conn, "seller@shop.ru")
             accounts.create_tenant_instance(conn, self.account_id, self.slug)
             self.code = accounts.create_telegram_link_code(conn, self.account_id)
+            tenant=accounts.get_tenant_by_slug(conn,self.slug)
+            conn.execute("UPDATE telegram_link_codes SET tenant_id=? WHERE code=?",(tenant["id"],self.code))
 
     def test_valid_code_links_chat_and_replies_success(self) -> None:
         sent = {}

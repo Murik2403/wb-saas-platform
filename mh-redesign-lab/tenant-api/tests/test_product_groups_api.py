@@ -74,7 +74,7 @@ def test_archive_hides_keeps_members_and_frees_name(client):
 def test_permissions():
     for role in ("owner", "manager"):
         for m in ("POST", "PUT", "DELETE"):
-            assert write_allowed(role, m, URL + "/1")
+            assert write_allowed(role, m, URL + "/1") == (role == "owner" or m != "DELETE")
     for role in ("viewer", "technologist", "cutter", "seamstress", "warehouse", "integration_reader"):
         for m in ("POST", "PUT", "DELETE"):
             assert not write_allowed(role, m, URL + "/1")

@@ -4,12 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ProductsView, ReportsView } from "./App";
 import type { CustomerQualityData } from "./data-source";
+import { getReportDelivery,requestTelegramLinkCode } from "./data-source";
 
 vi.mock("./data-source", async (load) => ({
   ...await load<typeof import("./data-source")>(),
   getPriceUploadHistory: vi.fn(async () => []),
   getReportOperations: vi.fn(async () => ({ definitions: [], runs: [], metric_labels: {} })),
   getReportDelivery: vi.fn(async () => ({ configured: false, email_configured: false, telegram_configured: false, telegram_linked: false })),
+  requestTelegramLinkCode: vi.fn(),
   getAnalyticsDashboard: vi.fn(async () => { throw new Error("Недоступна"); }),
 }));
 afterEach(() => { cleanup(); window.localStorage.clear(); });
@@ -48,6 +50,13 @@ describe("customer quality source failures", () => {
 });
 
 describe("reports presentation", () => {
+  it("recipient linking stays unavailable without owner permission",async()=>{
+    vi.mocked(getReportDelivery).mockResolvedValueOnce({configured:true,email_configured:false,telegram_configured:true,telegram_linked:false});
+    render(<ReportsView canLinkTelegram={false} exportItems={[]} reportCards={[]} reportMetrics={[]} onAction={vi.fn()} onQuickReport={vi.fn(async()=>{})}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Доставка'}));
+    const button=await screen.findByRole('button',{name:'Привязать Telegram'});
+    expect(button).toBeDisabled();expect(button).toHaveAttribute('title','Получателя Telegram изменяет только владелец');fireEvent.click(button);expect(requestTelegramLinkCode).not.toHaveBeenCalled();
+  });
   it("uses readable metric emphasis and correct count declensions without changing values", async () => {
     render(<ReportsView exportItems={[]} reportCards={[]} onAction={vi.fn()} onQuickReport={vi.fn(async () => {})}
       reportMetrics={[{ label: "Резервная копия", value: "2026-09-23T23:55:39", delta: "настройки tenant", detail: "настройки tenant", tone: "info" }]} />);

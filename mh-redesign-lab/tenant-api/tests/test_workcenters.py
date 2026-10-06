@@ -17,7 +17,7 @@ def client(monkeypatch,tmp_path):
   c.execute("INSERT INTO products_catalog(nm_id,raw_json) VALUES (10,?)",(json.dumps({"sizes":[{"chrtID":100},{"chrtID":101}]}),))
   c.execute("INSERT INTO execution_tasks(task_key,task_type,task_date,nm_id,chrt_id,planned_units,actual_units,status,updated_at) VALUES ('t','production','2026-09-01',10,100,5,0,'Не начато','original')")
  app=FastAPI();app.include_router(router)
- with TestClient(app) as client:yield client
+ with TestClient(app,headers={"x-tenant-role":"owner","x-tenant-account":"1"}) as client:yield client
 
 def setup(client):
  assert client.post(P+"/centers",json=dict(name="Цех",daily_minutes=30,workdays=[0,1,2,3,4],revision=0)).status_code==200

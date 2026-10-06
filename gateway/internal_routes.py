@@ -116,14 +116,21 @@ async def send_report_email(
     return JSONResponse({"status": "ok"})
 
 
-def create_telegram_link_code(slug: str) -> str:
+def create_telegram_link_code(slug: str, actor_account: str = '') -> str:
     """Raises HTTPException(404) for an unknown slug. Separate from the
     route function for the same testability reason as deliver_report_email."""
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_by_slug(conn, slug)
         if tenant is None:
             raise HTTPException(status_code=404, detail="unknown tenant")
-        return accounts.create_telegram_link_code(conn, int(tenant["account_id"]))
+        if not actor_account.isdigit() or int(actor_account) != int(tenant['account_id']):
+            raise HTTPException(status_code=403,detail='owner required')
+        membership=accounts.get_tenant_membership(conn,int(tenant['id']),int(actor_account))
+        if membership is None or membership['role']!='owner':
+            raise HTTPException(status_code=403,detail='owner required')
+        code=accounts.create_telegram_link_code(conn,int(actor_account))
+        conn.execute('UPDATE telegram_link_codes SET tenant_id=? WHERE code=?',(int(tenant['id']),code))
+        return code
 
 
 def telegram_is_linked(slug: str) -> bool:
@@ -174,7 +181,7 @@ def deliver_report_telegram(slug: str, report_name: str, pdf_bytes: bytes, filen
 def telegram_link_code(request: Request, slug: str = Form(...)):
     if not _secret_is_valid(request.headers.get("x-internal-secret", ""), slug):
         raise HTTPException(status_code=403, detail="forbidden")
-    code = create_telegram_link_code(slug)
+    code = create_telegram_link_code(slug,request.headers.get('x-tenant-account',''))
     return JSONResponse({"code": code, "ttl_minutes": accounts.TELEGRAM_LINK_CODE_TTL_MINUTES})
 
 

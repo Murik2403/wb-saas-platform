@@ -47,9 +47,12 @@ AUTO_REPLY = (
 
 def _call(method: str, **params) -> dict:
     url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method=method)
-    response = requests.post(url, json=params, timeout=35)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(url, json=params, timeout=35)
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException,ValueError):
+        raise RuntimeError('Telegram transport unavailable') from None
 
 
 def send_document(chat_id: str, file_bytes: bytes, filename: str, caption: str = "") -> dict:
@@ -60,9 +63,12 @@ def send_document(chat_id: str, file_bytes: bytes, filename: str, caption: str =
     if caption:
         data["caption"] = caption
     files = {"document": (filename, file_bytes, "application/pdf")}
-    response = requests.post(url, data=data, files=files, timeout=60)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(url, data=data, files=files, timeout=60)
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException,ValueError):
+        raise RuntimeError('Telegram transport unavailable') from None
 
 
 def send_message(chat_id: str, text: str) -> dict:
@@ -70,9 +76,12 @@ def send_message(chat_id: str, text: str) -> dict:
     as markup, so there is nothing to escape. Short timeout -- a notification
     must not hold a request open like a document upload may."""
     url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method="sendMessage")
-    response = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=15)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=15)
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException,ValueError):
+        raise RuntimeError('Telegram transport unavailable') from None
 
 
 @lru_cache(maxsize=1)
@@ -125,7 +134,9 @@ def _handle_link_command(chat_id, text: str) -> None:
     parts = text.split(maxsplit=1)
     code = parts[1].strip() if len(parts) > 1 else ""
     with control_db.connect() as conn:
-        ok = accounts.consume_telegram_link_code(conn, code, str(chat_id))
+        row=conn.execute('SELECT * FROM telegram_link_codes WHERE code=?',(code.upper(),)).fetchone()
+        tenant_id=row['tenant_id'] if row is not None and 'tenant_id' in row.keys() else None
+        ok = tenant_id is not None and accounts.consume_telegram_link_code(conn, code, str(chat_id),tenant_id=int(tenant_id))
     reply = LINK_SUCCESS_REPLY if ok else _link_failure_reply()
     try:
         _call("sendMessage", chat_id=chat_id, text=reply)
@@ -168,18 +179,29 @@ def run() -> None:
         return
     logger.info("Telegram support relay started.")
     offset = None
+    failures = 0
+    last_warning = 0.0
+    previous_delay = None
     while True:
         try:
             params = {"timeout": 30}
             if offset is not None:
                 params["offset"] = offset
             result = _call("getUpdates", **params)
+            if failures:logger.info('Telegram polling recovered')
+            failures = 0
+            previous_delay = None
             for update in result.get("result", []):
                 offset = update["update_id"] + 1
                 _handle_update(update)
         except Exception:
-            logger.exception("Telegram polling loop error, retrying in 5s")
-            time.sleep(5)
+            failures=min(failures+1,6)
+            delay=min(5*2**(failures-1),60)
+            if delay!=previous_delay or time.monotonic()-last_warning>=300:
+                logger.warning('Telegram polling unavailable; retry delay %s seconds',delay)
+                last_warning=time.monotonic()
+            previous_delay=delay
+            time.sleep(delay)
 
 
 if __name__ == "__main__":

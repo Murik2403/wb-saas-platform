@@ -932,11 +932,21 @@ READ_ONLY_POST_PATHS = {
 @app.middleware("http")
 async def invalidate_after_write(request, call_next):
     from production_permissions import ROLES, write_allowed
+    from gateway_request_auth import request_target, verify, VERIFIED_SCOPE_KEY, VERIFIED_TOKEN
+    if IS_DEMO:
+        request.scope['headers'] = [(key,value) for key,value in request.scope.get('headers',[]) if key.lower() not in {b'x-tenant-role',b'x-tenant-account',b'x-mh-gateway-auth'}] + [(b'x-tenant-role',b'viewer'),(b'x-tenant-account',b'demo')]
+        if hasattr(request,'_headers'):del request._headers
     headers = getattr(request, "headers", {})
-    tenant_role = headers.get("x-tenant-role", "owner").lower()
+    tenant_role = headers.get("x-tenant-role", "viewer").lower()
+    path = request.scope.get('path','')
+    if TENANT_SLUG and not IS_DEMO and path not in {'/healthz','/_stcore/health'} and request.scope.get(VERIFIED_SCOPE_KEY) is not VERIFIED_TOKEN:
+        try:proved = verify(INTERNAL_API_SECRET,headers.get('x-mh-gateway-auth',''),request.method,request_target(request.scope),TENANT_SLUG,tenant_role,headers.get('x-tenant-account',''))
+        except (UnicodeError,ValueError):proved = False
+        if not proved or not headers.get('x-tenant-account'):
+            return JSONResponse(status_code=403,content={'detail':'Контекст шлюза не подтверждён'})
     if tenant_role not in ROLES:
         return JSONResponse(status_code=403, content={"detail": "Роль пользователя не распознана"})
-    safe_supply_preview = request.method == "POST" and request.url.path in {"/api/v1/supply-planning/preview", "/api/v1/migration-import/preview", "/api/v1/cash-accounts/statements/preview"}
+    safe_supply_preview = request.method == "POST" and request.url.path in {"/api/v1/supply-planning/preview", "/api/v1/migration-import/preview", "/api/v1/cash-accounts/statements/preview", "/api/v1/dashboard/products/price-advice"}
     if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"} and not safe_supply_preview:
         return JSONResponse(status_code=403, content={"detail": "Роль наблюдателя доступна только для просмотра"})
     if not write_allowed(tenant_role, request.method, request.url.path):
@@ -999,7 +1009,7 @@ def get_dashboard_session(request: Request) -> dict:
     slug = os.getenv("WB_SAAS_TENANT_SLUG", "marketshelper-live")
     tenant_name = os.getenv("WB_SAAS_TENANT_NAME", slug)
     return {
-        "user": {"id": request.headers.get("x-tenant-account", slug), "name": "Пользователь", "role": request.headers.get("x-tenant-role", "owner")},
+        "user": {"id": request.headers.get("x-tenant-account", slug), "name": "Пользователь", "role": request.headers.get("x-tenant-role", "viewer")},
         "tenant": {"id": slug, "name": tenant_name},
         "mode": "demo" if IS_DEMO else "tenant",
     }
@@ -2563,8 +2573,10 @@ def toggle_report_definition(definition_id: int, payload: ReportEnabledInput) ->
 
 
 @app.post("/api/v1/operations/reports/telegram/link-code")
-def report_telegram_link_code() -> dict:
-    result = delivery.request_telegram_link_code()
+def report_telegram_link_code(request: Request) -> dict:
+    if IS_DEMO or request.headers.get('x-tenant-role','') != 'owner' or not request.headers.get('x-tenant-account'):
+        raise HTTPException(status_code=403,detail='Привязку Telegram может изменять только владелец')
+    result = delivery.request_telegram_link_code(request.headers['x-tenant-account'])
     if result is None:
         raise HTTPException(status_code=502, detail="Не удалось получить код привязки Telegram")
     code, ttl_minutes = result
@@ -3803,7 +3815,7 @@ class TaxReconciliationInput(BaseModel):
 
 @app.get("/api/v1/settings/tax-reconciliation")
 def get_tax_reconciliation(request: Request, month: str = Query(pattern=r"^20\d{2}-(0[1-9]|1[0-2])$")) -> dict:
-    return {**read_tax_month(month), "can_write": request.headers.get("x-tenant-role", "owner") in {"owner", "manager"}}
+    return {**read_tax_month(month), "can_write": request.headers.get("x-tenant-role", "viewer") in {"owner", "manager"}}
 
 
 @app.put("/api/v1/settings/tax-reconciliation")
@@ -4075,7 +4087,7 @@ class ExpenseArticleAttestationInput(BaseModel):
 @app.get("/api/v1/settings/expense-coverage")
 def get_expense_article_coverage(request: Request, nm_id: int = Query(..., gt=0), start: date = Query(...), end: date = Query(...)):
     result = get_management_economics(nm_id, start, end)
-    return {**result["coverage"], "nm_id": nm_id, "start": start.isoformat(), "end": end.isoformat(), "can_write": request.headers.get("x-tenant-role", "owner").lower() in {"owner", "manager"}}
+    return {**result["coverage"], "nm_id": nm_id, "start": start.isoformat(), "end": end.isoformat(), "can_write": request.headers.get("x-tenant-role", "viewer").lower() in {"owner", "manager"}}
 
 
 @app.post("/api/v1/settings/expense-coverage")
@@ -4127,3 +4139,7 @@ async def marketplace_boundary(request, call_next):
 # alone cannot bound DataFrames retained by overlapping response consumers.
 from dashboard_work_guard import DashboardWorkGuard  # noqa: E402
 app.add_middleware(DashboardWorkGuard)
+
+# Last registered is outermost: validate proof before any queue or business logic.
+from gateway_request_auth import GatewayIdentityGuard
+app.add_middleware(GatewayIdentityGuard,context=lambda:(IS_DEMO,TENANT_SLUG,INTERNAL_API_SECRET))

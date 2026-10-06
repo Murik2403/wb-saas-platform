@@ -969,6 +969,11 @@ def auth_verify(request: Request):
     forwarded_proto = request.headers.get("x-forwarded-proto", "https")
     forwarded_uri = request.headers.get("x-forwarded-uri", "/")
     slug = _slug_from_host(forwarded_host)
+    from gateway_request_auth import sign
+    from internal_auth import tenant_credential
+    def identity_headers(role,account):
+        proof=sign(tenant_credential(config.INTERNAL_API_SECRET,slug or ''),request.headers.get('x-forwarded-method','GET'),forwarded_uri,slug or '',role,account)
+        return {'X-Tenant-Role':role,'X-Tenant-Account':account,'X-MH-Gateway-Auth':proof}
 
     authorization = request.headers.get("authorization", "")
     if authorization.startswith("Bearer mh_read_"):
@@ -980,7 +985,7 @@ def auth_verify(request: Request):
         with control_db.connect() as conn:
             tenant = accounts.get_tenant_by_slug(conn, slug)
             allowed = tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant) and integration_tokens.valid(conn, authorization[7:], int(tenant["id"]))
-        return Response(status_code=200 if allowed else 401, headers={"X-Tenant-Role": "integration_reader", "X-Tenant-Account": "integration"} if allowed else {})
+        return Response(status_code=200 if allowed else 401, headers=identity_headers('integration_reader','integration') if allowed else {})
 
     account = _current_account(request)
     login_url = f"{('https' if config.COOKIE_SECURE else 'http')}://{config.PARENT_DOMAIN}/login"
@@ -999,10 +1004,7 @@ def auth_verify(request: Request):
 
     return Response(
         status_code=200,
-        headers={
-            "X-Tenant-Role": str(membership["role"]),
-            "X-Tenant-Account": str(account["id"]),
-        },
+        headers=identity_headers(str(membership['role']),str(account['id'])),
     )
 
 

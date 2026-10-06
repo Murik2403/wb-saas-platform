@@ -298,7 +298,7 @@ class ScheduleConfirmInput(ScheduleInput):
     request_id: UUID
 
 def _workcenter_authorize(request,preview=False):
-    role=request.headers.get("x-tenant-role","owner").lower()
+    role=request.headers.get("x-tenant-role","viewer").lower()
     if preview:
         if not write_allowed(role,request.method,request.url.path):raise HTTPException(403,detail="Нет доступа")
     elif config.IS_DEMO or not write_allowed(role,request.method,request.url.path):
@@ -321,7 +321,7 @@ def workcenter_view(request:Request,start:date|None=None,days:int=Query(14,ge=1,
             conn.execute("BEGIN")
             source=centers_db.snapshot(conn,(start or date.today()).isoformat(),days)
             history=[dict(r) for r in conn.execute("SELECT id,task_key,operation,before_json,after_json,actor_role,created_at,actor FROM production_workcenter_history ORDER BY id DESC LIMIT 100")]
-        role=request.headers.get("x-tenant-role","owner").lower()
+        role=request.headers.get("x-tenant-role","viewer").lower()
         return dict(**source,**centers_db.loading(source),history=history,read_only=bool(config.IS_DEMO) or role not in {"owner","manager","technologist"},can_schedule=not config.IS_DEMO and role in {"owner","manager"})
     except (ValueError,) as exc:_workcenter_error(exc)
 

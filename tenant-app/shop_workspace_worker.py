@@ -7,6 +7,10 @@ from pathlib import Path
 def main():
     payload=json.load(sys.stdin)
     import config
+    # Child API is an in-process ASGI app, never a network listener. Use a
+    # fresh child-only proof key instead of exporting the gateway credential.
+    import secrets
+    config.INTERNAL_API_SECRET=secrets.token_hex(32)
     config.get_token=lambda: payload['token']
     config.get_ozon_credentials=lambda: None
     from db import init_db
@@ -102,10 +106,13 @@ def main():
         body=base64.b64decode(envelope['body'],validate=True)
         if len(body)>1024*1024:raise ValueError('Child body too large')
         async def dispatch():
+            from gateway_request_auth import sign_context
+            uri=envelope['path']+('?' + envelope['query'] if envelope['query'] else '')
+            proof=sign_context(config.INTERNAL_API_SECRET,config.TENANT_SLUG,envelope['method'],uri,payload['role'],payload['actor'])
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app),base_url='http://127.0.0.1') as client:
                 return await client.request(envelope['method'],envelope['path']+('?' + envelope['query'] if envelope['query'] else ''),
                   content=body,headers={'content-type':envelope.get('content_type','application/json'),
-                    'x-tenant-account':payload['actor'],'x-tenant-role':payload['role']})
+                    'x-tenant-account':payload['actor'],'x-tenant-role':payload['role'],'x-mh-gateway-auth':proof})
         response=asyncio.run(dispatch())
         if envelope['method']=='POST' and response.status_code<400 and (
             envelope['path']=='/api/v1/operations/reports/quick' or envelope['path'].endswith('/generate')):

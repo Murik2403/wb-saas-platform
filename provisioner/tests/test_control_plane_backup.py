@@ -13,6 +13,7 @@ def test_control_plane_backup_resolves_only_this_compose_projects_gateway_volume
     }
     gateway_volume = SimpleNamespace(name="wb-saas-platform-clean_gateway_data")
     client = Mock()
+    client.containers.run.return_value.wait.return_value={'StatusCode':0}
     client.containers.get.return_value = own_container
     client.volumes.list.return_value = [gateway_volume]
 
@@ -29,6 +30,7 @@ def test_control_plane_backup_resolves_only_this_compose_projects_gateway_volume
 
 def test_control_plane_backup_mounts_only_resolved_gateway_volume(tmp_path, monkeypatch):
     client = Mock()
+    client.containers.run.return_value.wait.return_value={'StatusCode':0}
     monkeypatch.setattr(app, "BACKUP_MOUNT", tmp_path)
     monkeypatch.setattr(app, "BACKUP_DIR", "/host/backups")
     monkeypatch.setattr(app, "BACKUP_ENCRYPTION_KEY", "backup-secret-that-is-longer-than-thirty-two-characters")

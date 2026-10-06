@@ -60,6 +60,11 @@ services:
 
   provisioner:
     build: ./provisioner
+    mem_limit: ${WB_SAAS_PROVISIONER_MEM_LIMIT:-256m}
+    memswap_limit: ${WB_SAAS_PROVISIONER_MEM_LIMIT:-256m}
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     restart: unless-stopped
     depends_on:
       - docker-socket-proxy
@@ -107,6 +112,8 @@ services:
   postgres:
     profiles: ["postgres"]
     image: postgres:16-alpine
+    mem_limit: ${WB_SAAS_POSTGRES_MEM_LIMIT:-512m}
+    memswap_limit: ${WB_SAAS_POSTGRES_MEM_LIMIT:-512m}
     restart: unless-stopped
     networks:
       - wbsaas_net
@@ -130,6 +137,11 @@ services:
     # DNS/TLS problem, routing itself is dead. Fixed in v3.6.1+; see
     # https://github.com/traefik/traefik/issues/12253
     image: traefik:v3.6.13
+    mem_limit: ${WB_SAAS_TRAEFIK_MEM_LIMIT:-256m}
+    memswap_limit: ${WB_SAAS_TRAEFIK_MEM_LIMIT:-256m}
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     restart: unless-stopped
     networks:
       - wbsaas_net
@@ -156,6 +168,11 @@ services:
 
   gateway:
     build: ./gateway
+    mem_limit: ${WB_SAAS_GATEWAY_MEM_LIMIT:-1024m}
+    memswap_limit: ${WB_SAAS_GATEWAY_MEM_LIMIT:-1024m}
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     restart: unless-stopped
     networks:
       wbsaas_net:

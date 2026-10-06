@@ -285,6 +285,7 @@ _PG_SCHEMA_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_tenant_invitations_tenant ON tenant_invitations(tenant_id, email)",
     """
     CREATE TABLE IF NOT EXISTS telegram_link_codes (
+        tenant_id INTEGER REFERENCES tenant_instances(id) ON DELETE CASCADE,
         code TEXT PRIMARY KEY,
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
         created_at TEXT NOT NULL,
@@ -360,6 +361,8 @@ def _init_db_postgres(conn: _PGConnection) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN pdn_policy_version TEXT DEFAULT ''")
     if not _pg_column_exists(conn, "accounts", "marketing_consent_at"):
         conn.execute("ALTER TABLE accounts ADD COLUMN marketing_consent_at TEXT DEFAULT ''")
+    if not _pg_column_exists(conn, "telegram_link_codes", "tenant_id"):
+        conn.execute("ALTER TABLE telegram_link_codes ADD COLUMN tenant_id INTEGER REFERENCES tenant_instances(id) ON DELETE CASCADE")
     if not _pg_column_exists(conn, "tenant_instances", "telegram_chat_id"):
         conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
     conn.execute(
@@ -507,6 +510,7 @@ def init_db(conn) -> None:
         -- identity. Single-use, short TTL (see logic/accounts.py's
         -- TELEGRAM_LINK_CODE_TTL_MINUTES), same shape as password_reset_tokens.
         CREATE TABLE IF NOT EXISTS telegram_link_codes (
+            tenant_id INTEGER REFERENCES tenant_instances(id) ON DELETE CASCADE,
             code TEXT PRIMARY KEY,
             account_id INTEGER NOT NULL,
             created_at TEXT NOT NULL,
@@ -580,6 +584,9 @@ def init_db(conn) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN email_verified_at TEXT DEFAULT ''")
         conn.execute("UPDATE accounts SET email_verified_at=created_at WHERE email_verified_at='' OR email_verified_at IS NULL")
 
+    link_columns = {row[1] for row in conn.execute("PRAGMA table_info(telegram_link_codes)")}
+    if "tenant_id" not in link_columns:
+        conn.execute("ALTER TABLE telegram_link_codes ADD COLUMN tenant_id INTEGER REFERENCES tenant_instances(id) ON DELETE CASCADE")
     tenant_columns = {row[1] for row in conn.execute("PRAGMA table_info(tenant_instances)")}
     if "telegram_chat_id" not in tenant_columns:
         conn.execute("ALTER TABLE tenant_instances ADD COLUMN telegram_chat_id TEXT DEFAULT ''")

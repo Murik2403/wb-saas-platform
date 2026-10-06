@@ -8,6 +8,11 @@ ROLES = {"owner", "manager", "viewer", "technologist", "cutter", "seamstress", "
 def write_allowed(role: str, method: str, path: str) -> bool:
     if role not in ROLES:
         return False
+    owner_connections={'/api/v1/settings/wb-token','/api/v1/settings/ozon','/api/v1/operations/reports/telegram/link-code','/api/v1/ozon-accounting/advertising/credentials'}
+    if method=='DELETE' or path.startswith('/api/v1/operations/backups') or (method not in {'GET','HEAD','OPTIONS'} and (path in owner_connections or path=='/api/v1/self-buyouts/delete')):
+        return role=='owner'
+    if method=='POST' and path=='/api/v1/dashboard/products/price-advice':
+        return role!='integration_reader'
     if path.startswith("/api/v1/shared-warehouse"):
         if role=="integration_reader":return False
         if method in {"GET","HEAD","OPTIONS"}:return True

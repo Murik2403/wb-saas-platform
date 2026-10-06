@@ -50,6 +50,7 @@ COPY mh-redesign-lab/tenant-api/rnp_api.py ./rnp_api.py
 COPY mh-redesign-lab/tenant-api/fbs_api.py mh-redesign-lab/tenant-api/self_buyouts_api.py ./
 COPY mh-redesign-lab/tenant-api/ozon_accounting_api.py ./ozon_accounting_api.py
 COPY mh-redesign-lab/tenant-api/marketplace_context_api.py mh-redesign-lab/tenant-api/ozon_cabinet_api.py mh-redesign-lab/tenant-api/ozon_prices_api.py ./
+COPY mh-redesign-lab/tenant-api/gateway_request_auth.py ./
 COPY mh-redesign-lab/tenant-api/ozon_normalization_api.py mh-redesign-lab/tenant-api/ozon_insights_api.py mh-redesign-lab/tenant-api/ozon_ads_api.py ./
 COPY mh-redesign-lab/tenant-api/migration_import_api.py ./migration_import_api.py
 COPY mh-redesign-lab/tenant-api/incident_workflow_api.py ./incident_workflow_api.py

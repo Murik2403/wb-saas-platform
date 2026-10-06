@@ -30,8 +30,8 @@ tenant_slug_ctx: ContextVar[Optional[str]] = ContextVar("tenant_slug", default=N
 _REDACTED = "[REDACTED]"
 _BOT_TOKEN = re.compile(r"\bbot\d+(?::|%3[aA])[\w%-]+|\b\d{5,}:[\w-]{20,}", re.IGNORECASE)
 _BEARER = re.compile(r"\bBearer\s+[^\s\"'<>,;}]+", re.IGNORECASE)
-_SECRET_FIELD = re.compile(r"(?i)\b(authorization|api[-_]?key|client[-_]?id|password|access_token|refresh_token|bot_token|token|secret)[\"']?\s*[:=]\s*[\"']?([^\"'\r\n,;}]+)")
-_SECRET_KEYS = frozenset({"authorization", "proxyauthorization", "apikey", "clientid", "password", "passwd", "secret", "token", "bottoken", "accesstoken", "refreshtoken", "cookie", "setcookie", "credentials", "encryptionkey", "dataencryptionkey", "keyring"})
+_SECRET_FIELD = re.compile(r"(?i)\b(authorization|x[-_]?mh[-_]?gateway[-_]?auth|api[-_]?key|client[-_]?id|password|access_token|refresh_token|bot_token|token|secret)[\"']?\s*[:=]\s*[\"']?([^\"'\r\n,;}]+)")
+_SECRET_KEYS = frozenset({"authorization", "proxyauthorization", "xmhgatewayauth", "apikey", "clientid", "password", "passwd", "secret", "token", "bottoken", "accesstoken", "refreshtoken", "cookie", "setcookie", "credentials", "encryptionkey", "dataencryptionkey", "keyring"})
 
 
 def _secret_key(key) -> bool:

@@ -29,3 +29,4 @@ http:
         authResponseHeaders:
           - "X-Tenant-Role"
           - "X-Tenant-Account"
+          - "X-MH-Gateway-Auth"

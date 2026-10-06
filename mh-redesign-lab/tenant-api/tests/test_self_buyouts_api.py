@@ -128,7 +128,8 @@ def test_roles_write_only_owner_manager(client):
     for role in sorted(ROLES):
         expected = role in {"owner", "manager"}
         for path in (URL, f"{URL}/update", f"{URL}/delete"):
-            assert write_allowed(role, "POST", path) is expected, (role, path)
+            required = role == 'owner' if path.endswith('/delete') else expected
+            assert write_allowed(role, "POST", path) is required, (role, path)
         r = client.post(URL, json=rec("2026-09-01"), headers={"x-tenant-role": role})
         assert (r.status_code == 200) is expected, (role, r.status_code)
         if role != "integration_reader":

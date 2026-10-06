@@ -30,7 +30,7 @@ def test_create_purchase_retains_price_and_currency_conversion(
 
     # Use actual routing, validation, business rules and persistence. No lifespan
     # means no background jobs, WB connection or production settings are loaded.
-    with closing(TestClient(api.app, base_url="http://127.0.0.1")) as client:
+    with closing(TestClient(api.app, base_url="http://127.0.0.1",headers={"x-tenant-role":"owner","x-tenant-account":"1"})) as client:
         response = client.post("/api/v1/operations/procurement", json={
             "supplier_name": "Synthetic supplier",
             "procurement_type": "Товар",

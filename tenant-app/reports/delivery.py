@@ -106,7 +106,7 @@ def telegram_is_linked() -> bool:
     return bool(get_delivery_status().get("telegram_linked"))
 
 
-def request_telegram_link_code() -> tuple[str, int] | None:
+def request_telegram_link_code(actor_account: str = '') -> tuple[str, int] | None:
     """Returns (code, ttl_minutes) on success, None on any failure -- the
     caller (reports_page.py) shows an error message in that case."""
     if not internal_api_is_configured():
@@ -114,17 +114,17 @@ def request_telegram_link_code() -> tuple[str, int] | None:
     try:
         response = requests.post(
             f"{config.INTERNAL_API_URL}/internal/telegram-link-code",
-            headers={"X-Internal-Secret": config.INTERNAL_API_SECRET},
+            headers={"X-Internal-Secret": config.INTERNAL_API_SECRET,"X-Tenant-Account":actor_account},
             data={"slug": config.TENANT_SLUG},
             timeout=15,
         )
         if response.status_code != 200:
-            logger.error("Gateway rejected telegram-link-code request: %s %s", response.status_code, response.text[:500])
+            logger.error("Gateway rejected telegram-link-code request: HTTP %s", response.status_code)
             return None
         payload = response.json()
         return payload["code"], int(payload["ttl_minutes"])
     except Exception:
-        logger.exception("Failed to reach gateway internal API for Telegram link code")
+        logger.warning("Failed to reach gateway internal API for Telegram link code")
         return None
 
 

@@ -74,7 +74,7 @@ def _verified_backup_script(encryption_env):
         "from config import DATA_ENCRYPTION_KEY\n"
         "from backup_tools import create_backup,inspect_backup\n"
         "assert DATA_ENCRYPTION_KEY, 'Tenant backup encryption key is not configured'\n"
-        "p=create_backup(keep=1000000); payload=p.read_bytes()\n"
+        "p=create_backup(keep=5); payload=p.read_bytes()\n"
         "assert payload.startswith((b'mh-backup-enc:v1:', b'mh-backup-enc:v2:')), 'Backup is not encrypted'\n"
         "assert inspect_backup(payload); print(p.name)\n"
     )
@@ -111,7 +111,7 @@ def main():
         else:
             expected_env.append(entry)
     previous = args.container + "-rollback-" + time.strftime("%Y%m%d-%H%M%S")
-    # Uses the application's verified SQLite backup and retains all existing backups.
+    # Uses the application's verified SQLite backup with bounded retention.
     # The tenant image has a 64 MiB /tmp tmpfs by default.  SQLite's verified
     # snapshot is larger than that for real tenants, so place temporary backup
     # files on the persistent data mount instead.
@@ -119,7 +119,7 @@ def main():
     # credentials. Never let a release silently create a plaintext copy on the
     # persistent tenant volume when the encryption key is absent.
     backup_code = _verified_backup_script(added_env)
-    backup = subprocess.run(["docker", "exec", "-i", "-e", "TMPDIR=/app/data", args.container, "python", "-"], input=backup_code, capture_output=True, text=True)
+    backup = subprocess.run(["docker", "exec", "--user", "10001:10001", "-i", "-e", "TMPDIR=/app/data", args.container, "python", "-"], input=backup_code, capture_output=True, text=True, timeout=300)
     if backup.returncode:
         raise RuntimeError("Verified pre-release backup failed; original container untouched")
     print("Verified backup:", backup.stdout.strip(), flush=True)

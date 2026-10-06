@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import os
+import time
 from pathlib import Path
 
 import requests
@@ -17,6 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 
 import config  # noqa: E402
 from logic import db as control_db  # noqa: E402
+try:
+    from scripts.backup_offsite import alert
+except ImportError:
+    from backup_offsite import alert
 
 
 def _all_slugs() -> list[str]:
@@ -29,7 +35,7 @@ def _backup_one(slug: str, keep_days: int) -> dict[str, object]:
     response = requests.post(
         f"{config.PROVISIONER_URL.rstrip('/')}/v1/tenants/{slug}/backup",
         params={"keep_days": keep_days},
-        timeout=120,
+        timeout=(5, 600),
     )
     response.raise_for_status()
     payload = response.json()
@@ -42,7 +48,7 @@ def _backup_control_plane(keep_days: int) -> dict[str, object]:
     response = requests.post(
         f"{config.PROVISIONER_URL.rstrip('/')}/v1/control-plane/backup",
         params={"keep_days": keep_days},
-        timeout=120,
+        timeout=(5, 600),
     )
     response.raise_for_status()
     payload = response.json()
@@ -56,6 +62,7 @@ def main() -> int:
     parser.add_argument("--only", default=None, help="Comma-separated tenant slugs (default: all known tenants)")
     parser.add_argument("--keep-days", type=int, default=config.BACKUP_KEEP_DAYS)
     args = parser.parse_args()
+    if not 1<=args.keep_days<=3650:parser.error('--keep-days must be between 1 and 3650')
 
     slugs = _all_slugs()
     if args.only:
@@ -66,7 +73,7 @@ def main() -> int:
         result = _backup_control_plane(args.keep_days)
         print(f"control-plane: OK -> {result['archive']}")
     except Exception as exc:  # noqa: BLE001 -- tenant backups can still proceed
-        print(f"control-plane: ERROR: {exc}")
+        print("control-plane: ERROR: backup failed")
         failures.append("control-plane")
 
     if not slugs:
@@ -76,8 +83,10 @@ def main() -> int:
             result = _backup_one(slug, args.keep_days)
             print(f"{slug}: OK -> {result['archive']}")
         except Exception as exc:  # noqa: BLE001 -- continue with other tenants
-            print(f"{slug}: ERROR: {exc}")
+            print(f"{slug}: ERROR: backup failed")
             failures.append(slug)
+    if failures:
+        print('failure alert: '+alert({'kind':'backup_failure','code':'local_backup_failed','at':time.time()},os.environ))
     return int(bool(failures))
 
 

@@ -24,7 +24,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "DB_PATH", database)
     monkeypatch.setattr(api, "IS_DEMO", False)
     core.init_db()
-    with closing(TestClient(api.app, base_url="http://127.0.0.1")) as client:
+    with closing(TestClient(api.app, base_url="http://127.0.0.1",headers={"x-tenant-role":"owner","x-tenant-account":"1"})) as client:
         yield client
 
 def norm(nm=100, value=2):

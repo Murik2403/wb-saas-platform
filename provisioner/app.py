@@ -77,6 +77,7 @@ def _wait_demo_health(client):
 
 def start_daily_demo():
     global _DEMO_DAILY, _DEMO_REFRESH_THREAD
+    _cleanup_stale_backup_partials()
     _recover_demo_reseed()
     _DEMO_DAILY = DailyDemoRefresh(BACKUP_MOUNT / 'demo', _refresh_demo_and_healthcheck,
         enabled=os.environ.get('WB_SAAS_DEMO_DAILY_REFRESH', '0') == '1',
@@ -357,38 +358,124 @@ def _prune_old_backups(slug: str, keep_days: int) -> int:
     return removed
 
 
+def migrate_legacy_backups(backup_group,keep_days,remove_expired=False):
+    """Operator-only migration; no deletion until an exact verified replacement exists."""
+    import hashlib,uuid
+    if backup_group!=CONTROL_PLANE_BACKUP_GROUP:_validate_slug(backup_group)
+    if type(keep_days) is not int or not 1<=keep_days<=3650 or type(remove_expired) is not bool:raise ValueError('Invalid legacy migration policy')
+    if not BACKUP_ENCRYPTION_KEY:raise ValueError('Backup encryption key is not configured')
+    directory=BACKUP_MOUNT/backup_group
+    if directory.is_symlink():raise ValueError('Invalid backup namespace')
+    def digest(path):
+        result=hashlib.sha256()
+        with path.open('rb') as stream:
+            while chunk:=stream.read(1024*1024):result.update(chunk)
+        return result.digest()
+    result={'migrated':0,'verified':0,'plaintext_removed':0}
+    for source in sorted(directory.glob('*.tar.gz')):
+        if source.is_symlink() or not source.is_file():raise ValueError('Invalid legacy archive')
+        original=digest(source);stamp=source.stat().st_mtime
+        destination=source.with_name(source.name+'.enc');created=not destination.exists()
+        if destination.is_symlink():raise ValueError('Invalid legacy replacement')
+        temporary=directory/('.legacy-verified-'+uuid.uuid4().hex+'.partial')
+        try:
+            if created:encrypt_file(source,destination,BACKUP_ENCRYPTION_KEY);result['migrated']+=1
+            decrypt_file(destination,temporary,BACKUP_ENCRYPTION_KEY)
+            if digest(temporary)!=original or digest(source)!=original:raise ValueError('Legacy backup replacement did not verify')
+            result['verified']+=1
+            if remove_expired and stamp<time.time()-keep_days*86400:
+                source.unlink();result['plaintext_removed']+=1
+        except Exception:
+            if created:destination.unlink(missing_ok=True)
+            raise
+        finally:temporary.unlink(missing_ok=True)
+    return result
+
+
+def _cleanup_stale_backup_partials():
+    """Clean only abandoned temporary outputs, never plaintext historical archives."""
+    removed=0
+    if not BACKUP_MOUNT.exists():return removed
+    for directory in BACKUP_MOUNT.iterdir():
+        if directory.is_symlink() or not directory.is_dir():continue
+        try:
+            for pattern in ('.*.tar.gz.partial','.*.tar.gz.enc.tmp'):
+                for path in directory.glob(pattern):
+                    if not path.is_symlink() and path.is_file() and path.stat().st_mtime<time.time()-3600:
+                        path.unlink();removed+=1
+        except OSError:continue  # Independent freshness watchdog reports inaccessible/missing groups.
+    return removed
+
+
+def _prepare_backup_directory(client, backup_group):
+    """Narrow root helper creates only one validated archive namespace."""
+    if backup_group != CONTROL_PLANE_BACKUP_GROUP:_validate_slug(backup_group)
+    helper=None
+    try:
+        helper=client.containers.run(BACKUP_HELPER_IMAGE,user='0:0',
+            command=['sh','-c','umask 077; mkdir -p "$1" && chown 10001:10001 "$1" && chmod 700 "$1"','prepare-backup','/backup/'+backup_group],
+            volumes={BACKUP_DIR:{'bind':'/backup','mode':'rw'}},detach=True,remove=False,
+            network_disabled=True,security_opt=['no-new-privileges:true'],cap_drop=['ALL'],cap_add=['CHOWN','FOWNER'],read_only=True)
+        outcome=helper.wait(timeout=15)
+        if not isinstance(outcome,dict) or outcome.get('StatusCode')!=0:raise RuntimeError('Backup namespace initialization failed')
+    finally:
+        if helper is not None:
+            try:helper.remove(force=True)
+            except Exception:pass
+
+
 def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: Any) -> dict[str, str | int]:
     """Archive one fixed Docker volume to an encrypted archive namespace."""
     if not BACKUP_ENCRYPTION_KEY:
         raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
+    if not 1<=keep_days<=3650:raise HTTPException(status_code=422,detail='Invalid backup retention')
+    _prepare_backup_directory(client,backup_group)
     backup_dir = BACKUP_MOUNT / backup_group
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{backup_group}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    backup_dir.mkdir(parents=True, exist_ok=True,mode=0o700)
+    os.chmod(backup_dir,0o700)
+    # A killed archive helper cannot survive its 240s wait; remove only stale
+    # incomplete files, never legacy plaintext or a valid encrypted backup.
+    for partial in backup_dir.glob('.*.partial'):
+        if partial.is_file() and not partial.is_symlink() and partial.stat().st_mtime<time.time()-3600:
+            partial.unlink()
+    import uuid
+    stem = f"{backup_group}-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}-{uuid.uuid4().hex[:12]}"
     archive_name = f"{stem}.tar.gz.enc"
     plain_name = f".{stem}.tar.gz.partial"
     plain_path = backup_dir / plain_name
     archive_path = backup_dir / archive_name
+    helper=None
     try:
-        client.containers.run(
+        descriptor=os.open(plain_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        os.close(descriptor)
+        helper=client.containers.run(
             BACKUP_HELPER_IMAGE,
-            **({"user": "10001:10001"} if backup_group == "demo" else {}),
+            user="10001:10001",
             command=["tar", "czf", f"/backup/{backup_group}/{plain_name}", "-C", "/data", "."],
             volumes={
                 volume_name: {"bind": "/data", "mode": "ro"},
                 BACKUP_DIR: {"bind": "/backup", "mode": "rw"},
             },
-            remove=True,
+            detach=True,
+            remove=False,
             network_disabled=True,
             security_opt=["no-new-privileges:true"],
             cap_drop=["ALL"],
             read_only=True,
             tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
         )
+        outcome=helper.wait(timeout=240)
+        if not isinstance(outcome,dict) or outcome.get('StatusCode')!=0:
+            raise RuntimeError('Archive helper did not complete successfully')
         encrypt_file(plain_path, archive_path, BACKUP_ENCRYPTION_KEY)
     except Exception as exc:
         plain_path.unlink(missing_ok=True)
         archive_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=502, detail=f"Docker backup failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Docker backup failed; partial files removed") from exc
+    finally:
+        if helper is not None:
+            try:helper.remove(force=True)
+            except Exception:pass
     plain_path.unlink(missing_ok=True)
     return {"archive": archive_name, "pruned": _prune_old_backups(backup_group, keep_days)}
 
@@ -402,6 +489,7 @@ def healthz() -> dict[str, str]:
 def create_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
+    _prepare_backup_directory(client,slug)
     network = _network(client, slug)
     _volume(client, slug)
     _attach_traefik(client, network)

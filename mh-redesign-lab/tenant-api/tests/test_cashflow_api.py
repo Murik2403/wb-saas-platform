@@ -19,7 +19,7 @@ def client(monkeypatch,tmp_path):
     monkeypatch.setattr(api,"DB_PATH",tmp_path/"cash.db")
     monkeypatch.setattr(api,"IS_DEMO",False)
     core.init_db()
-    with closing(TestClient(api.app,base_url="http://127.0.0.1")) as value:yield value
+    with closing(TestClient(api.app,base_url="http://127.0.0.1",headers={"x-tenant-role":"owner","x-tenant-account":"1"})) as value:yield value
 
 def payload(**kwargs):
     return {"request_key":"request-001","direction":"outflow","status":"planned","planned_date":"2026-09-10","amount":"37.5","currency":"CNY","exchange_rate":"13",**kwargs}

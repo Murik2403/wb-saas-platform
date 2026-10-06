@@ -1,0 +1,8 @@
+# Compose override for /opt/glitchtip/compose.yml, not the unused SaaS PostgreSQL.
+services:
+  postgres:
+    mem_limit: 512m
+    memswap_limit: 512m
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

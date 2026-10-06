@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
@@ -27,17 +28,23 @@ def encrypt_file(source: Path, destination: Path, secret: str) -> None:
     encryptor = Cipher(algorithms.AES(_key(secret, salt)), modes.GCM(nonce)).encryptor()
     temp = destination.with_name(f".{destination.name}.tmp")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    created=False
+    deadline=time.monotonic()+120
     try:
-        with source.open("rb") as incoming, temp.open("wb") as outgoing:
+        descriptor=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        created=True
+        with os.fdopen(descriptor,"wb") as outgoing, source.open("rb") as incoming:
             outgoing.write(MAGIC + salt + nonce)
             while chunk := incoming.read(CHUNK_SIZE):
+                if time.monotonic()>deadline:raise TimeoutError('Backup encryption exceeded its deadline')
                 outgoing.write(encryptor.update(chunk))
             outgoing.write(encryptor.finalize())
             outgoing.write(encryptor.tag)
+            outgoing.flush(); os.fsync(outgoing.fileno())
         os.chmod(temp, 0o600)
         os.replace(temp, destination)
     finally:
-        temp.unlink(missing_ok=True)
+        if created:temp.unlink(missing_ok=True)
 
 
 def decrypt_file(source: Path, destination: Path, secret: str) -> None:
@@ -54,19 +61,25 @@ def decrypt_file(source: Path, destination: Path, secret: str) -> None:
     decryptor = Cipher(algorithms.AES(_key(secret, salt)), modes.GCM(nonce, tag)).decryptor()
     temp = destination.with_name(f".{destination.name}.tmp")
     remaining = source.stat().st_size - header_size - TAG_SIZE
+    created=False
+    deadline=time.monotonic()+120
     try:
-        with source.open("rb") as incoming, temp.open("wb") as outgoing:
+        descriptor=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        created=True
+        with os.fdopen(descriptor,"wb") as outgoing, source.open("rb") as incoming:
             incoming.seek(header_size)
             while remaining:
+                if time.monotonic()>deadline:raise TimeoutError('Backup decryption exceeded its deadline')
                 chunk = incoming.read(min(CHUNK_SIZE, remaining))
                 if not chunk:
                     raise ValueError("Encrypted backup is truncated")
                 remaining -= len(chunk)
                 outgoing.write(decryptor.update(chunk))
             outgoing.write(decryptor.finalize())
+            outgoing.flush(); os.fsync(outgoing.fileno())
         os.chmod(temp, 0o600)
         os.replace(temp, destination)
     except InvalidTag as exc:
         raise ValueError("Backup authentication failed: wrong key or changed archive") from exc
     finally:
-        temp.unlink(missing_ok=True)
+        if created:temp.unlink(missing_ok=True)

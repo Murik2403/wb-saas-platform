@@ -56,7 +56,7 @@ def mutate(request,shop_id,action,start,end,**kwargs):
 
 @router.get('')
 def listing(request:Request):
-    role=request.headers.get('x-tenant-role','owner')
+    role=request.headers.get('x-tenant-role','viewer')
     items=[]
     for shop in shops.listing():
         if not shop['active']:
@@ -70,7 +70,7 @@ def listing(request:Request):
 def create(payload:ShopInput,request:Request):
     try:shop_context.actor(request.headers,True)
     except shop_context.ShopContextError as exc:raise HTTPException(status_code=403,detail=exc.message) from exc
-    if request.headers.get('x-tenant-role','owner')!='owner':raise HTTPException(status_code=403,detail='Подключать магазины может только владелец')
+    if request.headers.get('x-tenant-role','viewer')!='owner':raise HTTPException(status_code=403,detail='Подключать магазины может только владелец')
     try:
         client=WBAPI(payload.token)
         if not client.test_statistics():raise ValueError('Подключение не прошло проверку')
@@ -87,7 +87,7 @@ def create(payload:ShopInput,request:Request):
 def reconnect(shop_id:int,payload:ReconnectInput,request:Request):
     try:shop_context.actor(request.headers,True)
     except shop_context.ShopContextError as exc:raise HTTPException(status_code=403,detail=exc.message) from exc
-    if request.headers.get('x-tenant-role','owner')!='owner':raise HTTPException(status_code=403,detail='Обновлять подключение может только владелец')
+    if request.headers.get('x-tenant-role','viewer')!='owner':raise HTTPException(status_code=403,detail='Обновлять подключение может только владелец')
     try:
         if not WBAPI(payload.token).test_statistics():raise ValueError('Подключение не прошло проверку')
         shops.reconnect(shop_id,payload.token,shops.account_identity(payload.token))
@@ -146,7 +146,7 @@ def cost(shop_id:int,payload:CostInput,request:Request):
 @router.post('/{shop_id}/deactivate')
 def deactivate(shop_id:int,request:Request):
     authorized(request,shop_id,True)
-    if request.headers.get('x-tenant-role','owner')!='owner':raise HTTPException(status_code=403,detail='Отключать магазины может только владелец')
+    if request.headers.get('x-tenant-role','viewer')!='owner':raise HTTPException(status_code=403,detail='Отключать магазины может только владелец')
     try:shops.deactivate(shop_id)
     except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
     return {'message':'Магазин отключён; данные сохранены'}

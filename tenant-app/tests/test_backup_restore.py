@@ -114,3 +114,24 @@ def test_encrypted_backup_survives_key_rotation(database, tmp_path, monkeypatch)
     database.commit()
     backup.restore_backup(payload)
     assert database.execute("SELECT value FROM orders").fetchone()[0] == 11
+
+
+def test_backup_partial_created_private_and_removed_when_encryption_fails(database,tmp_path,monkeypatch):
+    modes=[];original=backup.os.open
+    monkeypatch.setattr(backup.os,'open',lambda path,flags,mode:(modes.append(mode),original(path,flags,mode))[1])
+    monkeypatch.setattr(backup,'_maybe_encrypt_backup',lambda _:(_ for _ in ()).throw(RuntimeError('synthetic encryption failure')))
+    with pytest.raises(RuntimeError):backup.create_backup()
+    assert 0o600 in modes and not list(tmp_path.glob('*.zip.partial')) and not list(tmp_path.glob('marketshelper_*.zip'))
+
+def test_retention_permission_failure_is_visible_not_silently_unbounded(database,tmp_path,monkeypatch):
+    from pathlib import Path
+    old=tmp_path/'old.zip';new=tmp_path/'new.zip';old.write_bytes(b'old');new.write_bytes(b'new')
+    monkeypatch.setattr(backup,'_all_backup_paths',lambda:[new,old])
+    original=Path.unlink
+    def unlink(path,*args,**kwargs):
+        if path==old:raise PermissionError('synthetic root ownership')
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'unlink',unlink)
+    backup.os.utime(old,(1,1))
+    with pytest.raises(RuntimeError,match='ownership'):backup._prune_backups(1)
+    assert old.exists() and new.exists()

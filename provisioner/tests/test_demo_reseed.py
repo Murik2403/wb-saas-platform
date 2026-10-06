@@ -233,8 +233,9 @@ def test_demo_backup_restore_helpers_use_fixed_data_owner(monkeypatch, tmp_path)
     monkeypatch.setattr(app,'BACKUP_MOUNT',tmp_path)
     monkeypatch.setattr(app,'BACKUP_ENCRYPTION_KEY','x'*40)
     def tar(*args,**kwargs):
-        assert kwargs['user']=='10001:10001'
-        (tmp_path/'demo'/kwargs['command'][2].split('/')[-1]).write_bytes(b'fixture')
+        if kwargs['user']=='10001:10001':
+            (tmp_path/'demo'/kwargs['command'][2].split('/')[-1]).write_bytes(b'fixture')
+        helper=Mock();helper.wait.return_value={'StatusCode':0};return helper
     client.containers.run.side_effect=tar
     monkeypatch.setattr(app,'encrypt_file',lambda src,dst,key:dst.write_bytes(b'encrypted'))
     app._backup_volume('wb-tenant-data-demo','demo',14,client)

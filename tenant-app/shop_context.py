@@ -31,7 +31,7 @@ def route_scope(method,path,query=''):
     return None
 
 def actor(headers,secondary=False):
-    role=headers.get('x-tenant-role','owner')
+    role=headers.get('x-tenant-role','viewer')
     account=headers.get('x-tenant-account')
     if secondary and (not account or 'x-tenant-role' not in headers):
         raise ShopContextError('SHOP_IDENTITY_REQUIRED','Для магазина требуется подтверждённый пользователь')

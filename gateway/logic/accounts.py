@@ -660,7 +660,7 @@ def create_telegram_link_code(conn: sqlite3.Connection, account_id: int, max_att
     raise RuntimeError("Не удалось сгенерировать код привязки Telegram.")
 
 
-def consume_telegram_link_code(conn: sqlite3.Connection, code: str, chat_id: str) -> bool:
+def consume_telegram_link_code(conn: sqlite3.Connection, code: str, chat_id: str, *, tenant_id: int | None = None) -> bool:
     """Returns True and links `chat_id` to the code's account if the code is
     valid, unexpired, and unused; False otherwise. Single-use, same pattern
     as password_reset.consume_reset_token."""
@@ -670,20 +670,28 @@ def consume_telegram_link_code(conn: sqlite3.Connection, code: str, chat_id: str
     row = conn.execute("SELECT * FROM telegram_link_codes WHERE code=?", (code,)).fetchone()
     if row is None or row["consumed_at"] is not None:
         return False
+    if tenant_id is not None:
+        if 'tenant_id' not in row.keys() or row['tenant_id'] != tenant_id:
+            return False
+        tenant=conn.execute('SELECT account_id FROM tenant_instances WHERE id=?',(tenant_id,)).fetchone()
+        if tenant is None or int(tenant['account_id'])!=int(row['account_id']):return False
+        membership=get_tenant_membership(conn,tenant_id,int(row['account_id']))
+        if membership is None or membership['role']!='owner':return False
     expires_at = datetime.fromisoformat(row["expires_at"])
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
         return False
 
-    conn.execute(
-        "UPDATE telegram_link_codes SET consumed_at=? WHERE code=?",
+    consumed=conn.execute(
+        "UPDATE telegram_link_codes SET consumed_at=? WHERE code=? AND consumed_at IS NULL",
         (_now_iso(), code),
     )
-    conn.execute(
-        "UPDATE tenant_instances SET telegram_chat_id=?, updated_at=? WHERE account_id=?",
-        (str(chat_id), _now_iso(), int(row["account_id"])),
-    )
+    if consumed.rowcount!=1:return False
+    if tenant_id is None:
+        conn.execute('UPDATE tenant_instances SET telegram_chat_id=?, updated_at=? WHERE account_id=?',(str(chat_id),_now_iso(),int(row['account_id'])))
+    else:
+        conn.execute('UPDATE tenant_instances SET telegram_chat_id=?, updated_at=? WHERE id=? AND account_id=?',(str(chat_id),_now_iso(),tenant_id,int(row['account_id'])))
     return True
 
 

@@ -44,7 +44,9 @@ def test_ozon_upstream_reports_do_not_block_local_finance():
 
 def test_gateway_wiring_surrounds_selected_shop_dispatch():
     from test_display_contract import api
-    assert api.app.user_middleware[0].cls is DashboardWorkGuard
+    from gateway_request_auth import GatewayIdentityGuard
+    assert api.app.user_middleware[0].cls is GatewayIdentityGuard
+    assert api.app.user_middleware[1].cls is DashboardWorkGuard
 
 
 def test_complete_body_lifetime_serializes_distinct_routes_and_selected_shop():

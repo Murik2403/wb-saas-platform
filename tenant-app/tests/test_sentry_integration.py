@@ -28,6 +28,10 @@ def test_initialization_uses_non_pii_configuration(monkeypatch):
         dsn="https://key@example.ingest.sentry.io/1",
         environment="staging",
         send_default_pii=False,
+        include_local_variables=False,
+        before_send=sentry_integration.before_send,
+        before_send_transaction=sentry_integration.before_send,
+        before_breadcrumb=sentry_integration.before_breadcrumb,
     )
     sdk.set_tag.assert_called_once_with("service", "tenant-app")
 
@@ -42,6 +46,10 @@ def test_initialization_allows_service_override(monkeypatch):
         dsn="https://key@example.ingest.sentry.io/1",
         environment="production",
         send_default_pii=False,
+        include_local_variables=False,
+        before_send=sentry_integration.before_send,
+        before_send_transaction=sentry_integration.before_send,
+        before_breadcrumb=sentry_integration.before_breadcrumb,
     )
     sdk.set_tag.assert_called_once_with("service", "tenant-api")
 

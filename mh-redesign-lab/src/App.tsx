@@ -1173,6 +1173,7 @@ function App() {
 
         {activeNav === "reports" ? (
           <ReportsView
+            canLinkTelegram={session?.mode !== "demo" && session?.user.role === "owner"}
             exportItems={dashboard.exportItems}
             onAction={handleAction}
           onQuickReport={async (name, days, metrics) => { await generateQuickReport(name, days, metrics); setToast(`PDF за ${days} дней поставлен в очередь`); }}
@@ -3529,6 +3530,7 @@ export function ReportsView({
   reportCards,
   reportMetrics,
   target,
+  canLinkTelegram = false,
 }: {
   exportItems: ExportItem[];
   onAction: (label: string, itemLabel: string) => void;
@@ -3536,6 +3538,7 @@ export function ReportsView({
   reportCards: ReportCard[];
   reportMetrics: DashboardMetric[];
   target?: string | null;
+  canLinkTelegram?: boolean;
 }) {
   const [operations, setOperations] = useState<ReportOperations | null>(null);
   const [delivery, setDelivery] = useState<ReportDelivery>({ configured: false, email_configured: false, telegram_configured: false, telegram_linked: false });
@@ -3589,7 +3592,7 @@ export function ReportsView({
       setShowForm(false); form.reset(); await refreshOperations(); setMessage("Расписание сохранено");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось сохранить расписание"); } finally { setBusyId(null); }
   };
-  const linkTelegram = async () => { setMessage(null); try { const result = await requestTelegramLinkCode(); setTelegramCode({ code: result.code, ttl: result.ttl_minutes, link: result.deep_link }); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось получить код Telegram"); } };
+  const linkTelegram = async () => { if (!canLinkTelegram) return; setMessage(null); try { const result = await requestTelegramLinkCode(); setTelegramCode({ code: result.code, ttl: result.ttl_minutes, link: result.deep_link }); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось получить код Telegram"); } };
   const runDefinition = async (id: number) => { setBusyId(id); setMessage(null); try { await generateReportDefinition(id); await refreshOperations(); setMessage("Отчёт поставлен в очередь. Статус обновится автоматически."); } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось запустить отчёт"); } finally { setBusyId(null); } };
   const quickReportMetrics: Record<string, string[]> = {
     "Операционный отчёт": ["sales_orders", "pnl", "stocks", "oos_risk", "ads"],
@@ -3665,7 +3668,7 @@ export function ReportsView({
               <div><strong>Telegram</strong><span>{delivery.telegram_linked ? `привязан к @${delivery.telegram_bot_username}` : delivery.telegram_configured ? `не привязан · @${delivery.telegram_bot_username}` : "бот не настроен"}</span></div>
             </div>
             {delivery.email_configured ? <p className="form-hint">Email для отчётов — адрес аккаунта. Изменить его можно в разделе <a href={gatewayUrlFor("/account")}>«Аккаунт»</a>; код подтверждения здесь не вводится.</p> : null}
-            {delivery.telegram_configured ? <div className="telegram-link-box"><button className="secondary-button" type="button" onClick={() => void linkTelegram()}>{delivery.telegram_linked ? "Привязать другой Telegram" : "Привязать Telegram"}</button>{telegramCode ? <><p className="form-hint">Как привязать Telegram:</p><ol className="form-hint telegram-link-steps"><li>Нажмите «Открыть Telegram и привязать» — откроется чат бота <strong>@{delivery.telegram_bot_username}</strong>.</li><li>В Telegram нажмите «Запустить» (Start). Ссылка передаст код боту. Если ссылка не открылась, в чате этого же бота отправьте <code>/link {telegramCode.code}</code>.</li><li>Нажмите «Обновить статус» после ответа бота. Код одноразовый и действует {telegramCode.ttl} минут; оператору или в личные сообщения его отправлять не нужно.</li></ol>{telegramCode.link ? <a className="primary-link-button" href={telegramCode.link} rel="noreferrer" target="_blank">Открыть Telegram и привязать</a> : <p className="form-hint">Откройте чат бота <strong>@{delivery.telegram_bot_username}</strong> и отправьте <code>/link {telegramCode.code}</code>.</p>}</> : null}<button className="ghost-button" type="button" onClick={() => void refreshDelivery()}>Обновить статус</button></div> : null}
+            {delivery.telegram_configured ? <div className="telegram-link-box"><button className="secondary-button" type="button" disabled={!canLinkTelegram} title={!canLinkTelegram ? "Получателя Telegram изменяет только владелец" : undefined} onClick={() => void linkTelegram()}>{delivery.telegram_linked ? "Привязать другой Telegram" : "Привязать Telegram"}</button>{telegramCode ? <><p className="form-hint">Как привязать Telegram:</p><ol className="form-hint telegram-link-steps"><li>Нажмите «Открыть Telegram и привязать» — откроется чат бота <strong>@{delivery.telegram_bot_username}</strong>.</li><li>В Telegram нажмите «Запустить» (Start). Ссылка передаст код боту. Если ссылка не открылась, в чате этого же бота отправьте <code>/link {telegramCode.code}</code>.</li><li>Нажмите «Обновить статус» после ответа бота. Код одноразовый и действует {telegramCode.ttl} минут; оператору или в личные сообщения его отправлять не нужно.</li></ol>{telegramCode.link ? <a className="primary-link-button" href={telegramCode.link} rel="noreferrer" target="_blank">Открыть Telegram и привязать</a> : <p className="form-hint">Откройте чат бота <strong>@{delivery.telegram_bot_username}</strong> и отправьте <code>/link {telegramCode.code}</code>.</p>}</> : null}<button className="ghost-button" type="button" onClick={() => void refreshDelivery()}>Обновить статус</button></div> : null}
           </section>
         </aside>
       </div>);

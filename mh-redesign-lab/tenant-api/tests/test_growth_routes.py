@@ -74,7 +74,7 @@ def test_server_rechecks_evidence_before_recording(client, monkeypatch, growth_d
 
 def test_ack_requires_authenticated_identity_and_matching_report(client, growth_db):
     ack = {"nm_id": 123, "report_revision": "a" * 64}
-    assert client.post("/api/v1/growth/report-viewed", json=ack).status_code == 401
+    assert client.post("/api/v1/growth/report-viewed", json=ack).status_code == 403
     assert client.post("/api/v1/growth/report-viewed", json=ack, headers=AUTH).status_code == 409
     assert client.post("/api/v1/growth/report-viewed", json=ack, headers={**AUTH, "x-tenant-role": "viewer"}).status_code == 403
     with sqlite3.connect(growth_db) as conn:

@@ -57,6 +57,15 @@ def test_asgi_byte_headers_and_environment_credential_keys(policy):
     assert '"token_count": 42' in rendered
 
 
+@pytest.mark.parametrize("policy", [gateway_sentry, tenant_sentry], ids=["gateway", "tenant"])
+def test_gateway_identity_proof_redacted_as_header_url_and_rendered_field(policy):
+    proof="1700000000."+"a"*64
+    event={"headers":{"X-MH-Gateway-Auth":proof},"message":"X-MH-Gateway-Auth: "+proof, "url":"https://example.test/api?x-mh-gateway-auth="+proof}
+    assert proof not in json.dumps(policy.before_send(event,{}))
+    record=logging.makeLogRecord({"msg":"proof %s", "args":(event,)})
+    assert proof not in JSONFormatter().format(record)
+
+
 def test_real_httpx_request_logger_is_redacted_without_network():
     stream=io.StringIO(); handler=logging.StreamHandler(stream); handler.setFormatter(JSONFormatter())
     logger=logging.getLogger("httpx"); old_handlers,old_level,old_propagate=logger.handlers[:],logger.level,logger.propagate

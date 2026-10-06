@@ -116,7 +116,7 @@ def save_release(payload: Release):
 def workspace(request: Request):
     from production_permissions import write_allowed
     from config import IS_DEMO
-    role = "viewer" if IS_DEMO else request.headers.get("x-tenant-role", "owner").lower()
+    role = "viewer" if IS_DEMO else request.headers.get("x-tenant-role", "viewer").lower()
     allowed_actions = [name for name in ["boms", "equipment", "piecework", "defects", "releases"] if write_allowed(role, "POST", f"/api/v1/manufacturing-costs/{name}")]
     if role in {"owner", "manager"}:
         allowed_actions.append("reverse")

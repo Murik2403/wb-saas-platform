@@ -15,7 +15,7 @@ def client(monkeypatch, tmp_path):
     core.ensure_financial_schema()
     monkeypatch.setattr(api, 'IS_DEMO', False)
     monkeypatch.setattr(api, '_build_dashboard_cached', lambda *_: SimpleNamespace(financial_products=pd.DataFrame([{'Артикул WB':123, 'Выручка':100, 'Продано нетто':2, 'Прибыль':20}])))
-    return TestClient(api.app, base_url="http://127.0.0.1")
+    return TestClient(api.app, base_url="http://127.0.0.1",headers={"x-tenant-role":"owner","x-tenant-account":"1"})
 
 
 URL='/api/v1/settings/expense-coverage'

@@ -144,6 +144,7 @@ def _all_backup_paths() -> list[Path]:
 
 def create_backup(kind: str = "manual", keep: int = 14) -> Path:
     """Create a verified ZIP backup without the WB API token."""
+    if type(keep) is not int or not 1<=keep<=365:raise ValueError('Backup retention must be between 1 and 365 archives')
     kind = "auto" if kind == "auto" else "manual"
     stamp = _timestamp()
     final_path = BACKUP_DIR / f"{BACKUP_FILENAME_PREFIX}_{kind}_{stamp}.zip"
@@ -177,7 +178,17 @@ def create_backup(kind: str = "manual", keep: int = 14) -> Path:
                     zf.write(settings_copy, arcname="settings.json")
             payload = zip_path.read_bytes()
 
-    final_path.write_bytes(_maybe_encrypt_backup(payload))
+    # Never expose a partial archive or a file created with ambient umask.
+    temporary=final_path.with_suffix(final_path.suffix+'.partial')
+    created=False
+    try:
+        descriptor=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        created=True
+        with os.fdopen(descriptor,'wb') as output:
+            output.write(_maybe_encrypt_backup(payload));output.flush();os.fsync(output.fileno())
+        os.replace(temporary,final_path)
+    finally:
+        if created:temporary.unlink(missing_ok=True)
     _prune_backups(max(1, int(keep)))
     return final_path
 
@@ -194,11 +205,14 @@ def ensure_daily_backup(keep: int = 14) -> Path | None:
 
 def _prune_backups(keep: int) -> None:
     backups = sorted(_all_backup_paths(), key=lambda p: p.stat().st_mtime, reverse=True)
+    failures=0
     for path in backups[keep:]:
         try:
             path.unlink()
         except OSError:
-            pass
+            failures+=1
+    if failures:
+        raise RuntimeError('Backup retention failed; repair archive ownership before release')
 
 
 def list_backups(limit: int = 30) -> list[dict[str, Any]]:

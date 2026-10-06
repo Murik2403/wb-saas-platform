@@ -159,7 +159,7 @@ class TelegramLinkCodeTests(GatewayDbTestCase):
 
     def test_create_telegram_link_code_returns_usable_code(self) -> None:
         with mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect)):
-            code = internal_routes.create_telegram_link_code(self.slug)
+            code = internal_routes.create_telegram_link_code(self.slug,str(self.account_id))
         self.assertTrue(code)
         with self.connect() as conn:
             ok = accounts.consume_telegram_link_code(conn, code, "555")
