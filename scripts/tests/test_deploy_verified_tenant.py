@@ -72,3 +72,11 @@ def test_verified_backup_script_is_valid_and_keeps_key_out_of_command_arguments(
     assert key in script
     docker_args = ["docker", "exec", "-i", "tenant", "python", "-"]
     assert key not in docker_args
+
+
+def test_release_backup_runs_as_app_user_with_small_retention():
+    import re
+    from pathlib import Path
+    source=(Path(__file__).resolve().parents[1]/'deploy_verified_tenant.py').read_text(encoding='utf-8')
+    assert '"--user", "10001:10001"' in source
+    assert re.search(r'create_backup\(keep=([1-9]|10)\)',source)

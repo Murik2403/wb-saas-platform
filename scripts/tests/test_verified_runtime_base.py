@@ -37,16 +37,35 @@ def test_changed_runtime_dependencies_refuse_reused_image(candidate):
     root,output,_=candidate
     with (root/'tenant-app/requirements.txt').open('a') as f:f.write('\nnew-library==1\n')
     git(root,'add','.');git(root,'commit','-qm','changed dependency')
-    with pytest.raises(AssertionError,match='Changed runtime input'):gate.prepare(root,output)
+    with pytest.raises(RuntimeError,match='Changed runtime input'):gate.prepare(root,output)
     assert not output.exists()
 
 def test_deleted_module_refuses_overlay_leftovers(candidate):
     root,output,worker=candidate;worker.unlink()
     git(root,'add','-A');git(root,'commit','-qm','deleted module')
-    with pytest.raises(AssertionError,match='Deleted runtime source'):gate.prepare(root,output)
+    with pytest.raises(RuntimeError,match='Deleted runtime source'):gate.prepare(root,output)
     assert not output.exists()
 
 def test_mutable_base_identity_rejected_before_docker(tmp_path,monkeypatch):
     path=tmp_path/'manifest.json';path.write_text(json.dumps({'base_image':'mh-tenant:latest','base_revision':gate.BASE_REVISION}))
     monkeypatch.setattr(gate,'run',lambda *a,**kw:pytest.fail('Unverified manifest reached Docker'))
-    with pytest.raises(AssertionError):gate.verify(path)
+    with pytest.raises(RuntimeError):gate.verify(path)
+
+
+def test_added_module_copy_allowed_but_other_additions_refused(candidate):
+    root,output,_=candidate
+    docker=root/'mh-redesign-lab/Dockerfile.tenant-staging'
+    text=docker.read_bytes().decode()
+    anchor='COPY mh-redesign-lab/tenant-api/rnp_api.py ./rnp_api.py\n'
+    assert anchor in text
+    docker.write_bytes(text.replace(anchor,anchor+'COPY mh-redesign-lab/tenant-api/a_api.py mh-redesign-lab/tenant-api/b_api.py ./\n').encode())
+    stripped=gate._strip_added_module_copies(text.encode(),docker.read_bytes())
+    assert stripped==text.encode()
+    bad=docker.read_bytes().decode().replace(anchor,anchor+'COPY tenant-app/evil.py ./\n')
+    assert gate._strip_added_module_copies(text.encode(),bad.encode())!=text.encode()
+
+
+def test_gate_refuses_without_assert_statements():
+    import ast
+    tree=ast.parse((ROOT/'scripts/verify_verified_runtime_base.py').read_text(encoding='utf-8'))
+    assert not [n for n in ast.walk(tree) if isinstance(n,ast.Assert)]

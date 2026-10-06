@@ -28,7 +28,7 @@ npm run qa:staging -- http://127.0.0.1:4177
 и React/Nginx на `8501`. Старый Streamlit-контейнер сохраняется отдельно как rollback:
 
 ```bash
-docker build --ignorefile mh-redesign-lab/.dockerignore.tenant-staging \
+docker build \
   --build-arg VITE_MH_API_MODE=v1 \
   -f mh-redesign-lab/Dockerfile.tenant-staging \
   -t wb-dashboard-tenant:redesign .
