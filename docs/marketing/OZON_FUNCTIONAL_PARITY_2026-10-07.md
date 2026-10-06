@@ -27,4 +27,15 @@ Performance analytics requires separate Performance API credentials and real sel
 
 ## Release evidence
 
-Release revision, clean-source build, encrypted backup restore rehearsals, live health/route timings, memory checks and frontend acceptance are recorded after deployment. Foreign TrueStats review remains unstaged and unchanged.
+- Feature commit: `fd25c6aeac49e71300e2e83f45db2ef700bacbb0`; session-mode follow-up and deployed runtime: `d4446faa326fb95929e8e65edb6d1cc108db058f`.
+- Both tenants: `mh-tenant:ozon-d4446fa`, image `sha256:411ea80117b5dd8fe3d7eef58f355dc185b7ddd3cb82a06289542e5faf673f55`, memory limit1536MiB. Existing runtime environment, keys, volumes and network aliases preserved. Candidate and rollback rehearsals restored encrypted backups independently.
+- Frontend compiled from clean committed fd25c6a source. All eight frontend input Git trees equal d4446fa; output byte hashes verified. Source proof includes this equality and the immutable base-image chain.
+- Fresh validation:978 tenant-app tests +10 subtests passed,1 skipped;578 API tests;508 frontend tests; TypeScript and clean build passed. Dependency lock unchanged; npm clean installation audited149 packages with0 vulnerabilities.
+- Live HTTPS health for demo/mvvorokov is200/ok. Seven new read routes per tenant return200;0.011–0.069s on currently empty source/document data. This is an empty-state operational check, not a nonempty financial acceptance.
+- Cold September custom finance inside mvvorokov:200 in6.24s. Six concurrent existing dashboard GETs:all200, no OOM/max events or restarts; sampled peak767299584bytes (731.8MiB). Serialized queue latency4.829–18.553s; this stress result does not promise every concurrent request is below10s.
+- Production demo session now reports `mode=demo`, matching server write denial, and hides Ozon credential/import/edit controls. Real cabinet reports `mode=tenant`.
+- Provisioner runtime unchanged; future tenant pin set to `mh-tenant:ozon-d4446fa`; `provisioner` network alias and gateway health connection checked. Traefik untouched.
+- All16 narrated course videos and16 caption tracks verified with hashes; range playback and public security headers retained.
+- Browser acceptance: local nonempty synthetic product/FIFO/monthly example, heatmap/plan-fact presentation, both themes and320px no body overflow. Production demo's new tabs and safe empty advertising state checked. The local direct API fixture does not inject gateway role headers: its browser plan save correctly returned403; owner/manager saves are covered by API tests, not represented as a passed production write.
+
+Operator artifacts: `C:/Users/mvvor/Downloads/wbsaasplatform/deliveries/ozon-parity-20261007/release2/` and `/opt/wb-saas/releases/ozon-d4446fa/release/`. Backup/rollback proof and source fingerprints are retained there; secrets and private financial values are not printed. Foreign TrueStats review remains unstaged and unchanged.

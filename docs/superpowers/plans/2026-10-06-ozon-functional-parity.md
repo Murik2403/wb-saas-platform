@@ -42,6 +42,8 @@ Files: src/OzonAccounting.tsx, new Ozon feature panels/.css/.tests; api_server i
 - [x] UI tests/mobile/lightdark/a11y, full suites and independent review.
 
 ### Task5: Release and final acceptance
-- [ ] Clean committed HEAD source/frontends; exact base image/source hashes, restored encrypted backup, candidate/rollback rehearsals.
-- [ ] Deploy demo/mvvorokov and provisioner pin, headers/media preserved.
-- [ ] Live healthy/memory/cold routes/no unexpected writes; report implemented features vs live-data acceptance dependencies.
+- [x] Clean committed HEAD source/frontends; exact base image/source hashes, restored encrypted backup, candidate/rollback rehearsals.
+- [x] Deploy demo/mvvorokov and provisioner pin, headers/media preserved.
+- [x] Live healthy/memory/cold routes/no unexpected writes; report implemented features vs live-data acceptance dependencies.
+
+Acceptance: runtime d4446faa326fb95929e8e65edb6d1cc108db058f deployed to both tenants. 978 tenant-app tests + 10 subtests (1 skipped), 578 API tests, 508 frontend tests; clean committed frontend compilation. Cold September finance 6.24s. Ozon real financial and Performance-report acceptance is explicitly pending, not converted into a passed gate. See docs/marketing/OZON_FUNCTIONAL_PARITY_2026-10-07.md.

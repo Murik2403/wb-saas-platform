@@ -62,3 +62,7 @@ Sanitized proof-файлы вне Git: `../../../deliveries/security-20261006/re
 Реальное непустое FBS содержимое, речь экранного диктора и все возможные сочетания роли/магазина не объявляются проверенными: здесь контрактные/роль-тесты, учебный CRUD и описанная live-приёмка. Это не pentest и не доказательство отсутствия всех будущих ошибок. На сервере после завершения временных восстановлений около2.5GiB свободного диска (95% занято); резервные копии и чужие артефакты не удалялись.
 
 Первичные security источники: [urllib3 changelog](https://urllib3.readthedocs.io/en/stable/changelog.html), [source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q), [maintainer release1.2.2](https://github.com/7rulnik/source-map-js/releases/tag/v1.2.2).
+
+## Follow-up2026-10-07: Ozon development reopened
+
+The owner's new request reopened Ozon implementation; the earlier pause describes the state at this report's original release, not the current development status. Product insights, documentary reconciliation/FIFO links, monthly reports/explicit tax inputs and dedicated Performance analytics were released as d4446fa to demo and mvvorokov. Automatic source-to-physical-movement conversion and nonempty real financial/advertising acceptance remain unconfirmed, not closed by mocks or by owner decision. Details and exact live evidence: [Ozon functional parity](OZON_FUNCTIONAL_PARITY_2026-10-07.md).
