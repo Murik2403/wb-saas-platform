@@ -14,7 +14,7 @@ def guarded_request(scope):
     if path in {"/api/v1/dashboard/analytics", "/api/v1/dashboard/finance/wb-costs"}:
         return False
     if method in {"GET", "HEAD"}:
-        return (path.startswith(("/api/v1/dashboard/", "/api/v1/operations/finance/", "/api/v1/ozon-insights/"))
+        return (path.startswith(("/api/v1/dashboard/", "/api/v1/operations/finance/", "/api/v1/ozon-insights/", "/api/v1/ozon-cabinet/"))
                 or path in {"/api/v1/ozon-accounting/normalization/documents", "/api/v1/ozon-accounting/normalization/preview", "/api/v1/ozon-accounting/pnl", "/api/v1/ozon-accounting/workspace", "/api/today", "/api/overview", "/api/products", "/api/v1/settings/expense-coverage"})
     return method == "POST" and path in {"/api/v1/ozon-insights/tax-input", "/api/v1/dashboard/products/price-advice", "/api/v1/settings/expense-coverage"}
 

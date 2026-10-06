@@ -1,3 +1,4 @@
+import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +11,7 @@ vi.mock('./data-source', async () => ({
   ...await vi.importActual<typeof import('./data-source')>('./data-source'),
   useDashboardData: () => dashboard,
   getActionPlanItems: vi.fn(async () => []),
+  getProductGroups: vi.fn(async () => []),
   getDashboardSession: vi.fn(async () => ({user: {id:'u', name:'QA',role:'viewer'},tenant:{id:'t',name:'Учебный кабинет'},mode:'demo'})),
   getIncidentOperations: vi.fn(async () => ({cases:[],summary:{}})),
 }));
@@ -24,7 +26,7 @@ describe('remaining cabinet audit acceptance', () => {
     expect(checkPriority(status)).not.toBe(3);
   });
   it('collapses the active incident creation form and exposes it on request', async () => {
-    render(<App/>);
+    await renderAuthorizedWb(<App/>);
     fireEvent.click(await screen.findByRole('button',{name:'Инциденты'}));
     const create = await screen.findByRole('button',{name:'Создать карточку'});
     expect(create).not.toBeVisible();
@@ -33,18 +35,18 @@ describe('remaining cabinet audit acceptance', () => {
     fireEvent.click(disclosure!.querySelector('summary')!);
     expect(create).toBeVisible();
   });
-  it('combines product-source failures into one useful warning without transport paths', () => {
+  it('combines product-source failures into one useful warning without transport paths', async () => {
     dashboard.productPriceErrors=['/api/v1/prices: HTTP 409'];
     dashboard.productCardErrors=['/api/v1/cards: HTTP 409'];
     window.history.replaceState({},'', '/?view=products');
-    render(<App/>);
+    await renderAuthorizedWb(<App/>);
     expect(screen.getAllByText(/Часть данных WB недоступна/)).toHaveLength(1);
     expect(document.body.textContent).not.toMatch(/\/api\/v1|HTTP 409/);
   });
-  it('keeps unknown checks actionable and visually distinct from confirmed checks', () => {
+  it('keeps unknown checks actionable and visually distinct from confirmed checks', async () => {
     dashboard.dataQuality={summary:{},reliability:[],fifo_guard:{},checks:[{Проверка:'Неопределённая проверка',Статус:'Неизвестно',Детали:'Нет подтверждения'},{Проверка:'Успешная проверка',Статус:'Готово',Детали:'Подтверждено'}]};
     window.history.replaceState({},'', '/?view=control');
-    render(<App/>);
+    await renderAuthorizedWb(<App/>);
     expect(screen.getByText('Неопределённая проверка')).toBeVisible();
     expect(screen.getByText('Неизвестно')).not.toHaveClass('good');
     expect(screen.queryByText('Успешная проверка')).toBeNull();

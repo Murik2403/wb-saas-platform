@@ -6,18 +6,20 @@ from fastapi.testclient import TestClient
 API_DIR=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(API_DIR));sys.path.insert(0,str(API_DIR.parents[1]/'tenant-app'))
 from db import core
-from db.ozon_accounting import import_snapshot
+from db.ozon_accounting import seller_fingerprint, import_snapshot
 import ozon_insights_api as api
 
 @pytest.fixture
 def client(tmp_path,monkeypatch):
     monkeypatch.setattr(core,'DB_PATH',tmp_path/'isolated.sqlite');core.init_db()
+    import config
+    monkeypatch.setattr(config,'get_ozon_credentials',lambda:('fake','synthetic-key'))
     app=FastAPI();app.include_router(api.router)
     with TestClient(app) as client:yield client
 
 
 def seed():
-    import_snapshot({'start_date':'2026-09-01','end_date':'2026-09-30','products':[{'sku':123,'offer_id':'Synthetic'}],'stocks':[],'fbo':[],'fbs':[],'returns':[],'types':[],'accruals':[]})
+    import_snapshot({'seller_fingerprint':seller_fingerprint('fake'),'start_date':'2026-09-01','end_date':'2026-09-30','products':[{'sku':123,'offer_id':'Synthetic'}],'stocks':[],'fbo':[],'fbs':[],'returns':[],'types':[],'accruals':[]})
 
 
 def test_reads_unknown_without_upstream_or_mutating_wb(client):

@@ -1,3 +1,4 @@
+import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 import '@testing-library/jest-dom/vitest';
 import {cleanup,fireEvent,render,screen,within,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
@@ -22,7 +23,7 @@ beforeEach(()=>{
 });
 afterEach(cleanup);
 it('allows a second recommendation after the first confirmation succeeds',async()=>{
- render(<App/>);
+ await renderAuthorizedWb(<App/>);
  fireEvent.click(screen.getAllByRole('button',{name:'Применить'})[0]);
  let dialog=screen.getByRole('dialog',{name:'Применить рекомендацию?'});
  fireEvent.click(within(dialog).getByRole('button',{name:'Применить'}));

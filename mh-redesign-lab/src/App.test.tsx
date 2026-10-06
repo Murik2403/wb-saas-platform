@@ -1,3 +1,4 @@
+import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 vi.mock("./ShopContextBoundary",()=>({ShopContextBoundary:({children}:{children:unknown})=>children}));
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -231,7 +232,7 @@ describe("operational detail drawer", () => {
   });
 
   it("contains keyboard focus in the real product drawer and restores its opener", async () => {
-    const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    const {default:App}=await import("./App");const user=userEvent.setup();await renderAuthorizedWb(<App/>);
     const opener=await screen.findByRole("button",{name:/Товар для проверки/i});await user.click(opener);
     const dialog=screen.getByRole("dialog"),close=within(dialog).getAllByRole("button",{name:"Закрыть"})[0];expect(close).toHaveFocus();
     await user.tab({shift:true});expect(dialog).toContainElement(document.activeElement as HTMLElement);
@@ -241,7 +242,7 @@ describe("operational detail drawer", () => {
   it("opens a product card drawer on click", async () => {
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     const productCard = await screen.findByRole("button", { name: /Товар для проверки/i });
     await user.click(productCard);
@@ -262,7 +263,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=supply");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Создать заявку" }));
     const form = within(screen.getByRole("dialog"));
@@ -295,7 +296,7 @@ describe("operational detail drawer", () => {
       .mockResolvedValue({ orders: [order], items: [item] });
     window.history.replaceState({}, "", "/?view=supply");
     const { default: App } = await import("./App");
-    const { rerender } = render(<App />);
+    const { rerender } = await renderAuthorizedWb(<App />);
     await waitFor(() => expect(getProcurementOperations).toHaveBeenCalledTimes(1));
 
     mockedDashboard.procurementOrders = [order];
@@ -310,7 +311,7 @@ describe("operational detail drawer", () => {
   it("keeps account menu links actionable through the gateway", async () => {
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(await screen.findByRole("button", { name: /Текущий аккаунт: Demo tenant/i }));
 
@@ -335,7 +336,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=today");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click((await screen.findAllByRole("button", { name: "Открыть действие" }))[0]);
 
@@ -360,7 +361,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=today");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click((await screen.findAllByRole("button", { name: "Открыть действие" }))[0]);
 
@@ -372,7 +373,7 @@ describe("operational detail drawer", () => {
     mockedDashboard.productCardErrors = ["/api/v1/products/cards: HTTP 403"];
     window.history.replaceState({}, "", "/?view=products");
     const { default: App } = await import("./App");
-    render(<App />);
+    await renderAuthorizedWb(<App />);
     await userEvent.click(await screen.findByRole("button", { name: "Контент и качество" }));
 
     expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
@@ -383,7 +384,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=ads");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    const first = render(<App />);
+    const first = await renderAuthorizedWb(<App />);
     const nav = await screen.findByRole("navigation", { name: "Разделы рекламы" });
     expect(screen.getByText("Где менять ставки")).toBeInTheDocument();
     expect(document.getElementById("ads-analytics")).toBeNull();
@@ -391,7 +392,7 @@ describe("operational detail drawer", () => {
     expect(document.getElementById("ads-analytics")).not.toBeNull();
     expect(screen.queryByText("Где менять ставки")).toBeNull();
     first.unmount();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
     await screen.findByRole("navigation", { name: "Разделы рекламы" });
     expect(document.getElementById("ads-analytics")).not.toBeNull();
   });
@@ -400,7 +401,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=reports");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
     const nav = await screen.findByRole("navigation", { name: "Разделы отчётов" });
     expect(screen.getByText("Быстрые отчёты")).toBeInTheDocument();
     expect(screen.queryByText("Email и Telegram")).toBeNull();
@@ -418,7 +419,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=reports");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(within(await screen.findByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Доставка" }));
     expect(await screen.findByText("Настройки доставки недоступны: SMTP не настроен")).toBeInTheDocument();
@@ -431,7 +432,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=reports");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(within(await screen.findByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Доставка" }));
     await user.click(await screen.findByRole("button", { name: "Привязать Telegram" }));
@@ -447,7 +448,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=reports");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     expect(await screen.findByText("Аналитика WB недоступна: Analytics timeout")).toBeInTheDocument();
     await user.click(within(screen.getByRole("navigation", { name: "Разделы отчётов" })).getByRole("button", { name: "Расписания и запуски" }));
@@ -461,7 +462,7 @@ describe("operational detail drawer", () => {
     mockedDashboard.customerQuality = { rating: {}, unread: {}, feedbacks: [], questions: [], quarantine: [], returns: {}, return_history: [], chats: [], errors: ["/api/v1/dashboard/customer-quality: HTTP 403"] };
     window.history.replaceState({}, "", "/?view=products");
     const { default: App } = await import("./App");
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
   });
@@ -470,7 +471,7 @@ describe("operational detail drawer", () => {
     mockedDashboard.productPriceErrors = ["/api/v1/products/prices: HTTP 403"];
     window.history.replaceState({}, "", "/?view=products");
     const { default: App } = await import("./App");
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
   });
@@ -480,7 +481,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=supply");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Открыть поставку WB" }));
     expect(getFbsSupplyDetails).toHaveBeenCalledWith("WB-123");
@@ -495,7 +496,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=supply");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    const view = render(<App />);
+    const view = await renderAuthorizedWb(<App />);
     const tab = (name: string) => screen.getByRole("button", { name });
 
     expect(await screen.findByText("Поставки и заявки")).toBeInTheDocument();
@@ -515,7 +516,7 @@ describe("operational detail drawer", () => {
     expect(screen.queryByText("Добавить поставщика")).toBeNull();
 
     view.unmount();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
     expect(await screen.findByText("Новые сборочные задания")).toBeInTheDocument();
     expect(tab("FBS")).toHaveAttribute("aria-pressed", "true");
     window.localStorage.clear();
@@ -528,7 +529,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=stock");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(await screen.findByRole("button", { name: /Правило А/ }));
     await user.click(screen.getByRole("button", { name: "Перейти в поставки" }));
@@ -544,7 +545,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=stock");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
     const tab = (name: string) => screen.getByRole("button", { name });
 
     expect(await screen.findByText("Запасы WB")).toBeInTheDocument();
@@ -582,7 +583,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=production");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     const actual = await screen.findByLabelText("Факт, ед.");
     await user.clear(actual);
@@ -604,19 +605,19 @@ describe("operational detail drawer", () => {
     vi.mocked(updateActionPlanItem).mockImplementationOnce(async (_id, patch) => ({ ...item, ...patch }));
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
     await user.click(await screen.findByRole("button", { name: "Открыть план задач" }));
     await user.click(await screen.findByRole("button", { name: "В работу" }));
     expect(updateActionPlanItem).toHaveBeenCalledWith("release-task", { status: "in_progress" });
     expect(vi.mocked(updateActionPlanItem).mock.calls.some(([, patch]) => patch.status === "done")).toBe(false);
   });
 
-  it("preserves exact custom dates in finance download", () => {
+  it("preserves exact custom dates in finance download", async () => {
     const url = financeExportUrl({ id: "custom", start: "2026-05-01", end: "2026-05-07" });
     expect(url).toContain("period=custom&start=2026-05-01&end=2026-05-07");
   });
 
-  it("reads measurement penalties and reversals rather than treating them as zero", () => {
+  it("reads measurement penalties and reversals rather than treating them as zero", async () => {
     const report = adaptFinanceReport(undefined, { rows: [] }, {
       deductions: [{ bonusSumm: 245.5 }],
       measurement_penalties: [{ penaltyAmount: 400.25, reversalAmount: 100 }, { penaltyAmount: 20 }],
@@ -641,7 +642,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=products");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Контент и качество" }));
     await user.click(await screen.findByRole("button", { name: "Ответить" }));
@@ -665,7 +666,7 @@ describe("operational detail drawer", () => {
     };
     window.history.replaceState({}, "", "/?view=finance");
     const { default: App } = await import("./App");
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     expect(await screen.findByText("WB обновляет данные")).toBeInTheDocument();
     expect(screen.getByText(/WB ещё не закрыл последний день/i)).toBeInTheDocument();
@@ -687,7 +688,7 @@ describe("operational detail drawer", () => {
     };
     window.history.replaceState({}, "", "/?view=finance");
     const { default: App } = await import("./App");
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Расходы и себестоимость" }));
     fireEvent.click(screen.getByText("Проверка себестоимости"));
@@ -709,7 +710,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=finance&period=30d");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(screen.getByRole("button", { name: "Расходы и себестоимость" }));
     await user.click(screen.getByText("Проверка себестоимости"));
@@ -730,7 +731,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=finance&period=30d");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(screen.getByRole("button", { name: "Расходы и себестоимость" }));
     await user.click(screen.getByText("Проверка себестоимости"));
@@ -744,7 +745,7 @@ describe("operational detail drawer", () => {
     window.history.replaceState({}, "", "/?view=control");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     const checkButton = await screen.findByRole("button", { name: /Проверка FIFO/i });
     checkButton.focus();
@@ -769,7 +770,7 @@ describe("operational detail drawer", () => {
 
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     const checkCard = await screen.findByRole("button", { name: /Нормы производства/i });
     await user.click(checkCard);
@@ -793,7 +794,7 @@ describe("operational detail drawer", () => {
 
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     const checkCard = await screen.findByRole("button", { name: /Себестоимость/i });
     await user.click(checkCard);
@@ -809,7 +810,7 @@ describe("custom dashboard date range", () => {
     window.history.replaceState({}, "", "/?view=finance&period=30d");
     const { default: App } = await import("./App");
     const user = userEvent.setup();
-    render(<App />);
+    await renderAuthorizedWb(<App />);
 
     await user.click(screen.getByRole("button", { name: "Свои даты" }));
     const start = screen.getByLabelText("Дата начала");
@@ -833,7 +834,7 @@ describe("explicit reasons for settings edits", () => {
     window.history.replaceState({}, "", "/?view=settings");
     const source = await import("./data-source");
     vi.mocked(source.getProductCostSettings).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Тест",cost_per_wb_unit:10,note:"Примечание товара",updated_at:""}]});
-    const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    const {default:App}=await import("./App");const user=userEvent.setup();await renderAuthorizedWb(<App/>);
     await user.click(await screen.findByRole("button",{name:"Производство"}));
     await user.click(await screen.findByRole("button",{name:"Изменить себестоимость: Тест"}));
     await user.type(screen.getByLabelText("Причина изменения"),"Новая закупочная цена");
@@ -845,7 +846,7 @@ describe("explicit reasons for settings edits", () => {
     window.history.replaceState({}, "", "/?view=settings");
     const source=await import("./data-source");
     vi.mocked(source.getProductionNorms).mockResolvedValue({items:[{nm_id:100,supplier_article:"A",product_name:"Тест",enabled:1,material_per_unit:2,min_batch:1,pack_size:1,blank_type:"",material_unit:"м"}]});
-    const {default:App}=await import("./App");const user=userEvent.setup();render(<App/>);
+    const {default:App}=await import("./App");const user=userEvent.setup();await renderAuthorizedWb(<App/>);
     await user.click(await screen.findByRole("button",{name:"Производство"}));
     await user.click(await screen.findByRole("button",{name:"Изменить норму"}));
     await user.type(screen.getByLabelText("Причина изменения"),"Уточнение раскроя");
@@ -866,7 +867,7 @@ it("keeps completed onboarding reports reachable through the actual Settings mou
   vi.mocked(source.recordFirstReportViewed).mockResolvedValue({first_value_verified:true,first_value_at:"2026-09-18"});
   const {default:App} = await import("./App");
   const user = userEvent.setup();
-  render(<App/>);
+  await renderAuthorizedWb(<App/>);
   const selector = await screen.findByLabelText("Товар для повторного отчёта");
   expect(source.recordFirstReportViewed).not.toHaveBeenCalled();
   await user.selectOptions(selector,"100");

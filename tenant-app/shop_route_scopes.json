@@ -1240,5 +1240,70 @@
     "method": "GET",
     "path": "/api/v1/ozon-accounting/normalization/documents",
     "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/marketplace-context/session",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/marketplace-context/ozon/access",
+    "scope": "forbidden"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/marketplace-context/ozon/access",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-cabinet/overview",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-cabinet/stock",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-cabinet/orders",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-cabinet/returns",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-cabinet/control",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-prices",
+    "scope": "forbidden"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ozon-prices/export.csv",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-prices/refresh",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-prices/preview",
+    "scope": "forbidden"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ozon-prices/confirm",
+    "scope": "forbidden"
   }
 ]

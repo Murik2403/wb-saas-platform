@@ -1,3 +1,4 @@
+import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 import '@testing-library/jest-dom/vitest';
 import {cleanup,fireEvent,render,screen,within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -20,7 +21,7 @@ beforeEach(()=>{
 });
 afterEach(cleanup);
 it('keeps keyboard navigation inside the mobile dialog and restores the opener on Escape',async()=>{
- const user=userEvent.setup();render(<App/>);
+ const user=userEvent.setup();await renderAuthorizedWb(<App/>);
  const opener=screen.getByRole('button',{name:'Открыть меню'});opener.focus();fireEvent.click(opener);
  const dialog=screen.getByRole('dialog',{name:'Все разделы'});
  const close=within(dialog).getByRole('button',{name:'Закрыть меню'});
@@ -31,8 +32,8 @@ it('keeps keyboard navigation inside the mobile dialog and restores the opener o
  await user.keyboard('{Escape}');
  expect(screen.queryByRole('dialog',{name:'Все разделы'})).not.toBeInTheDocument();expect(opener).toHaveFocus();
 });
-it('closes with its explicit button or a selected section without changing page navigation',()=>{
- render(<App/>);const opener=screen.getByRole('button',{name:'Открыть меню'});opener.focus();fireEvent.click(opener);
+it('closes with its explicit button or a selected section without changing page navigation',async () => {
+ await renderAuthorizedWb(<App/>);const opener=screen.getByRole('button',{name:'Открыть меню'});opener.focus();fireEvent.click(opener);
  fireEvent.click(within(screen.getByRole('dialog',{name:'Все разделы'})).getByRole('button',{name:'Закрыть меню'}));
  expect(opener).toHaveFocus();expect(opener).toHaveAttribute('aria-expanded','false');
  fireEvent.click(opener);

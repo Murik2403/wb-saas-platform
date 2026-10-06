@@ -6,6 +6,19 @@ import json
 import hashlib
 from .core import connect
 
+def seller_fingerprint(client_id):
+    """Stable Seller namespace; API-key rotation cannot change the seller."""
+    return hashlib.sha256(canonical({'seller_client_id':str(client_id)}).encode()).hexdigest()
+
+def current_seller_fingerprint():
+    import config
+    credentials=config.get_ozon_credentials()
+    return seller_fingerprint(credentials[0]) if credentials else None
+
+def source_seller_matches(data, current=None):
+    current=current_seller_fingerprint() if current is None else current
+    return bool(current and isinstance(data,dict) and data.get('seller_fingerprint')==current)
+
 
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -133,6 +146,11 @@ def workspace(start, end):
     if not saved:
         return {"loaded": False, "source_complete": False, "accounting_complete": False, "period": {"start_date": start,"end_date": end}, "products": [], "net_accrual_rub": None, "profit_rub": None, "blockers": ["Данные Ozon за выбранный период ещё не загружены."]}
     data = json.loads(saved["payload_json"])
+    if not source_seller_matches(data):
+        return {"loaded":False,"source_complete":False,"accounting_complete":False,
+                "source_identity_confirmed":False,"period":{"start_date":start,"end_date":end},
+                "products":[],"net_accrual_rub":None,"profit_rub":None,
+                "blockers":["Продавец источника Ozon не подтверждён для текущего подключения. Загрузите период заново."]}
     from .ozon_fee_preview import fee_preview
     from .ozon_posting_evidence import posting_evidence
     reconciled_fees = fee_preview(data["accruals"], data["types"])

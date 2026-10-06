@@ -39,14 +39,16 @@ def test_ozon_new_reports_never_fall_back_to_primary_for_secondary_shop(client, 
     shop = shops.create('secondary', 'unused', 'verified')
     response = client.get(path+'?start_date=2026-09-01&end_date=2026-09-30', headers={'x-mh-shop-id': str(shop)})
     assert response.status_code == 409
-    assert response.json()['detail']['code'] == 'SHOP_ROUTE_FORBIDDEN'
+    assert response.json()['detail']['code'] == 'OZON_PRIMARY_CONTEXT_REQUIRED'
 
 
 def test_ozon_plan_write_secondary_denied_before_main_mutation(client):
     shop = shops.create('secondary', 'unused', 'verified')
-    response = client.put('/api/v1/ozon-insights/rnp/plan', headers={'x-mh-shop-id': str(shop)}, json={'namespace':'main','sku':'123','day':'2026-09-01','units':1})
+    with patch('ozon_insights.save_plan') as mutation:
+        response = client.put('/api/v1/ozon-insights/rnp/plan', headers={'x-mh-shop-id': str(shop)}, json={'namespace':'main','sku':'123','day':'2026-09-01','units':1})
+    mutation.assert_not_called()
     assert response.status_code == 409
-    assert response.json()['detail']['code'] == 'SHOP_ROUTE_FORBIDDEN'
+    assert response.json()['detail']['code'] == 'OZON_PRIMARY_CONTEXT_REQUIRED'
 
 
 def test_tax_reconciliation_isolated_secondary_write_and_replay(client, monkeypatch, tmp_path):
@@ -293,7 +295,7 @@ def test_selected_wb_shop_cannot_read_or_mutate_any_ozon_accounting_route(client
             path=route['path'].replace('{id}','1').replace('{request_key}','test')
             response=client.request(route['method'],path,headers=headers)
             assert response.status_code in {403,409},(path,response.text)
-            if response.status_code==409:assert response.json()['detail']['code']=='SHOP_ROUTE_FORBIDDEN'
+            if response.status_code==409:assert response.json()['detail']['code']=='OZON_PRIMARY_CONTEXT_REQUIRED'
     worker.assert_not_called()
     primary=client.get('/api/v1/ozon-accounting/workspace?start_date=2026-09-01&end_date=2026-09-02')
     assert primary.status_code==200,primary.text

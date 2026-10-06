@@ -4105,6 +4105,24 @@ app.include_router(ozon_normalization_router)
 app.include_router(ozon_insights_router)
 app.include_router(ozon_ads_router)
 
+from marketplace_context_api import router as marketplace_context_router, marketplace_guard
+from ozon_cabinet_api import router as ozon_cabinet_router
+from ozon_prices_api import router as ozon_prices_router
+app.include_router(marketplace_context_router)
+app.include_router(ozon_cabinet_router)
+app.include_router(ozon_prices_router)
+
+@app.middleware("http")
+async def marketplace_boundary(request, call_next):
+    failure = await marketplace_guard(request)
+    if failure is not None:
+        return failure
+    response = await call_next(request)
+    selected = request.headers.get("x-mh-marketplace")
+    if selected in {"wb", "ozon"}:
+        response.headers["X-MH-Marketplace"] = selected
+    return response
+
 # Must surround shop dispatch as well as local handlers: a cache miss lock
 # alone cannot bound DataFrames retained by overlapping response consumers.
 from dashboard_work_guard import DashboardWorkGuard  # noqa: E402

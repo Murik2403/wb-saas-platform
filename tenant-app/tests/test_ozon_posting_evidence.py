@@ -12,6 +12,11 @@ from base import DbTestCase
 from db.core import connect
 from db.ozon_accounting import import_snapshot, workspace
 
+@pytest.fixture(autouse=True)
+def seller_connection(monkeypatch):
+    import config
+    monkeypatch.setattr(config,'get_ozon_credentials',lambda:('fake','synthetic-key'))
+
 
 def group(number="one"):
     return {"posting_number": number, "accruals": [{"accrual_date": "2026-09-01", "quantity": 2, "sku": 123,

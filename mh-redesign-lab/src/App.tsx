@@ -35,7 +35,8 @@ import { SelfBuyoutsPanel } from "./SelfBuyoutsPanel";
 import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
-import { OzonAccounting } from "./OzonAccounting";
+import { MarketplaceBoundary } from "./MarketplaceBoundary";
+import { OzonCabinetShell } from "./OzonCabinetShell";
 import { FinanceProfitHeading } from "./FinanceProfitHeading";
 import { PriceScenarios } from "./PriceScenarios";
 import { SyncHistory, BackupHistory } from "./SyncHistory";
@@ -2053,7 +2054,7 @@ export function FinanceView({
         </>,
         accounts: <>
       <details className="cabinet-disclosure"><summary>Магазины WB</summary><ShopWorkspaces /></details>
-      <details className="cabinet-disclosure"><summary>Учёт Ozon</summary><OzonAccounting /></details>
+      <p>Кабинет Ozon открывается переключателем площадки вверху страницы.</p>
       <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><PriceScenarios /></details>
       {selfBuyouts}
         </>,
@@ -4418,4 +4419,4 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: Tone }) {
   return <span className={cx("status-pill", tone)}>{children}</span>;
 }
 
-export default function SelectedShopApp(){return <ShopContextBoundary><App /></ShopContextBoundary>;}
+export default function SelectedShopApp(){return <MarketplaceBoundary wb={<ShopContextBoundary><App /></ShopContextBoundary>} ozon={session=><OzonCabinetShell session={session}/>}/>;}

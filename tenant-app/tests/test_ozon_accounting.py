@@ -5,12 +5,18 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import pytest
 from base import DbTestCase
 from db.core import connect
-from db.ozon_accounting import import_snapshot, workspace, save_cost_mapping
+from db.ozon_accounting import seller_fingerprint, import_snapshot, workspace, save_cost_mapping
 from ozon_accounting_client import OzonAccountingClient, OzonAccountingError, checked_period
 
 
+@pytest.fixture(autouse=True)
+def seller_connection(monkeypatch):
+    import config
+    monkeypatch.setattr(config,'get_ozon_credentials',lambda:('fake','synthetic-key'))
+
+
 def fixture_snapshot(rows=None):
-    return {"start_date":"2026-09-01","end_date":"2026-09-02","products":[{"product_id":1,"sku":123,"offer_id":"offer"}],"stocks":[],"fbo":[],"fbs":[],"returns":[],"types":[{"id":1,"name":"Acquiring","description":"Эквайринг"}],"accruals": rows or [{"accrual_id":1,"date":"2026-09-01","total_amount":{"amount":"-12.34","currency":"RUB"},"accrued_category":"NON_ITEM","non_item_fee":{"type_id":1,"accrued":{"amount":"-12.34","currency":"RUB"}}}]}
+    return {"seller_fingerprint": seller_fingerprint("fake"),"start_date":"2026-09-01","end_date":"2026-09-02","products":[{"product_id":1,"sku":123,"offer_id":"offer"}],"stocks":[],"fbo":[],"fbs":[],"returns":[],"types":[{"id":1,"name":"Acquiring","description":"Эквайринг"}],"accruals": rows or [{"accrual_id":1,"date":"2026-09-01","total_amount":{"amount":"-12.34","currency":"RUB"},"accrued_category":"NON_ITEM","non_item_fee":{"type_id":1,"accrued":{"amount":"-12.34","currency":"RUB"}}}]}
 
 
 class OzonLedgerTests(DbTestCase):

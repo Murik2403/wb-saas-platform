@@ -1,4 +1,5 @@
 /** Selected-shop transport. Context is validated before UI mounting. */
+import { currentMarketplace, marketplaceFetch, isOzonPath } from "./marketplace-context";
 export type SelectedShop = {id:number;name:string;verified_identity:string|null;active:boolean;snapshot_revision:number|null;can_write:boolean;snapshot_available?:boolean;allowed_actions:string[]};
 type ResourceScope="shop_local"|"tenant_shared"|"forbidden";
 export type ShopRoute={method:string;path:string;scope:ResourceScope;action?:string;can_write?:boolean;query_scopes?:Record<string,Record<string,ResourceScope>>;requires_kind?:boolean};
@@ -12,6 +13,7 @@ const retries=new Map<string,string>();
 export function currentShop(){return selected;}
 export function requireShopContext(){enforced=true;}
 export function selectShop(next:ShopSession,id:number){
+ if(currentMarketplace()?.marketplace==='ozon')throw new Error('Выберите кабинет WB перед выбором магазина');
  const shop=next.shops.find(s=>s.id===id);
  if(!Number.isSafeInteger(id)||!shop||!shop.active)throw new Error('Магазин недоступен');
  for(const controller of controllers)controller.abort();controllers.clear();retries.clear();epoch++;session=next;selected=shop;enforced=true;
@@ -20,6 +22,16 @@ export function selectShop(next:ShopSession,id:number){
 export function clearShopContext(){for(const c of controllers)c.abort();controllers.clear();retries.clear();epoch++;selected=null;session=null;}
 function stillCurrent(version:number){if(epoch!==version)throw new DOMException('Магазин изменён','AbortError');}
 export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Promise<Response>{
+ const marketplace=currentMarketplace();
+ if(marketplace?.marketplace==='ozon')return marketplaceFetch(input,init);
+ if(marketplace?.marketplace==='wb'){
+  const url=new URL(input instanceof Request?input.url:String(input),window.location.origin);
+  if(isOzonPath(url.pathname.replace(/^\/tenant-api(?=\/|$)/,'')))throw new Error('Выберите кабинет Ozon');
+  const headers=new Headers(init.headers??(input instanceof Request?input.headers:undefined));if(headers.has('X-MH-Marketplace')&&headers.get('X-MH-Marketplace')!=='wb')throw new Error('Маркетплейс запроса не совпадает с кабинетом');
+  const markers=url.searchParams.getAll('marketplace');if(markers.length>1||markers.length===1&&markers[0]!=='wb')throw new Error('Маркетплейс URL не совпадает с кабинетом');
+  if(typeof init.body==='string'){try{const body=JSON.parse(init.body);if(body&&typeof body==='object'&&'marketplace' in body&&body.marketplace!=='wb')throw new Error('Маркетплейс данных не совпадает с кабинетом');}catch(error){if(!(error instanceof SyntaxError))throw error;}}
+  headers.set('X-MH-Marketplace','wb');init={...init,headers};
+ }
  if(!enforced)return globalThis.fetch(input,init);
  if(!selected||!session)throw new Error('Контекст магазина не подтверждён');
  const shop=selected,version=epoch;
@@ -53,6 +65,7 @@ export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Pro
  }
  const controller=new AbortController();controllers.add(controller);
  const abort=()=>controller.abort();init.signal?.addEventListener('abort',abort,{once:true});if(init.signal?.aborted)controller.abort();
+ const finish=()=>{controllers.delete(controller);init.signal?.removeEventListener('abort',abort);};
  try{
   const response=await globalThis.fetch(input,{...init,headers,signal:controller.signal});stillCurrent(version);
   let revisionChanged=false;
@@ -71,11 +84,12 @@ export async function scopedFetch(input:RequestInfo|URL,init:RequestInit={}):Pro
   const guard=(source:Response):Response=>new Proxy(source,{get(target,property){
    const value=Reflect.get(target,property,target);
    if(property==='clone')return ()=>{stillCurrent(version);return guard(target.clone());};
-   if(['json','text','blob','arrayBuffer','formData'].includes(String(property)))return async()=>{stillCurrent(version);const result=await value.call(target);stillCurrent(version);if(response.ok&&replayIdentity)retries.delete(replayIdentity);if(revisionChanged)window.dispatchEvent(new Event('mh-shop-revision-changed'));return result;};
+   if(['json','text','blob','arrayBuffer','formData'].includes(String(property)))return async()=>{try{stillCurrent(version);const result=await value.call(target);stillCurrent(version);if(response.ok&&replayIdentity)retries.delete(replayIdentity);if(revisionChanged)window.dispatchEvent(new Event('mh-shop-revision-changed'));return result;}finally{finish();}};
    return typeof value==='function'?value.bind(target):value;
   }});
+  if(response.body===null)finish();
   return guard(response);
- }finally{controllers.delete(controller);init.signal?.removeEventListener('abort',abort);}
+ }catch(error){finish();throw error;}
 }
 
 export function shopReadTimeout(path:string,timeoutMs:number){

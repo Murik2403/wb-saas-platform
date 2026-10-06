@@ -7,6 +7,8 @@ import requests
 import time
 import json
 import hashlib
+import re
+from db.ozon_accounting import seller_fingerprint
 
 
 class OzonAccountingError(ValueError):
@@ -95,7 +97,10 @@ class OzonAccountingClient:
                 if cursor not in data:
                     raise OzonAccountingError("Ozon не сообщил курсор страницы.")
             if numeric:
-                if isinstance(next_cursor,bool) or not isinstance(next_cursor,int) or next_cursor<1:
+                # Seller returns IDs are decimal strings; request last_id is int64.
+                if isinstance(next_cursor, str) and re.fullmatch(r'[1-9][0-9]{0,18}', next_cursor):
+                    next_cursor = int(next_cursor)
+                if isinstance(next_cursor,bool) or not isinstance(next_cursor,int) or not 1 <= next_cursor <= 2**63-1:
                     raise OzonAccountingError("Некорректный числовой курсор Ozon.")
             elif not isinstance(next_cursor,str) or len(next_cursor)>4096:
                 raise OzonAccountingError("Некорректный курсор Ozon.")
@@ -106,13 +111,44 @@ class OzonAccountingClient:
             seen.add(str(next_cursor)); previous = next_cursor
         raise OzonAccountingError("Достигнут предел страниц Ozon. Сократите период.")
 
-    def snapshot(self, start: str, end: str) -> dict:
+    def product_details(self, products: list[dict]) -> list[dict]:
+        """Enrich only explicit product IDs; response SKU is never inferred."""
+        identifiers=[]
+        for product in products:
+            value=product.get('product_id')
+            if isinstance(value,bool) or not isinstance(value,(str,int)) or not re.fullmatch(r'[1-9][0-9]{0,19}',str(value)):
+                raise OzonAccountingError('Каталог Ozon не содержит корректный product_id.')
+            identifiers.append(str(value))
+        identifiers=list(dict.fromkeys(identifiers)); details={}
+        for offset in range(0,len(identifiers),1000):
+            batch=identifiers[offset:offset+1000]
+            rows=self._post('/v3/product/info/list',{'product_id':batch}).get('items')
+            if not isinstance(rows,list) or len(rows)>1000:
+                raise OzonAccountingError('Неизвестный ответ карточек Ozon.')
+            for row in rows:
+                if not isinstance(row,dict) or isinstance(row.get('id'),bool) or str(row.get('id')) not in batch:
+                    raise OzonAccountingError('Карточка Ozon не соответствует запрошенному product_id.')
+                key=str(row['id'])
+                if key in details and details[key]!=row:
+                    raise OzonAccountingError('Конфликтующие карточки Ozon.')
+                details[key]=row
+        return [{**product,**details.get(str(product['product_id']),{}),'product_id':product['product_id']} for product in products]
+
+    def product_prices(self) -> list[dict]:
+        """Current v5 read-only price source; values remain raw currency amounts."""
+        return self._pages('/v5/product/info/prices',{'filter':{'visibility':'ALL'},'limit':1000},rows='items',cursor='cursor')
+
+    def snapshot(self, start: str, end: str, *, include_prices: bool=False) -> dict:
         first, last = checked_period(start, end)
         products = self._pages("/v3/product/list", {"filter": {"visibility": "ALL"}, "limit": 1000}, rows="items", cursor="last_id", nested=True)
+        products = self.product_details(products)
+        prices = self.product_prices() if include_prices else None
         stocks = self._pages("/v4/product/info/stocks", {"filter": {"visibility": "ALL"}, "limit": 1000}, rows="items", cursor="cursor")
         period_filter = {"since": first.isoformat()+"T00:00:00Z", "to": last.isoformat()+"T23:59:59Z"}
-        fbo = self._pages("/v3/posting/fbo/list", {"filter": period_filter, "limit": 1000, "dir": "ASC"}, rows="postings", cursor="cursor", has_next=True)
-        fbs = self._pages("/v4/posting/fbs/list", {"filter": period_filter, "limit": 1000, "dir": "ASC"}, rows="postings", cursor="cursor", has_next=True)
+        # Current PostingFboList/PostingFbsList use cursor, sort_dir and 1..100
+        # postings per page; legacy limit=1000/dir belongs to retired versions.
+        fbo = self._pages("/v3/posting/fbo/list", {"filter": period_filter, "limit": 100, "sort_dir": "ASC"}, rows="postings", cursor="cursor", has_next=True)
+        fbs = self._pages("/v4/posting/fbs/list", {"filter": period_filter, "limit": 100, "sort_dir": "ASC"}, rows="postings", cursor="cursor", has_next=True)
         # All returns are read because the current date-filter semantics are not verified.
         # The UI labels this collection as a current registry, not period return revenue.
         returns = self._pages("/v1/returns/list", {"filter": {}, "limit": 500}, rows="returns", cursor="last_id", has_next=True, numeric=True)
@@ -134,7 +170,7 @@ class OzonAccountingClient:
         posting_numbers = [row["posting_number"] for row in fbo + fbs
                            if isinstance(row.get("posting_number"), str) and row["posting_number"]]
         finance_postings = self.finance_postings(posting_numbers)
-        return {"start_date": start, "end_date": end, "products": products, "stocks": stocks, "fbo": fbo, "fbs": fbs, "returns": returns, "types": dictionary, "accruals": accruals,"finance_postings":finance_postings,"finance_postings_scope":{"requested_number_count":len(set(posting_numbers)),"date_filter_supported":False,"missing_number_count":len(set(posting_numbers)-{r["posting_number"] for r in finance_postings}),"normalization_verified":False},"collection_provenance":{"schema_version":1,"completed_days":completed_days,"start_date":start,"end_date":end,"terminal_pages_checked":True,"financial_normalization_verified":False,"page_receipts":self.page_receipts.copy()}}
+        return {"seller_fingerprint":seller_fingerprint(self.headers["Client-Id"]), "start_date": start, "end_date": end, "products": products, "prices": prices, "source_endpoints": {"fbs":"/v4/posting/fbs/list","fbo":"/v3/posting/fbo/list","products":"/v3/product/info/list","prices":"/v5/product/info/prices" if include_prices else None}, "stocks": stocks, "fbo": fbo, "fbs": fbs, "returns": returns, "types": dictionary, "accruals": accruals,"finance_postings":finance_postings,"finance_postings_scope":{"requested_number_count":len(set(posting_numbers)),"date_filter_supported":False,"missing_number_count":len(set(posting_numbers)-{r["posting_number"] for r in finance_postings}),"normalization_verified":False},"collection_provenance":{"schema_version":1,"completed_days":completed_days,"start_date":start,"end_date":end,"terminal_pages_checked":True,"financial_normalization_verified":False,"page_receipts":self.page_receipts.copy()}}
 
     def realization_source(self, month: int, year: int) -> dict:
         checked_realization_month(month, year)

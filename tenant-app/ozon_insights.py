@@ -12,7 +12,7 @@ from threading import Lock
 from zoneinfo import ZoneInfo
 
 from db import core
-from db.ozon_accounting import ensure_schema as accounting_schema, _collection_verified
+from db.ozon_accounting import ensure_schema as accounting_schema, _collection_verified, current_seller_fingerprint, source_seller_matches
 from db.ozon_pnl import ensure_schema as document_schema, canonical, money, sku_id, text
 
 MAX_ROWS, MAX_BYTES, MAX_PRODUCTS = 20000, 16 * 1024 * 1024, 500
@@ -107,10 +107,13 @@ def _read(start, end, namespace):
         projection_row = conn.execute('SELECT id,CASE WHEN length(CAST(payload_json AS BLOB))<=? THEN payload_json END FROM ozon_cost_projections ORDER BY id DESC LIMIT 1', (MAX_BYTES,)).fetchone()
         if projection_row and projection_row[1] is None: raise ValueError('FIFO-проекция превышает безопасный объём.')
         projection_revision = projection_row[0] if projection_row else None
-        key = (str(core.DB_PATH), start, end, namespace, source_revision, stale[0] if stale else None, doc_revision, projection_revision)
+        seller=current_seller_fingerprint()
+        key = (str(core.DB_PATH), start, end, namespace, source_revision, stale[0] if stale else None, doc_revision, projection_revision, seller)
         if _cache and _cache[0] == key:
             return _cache[1]
         raw = _decoded(saved[0]) if saved else None
+        identity_mismatch=raw is not None and not source_seller_matches(raw,seller)
+        if identity_mismatch:raw=None
         docs = _document_rows(conn, namespace)
         docs = [r for r in docs if start <= datetime.fromisoformat(r['accrued_at']).astimezone(MSK).date().isoformat() <= end]
         projection = _decoded(projection_row[1]) if projection_row else {'events': []}
@@ -119,6 +122,7 @@ def _read(start, end, namespace):
         costs = {canonical([r['namespace'], r['event_id']]): r for r in projection['events'] if r['namespace']==namespace}
         products, order_days, document_days, months = {}, {}, {}, {}
         blockers = []
+        if identity_mismatch:blockers.append('Продавец источника Ozon не подтверждён для текущего подключения; загрузите период заново.')
         verified = bool(raw and _collection_verified(raw, start, end))
         order_parse = True
         catalog_parse = True
@@ -134,6 +138,9 @@ def _read(start, end, namespace):
                 if sku: products[sku] = _new_product(sku, str(product.get('offer_id') or ''))
                 elif _valid_sku(product.get('product_id')) not in stock_product_ids: catalog_parse = False
             postings = raw.get('fbo', []) + raw.get('fbs', [])
+            endpoints = raw.get('source_endpoints', {})
+            if not isinstance(endpoints, dict): raise ValueError('Неизвестная структура версий источника Ozon.')
+            current_fbs_ids = {id(p) for p in raw.get('fbs', [])} if endpoints.get('fbs') == '/v4/posting/fbs/list' else set()
             if len(postings) > MAX_ROWS: raise ValueError('Слишком много отправлений Ozon.')
             unique, conflicts = {}, set()
             for posting in postings:
@@ -148,7 +155,11 @@ def _read(start, end, namespace):
             for identity, posting in unique.items():
                 if identity in conflicts: continue
                 try:
-                    when = datetime.fromisoformat(posting['created_at'].replace('Z', '+00:00'))
+                    # Current FBS v4 exposes in_process_at; historical saved
+                    # snapshots may carry created_at. Preserve the explicit source.
+                    current_fbs = id(posting) in current_fbs_ids
+                    stamp = posting.get('in_process_at') if current_fbs else posting.get('in_process_at') or posting.get('created_at')
+                    when = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
                     if when.tzinfo is None: raise ValueError()
                     day = when.astimezone(timezone.utc).date().isoformat()
                     if not start <= day <= end: continue
@@ -164,7 +175,7 @@ def _read(start, end, namespace):
                         row = products.setdefault(sku, _new_product(sku))
                         row['order_units'] = (row['order_units'] or 0)+quantity
                         order_days[(sku, day)] = order_days.get((sku, day), 0)+quantity
-                except (KeyError, ValueError, TypeError): order_parse = False
+                except (KeyError, ValueError, TypeError, AttributeError): order_parse = False
         unallocated_fees = Decimal(0)
         for event in docs:
             day = datetime.fromisoformat(event['accrued_at']).astimezone(MSK).date().isoformat()
@@ -206,13 +217,14 @@ def _read(start, end, namespace):
                 'source_revision': source_revision, 'projection_revision': projection_revision,
                 'unallocated_document_fees_rub': _amount(unallocated_fees) if docs else None,
                 'coverage': {'source_collection_complete': verified, 'order_parse_complete': order_parse,
-                             'source_snapshot_stale': bool(stale),
+                              'source_snapshot_stale': bool(stale),
+                              'source_identity_confirmed': raw is not None,
                              'catalog_sku_complete': catalog_parse if raw else False,
                              'document_lines_present': bool(docs), 'marketplace_complete': False,
                              'tax_input_confirmed': False}, 'blockers': blockers,
                 'items': [products[k] for k in sorted(products)], '_order_days': order_days,
                 '_document_days': document_days, '_months': months,
-                'order_basis': 'posting_created_at_utc', 'document_basis': 'accrual_timestamp_europe_moscow',
+                'order_basis': 'posting_source_timestamp_utc' if raw and any(isinstance(p, dict) and p.get('in_process_at') for p in raw.get('fbs', [])) else 'posting_created_at_utc', 'document_basis': 'accrual_timestamp_europe_moscow',
                 'note': 'Заказы — созданные отправления, включая отменённые; это не продажи. Прибыль только по документам, до налогов/внешних расходов.'}
         _cache = (key, data)
         return data
@@ -257,6 +269,7 @@ def _known_sku(conn, sku, namespace):
     if not saved: return False
     if saved[0] is None: raise ValueError('Каталог превышает безопасный объём.')
     data = _decoded(saved[0])
+    if not source_seller_matches(data): return False
     stock_products, _ = _stock_catalog(data)
     return sku in stock_products or any(_valid_sku(row.get('sku'))==sku for row in data.get('products', [])) or any(
         _valid_sku(item.get('sku'))==sku for posting in data.get('fbo', [])+data.get('fbs', []) if isinstance(posting, dict)

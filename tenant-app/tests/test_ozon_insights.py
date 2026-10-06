@@ -2,17 +2,19 @@ import csv,io,json,uuid
 from datetime import date
 import pytest
 from db import core
-from db.ozon_accounting import import_snapshot
+from db.ozon_accounting import seller_fingerprint, import_snapshot
 from db.ozon_pnl import COLUMNS,preview_import,confirm_import,add_cost_lot
 import ozon_insights as insights
 
 @pytest.fixture
 def db(tmp_path,monkeypatch):
     monkeypatch.setattr(core,'DB_PATH',tmp_path/'insights.sqlite');core.init_db()
+    import config
+    monkeypatch.setattr(config,'get_ozon_credentials',lambda:('fake','synthetic-key'))
     return core.DB_PATH
 
 def snapshot(**extra):
-    return {'start_date':'2026-09-01','end_date':'2026-09-30','products':[{'sku':123,'offer_id':'synthetic'}], 'stocks':[], 'fbo':[], 'fbs':[], 'returns':[], 'accruals':[], 'types':[], **extra}
+    return {'seller_fingerprint': seller_fingerprint('fake'),'start_date':'2026-09-01','end_date':'2026-09-30','products':[{'sku':123,'offer_id':'synthetic'}], 'stocks':[], 'fbo':[], 'fbs':[], 'returns':[], 'accruals':[], 'types':[], **extra}
 
 def documents(namespace='main',cost=True):
     row=dict(external_event_id='one',accrued_at='2026-09-04T12:00:00+03:00',movement_at='2026-09-03T12:00:00+03:00',kind='sale',sku='123',posting_ref='synthetic-post',return_of='',quantity='2',revenue_rub='100.01',commission_rub='-10.00',logistics_rub='-5.00',other_rub='0.00',source_total_rub='85.01',currency='RUB',document_ref='Synthetic')
@@ -35,6 +37,14 @@ def test_orders_are_not_sales_and_duplicate_posting_not_accumulated(db):
     assert r['order_units']==3 and r['sales_units'] is None and r['revenue_rub'] is None
     h=insights.heatmap('2026-09-01','2026-09-30',metric='order_units')
     assert h['items'][0]['values'][2]==3 and h['basis']=='posting_created_at_utc'
+
+
+def test_current_fbs_source_timestamp_is_not_discarded_or_replaced_by_legacy_date(db):
+    posting={'posting_number':'FBS','in_process_at':'2026-09-03T22:00:00Z',
+             'created_at':'2026-08-01T00:00:00Z','products':[{'sku':123,'quantity':3}]}
+    import_snapshot(snapshot(fbs=[posting]))
+    h=insights.heatmap('2026-09-01','2026-09-30',metric='order_units')
+    assert h['items'][0]['values'][2]==3 and h['basis']=='posting_source_timestamp_utc'
 
 
 def test_documents_decimal_fifo_monthly_namespace_and_cache_freshness(db):
@@ -67,6 +77,17 @@ def test_tax_never_infers_from_accrual_or_documents(db):
     assert r['document_revenue_suggestion_rub']=='100.01'
     r=insights.tax_input('2026-09-01','2026-09-30',options={'month':'2026-09','regime':'ausn_income','received':'100.01','offset':'0','compensation':'0','other_income':'0','refunds':'0'})
     assert r['income_input_rub']=='100.01' and r['estimate']['estimate']=='8.00'
+
+def test_seller_change_invalidates_derived_runtime_cache_without_deleting_documents(db,monkeypatch):
+    import config
+    documents()
+    import_snapshot(snapshot(fbs=[{'posting_number':'P','in_process_at':'2026-09-03T00:00:00Z','products':[{'sku':123,'quantity':3}]}]))
+    assert insights.products('2026-09-01','2026-09-30')['items'][0]['order_units']==3
+    monkeypatch.setattr(config,'get_ozon_credentials',lambda:('other-seller','synthetic'))
+    value=insights.products('2026-09-01','2026-09-30')
+    assert value['items'][0]['order_units'] is None
+    assert value['items'][0]['revenue_rub']=='100.01'
+    assert not value['coverage']['source_identity_confirmed']
 
 
 def test_invalid_windows_metrics_unknown_prices_and_conflicting_duplicates(db):
