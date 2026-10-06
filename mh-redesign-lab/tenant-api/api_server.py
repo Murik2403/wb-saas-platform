@@ -2816,7 +2816,7 @@ def get_dashboard_analytics(
         elif not token:
             errors["sales_funnel"] = "Подключите токен WB с категорией «Аналитика»."
 
-        stocks = read_table("stocks")
+        stocks = read_table("stocks", omit_raw=True)
         history: list[dict] = []
         if not stocks.empty and "snapshot_at" in stocks.columns:
             frame = stocks.copy()
@@ -4092,3 +4092,8 @@ rnp_api.configure(lambda s, e: _build_dashboard_cached(s, e), lambda k, b: _dash
 app.include_router(rnp_api.router)
 import self_buyouts_api  # noqa: E402  (manual self-buyout cost ledger: local SQLite only)
 app.include_router(self_buyouts_api.router)
+
+# Must surround shop dispatch as well as local handlers: a cache miss lock
+# alone cannot bound DataFrames retained by overlapping response consumers.
+from dashboard_work_guard import DashboardWorkGuard  # noqa: E402
+app.add_middleware(DashboardWorkGuard)

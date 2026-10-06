@@ -52,7 +52,10 @@ def test_analytics_dashboard_normalizes_funnel_and_keeps_stock_history(monkeypat
         "product": {"nmId": 7, "title": "Товар"},
         "statistic": {"selected": {"period": {"openCard": 100, "cartCount": 20, "orderCount": 5, "buyoutCount": 3}}},
     }])
-    monkeypatch.setattr(api, "read_table", lambda name: pd.DataFrame([{"snapshot_at": "2026-09-10T10:00:00", "quantity": 12}, {"snapshot_at": "2026-09-11T10:00:00", "quantity": 9}]) if name == "stocks" else pd.DataFrame())
+    def read_stocks(name, *, omit_raw=False):
+        assert name == "stocks" and omit_raw is True
+        return pd.DataFrame([{"snapshot_at": "2026-09-10T10:00:00", "quantity": 12}, {"snapshot_at": "2026-09-11T10:00:00", "quantity": 9}])
+    monkeypatch.setattr(api, "read_table", read_stocks)
 
     result = api.get_dashboard_analytics(period="7d")
 
