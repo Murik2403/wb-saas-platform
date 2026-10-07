@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MARKETSHELPER</title>
+<style>
+:root{--bg:#f4f7f6;--fg:#10251f;--muted:#51655f;--accent:#0f9f7d;--on:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#0b1115;--fg:#e8f1ee;--muted:#9bb0aa;--accent:#2de2b5;--on:#07110e}}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Roboto,sans-serif}
+main{min-height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left))}
+svg{width:72px;height:72px;margin-bottom:20px}
+h1{font-size:22px;margin:0 0 8px}p{margin:0 0 24px;color:var(--muted);max-width:320px}
+button{font:inherit;font-weight:600;min-height:48px;padding:0 32px;border:0;border-radius:12px;background:var(--accent);color:var(--on)}
+</style>
+</head>
+<body>
+<main>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.4a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r=".8" fill="currentColor"/><path d="M3 3l18 18"/></svg>
+<h1>Нет соединения</h1>
+<p>Не удалось загрузить MARKETSHELPER. Проверьте интернет и попробуйте ещё раз.</p>
+<button id="retry" type="button">Повторить</button>
+</main>
+<script>document.getElementById("retry").addEventListener("click",function(){window.location.href="https://marketshelper.ru/login"});</script>
+<script src="shell.js"></script>
+</body>
+</html>
