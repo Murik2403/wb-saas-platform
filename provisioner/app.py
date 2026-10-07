@@ -16,6 +16,7 @@ import tarfile
 import tempfile
 import threading
 import time
+from functools import wraps
 from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -67,6 +68,25 @@ BACKUP_HELPER_IMAGE = "alpine:3.20"
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
 CONTROL_PLANE_BACKUP_GROUP = "control-plane"
 _DEMO_RESEED_LOCK = threading.Lock()
+_TENANT_LIFECYCLE_LOCK = threading.RLock()
+_PURGE_MAX_REFERENCES = 32
+
+
+def _serialized_lifecycle(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        if function.__name__ == "reseed_demo":
+            # A duplicate refresh must fail immediately, not queue and refresh
+            # the demo a second time after the first operation has completed.
+            if not _TENANT_LIFECYCLE_LOCK.acquire(blocking=False):
+                raise HTTPException(status_code=409, detail="Another tenant lifecycle operation is running")
+            try:
+                return function(*args, **kwargs)
+            finally:
+                _TENANT_LIFECYCLE_LOCK.release()
+        with _TENANT_LIFECYCLE_LOCK:
+            return function(*args, **kwargs)
+    return wrapped
 _DEMO_REFRESH_STOP = threading.Event()
 _DEMO_REFRESH_THREAD = None
 _DEMO_DAILY = None
@@ -498,6 +518,7 @@ def healthz() -> dict[str, str]:
 
 
 @app.post("/v1/tenants/{slug}")
+@_serialized_lifecycle
 def create_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
@@ -525,6 +546,7 @@ def tenant_health(slug: str) -> dict[str, str | None]:
 
 
 @app.post("/v1/tenants/{slug}/stop")
+@_serialized_lifecycle
 def stop_tenant(slug: str) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
@@ -536,10 +558,125 @@ def stop_tenant(slug: str) -> dict[str, str]:
     return {"status": "stopped"}
 
 
+def _purge_reference(container: Any, slug: str, sources: dict[str, str] | None = None) -> bool:
+    """Return whether this exact data-volume owner is a stopped rollback."""
+    container.reload()
+    attrs = container.attrs
+    name = str(attrs.get("Name", "")).lstrip("/")
+    canonical = _container_name(slug)
+    rollback = name.startswith(canonical + "-rollback-") or name.startswith(canonical + "-refresh-rollback-")
+    labels = attrs.get("Config", {}).get("Labels", {}) or {}
+    env = attrs.get("Config", {}).get("Env", []) or []
+    mounts = attrs.get("Mounts", [])
+    state = attrs.get("State", {})
+    primary = [mount for mount in mounts if mount.get("Type") == "volume" and mount.get("Name") == _volume_name(slug) and mount.get("Destination") == "/app/data"]
+    auxiliary = [mount for mount in mounts if mount.get("Type") == "volume" and re.fullmatch(r"[a-f0-9]{64}", str(mount.get("Name", ""))) and mount.get("Destination") == "/app/tenant-app/data" and "/app/tenant-app/data" in (attrs.get("Config", {}).get("Volumes") or {})]
+    valid_mount = len(primary) == 1 and len(auxiliary) <= 1 and len(mounts) == len(primary) + len(auxiliary)
+    if sources is not None:
+        valid_mount = valid_mount and all(mount.get("Source") == sources.get(mount.get("Name")) and bool(sources.get(mount.get("Name"))) for mount in mounts)
+    if (name != canonical and not rollback) or labels.get("wb-saas.slug") != slug or labels.get("traefik.docker.network") != _network_name(slug) or f"WB_SAAS_TENANT_SLUG={slug}" not in env or not valid_mount:
+        raise HTTPException(status_code=409, detail="Tenant data has an unverified container reference; no cabinet was removed")
+    if state.get("Paused") or state.get("Restarting") or (rollback and (state.get("Running") or state.get("Status") != "exited")):
+        raise HTTPException(status_code=409, detail="Tenant rollback is not safely stopped; no cabinet was removed")
+    return rollback
+
+
+def _purge_references(client: Any, slug: str) -> list[Any]:
+    references = client.containers.list(all=True, filters={"volume": _volume_name(slug)}, limit=_PURGE_MAX_REFERENCES + 1)
+    if len(references) > _PURGE_MAX_REFERENCES:
+        raise HTTPException(status_code=409, detail="Tenant data reference limit exceeded; manual review required")
+    ids = [reference.id for reference in references]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=409, detail="Tenant data reference inventory is ambiguous")
+    for reference in references:
+        _purge_reference(reference, slug)
+    return references
+
+
+def _purge_inventory(client: Any, slug: str) -> tuple[list[Any], dict[str, Any]]:
+    references = _purge_references(client, slug)
+    approved_ids = {reference.id for reference in references}
+    # A missing reference inventory must never report a mismatched canonical
+    # cabinet as purged merely because it mounted a different volume.
+    try:
+        canonical = client.containers.get(_container_name(slug))
+    except DockerNotFound:
+        canonical = None
+    if canonical is not None and canonical.id not in approved_ids:
+        raise HTTPException(status_code=409, detail="Canonical cabinet data volume does not match purge scope")
+    names = {_volume_name(slug)}
+    for reference in references:
+        names.update(mount["Name"] for mount in reference.attrs["Mounts"])
+    volumes = {}
+    sources = {}
+    for name in names:
+        try:
+            volume = client.volumes.get(name)
+        except DockerNotFound:
+            if name == _volume_name(slug) and not references:
+                continue
+            raise HTTPException(status_code=409, detail="Referenced tenant volume is missing") from None
+        volume.reload()
+        sources[name] = volume.attrs.get("Mountpoint", "")
+        volumes[name] = volume
+        if name != _volume_name(slug):
+            auxiliary_refs = client.containers.list(all=True, filters={"volume": name}, limit=_PURGE_MAX_REFERENCES + 1)
+            if len(auxiliary_refs) > _PURGE_MAX_REFERENCES or any(reference.id not in approved_ids for reference in auxiliary_refs):
+                raise HTTPException(status_code=409, detail="Legacy data volume has an unverified container reference; no cabinet was removed")
+            for reference in auxiliary_refs:
+                _purge_reference(reference, slug)
+    for reference in references:
+        _purge_reference(reference, slug, sources)
+    return references, volumes
+
+
+def _purge_tenant_data(client: Any, slug: str) -> None:
+    # Inspect every reference before removing the live cabinet. force=True on a
+    # volume does not override Docker's in-use protection, even for exited refs.
+    references, volumes = _purge_inventory(client, slug)
+    first_ids = {reference.id for reference in references}
+    second, checked_volumes = _purge_inventory(client, slug)
+    if {reference.id for reference in second} != first_ids or set(checked_volumes) != set(volumes):
+        raise HTTPException(status_code=409, detail="Tenant data references changed; no cabinet was removed")
+    rollbacks = [reference for reference in second if _purge_reference(reference, slug)]
+    for rollback in rollbacks:
+        # Check again immediately before removal; never force-remove a running
+        # reference or broadly remove containers by an attacker-controlled label.
+        _purge_reference(rollback, slug)
+        rollback.remove(force=False)
+    remaining, remaining_volumes = _purge_inventory(client, slug)
+    if any(_purge_reference(reference, slug) for reference in remaining):
+        raise HTTPException(status_code=409, detail="Tenant data references changed during purge")
+    for current in remaining:
+        current.stop(timeout=10)
+        current.reload()
+        if current.attrs.get("State", {}).get("Running"):
+            raise HTTPException(status_code=502, detail="Tenant cabinet did not stop")
+        current.remove(force=False)
+    _remove_network(client, slug)
+    for name, volume in volumes.items():
+        try:
+            # Recheck all references after container removal; never bypass
+            # Engine in-use protection or delete an auxiliary shared volume.
+            if client.containers.list(all=True, filters={"volume": name}, limit=1):
+                raise HTTPException(status_code=409, detail="Tenant data volume acquired a new container reference")
+            volume.remove(force=False)
+        except DockerNotFound:
+            continue
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=502, detail="Tenant data purge could not be completed") from None
+
+
 @app.delete("/v1/tenants/{slug}")
+@_serialized_lifecycle
 def remove_tenant(slug: str, purge_volume: bool = False) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
+    if purge_volume:
+        _purge_tenant_data(client, slug)
+        return {"status": "purged"}
     try:
         container = client.containers.get(_container_name(slug))
         container.stop(timeout=10)
@@ -547,12 +684,7 @@ def remove_tenant(slug: str, purge_volume: bool = False) -> dict[str, str]:
     except Exception:
         pass
     _remove_network(client, slug)
-    if purge_volume:
-        try:
-            client.volumes.get(_volume_name(slug)).remove(force=True)
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Tenant data purge failed: {exc}") from exc
-    return {"status": "purged" if purge_volume else "removed"}
+    return {"status": "removed"}
 
 
 def _verify_demo_backup(archive_name: str, slug: str) -> str:
@@ -788,6 +920,7 @@ def _recover_demo_reseed(client=None):
 
 
 @app.post("/v1/tenants/{slug}/upgrade")
+@_serialized_lifecycle
 def upgrade_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
@@ -805,6 +938,7 @@ def upgrade_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
 
 
 @app.post("/v1/demo/reseed")
+@_serialized_lifecycle
 def reseed_demo() -> dict[str, str]:
     """Reseed the fixed public demo tenant with a verified rollback snapshot."""
     if not BACKUP_ENCRYPTION_KEY:

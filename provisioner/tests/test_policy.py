@@ -140,12 +140,17 @@ def test_export_stream_is_read_only_and_removes_helper(monkeypatch):
 
 
 def test_remove_tenant_purge_removes_volume(monkeypatch):
+    from docker.errors import NotFound
     class Volume:
         def __init__(self):
             self.removed = False
+            self.attrs = {"Mountpoint": "/volumes/wb-tenant-data-shop-a"}
+
+        def reload(self):
+            pass
 
         def remove(self, **kwargs):
-            assert kwargs == {"force": True}
+            assert kwargs == {"force": False}
             self.removed = True
 
     class Volumes:
@@ -163,7 +168,8 @@ def test_remove_tenant_purge_removes_volume(monkeypatch):
             self.networks = type("Networks", (), {})()
 
     client = Client()
-    client.containers.get = lambda name: (_ for _ in ()).throw(RuntimeError("already gone"))
+    client.containers.get = lambda name: (_ for _ in ()).throw(NotFound("already gone"))
+    client.containers.list = lambda **kwargs: []
     client.networks.get = lambda name: (_ for _ in ()).throw(RuntimeError("already gone"))
     monkeypatch.setattr(app, "_client", lambda: client)
     assert app.remove_tenant("shop-a", purge_volume=True)["status"] == "purged"
