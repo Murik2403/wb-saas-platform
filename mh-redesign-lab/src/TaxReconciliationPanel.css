@@ -15,7 +15,7 @@
 .tax-reconciliation [role=alert]{color:var(--danger,#d42a48)}
 .tax-tabs{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0 1.3rem;border-bottom:1px solid var(--border-color,#7c8d9e);padding-bottom:.8rem}
 .tax-tabs button{padding:.7rem 1rem;min-height:44px;border:1px solid var(--border-color,#7c8d9e);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit}
-.tax-tabs button[aria-selected=true]{background:var(--accent,#008e79);color:white;border-color:var(--accent,#008e79)}
+.tax-tabs button[aria-selected=true]{background:var(--accent,#008e79);color:var(--teal-ink,#fff);border-color:var(--accent,#008e79)}
 .tax-period{display:grid;gap:.5rem;margin:.7rem 0;padding:.7rem;border-left:3px solid var(--accent,#008e79);line-height:1.5}.tax-period span{font-size:.85rem}
 .tax-note{padding:1rem;border-radius:10px;border:1px solid var(--border-color,#7c8d9e);line-height:1.6}
 .tax-reconciliation h3{margin:1.5rem 0 .7rem}.tax-saved-result{border-top:1px solid var(--border-color,#7c8d9e);margin-top:1.5rem}

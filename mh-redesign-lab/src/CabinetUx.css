@@ -33,6 +33,7 @@
 }
 @media(max-width:700px) {
   .topbar { grid-template-columns: 42px minmax(0,1fr); }
+  .topbar-actions > button, .topbar-actions .session-chip { width: 44px; min-width: 44px; height: 44px; }
   .topbar .search-shell { grid-column: 1 / -1; grid-row: 2; }
   .topbar .topbar-actions { grid-column: 1 / -1; grid-row: 3; justify-content: flex-end; }
   .workspace > .connection-banner { display: flex; }

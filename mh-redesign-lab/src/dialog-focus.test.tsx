@@ -44,3 +44,10 @@ it('does not intercept a separate native modal or restore a removed opener',()=>
 function AutoFocusDrawer({busy,close}:{busy:boolean;close:()=>void}){const ref=useDialogFocus(()=>{if(!busy)close();});return <section role="dialog" aria-label="Auto focus" ref={ref}><input autoFocus aria-label="Price"/><button disabled={busy} onClick={close}>Cancel</button></section>;}
 function AutoFocusHarness(){const[open,setOpen]=useState(false),[busy,setBusy]=useState(true);return <><button onClick={()=>setOpen(true)}>Open price</button><button onClick={()=>setBusy(false)}>Finish</button>{open&&<AutoFocusDrawer busy={busy} close={()=>setOpen(false)}/>}</>;}
 it('captures external opener before React autoFocus and respects pending cancellation',()=>{render(<AutoFocusHarness/>);const opener=screen.getByText('Open price');opener.focus();fireEvent.click(opener);expect(screen.getByLabelText('Price')).toHaveFocus();fireEvent.keyDown(document,{key:'Escape'});expect(screen.getByRole('dialog')).toBeInTheDocument();fireEvent.click(screen.getByText('Finish'));fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(opener).toHaveFocus();});
+it('locks page scroll on narrow viewports only while a dialog scope is open',()=>{
+ const original=window.matchMedia;window.matchMedia=((q:string)=>({matches:true,media:q}))as typeof window.matchMedia;
+ const a=document.createElement('section'),b=document.createElement('section');a.innerHTML='<button>A</button>';b.innerHTML='<button>B</button>';document.body.append(a,b);
+ const disposeA=createDialogFocusScope(a,vi.fn()),disposeB=createDialogFocusScope(b,vi.fn());
+ expect(document.documentElement.style.overflow).toBe('hidden');disposeB();expect(document.documentElement.style.overflow).toBe('hidden');disposeA();expect(document.documentElement.style.overflow).toBe('');
+ window.matchMedia=original;a.remove();b.remove();
+});

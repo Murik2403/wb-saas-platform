@@ -1100,6 +1100,12 @@ button.export-row {
   grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.65fr);
 }
 
+@media (max-width: 1120px) {
+  .content-grid.compact-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .content-grid.compact-flow > .insight-column {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1735,7 +1741,7 @@ button.report-row.detail-trigger {
   min-height: 0.9rem;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   line-height: 1;
   text-align: center;
   text-overflow: ellipsis;
@@ -1870,6 +1876,11 @@ button.report-row.detail-trigger {
 .funnel-bar {
   display: grid;
   gap: 0.45rem;
+}
+
+button.signal.detail-trigger,
+button.funnel-bar {
+  background: var(--surface-2);
 }
 
 button.funnel-bar,
@@ -3600,8 +3611,7 @@ td {
     min-height: 4.2rem;
     border: 1px solid var(--line-strong);
     border-radius: var(--radius);
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    display: flex;
     background: var(--mobile-bg);
     backdrop-filter: blur(20px);
     box-shadow: var(--shadow);
@@ -3609,13 +3619,14 @@ td {
   }
 
   .bottom-nav button {
+    flex: 1 1 auto;
     min-width: 0;
     display: grid;
     place-items: center;
     gap: 0.18rem;
     color: var(--muted);
     padding-inline: 0.1rem;
-    font-size: clamp(0.5rem, 2.3vw, 0.64rem);
+    font-size: 0.6875rem;
     line-height: 1.15;
   }
 
@@ -3647,6 +3658,14 @@ td {
     padding: 1rem 0.8rem 5.5rem;
   }
 
+  .plan-drawer.operation-dialog {
+    width: min(32rem, 100%);
+  }
+
+  html {
+    scroll-padding-bottom: calc(5.8rem + env(safe-area-inset-bottom));
+  }
+
   .plan-detail-grid {
     grid-template-columns: 1fr;
   }
@@ -3658,8 +3677,7 @@ td {
 
 @media (max-width: 680px) {
   .workspace {
-    padding: calc(0.7rem + env(safe-area-inset-top)) 0.65rem calc(6rem + env(safe-area-inset-bottom));
-    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    padding: 0.7rem 0.65rem calc(6rem + env(safe-area-inset-bottom));
   }
 
   .topbar,
@@ -3899,6 +3917,11 @@ td {
     height: 9rem;
   }
 
+  .topbar .icon-button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
   .production-task-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4032,8 +4055,8 @@ td {
     z-index: 40;
   }
 
-  .workspace {
-    padding-top: calc(0.7rem + var(--mobile-status-bar));
+  body .marketplace-bar {
+    padding-top: calc(10px + var(--mobile-status-bar));
   }
 
   .topbar {
