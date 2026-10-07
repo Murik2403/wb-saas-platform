@@ -1101,6 +1101,12 @@ button.export-row {
   grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.65fr);
 }
 
+@media (max-width: 1120px) {
+  .content-grid.compact-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .content-grid.compact-flow > .insight-column {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1736,7 +1742,7 @@ button.report-row.detail-trigger {
   min-height: 0.9rem;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   line-height: 1;
   text-align: center;
   text-overflow: ellipsis;
@@ -1871,6 +1877,11 @@ button.report-row.detail-trigger {
 .funnel-bar {
   display: grid;
   gap: 0.45rem;
+}
+
+button.signal.detail-trigger,
+button.funnel-bar {
+  background: var(--surface-2);
 }
 
 button.funnel-bar,
@@ -3620,6 +3631,7 @@ td {
   }
 
   .bottom-nav button {
+    flex: 1 1 auto;
     min-width: 0;
     display: grid;
     place-items: center;
@@ -3681,8 +3693,7 @@ td {
 
 @media (max-width: 680px) {
   .workspace {
-    padding: calc(0.7rem + env(safe-area-inset-top)) 0.65rem calc(6rem + env(safe-area-inset-bottom));
-    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    padding: 0.7rem 0.65rem calc(6rem + env(safe-area-inset-bottom));
   }
 
   .topbar,
@@ -3925,6 +3936,11 @@ td {
 
   .mini-chart {
     height: 9rem;
+  }
+
+  .topbar .icon-button {
+    width: 2.75rem;
+    height: 2.75rem;
   }
 
   .production-task-fields {
