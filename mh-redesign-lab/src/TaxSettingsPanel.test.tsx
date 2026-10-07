@@ -30,6 +30,14 @@ describe("TaxSettingsPanel", () => {
   });
   beforeEach(() => { load.mockReset(); save.mockReset(); load.mockResolvedValue(empty); });
 
+  it("is read-only without the save button when the server says can_write is false", async () => {
+    load.mockResolvedValue({ ...empty, can_write: false });
+    render(<TaxSettingsPanel />);
+    await waitFor(() => expect(screen.getByText(/только владелец/)).toBeInTheDocument());
+    expect(screen.queryByText("Сохранить ставки")).toBeNull();
+    expect(screen.getByLabelText(/УСН «Доходы»$/)).toBeDisabled();
+  });
+
   it("disables unsupported regimes and explains why", async () => {
     render(<TaxSettingsPanel />);
     await waitFor(() => expect(screen.getByLabelText(/УСН «Доходы»$/)).toBeEnabled());

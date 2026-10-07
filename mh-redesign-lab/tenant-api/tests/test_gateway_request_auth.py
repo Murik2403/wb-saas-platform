@@ -92,3 +92,22 @@ def test_valid_proof_does_not_expire_while_waiting_behind_inner_guard(client,mon
  asyncio.run(guard(scope,receive,send))
  assert result[0]['status']==200
  assert not proof.verify('tenant-scoped-secret',headers['x-mh-gateway-auth'],'GET',path,'test-seller','owner','1')
+
+@pytest.mark.parametrize('demo,role',[(False,'viewer'),(True,'owner')])
+def test_readonly_tax_input_passes_role_gate_for_viewer_and_demo(client,monkeypatch,demo,role):
+ # The Ozon cabinet-grant layer (marketplace_context_api) is separate; here only the write-role gate is under test.
+ monkeypatch.setattr(api,'TENANT_SLUG','');monkeypatch.setattr(api,'IS_DEMO',demo)
+ r=client.post('/api/v1/ozon-insights/tax-input',json={'start_date':'2026-01-01','end_date':'2026-01-31'},headers={'x-tenant-role':role,'x-tenant-account':'1'})
+ blocked=('наблюдателя','Демо доступно','производственной роли')
+ assert not any(text in r.text for text in blocked)
+
+def test_tax_rates_put_owner_only_manager_denied(client):
+ from production_permissions import write_allowed
+ assert write_allowed('owner','PUT','/api/v1/settings/tax') and not write_allowed('manager','PUT','/api/v1/settings/tax')
+ assert write_allowed('manager','PUT','/api/v1/settings/tax-reconciliation')
+ path='/api/v1/settings/tax'
+ assert client.put(path,json={'year':2026,'regime':'usn_income','rates':[]},headers=auth('PUT',path,'manager')).status_code==403
+
+def test_readonly_mutating_posts_stay_blocked_for_viewer(client,monkeypatch):
+ monkeypatch.setattr(api,'TENANT_SLUG','')
+ assert client.post('/api/v1/ozon-prices/confirm',json={},headers={'x-tenant-role':'viewer','x-tenant-account':'1'}).status_code==403

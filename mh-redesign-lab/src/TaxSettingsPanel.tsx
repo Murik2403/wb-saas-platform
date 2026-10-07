@@ -37,6 +37,7 @@ export function buildRates(cells: TaxCell[]): { rates: TaxRate[] } | { error: st
 export function TaxSettingsPanel() {
   const thisYear = new Date().getFullYear();
   const [enabled, setEnabled] = useState(false);
+  const [canWrite, setCanWrite] = useState(true);
   const [year, setYear] = useState(thisYear);
   const [regime, setRegime] = useState<TaxRegime | null>(null);
   const [costOfficial, setCostOfficial] = useState(false);
@@ -52,6 +53,7 @@ export function TaxSettingsPanel() {
     getTaxSettings(year, controller.signal)
       .then((data) => {
         setEnabled(data.enabled === true);
+        setCanWrite(data.can_write !== false);
         if (data.enabled !== true) return;
         setRegime(data.regime);
         setCostOfficial(data.cost_official);
@@ -95,7 +97,7 @@ export function TaxSettingsPanel() {
   };
 
   const rateInput = (months: number[], field: keyof TaxCell, label: string, value: string, placeholder = "") =>
-    <input type="number" inputMode="decimal" min={0} max={100} step="0.1" aria-label={label} value={value} placeholder={placeholder} disabled={loading || busy}
+    <input type="number" inputMode="decimal" min={0} max={100} step="0.1" aria-label={label} value={value} placeholder={placeholder} disabled={loading || busy || !canWrite}
       onChange={(event) => setCell(months, field, event.target.value)} />;
 
   if (!enabled) return null;
@@ -108,7 +110,7 @@ export function TaxSettingsPanel() {
         {[thisYear - 2, thisYear - 1, thisYear, thisYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
       </select>
     </label>
-    <fieldset className="tax-regimes" disabled={loading || busy}>
+    <fieldset className="tax-regimes" disabled={loading || busy || !canWrite}>
       <legend>Режим налогообложения за {year} год</legend>
       {REGIMES.map((item) => <label key={item.id} className={`tax-regime${item.supported ? "" : " tax-regime-disabled"}`}>
         <input type="radio" name="tax-regime" value={item.id} disabled={!item.supported} checked={regime === item.id}
@@ -117,7 +119,7 @@ export function TaxSettingsPanel() {
       </label>)}
     </fieldset>
     {regime === "usn_income_expense" ? <label className="checkbox-field tax-cost-official">
-      <input type="checkbox" checked={costOfficial} disabled={loading || busy} onChange={(event) => { setCostOfficial(event.target.checked); setStatus(null); }} />
+      <input type="checkbox" checked={costOfficial} disabled={loading || busy || !canWrite} onChange={(event) => { setCostOfficial(event.target.checked); setStatus(null); }} />
       <span>Учитывать себестоимость товара как официальный расход</span>
     </label> : null}
     <div className="tax-grid-scroll">
@@ -144,7 +146,7 @@ export function TaxSettingsPanel() {
     </div>
     <p className="form-hint">Месяц без ставок не считается: в ОПиУ будет «ставка не задана». Минимальный налог (1% от доходов) не применяется.</p>
     <div className="tax-actions">
-      <button className="primary-button" type="button" disabled={loading || busy} onClick={() => void save()}>{busy ? "Сохраняем" : "Сохранить ставки"}</button>
+      {canWrite ? <button className="primary-button" type="button" disabled={loading || busy} onClick={() => void save()}>{busy ? "Сохраняем" : "Сохранить ставки"}</button> : <p className="form-hint">Ставки меняет только владелец кабинета.</p>}
       {status ? <p className={status.kind === "ok" ? "form-hint tax-ok" : "operation-error"} role={status.kind === "ok" ? "status" : "alert"}>{status.text}</p> : null}
     </div>
   </section>;
