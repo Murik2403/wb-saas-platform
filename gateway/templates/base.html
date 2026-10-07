@@ -28,6 +28,7 @@
 <meta name="theme-color" content="#0a0b12">
 {# Blocking, first-party initialization restores the palette before CSS paints. #}
 <script src="/static/theme.js"></script>
+{% if request["store_app"] %}<script src="/static/app-shell.js" defer></script>{% endif %}
 {% if yandex_verification %}<meta name="yandex-verification" content="{{ yandex_verification }}">{% endif %}
 {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
 <style>

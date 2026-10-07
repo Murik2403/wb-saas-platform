@@ -146,3 +146,20 @@ class SeoFixTests(GatewayDbTestCase):
         home = self.client.get("/").text
         for href in ("/guides/fifo-po-partiyam", "/guides/zamena-servisov-analitiki", "/calculator"):
             self.assertIn(f'href="{href}"', home)
+
+
+class AppShellScriptTests(GatewayDbTestCase):
+    SCRIPT = '<script src="/static/app-shell.js" defer></script>'
+
+    def test_script_only_for_app_ua(self) -> None:
+        client = TestClient(gateway_app.app, follow_redirects=False)
+        self.assertIn(self.SCRIPT, client.get("/login", headers=APP_UA).text)
+        self.assertNotIn("app-shell.js", client.get("/login").text)
+
+    def test_script_served_same_origin_and_in_sync(self) -> None:
+        resp = TestClient(gateway_app.app).get("/static/app-shell.js")
+        self.assertEqual(resp.status_code, 200)
+        canonical = (GATEWAY_ROOT.parent / "mobile" / "src" / "remote-shell.js").read_text(encoding="utf-8")
+        self.assertEqual(resp.text, canonical)
+        lab_copy = GATEWAY_ROOT.parent / "mh-redesign-lab" / "public" / "app-shell.js"
+        self.assertEqual(lab_copy.read_text(encoding="utf-8"), canonical)

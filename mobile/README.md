@@ -29,8 +29,14 @@ cd android && ./gradlew assembleDebug
 ```
 Или `npx cap open android` и Run на эмуляторе/устройстве. iOS (только macOS): `npx cap open ios`.
 
-## Remote shell script (важно)
-Приложение грузит удалённый сайт, поэтому `www/shell.js` на нём не выполняется сам. Нативный мост Capacitor в удалённую страницу внедряется (`window.Capacitor.Plugins`), но хуки должны запуститься на странице. Нужно, чтобы gateway отдавал `shell.js` (например `/static/app-shell.js`) и подключал его тегом `<script>` только когда User-Agent содержит `MarketsHelperApp`. Без этого работают только нативные умолчания (back по истории WebView, deep link открывает приложение на `server.url`). Gateway в рамках этой задачи не менялся.
+## Remote shell script
+Приложение грузит удалённый сайт, поэтому хуки (внешние ссылки в системный браузер, кнопка «назад», deep links `/verify-email*`, `/reset-password*`, `/team/accept*`, status bar, splash) подключаются самой страницей. Канонический исходник: `src/remote-shell.js` (чистый ES2017, без зависимостей и сборки, использует только `window.Capacitor.Plugins`; вне приложения ничего не делает). Он же собирается в `www/remote-shell.js` для офлайн-экрана (`npm run build`).
+
+Копии (должны быть идентичны, это проверяет `gateway/tests/test_mobile_gateway.py`):
+- `gateway/static/app-shell.js`: gateway добавляет `<script src="/static/app-shell.js" defer>` в `base.html` только для User-Agent с `MarketsHelperApp/`;
+- `mh-redesign-lab/public/app-shell.js`: подключён в `mh-redesign-lab/index.html`; тесты в `src/app-shell-remote.test.ts`.
+
+После правки `src/remote-shell.js` скопируйте файл в оба места.
 
 ## Смена appId
 1. Поменять `appId` в `app.json`.
@@ -45,12 +51,12 @@ npm run assets:generate   # размеры для android/ios
 ```
 
 ## Скриншоты для сторов
-Из мок-режима фронта (демо-данные, без реальных клиентов):
+Светлая тема, данные демо-тенанта из `scripts/demo-cabinet.json` (без реальных клиентов): `/tenant-api/*` подменяется ответами снимка через CDP, Vite в обычном режиме (mock-режим API не вызывает):
 ```bash
-cd ../mh-redesign-lab && VITE_MH_API_MODE=mock npx vite --port 5350   # в другом терминале
+cd ../mh-redesign-lab && npx vite --port 5360   # в другом терминале
 cd ../mobile && node scripts/store-shots.mjs
 ```
-Результат: `store/screenshots/android` (1080x1920) и `store/screenshots/ios` (1290x2796). Нужен Edge/Chrome (`EDGE_PATH`). Кабинет сейчас тёмный (светлой темы в этой ветке нет). Экран «Товары» в mock-режиме показывает нули: перед подачей заменить на реальный демо-аккаунт.
+Результат: `store/screenshots/android` (1080x1920) и `store/screenshots/ios` (1290x2796). Нужен Edge/Chrome (`EDGE_PATH`). Снимок сделан в начале суток, поэтому «Сегодня» заполняется данными предыдущего дня из того же снимка (см. `today()` в скрипте). «Отчёты» в снимке пусты (нет расписаний).
 
 ## Push-уведомления
 Плагин `@capacitor/push-notifications` подключён, регистрация токена в коде не вызывается.

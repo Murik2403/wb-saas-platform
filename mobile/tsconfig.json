@@ -4,6 +4,7 @@
     "module": "esnext",
     "lib": ["ES2019", "DOM"],
     "strict": true,
+    "allowJs": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -11,5 +12,5 @@
     "rootDir": "src",
     "outDir": "www"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.js"]
 }
