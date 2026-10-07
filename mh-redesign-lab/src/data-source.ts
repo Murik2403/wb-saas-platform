@@ -2805,7 +2805,7 @@ export async function getPriceUploadDetail(uploadId: number): Promise<PriceUploa
 
 export type TaxRegime = "usn_income" | "usn_income_expense";
 export type TaxRate = { month: number; usn_pct: number; vat_pct: number };
-export type TaxSettings = { enabled?: boolean; year: number; regime: TaxRegime | null; cost_official: boolean; rates: TaxRate[]; supported_regimes: TaxRegime[] };
+export type TaxSettings = { enabled?: boolean; can_write?: boolean; year: number; regime: TaxRegime | null; cost_official: boolean; rates: TaxRate[]; supported_regimes: TaxRegime[] };
 
 export async function getTaxSettings(year: number, signal: AbortSignal = new AbortController().signal): Promise<TaxSettings> {
   return fetchJson<TaxSettings>(`/api/v1/settings/tax?year=${encodeURIComponent(String(year))}`, signal);

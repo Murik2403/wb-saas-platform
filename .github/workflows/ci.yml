@@ -90,6 +90,17 @@ jobs:
         working-directory: mh-redesign-lab/tenant-api
         run: python -m pytest tests -q
 
+  test-scripts:
+    name: Release Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes -r tenant-app/requirements.lock
+      - run: python -m pytest scripts/tests standalone/tests -q
+
   test-frontends:
     name: Build Frontends
     runs-on: ubuntu-latest
@@ -104,7 +115,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: hashFiles('${{ matrix.project }}/package.json') != ''
         with:
-          node-version: '24'
+          node-version: '24'  # matches the current node:24-alpine Dockerfiles
           cache: npm
           cache-dependency-path: ${{ matrix.project }}/package-lock.json
       - run: npm ci

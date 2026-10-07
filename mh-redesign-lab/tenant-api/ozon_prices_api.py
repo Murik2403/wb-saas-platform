@@ -16,6 +16,7 @@ class Draft(BaseModel):
 class Confirmation(Draft):
     request_key:StrictStr
     confirmed:StrictBool
+    allow_large_change:StrictBool=False
 
 def write(request):
     if request.headers.get('x-tenant-role','').lower() not in {'owner','manager'}:raise HTTPException(403,'Доступно владельцу и менеджеру.')
@@ -37,4 +38,4 @@ def refresh(request:Request):write(request);return guarded(prices.refresh)
 @router.post('/preview')
 def preview(payload:Draft,request:Request):write(request);return call(prices.preview,[i.model_dump() for i in payload.items],payload.source_fingerprint)
 @router.post('/confirm')
-def confirm(payload:Confirmation,request:Request):write(request);return guarded(prices.confirm,[i.model_dump() for i in payload.items],payload.source_fingerprint,payload.request_key,payload.confirmed,request.headers.get('x-tenant-account',''))
+def confirm(payload:Confirmation,request:Request):write(request);return guarded(prices.confirm,[i.model_dump() for i in payload.items],payload.source_fingerprint,payload.request_key,payload.confirmed,request.headers.get('x-tenant-account',''),payload.allow_large_change)

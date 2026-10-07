@@ -32,12 +32,16 @@ def _all_slugs() -> list[str]:
     return [str(row["slug"]) for row in rows]
 
 
+# Multi-GB archives: provisioner may legitimately take many minutes to answer.
+BACKUP_READ_TIMEOUT = 900
+
+
 def _backup_one(slug: str, keep_days: int) -> dict[str, object]:
     response = requests.post(
         f"{config.PROVISIONER_URL.rstrip('/')}/v1/tenants/{slug}/backup",
         params={"keep_days": keep_days},
         headers=provisioner_headers(),
-        timeout=(5, 600),
+        timeout=(5, BACKUP_READ_TIMEOUT),
     )
     response.raise_for_status()
     payload = response.json()
@@ -51,7 +55,7 @@ def _backup_control_plane(keep_days: int) -> dict[str, object]:
         f"{config.PROVISIONER_URL.rstrip('/')}/v1/control-plane/backup",
         params={"keep_days": keep_days},
         headers=provisioner_headers(),
-        timeout=(5, 600),
+        timeout=(5, BACKUP_READ_TIMEOUT),
     )
     response.raise_for_status()
     payload = response.json()

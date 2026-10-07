@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -209,7 +210,8 @@ def _prune_backups(keep: int) -> None:
     for path in backups[keep:]:
         try:
             path.unlink()
-        except OSError:
+        except OSError as exc:
+            logging.getLogger(__name__).error('Backup prune failed for %s: %s', path.name, exc)
             failures+=1
     if failures:
         raise RuntimeError('Backup retention failed; repair archive ownership before release')

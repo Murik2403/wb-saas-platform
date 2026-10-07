@@ -946,7 +946,7 @@ async def invalidate_after_write(request, call_next):
             return JSONResponse(status_code=403,content={'detail':'Контекст шлюза не подтверждён'})
     if tenant_role not in ROLES:
         return JSONResponse(status_code=403, content={"detail": "Роль пользователя не распознана"})
-    safe_supply_preview = request.method == "POST" and request.url.path in {"/api/v1/supply-planning/preview", "/api/v1/migration-import/preview", "/api/v1/cash-accounts/statements/preview", "/api/v1/dashboard/products/price-advice"}
+    safe_supply_preview = request.method == "POST" and request.url.path in {"/api/v1/supply-planning/preview", "/api/v1/migration-import/preview", "/api/v1/cash-accounts/statements/preview", "/api/v1/dashboard/products/price-advice", "/api/v1/ozon-insights/tax-input"}
     if tenant_role == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"} and not safe_supply_preview:
         return JSONResponse(status_code=403, content={"detail": "Роль наблюдателя доступна только для просмотра"})
     if not write_allowed(tenant_role, request.method, request.url.path):
@@ -1004,7 +1004,7 @@ def get_dashboard_session(request: Request) -> dict:
     slug = os.getenv("WB_SAAS_TENANT_SLUG", "marketshelper-live")
     tenant_name = os.getenv("WB_SAAS_TENANT_NAME", slug)
     return {
-        "user": {"id": request.headers.get("x-tenant-account", slug), "name": "Пользователь", "role": request.headers.get("x-tenant-role", "viewer")},
+        "user": {"id": request.headers.get("x-tenant-account", slug), "name": "Пользователь", "role": "viewer" if IS_DEMO else request.headers.get("x-tenant-role", "viewer")},
         "tenant": {"id": slug, "name": tenant_name},
         "mode": "demo" if IS_DEMO else "tenant",
     }
@@ -3840,12 +3840,12 @@ class TaxSettingsInput(BaseModel):
 
 
 @app.get("/api/v1/settings/tax")
-def get_tax_settings(year: int = Query(..., ge=2020, le=2100)) -> dict:
+def get_tax_settings(year: int = Query(..., ge=2020, le=2100), request: Request = None) -> dict:
     if not _tax_estimates_enabled():
         # No DB access or saved taxpayer data while the feature is gated.
         return {"enabled": False, "year": year, "regime": None, "cost_official": False,
                 "rates": [], "supported_regimes": []}
-    return {"enabled": True, **read_tax_settings(year), "supported_regimes": list(TAX_REGIMES)}
+    return {"enabled": True, **read_tax_settings(year), "supported_regimes": list(TAX_REGIMES), "can_write": request is None or (request.headers.get("x-tenant-role", "viewer").lower() == "owner" and not IS_DEMO)}
 
 
 @app.put("/api/v1/settings/tax")
