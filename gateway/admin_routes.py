@@ -58,6 +58,8 @@ def admin_dashboard(request: Request):
         tenants = accounts.list_all_tenants_overview(conn)
         growth_report = growth.growth_summary(conn)
         feedback_report = product_feedback.summary(conn)
+        billing_operations=[dict(row) for row in conn.execute("SELECT operation_id,account_id,state,provider_id,created_at FROM billing_operation_claims WHERE state!='completed' ORDER BY created_at LIMIT 100").fetchall()]
+        pending_payments=[dict(row) for row in conn.execute("SELECT account_id,yookassa_payment_id,created_at FROM payments WHERE status='pending' ORDER BY created_at LIMIT 100").fetchall()]
         exclusions = {int(row["account_id"]): row["exclusion_reason"] for row in conn.execute("SELECT account_id,exclusion_reason FROM growth_sources").fetchall()}
         for tenant in tenants:
             tenant["growth_exclusion"] = exclusions.get(tenant["account_id"], "")
@@ -66,7 +68,7 @@ def admin_dashboard(request: Request):
     response = templates.TemplateResponse(
         request,
         "admin_dashboard.html",
-        {"tenants": tenants, "csrf_token": csrf_token, "growth": growth_report, "product_feedback": feedback_report},
+        {"tenants": tenants, "csrf_token": csrf_token, "growth": growth_report, "product_feedback": feedback_report, "billing_operations": billing_operations, "pending_payments": pending_payments},
     )
     response.headers["Cache-Control"] = "private, no-store"
     csrf.set_cookie(response, csrf_token)
@@ -163,3 +165,74 @@ def admin_payment_refund(request: Request, payment_id: str, amount: float | None
     except Exception:
         logger.exception("admin: failed to refund payment")
     return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/admin/billing-operation/{operation_id}/reconcile")
+def admin_reconcile_payment(request: Request, operation_id: str, provider_payment_id: str = Form(...), csrf_token: str = Form("")):
+    """Read-only upstream reconciliation; never resend a charge or auto-refund."""
+    if _require_admin(request) is None:
+        return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return RedirectResponse("/admin", status_code=303)
+    from logic import account_lifecycle
+    import yookassa_client
+    from fastapi.responses import PlainTextResponse
+    with control_db.connect() as conn:
+        claim=conn.execute("SELECT * FROM billing_operation_claims WHERE operation_id=?",(operation_id,)).fetchone()
+    if claim is None:
+        return PlainTextResponse("Операция не найдена",status_code=404)
+    import uuid
+    try:
+        provider_payment_id=str(uuid.UUID(provider_payment_id))
+    except (ValueError,AttributeError):
+        return PlainTextResponse("Некорректный идентификатор платежа",status_code=422)
+    try:
+        verified=yookassa_client.get_payment(provider_payment_id)
+    except Exception:
+        return PlainTextResponse("Не удалось сверить платёж; операция остаётся заблокированной",status_code=502)
+    if not isinstance(verified,dict) or verified.get("id") != provider_payment_id:
+        return PlainTextResponse("Идентификатор платежа не совпадает",status_code=409)
+    try:
+        with control_db.connect() as conn:
+            claim=account_lifecycle.bind_verified_provider(conn,int(claim["account_id"]),operation_id,verified)
+            if conn.execute("SELECT 1 FROM payments WHERE yookassa_payment_id=?",(verified["id"],)).fetchone() is None:
+                billing.record_payment_attempt(conn,int(claim["account_id"]),verified["id"],
+                    "recurring" if claim["operation_key"].startswith("recurring:") else "manual",
+                    float(claim["expected_amount_rub"]))
+            if verified.get("status")=="succeeded":
+                billing.apply_successful_payment(conn,int(claim["account_id"]),verified["id"],is_test=bool(verified.get("test",False)))
+            elif verified.get("status")=="canceled":
+                billing.apply_failed_payment(conn,int(claim["account_id"]),verified["id"],error="canceled")
+    except account_lifecycle.LifecycleConflict:
+        return PlainTextResponse("Платёж не соответствует операции",status_code=409)
+    return RedirectResponse("/admin",status_code=303)
+
+
+@router.post("/admin/payment/{payment_id}/reconcile")
+def admin_reconcile_known_payment(request: Request, payment_id: str, csrf_token: str = Form("")):
+    """Resolve pre-claim legacy pending records using authenticated provider GET."""
+    from fastapi.responses import PlainTextResponse
+    from decimal import Decimal,InvalidOperation
+    import uuid,yookassa_client
+    if _require_admin(request) is None:
+        return RedirectResponse("/login",status_code=303)
+    if not csrf.verify(request,csrf_token):
+        return RedirectResponse("/admin",status_code=303)
+    try:payment_id=str(uuid.UUID(payment_id))
+    except (ValueError,AttributeError):return PlainTextResponse("Некорректный идентификатор платежа",status_code=422)
+    with control_db.connect() as conn:
+        original=conn.execute("SELECT * FROM payments WHERE yookassa_payment_id=?",(payment_id,)).fetchone()
+    if original is None:return PlainTextResponse("Платёж не найден",status_code=404)
+    try:verified=yookassa_client.get_payment(payment_id)
+    except Exception:return PlainTextResponse("Не удалось сверить платёж",status_code=502)
+    try:
+        amount=verified.get("amount") or {};metadata=verified.get("metadata") or {}
+        valid=verified.get("id")==payment_id and str(metadata.get("account_id"))==str(original["account_id"]) and amount.get("currency")=="RUB" and Decimal(str(amount.get("value")))==Decimal(str(original["amount_rub"]))
+    except (InvalidOperation,ValueError,TypeError,AttributeError):valid=False
+    if not valid:return PlainTextResponse("Данные платежа не совпадают",status_code=409)
+    with control_db.connect() as conn:
+        if verified.get("status")=="succeeded":
+            billing.apply_successful_payment(conn,int(original["account_id"]),payment_id,is_test=bool(verified.get("test",False)))
+        elif verified.get("status")=="canceled":
+            billing.apply_failed_payment(conn,int(original["account_id"]),payment_id,error="canceled")
+    return RedirectResponse("/admin",status_code=303)

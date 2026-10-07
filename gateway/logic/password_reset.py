@@ -32,7 +32,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import config
-from logic import accounts
+from logic import accounts, account_lifecycle
 
 RESET_TOKEN_BYTES = 32
 
@@ -57,6 +57,7 @@ def _parse_iso(value: str) -> datetime:
 
 
 def create_reset_token(conn: sqlite3.Connection, account_id: int, ttl_minutes: int = config.PASSWORD_RESET_TTL_MINUTES) -> str:
+    account_lifecycle.require_open(conn, account_id)
     token = secrets.token_urlsafe(RESET_TOKEN_BYTES)
     now = _now()
     expires_at = now + timedelta(minutes=ttl_minutes)
@@ -73,9 +74,12 @@ def request_password_reset(conn: sqlite3.Connection, email: str, ttl_minutes: in
     HTTP layer can't accidentally leak account existence through a richer
     return value."""
     account = accounts.get_account_by_email(conn, email)
-    if account is None:
+    if account_lifecycle.closed(account):
         return None
-    return create_reset_token(conn, int(account["id"]), ttl_minutes=ttl_minutes)
+    try:
+        return create_reset_token(conn, int(account["id"]), ttl_minutes=ttl_minutes)
+    except account_lifecycle.LifecycleConflict:
+        return None
 
 
 def consume_reset_token(conn: sqlite3.Connection, raw_token: str, new_password: str) -> int:
@@ -100,6 +104,7 @@ def consume_reset_token(conn: sqlite3.Connection, raw_token: str, new_password: 
         raise ValueError(" ".join(issues))
 
     account_id = int(row["account_id"])
+    account_lifecycle.require_open(conn, account_id)
     password_hash, salt = accounts.hash_password(new_password)
     now = _now_iso()
     conn.execute(

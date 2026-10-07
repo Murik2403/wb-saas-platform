@@ -24,6 +24,7 @@ from argon2.exceptions import InvalidHashError, VerificationError
 from argon2.low_level import Type
 
 import config
+from . import account_lifecycle
 
 PBKDF2_ITERATIONS = 260_000
 SESSION_TOKEN_BYTES = 32
@@ -219,12 +220,13 @@ def create_account(
     return int(cur.fetchone()["id"])
 
 
-def get_account_by_id(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM accounts WHERE id=?", (int(account_id),)).fetchone()
+def get_account_by_id(conn: sqlite3.Connection, account_id: int, *, include_deleted: bool = False) -> sqlite3.Row | None:
+    suffix = "" if include_deleted else " AND deleted_at=''"
+    return conn.execute("SELECT * FROM accounts WHERE id=?" + suffix, (int(account_id),)).fetchone()
 
 
 def get_account_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM accounts WHERE email=?", ((email or "").strip().lower(),)).fetchone()
+    return conn.execute("SELECT * FROM accounts WHERE email=? AND deleted_at=''", ((email or "").strip().lower(),)).fetchone()
 
 
 def is_email_verified(account: sqlite3.Row | dict[str, Any] | None) -> bool:
@@ -234,8 +236,11 @@ def is_email_verified(account: sqlite3.Row | dict[str, Any] | None) -> bool:
 
 def authenticate_account(conn: sqlite3.Connection, email: str, password: str) -> sqlite3.Row | None:
     account = get_account_by_email(conn, email)
-    if account is None:
+    if account is None or dict(account).get("deleted_at"):
         verify_password(password, DUMMY_PASSWORD_HASH, DUMMY_PASSWORD_SALT)
+        return None
+    account = account_lifecycle.lock_account(conn, int(account["id"]))
+    if account is None or dict(account).get("deleted_at"):
         return None
     if not verify_password(password, account["password_hash"], account["password_salt"]):
         return None
@@ -250,8 +255,8 @@ def authenticate_account(conn: sqlite3.Connection, email: str, password: str) ->
 
 
 def change_password(conn: sqlite3.Connection, account_id: int, current_password: str, new_password: str) -> None:
-    account = get_account_by_id(conn, int(account_id))
-    if account is None or not verify_password(current_password, account["password_hash"], account["password_salt"]):
+    account = account_lifecycle.lock_account(conn, account_id)
+    if account_lifecycle.closed(account) or not verify_password(current_password, account["password_hash"], account["password_salt"]):
         raise ValueError("Текущий пароль указан неверно.")
     issues = password_issues(new_password)
     if issues:
@@ -262,6 +267,7 @@ def change_password(conn: sqlite3.Connection, account_id: int, current_password:
 
 
 def create_email_change_token(conn: sqlite3.Connection, account_id: int, new_email: str, ttl_minutes: int = 60) -> str:
+    account_lifecycle.require_open(conn, account_id)
     email = (new_email or "").strip().lower()
     if not validate_email(email):
         raise ValueError("Некорректный email.")
@@ -278,6 +284,7 @@ def consume_email_change_token(conn: sqlite3.Connection, token: str) -> int:
     row = conn.execute("SELECT * FROM email_change_tokens WHERE token_hash=?", (_hash_token(token),)).fetchone()
     if row is None or row["consumed_at"]:
         raise ValueError("Ссылка подтверждения email недействительна.")
+    account_lifecycle.require_open(conn, int(row["account_id"]))
     expires = datetime.fromisoformat(row["expires_at"])
     if expires < datetime.now(timezone.utc):
         raise ValueError("Ссылка подтверждения email истекла.")
@@ -294,6 +301,7 @@ def consume_email_change_token(conn: sqlite3.Connection, token: str) -> int:
 
 
 def create_email_verification_token(conn: sqlite3.Connection, account_id: int, ttl_hours: int = EMAIL_VERIFICATION_TTL_HOURS) -> str:
+    account_lifecycle.require_open(conn, account_id)
     account = get_account_by_id(conn, int(account_id))
     if account is None:
         raise ValueError("Аккаунт не найден.")
@@ -317,6 +325,7 @@ def consume_email_verification_token(conn: sqlite3.Connection, token: str) -> in
     ).fetchone()
     if row is None or row["consumed_at"]:
         raise ValueError("Ссылка подтверждения email недействительна.")
+    account_lifecycle.require_open(conn, int(row["account_id"]))
     expires = datetime.fromisoformat(row["expires_at"])
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
@@ -338,6 +347,8 @@ def consume_email_verification_token(conn: sqlite3.Connection, token: str) -> in
 
 
 def set_account_status(conn: sqlite3.Connection, account_id: int, status: str) -> None:
+    if status != "canceled" and account_lifecycle.closed(account_lifecycle.lock_account(conn, account_id)):
+        raise ValueError("Аккаунт удаляется или удалён")
     if status not in ACCOUNT_STATUSES:
         raise ValueError(f"Недопустимый статус аккаунта: {status!r}")
     conn.execute(
@@ -349,12 +360,12 @@ def set_account_status(conn: sqlite3.Connection, account_id: int, status: str) -
 def account_has_access(account: sqlite3.Row | dict[str, Any] | None) -> bool:
     if account is None:
         return False
-    return str(account["status"]) in ACCESS_ALLOWED_STATUSES
+    return not account_lifecycle.closed(account) and str(account["status"]) in ACCESS_ALLOWED_STATUSES
 
 
 def delete_account(conn: sqlite3.Connection, account_id: int) -> None:
-    """Delete control-plane personal data after the tenant is removed."""
-    conn.execute("DELETE FROM accounts WHERE id=?", (int(account_id),))
+    """Erase operational identity while retaining financial foreign keys."""
+    account_lifecycle.finalize_deletion(conn, account_id)
 
 
 # --------------------------------------------------------------------------
@@ -366,6 +377,9 @@ def _hash_token(token: str) -> str:
 
 
 def create_session(conn: sqlite3.Connection, account_id: int, ttl_hours: int = SESSION_TTL_HOURS) -> str:
+    account = account_lifecycle.lock_account(conn, account_id)
+    if account is None or dict(account).get("deleted_at"):
+        raise ValueError("Аккаунт удалён")
     token = secrets.token_urlsafe(SESSION_TOKEN_BYTES)
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(hours=ttl_hours)
@@ -733,6 +747,7 @@ def list_all_tenants_overview(conn: sqlite3.Connection) -> list[dict]:
             a.current_period_end, a.past_due_since
         FROM tenant_instances t
         JOIN accounts a ON a.id = t.account_id
+        WHERE a.deleted_at=''
         ORDER BY t.created_at DESC
         """
     ).fetchall()

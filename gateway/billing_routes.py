@@ -15,14 +15,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import PlainTextResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import config
 import yookassa_client
 from client_ip import client_ip
 from logging_config import bind_account_context
-from logic import accounts, billing, csrf, db as control_db
+from logic import account_lifecycle, accounts, billing, csrf, db as control_db
 from rate_limiter import RateLimiter
 from template_setup import create_templates
 
@@ -104,6 +104,13 @@ def billing_checkout(request: Request, csrf_token: str = Form("")):
     if not csrf.verify(request, csrf_token):
         return RedirectResponse("/billing", status_code=303)
 
+    import uuid
+    try:
+        with control_db.connect() as conn:
+            operation = account_lifecycle.begin_payment(conn, int(account["id"]), "checkout:" + uuid.uuid4().hex, allow_canceled=True, expected_amount_rub=f"{config.SUBSCRIPTION_PRICE_RUB:.2f}")
+            account = accounts.get_account_by_id(conn, int(account["id"]))
+    except account_lifecycle.LifecycleConflict as exc:
+        return PlainTextResponse(str(exc), status_code=409)
     return_url = f"{'https' if config.COOKIE_SECURE else 'http'}://{config.PARENT_DOMAIN}/billing/return"
     try:
         payment = yookassa_client.create_payment(
@@ -111,11 +118,16 @@ def billing_checkout(request: Request, csrf_token: str = Form("")):
             description=f"Подписка MARKETSHELPER — {account['email']}",
             return_url=return_url,
             save_payment_method=True,
-            metadata={"account_id": str(account["id"])},
+            idempotence_key=operation,
+            metadata={"account_id": str(account["id"]), "mh_operation_id": operation},
             customer_email=account["email"],
         )
-    except yookassa_client.YooKassaError:
-        logger.exception("Failed to create YooKassa payment for account %s", account["id"])
+        if not isinstance(payment, dict) or not isinstance(payment.get("id"), str) or not payment["id"]:
+            raise ValueError("Invalid payment response")
+    except Exception:
+        with control_db.connect() as conn:
+            account_lifecycle.mark_payment_outcome(conn, operation, "unknown")
+        logger.warning("Payment outcome unknown for account %s; reconciliation required", account["id"])
         return templates.TemplateResponse(
             request,
             "billing.html",
@@ -123,7 +135,7 @@ def billing_checkout(request: Request, csrf_token: str = Form("")):
                 "account": account,
                 "days_left": None,
                 "price_rub": config.SUBSCRIPTION_PRICE_RUB,
-                "error": "Не получилось начать оплату. Попробуйте ещё раз через пару минут.",
+                "error": "Результат оплаты пока неизвестен. Не повторяйте платёж; обратитесь в поддержку для сверки.",
             },
             status_code=502,
         )
@@ -137,6 +149,12 @@ def billing_checkout(request: Request, csrf_token: str = Form("")):
         billing.record_payment_attempt(
             conn, account["id"], payment["id"], "manual", config.SUBSCRIPTION_PRICE_RUB, status="pending"
         )
+        account_lifecycle.mark_payment_outcome(conn, operation, "completed" if payment.get("status") in {"succeeded", "canceled"} else "provider_pending", payment["id"])
+        if payment.get("status") == "succeeded":
+            billing.apply_successful_payment(conn, int(account["id"]), payment["id"],
+                payment_method_id=yookassa_client.extract_payment_method_id(payment),is_test=bool(payment.get("test",False)))
+        elif payment.get("status") == "canceled":
+            billing.apply_failed_payment(conn,int(account["id"]),payment["id"],error="canceled")
 
     confirmation = payment.get("confirmation") or {}
     confirmation_url = confirmation.get("confirmation_url")
@@ -255,8 +273,20 @@ async def yookassa_webhook(request: Request):
         logger.error("YooKassa payment %s has non-numeric account_id metadata: %r", payment_id, account_id_raw)
         return JSONResponse({"error": "invalid account_id"}, status_code=200)
 
+    if not isinstance(payment, dict) or payment.get("id") != payment_id:
+        return JSONResponse({"error": "verified payment mismatch"}, status_code=502)
     status = payment.get("status")
     with control_db.connect() as conn:
+        operation_id = (payment.get("metadata") or {}).get("mh_operation_id")
+        if operation_id:
+            try:
+                claim = account_lifecycle.bind_verified_provider(conn, account_id, operation_id, payment)
+            except account_lifecycle.LifecycleConflict:
+                return JSONResponse({"error": "payment operation mismatch"}, status_code=200)
+            if conn.execute("SELECT id FROM payments WHERE yookassa_payment_id=?", (payment_id,)).fetchone() is None:
+                billing.record_payment_attempt(conn, account_id, payment_id,
+                    "recurring" if claim["operation_key"].startswith("recurring:") else "manual",
+                    float(claim["expected_amount_rub"]), status="pending")
         if status == "succeeded":
             payment_method_id = yookassa_client.extract_payment_method_id(payment)
             billing.apply_successful_payment(

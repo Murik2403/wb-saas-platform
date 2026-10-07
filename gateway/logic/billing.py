@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import config
-from . import accounts, growth
+from . import account_lifecycle, accounts, growth
 
 PAYMENT_KINDS = {"initial", "recurring", "manual"}
 PAYMENT_STATUSES = {"pending", "succeeded", "failed", "canceled"}
@@ -53,6 +53,8 @@ def _parse_iso(value: str) -> datetime | None:
 # --------------------------------------------------------------------------
 
 def start_trial(conn: sqlite3.Connection, account_id: int, trial_days: int = config.TRIAL_DAYS) -> None:
+    if account_lifecycle.closed(account_lifecycle.lock_account(conn, account_id)):
+        raise ValueError("Аккаунт удаляется или удалён")
     period_end = (_now() + timedelta(days=trial_days)).isoformat(timespec="seconds")
     conn.execute(
         "UPDATE accounts SET status='trialing', current_period_end=?, past_due_since='', updated_at=? WHERE id=?",
@@ -85,10 +87,15 @@ def record_payment_attempt(
         INSERT INTO payments(account_id, yookassa_payment_id, kind, amount_rub, status,
                               period_start, period_end, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(yookassa_payment_id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at
+        ON CONFLICT(yookassa_payment_id) DO UPDATE SET
+          status=CASE WHEN payments.status IN ('succeeded','failed','canceled') THEN payments.status ELSE excluded.status END,
+          updated_at=CASE WHEN payments.status IN ('succeeded','failed','canceled') THEN payments.updated_at ELSE excluded.updated_at END
+        WHERE payments.account_id=excluded.account_id AND payments.amount_rub=excluded.amount_rub
         """,
         (int(account_id), yookassa_payment_id, kind, amount_rub, status, period_start, period_end, now, now),
     )
+    if cur.rowcount == 0:
+        raise ValueError("Платёж уже зарегистрирован для другого аккаунта или суммы")
     row = conn.execute(
         "SELECT id FROM payments WHERE yookassa_payment_id=?", (yookassa_payment_id,)
     ).fetchone()
@@ -107,6 +114,7 @@ def list_payments(conn: sqlite3.Connection, account_id: int, limit: int = 50) ->
 
 def apply_refund(conn: sqlite3.Connection, account_id: int, yookassa_payment_id: str, amount_rub: float, refund_id: str, status: str = "succeeded") -> None:
     """Record an idempotent YooKassa refund and revoke access for a full refund."""
+    account = account_lifecycle.lock_account(conn, account_id)
     payment = conn.execute("SELECT id FROM payments WHERE account_id=? AND yookassa_payment_id=?", (int(account_id), yookassa_payment_id)).fetchone()
     if payment is None:
         raise ValueError("Платёж не найден")
@@ -118,7 +126,8 @@ def apply_refund(conn: sqlite3.Connection, account_id: int, yookassa_payment_id:
     )
     if status == "succeeded":
         conn.execute("UPDATE payments SET status='canceled', updated_at=? WHERE id=?", (now, int(payment["id"])))
-        conn.execute("UPDATE accounts SET status='past_due', current_period_end=?, past_due_since=?, updated_at=? WHERE id=?", (now, now, now, int(account_id)))
+        if not account_lifecycle.closed(account):
+            conn.execute("UPDATE accounts SET status='past_due', current_period_end=?, past_due_since=?, updated_at=? WHERE id=?", (now, now, now, int(account_id)))
 
 
 def apply_successful_payment(
@@ -140,6 +149,11 @@ def apply_successful_payment(
     checking the payments row's own status before doing anything; only a
     payment not already recorded as 'succeeded' actually extends the period.
     """
+    account_lifecycle.lock_account(conn, account_id)
+    owned_payment=conn.execute("SELECT status FROM payments WHERE yookassa_payment_id=? AND account_id=?",(yookassa_payment_id,int(account_id))).fetchone()
+    if owned_payment is None:
+        return
+    account_lifecycle.settle_provider(conn, account_id, yookassa_payment_id, owned_payment["status"] in {"succeeded","failed","canceled"})
     # Idempotency as an atomic claim, not a read-then-write. YooKassa delivers
     # webhooks at-least-once and can retry them concurrently; a plain
     # "SELECT status; if succeeded return" guard lets two concurrent calls both
@@ -152,8 +166,8 @@ def apply_successful_payment(
     # only commits on clean exit), un-claiming the payment too.
     claimed = conn.execute(
         "UPDATE payments SET status='succeeded', updated_at=? "
-        "WHERE yookassa_payment_id=? AND status != 'succeeded'",
-        (_now_iso(), yookassa_payment_id),
+        "WHERE yookassa_payment_id=? AND account_id=? AND status='pending'",
+        (_now_iso(), yookassa_payment_id, int(account_id)),
     )
     if claimed.rowcount == 0:
         # Provider test classification may arrive on a later, verified
@@ -168,9 +182,12 @@ def apply_successful_payment(
                 growth.record_payment_success(conn, account_id, int(payment["id"]), is_test=True, occurred_at=_now())
         return  # already applied, or no matching payment row -- nothing to extend
 
-    account = accounts.get_account_by_id(conn, account_id)
+    account = accounts.get_account_by_id(conn, account_id, include_deleted=True)
     if account is None:
         raise ValueError(f"Аккаунт {account_id} не найден.")
+    account_lifecycle.settle_provider(conn, account_id, yookassa_payment_id, True)
+    if account_lifecycle.closed(account):
+        return
 
     # Extend from the later of "now" or the current period end, so paying
     # early (or exactly on time) doesn't lose days, but a very late payment
@@ -202,9 +219,12 @@ def admin_extend_period(conn: sqlite3.Connection, account_id: int, days: int) ->
     apply_successful_payment, but with no payment record backing it (no
     yookassa_payment_id to guard idempotency with, since this is a one-off
     operator action, not a retried webhook)."""
+    account_lifecycle.lock_account(conn, account_id)
     account = accounts.get_account_by_id(conn, account_id)
     if account is None:
         raise ValueError(f"Аккаунт {account_id} не найден.")
+    if account_lifecycle.closed(account):
+        raise ValueError("Аккаунт удаляется или удалён")
 
     current_end = _parse_iso(account["current_period_end"]) or _now()
     base = max(current_end, _now())
@@ -217,13 +237,22 @@ def admin_extend_period(conn: sqlite3.Connection, account_id: int, days: int) ->
 
 
 def apply_failed_payment(conn: sqlite3.Connection, account_id: int, yookassa_payment_id: str, error: str = "") -> None:
-    conn.execute(
-        "UPDATE payments SET status='failed', error_message=?, updated_at=? WHERE yookassa_payment_id=?",
-        (error, _now_iso(), yookassa_payment_id),
+    locked_account = account_lifecycle.lock_account(conn, account_id)
+    if account_lifecycle.closed(locked_account):
+        error = ""
+    claimed=conn.execute(
+        "UPDATE payments SET status='failed', error_message=?, updated_at=? WHERE yookassa_payment_id=? AND account_id=? AND status='pending'",
+        (error, _now_iso(), yookassa_payment_id, int(account_id)),
     )
-    account = accounts.get_account_by_id(conn, account_id)
+    if claimed.rowcount == 0:
+        return
+    account = accounts.get_account_by_id(conn, account_id, include_deleted=True)
     if account is None:
         return
+    account_lifecycle.settle_provider(conn, account_id, yookassa_payment_id, True)
+    if account_lifecycle.closed(account):
+        return
+
     # Only start the grace-period clock the first time; don't keep resetting
     # past_due_since on every retry, or a client could stay in grace forever
     # by having their card decline repeatedly.
@@ -276,7 +305,7 @@ def trials_expiring_without_payment(conn: sqlite3.Connection) -> list[sqlite3.Ro
 
 def expire_trial_without_payment(conn: sqlite3.Connection, account_id: int) -> None:
     conn.execute(
-        "UPDATE accounts SET status='past_due', past_due_since=?, updated_at=? WHERE id=? AND past_due_since=''",
+        "UPDATE accounts SET status='past_due', past_due_since=?, updated_at=? WHERE id=? AND past_due_since='' AND deletion_requested_at='' AND deleted_at=''",
         (_now_iso(), _now_iso(), int(account_id)),
     )
 

@@ -938,6 +938,11 @@ def account_delete(
         )
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_for_account(conn, int(account["id"]))
+    from logic import account_lifecycle
+    with control_db.connect() as conn:
+        state = account_lifecycle.request_deletion(conn, int(account["id"]))
+    if state == "blocked_payment":
+        return PlainTextResponse("Удаление ожидает сверки незавершённой оплаты. Новые списания отключены. После сверки повторите удаление; при неизвестном результате обратитесь в поддержку.", status_code=409)
     if tenant is not None:
         import provisioning  # local import keeps app importable without Docker SDK
 

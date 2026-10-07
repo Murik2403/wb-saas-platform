@@ -3,19 +3,10 @@
 unpaid trials into the grace period, and cancel (+ stop the container of)
 accounts that have been past_due longer than the grace period allows.
 
-Meant to run once a day from cron on the VPS -- see DEPLOY.md for the
-crontab line. Idempotent to run more than once a day: accounts already
-billed for the current period won't show up in accounts_due_for_recurring_charge
-again until their new current_period_end passes, and create_payment() below
-is called with a deterministic Idempotence-Key derived from
-(account_id, current_period_end) -- so if this process dies after YooKassa
-already charged the card but before record_payment_attempt/
-apply_successful_payment ran (OOM-kill, host reboot mid-cron), tomorrow's
-run reuses the SAME key and gets back the SAME payment object from
-YooKassa instead of creating a brand new charge. Without this, a crash at
-exactly that point would double-charge the customer's real card on the
-next run, since accounts_due_for_recurring_charge would still see the
-account as due (current_period_end was never advanced).
+Meant to run once a day from cron on the VPS. A durable operation claim is
+committed before each upstream request. Unknown outcomes remain blocked for
+reconciliation; they are never retried automatically. YooKassa idempotency
+lasts only24hours, so a stable request key alone cannot protect a next-day retry.
 
 Exit code is nonzero if any recurring charge raised an exception talking to
 YooKassa (network/API failure) -- a plain "card declined" is NOT an error
@@ -33,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 import config  # noqa: E402
 import provisioning  # noqa: E402
 import yookassa_client  # noqa: E402
-from logic import accounts, billing, db as control_db  # noqa: E402
+from logic import account_lifecycle, accounts, billing, db as control_db  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("run_billing_cycle")
@@ -48,13 +39,23 @@ def charge_due_accounts() -> int:
     api_failures = 0
     for account in due:
         account_id = int(account["id"])
-        logger.info("Charging account %s (%s) for next period", account_id, account["email"])
+        try:
+            with control_db.connect() as conn:
+                fresh = account_lifecycle.lock_account(conn, account_id)
+                if fresh is None or fresh["status"] not in {"trialing", "active"} or not fresh["payment_method_id"] or not fresh["current_period_end"] or fresh["current_period_end"] > billing._now_iso():
+                    continue
+                key = f"recurring:{account_id}:{fresh['current_period_end']}"
+                operation = account_lifecycle.begin_payment(conn, account_id, key, expected_amount_rub=f"{config.SUBSCRIPTION_PRICE_RUB:.2f}")
+                account = accounts.get_account_by_id(conn, account_id)
+        except account_lifecycle.LifecycleConflict:
+            continue
+        logger.info("Charging account %s for next period", account_id)
         try:
             payment = yookassa_client.create_payment(
                 amount_rub=config.SUBSCRIPTION_PRICE_RUB,
                 description=f"Продление подписки MARKETSHELPER — {account['email']}",
                 payment_method_id=account["payment_method_id"],
-                metadata={"account_id": str(account_id)},
+                metadata={"account_id": str(account_id), "mh_operation_id": operation},
                 customer_email=account["email"],
                 # Deterministic per (account, period being paid for) -- see
                 # module docstring. Stays stable across reruns until this
@@ -63,8 +64,12 @@ def charge_due_accounts() -> int:
                 # 'succeeded' result.
                 idempotence_key=f"recurring:{account_id}:{account['current_period_end']}",
             )
-        except yookassa_client.YooKassaError:
-            logger.exception("YooKassa API call failed for account %s", account_id)
+            if not isinstance(payment, dict) or not isinstance(payment.get("id"), str) or not payment["id"]:
+                raise ValueError("Invalid payment response")
+        except Exception:
+            with control_db.connect() as conn:
+                account_lifecycle.mark_payment_outcome(conn, operation, "unknown")
+            logger.warning("Payment outcome unknown for account %s; reconciliation required", account_id)
             api_failures += 1
             continue
 
@@ -74,6 +79,8 @@ def charge_due_accounts() -> int:
                 status="pending",
             )
             status = payment.get("status")
+            account_lifecycle.mark_payment_outcome(conn, operation,
+                "completed" if status in {"succeeded", "canceled"} else "provider_pending", payment["id"])
             if status == "succeeded":
                 payment_method_id = yookassa_client.extract_payment_method_id(payment) or account["payment_method_id"]
                 billing.apply_successful_payment(

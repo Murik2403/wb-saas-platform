@@ -237,7 +237,7 @@ payments. It is not a historical accounting reconstruction.
     cutoff = _utc(now)
     accounts_rows = conn.execute(
         "SELECT a.id,a.email,g.*,t.slug FROM accounts a LEFT JOIN growth_sources g ON g.account_id=a.id "
-        "LEFT JOIN tenant_instances t ON t.account_id=a.id"
+        "LEFT JOIN tenant_instances t ON t.account_id=a.id WHERE a.deleted_at=''"
     ).fetchall()
     included: dict[int, dict[str, Any]] = {}
     excluded_count = untracked_count = 0

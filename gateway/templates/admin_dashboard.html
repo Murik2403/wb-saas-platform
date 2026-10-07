@@ -125,5 +125,25 @@
   </tbody>
 </table>
 
+{% if billing_operations %}
+<h2>Оплаты, ожидающие сверки</h2>
+<p>Новый платёж не запускается до сверки. Укажите идентификатор из кабинета ЮKassa: действие только читает подтверждённый статус, не списывает и не возвращает деньги.</p>
+<table><thead><tr><th>Аккаунт</th><th>Состояние</th><th>Операция</th><th>Сверка</th></tr></thead><tbody>
+{% for operation in billing_operations %}
+<tr><td>{{ operation.account_id }}</td><td>{{ operation.state }}</td><td>{{ operation.operation_id }}</td><td>
+<form method="post" action="/admin/billing-operation/{{ operation.operation_id }}/reconcile">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>Идентификатор платежа ЮKassa <input name="provider_payment_id" value="{{ operation.provider_id }}" required maxlength="36"></label>
+<button type="submit">Сверить без списания</button>
+</form></td></tr>
+{% endfor %}
+</tbody></table>
+{% endif %}
+{% if pending_payments %}
+<h2>Платежи без окончательного статуса</h2>
+<p>Сверка только проверяет статус уже созданного платежа.</p>
+<ul>{% for payment in pending_payments %}<li>Аккаунт {{ payment.account_id }} · {{ payment.yookassa_payment_id }}
+<form method="post" action="/admin/payment/{{ payment.yookassa_payment_id }}/reconcile"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Сверить без списания</button></form></li>{% endfor %}</ul>
+{% endif %}
 <div class="footer-link"><a href="/">На главную</a></div>
 {% endblock %}
