@@ -1,13 +1,15 @@
 """Actual HTTP acceptance of fresh tenant-scoped delegation role reads."""
 import asyncio
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 from fastapi import FastAPI
 import config
 import internal_routes
 from internal_auth import tenant_credential
-from logic import accounts
+from logic import accounts, erasure_ledger
 from .base import GatewayDbTestCase
 
 
@@ -107,3 +109,22 @@ class TenantMemberRoleTests(GatewayDbTestCase):
     def test_unconfigured_secret_never_authenticates(self):
         with mock.patch.object(config, "INTERNAL_API_SECRET", ""):
             self.assertEqual(self.read().status_code, 403)
+
+    def test_erased_manager_from_snapshot_never_gets_fresh_delegation(self):
+        ledger_path = Path(self._tmpdir.name) / "independent-erasures.sqlite3"
+        erasure_ledger.initialize(ledger_path)
+        with mock.patch.dict(os.environ, {
+            "WB_SAAS_ERASURE_LEDGER_PATH": str(ledger_path),
+            "WB_SAAS_ERASURE_LEDGER_REQUIRED": "1",
+        }):
+            with self.connect() as conn:
+                conn.execute("INSERT INTO tenant_memberships(tenant_id,account_id,role,created_at,updated_at) VALUES (?,?,'manager','2026-10-08','2026-10-08')", (self.tenant, self.other))
+                manager = dict(accounts.get_account_by_id(conn, self.other))
+            self.assertEqual(self.read(self.other).json(), {"role": "manager"})
+            erasure_ledger.record(manager)
+            with self.connect() as conn:
+                restored = accounts.get_account_by_id(conn, self.other)
+                self.assertEqual(restored["deletion_requested_at"], "")
+                self.assertEqual(restored["status"], "active")
+            self.assertEqual(self.read(self.other).json(), {"role": None})
+            self.assertEqual(self.read(self.owner).json(), {"role": "owner"})

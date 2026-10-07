@@ -206,6 +206,8 @@ services:
           - gateway
     volumes:
       - gateway_data:/app/data
+      # Independent of control-plane snapshots; initialize explicitly before startup.
+      - ${WB_SAAS_ERASURE_LEDGER_DIR:-/opt/wb-saas/erasure-ledger}:/app/erasure-ledger
       # scripts/run_billing_cycle.py and scripts/backup_tenant_volumes.py both
       # read the real accounts DB (logic/db.py), which only exists inside
       # this container's /app/data (the gateway_data volume above) -- running
@@ -217,6 +219,8 @@ services:
       - ./scripts:/app/scripts:ro
     environment:
       - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
+      - WB_SAAS_ERASURE_LEDGER_PATH=/app/erasure-ledger/erasures.sqlite3
+      - WB_SAAS_ERASURE_LEDGER_REQUIRED=1
       - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
       - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:redesign}
       - WB_SAAS_DOCKER_NETWORK=${WB_SAAS_DOCKER_NETWORK:-wbsaas_net}

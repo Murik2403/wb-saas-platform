@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 import config
 import mailer
 import telegram_bot
-from logic import accounts, db as control_db
+from logic import accounts, account_lifecycle, db as control_db
 
 logger = logging.getLogger("wb_saas_gateway.internal")
 
@@ -60,7 +60,7 @@ def tenant_member_role(payload: TenantMemberRoleInput, request: Request):
         conn.execute("BEGIN")
         tenant = accounts.get_tenant_by_slug(conn, payload.slug)
         account = accounts.get_account_by_id(conn, int(payload.account))
-        if tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant) and accounts.is_email_verified(account):
+        if tenant is not None and tenant["status"] == "running" and accounts.tenant_has_access(conn, tenant) and not account_lifecycle.closed(account) and accounts.is_email_verified(account):
             membership = accounts.get_tenant_membership(conn, int(tenant["id"]), int(payload.account))
             if membership is not None and membership["role"] in accounts.TENANT_ROLES:
                 role = membership["role"]
@@ -91,7 +91,7 @@ def deliver_report_email(slug: str, report_name: str, pdf_bytes: bytes, filename
         if tenant is None:
             raise HTTPException(status_code=404, detail="unknown tenant")
         account = accounts.get_account_by_id(conn, int(tenant["account_id"]))
-    if account is None:
+    if account_lifecycle.closed(account):
         raise HTTPException(status_code=404, detail="unknown account")
 
     status = mailer.send_report_email(account["email"], report_name, pdf_bytes, filename)

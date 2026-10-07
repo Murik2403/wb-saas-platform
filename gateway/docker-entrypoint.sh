@@ -8,6 +8,8 @@
 # docstring) and returns immediately when unconfigured.
 set -e
 
+python3 -m logic.erasure_recovery --check
+
 python3 telegram_bot.py &
 
 # exec (not background+wait) makes uvicorn PID 1, so it receives SIGTERM

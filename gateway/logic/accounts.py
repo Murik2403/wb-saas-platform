@@ -236,11 +236,11 @@ def is_email_verified(account: sqlite3.Row | dict[str, Any] | None) -> bool:
 
 def authenticate_account(conn: sqlite3.Connection, email: str, password: str) -> sqlite3.Row | None:
     account = get_account_by_email(conn, email)
-    if account is None or dict(account).get("deleted_at"):
+    if account_lifecycle.closed(account):
         verify_password(password, DUMMY_PASSWORD_HASH, DUMMY_PASSWORD_SALT)
         return None
     account = account_lifecycle.lock_account(conn, int(account["id"]))
-    if account is None or dict(account).get("deleted_at"):
+    if account_lifecycle.closed(account):
         return None
     if not verify_password(password, account["password_hash"], account["password_salt"]):
         return None
@@ -378,7 +378,7 @@ def _hash_token(token: str) -> str:
 
 def create_session(conn: sqlite3.Connection, account_id: int, ttl_hours: int = SESSION_TTL_HOURS) -> str:
     account = account_lifecycle.lock_account(conn, account_id)
-    if account is None or dict(account).get("deleted_at"):
+    if account_lifecycle.closed(account):
         raise ValueError("Аккаунт удалён")
     token = secrets.token_urlsafe(SESSION_TOKEN_BYTES)
     now = datetime.now(timezone.utc)
@@ -405,7 +405,37 @@ def resolve_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     if expires_at < datetime.now(timezone.utc):
         conn.execute("DELETE FROM sessions WHERE token_hash=?", (row["token_hash"],))
         return None
-    return get_account_by_id(conn, int(row["account_id"]))
+    account = get_account_by_id(conn, int(row["account_id"]))
+    return None if account_lifecycle.closed(account) else account
+
+
+def resolve_deletion_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
+    """Existing session usable only to retry deletion, never ordinary access.
+
+    No login/session creation is permitted for closed identities. Reconciliation
+    invalidates these sessions on startup; after that an operator retry is needed.
+    """
+    from . import erasure_ledger
+    try:
+        erasure_ledger.validate_configured()
+        if not token:
+            return None
+        row = conn.execute("SELECT * FROM sessions WHERE token_hash=?", (_hash_token(token),)).fetchone()
+        if row is None:
+            return None
+        expires_at = datetime.fromisoformat(row["expires_at"])
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            return None
+        account = get_account_by_id(conn, int(row["account_id"]))
+        if account is None or dict(account).get("deleted_at"):
+            return None
+        if not dict(account).get("deletion_requested_at") and not erasure_ledger.is_erased(account):
+            return None
+        return account
+    except (erasure_ledger.LedgerUnavailable, ValueError):
+        return None
 
 
 def purge_expired_sessions(conn: sqlite3.Connection) -> int:
@@ -659,6 +689,8 @@ def create_telegram_link_code(conn: sqlite3.Connection, account_id: int, max_att
     Telegram bot as `/link <code>` to associate their chat with this
     account -- see telegram_link_codes' schema comment in logic/db.py for
     why this indirection is needed at all."""
+    if account_lifecycle.closed(get_account_by_id(conn, account_id)):
+        raise ValueError("Аккаунт удаляется или удалён")
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=TELEGRAM_LINK_CODE_TTL_MINUTES)
     for _ in range(max_attempts):
@@ -683,6 +715,8 @@ def consume_telegram_link_code(conn: sqlite3.Connection, code: str, chat_id: str
         return False
     row = conn.execute("SELECT * FROM telegram_link_codes WHERE code=?", (code,)).fetchone()
     if row is None or row["consumed_at"] is not None:
+        return False
+    if account_lifecycle.closed(get_account_by_id(conn, int(row["account_id"]))):
         return False
     if tenant_id is not None:
         if 'tenant_id' not in row.keys() or row['tenant_id'] != tenant_id:
@@ -712,6 +746,8 @@ def consume_telegram_link_code(conn: sqlite3.Connection, code: str, chat_id: str
 def get_telegram_chat_id_for_slug(conn: sqlite3.Connection, slug: str) -> str:
     tenant = get_tenant_by_slug(conn, slug)
     if tenant is None:
+        return ""
+    if account_lifecycle.closed(get_account_by_id(conn, int(tenant["account_id"]))):
         return ""
     return str(tenant["telegram_chat_id"] or "")
 

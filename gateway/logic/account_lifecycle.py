@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import secrets
+from . import erasure_ledger
 
 class LifecycleConflict(ValueError):
     pass
@@ -15,7 +16,13 @@ def closed(account):
     if account is None:
         return True
     row = dict(account)
-    return bool(row.get("deletion_requested_at") or row.get("deleted_at"))
+    if row.get("deletion_requested_at") or row.get("deleted_at"):
+        return True
+    try:
+        return erasure_ledger.is_erased(row)
+    except erasure_ledger.LedgerUnavailable:
+        # Enabled but inaccessible/corrupt guard must never grant access.
+        return True
 
 
 def initialize(conn, *, postgres=False):
@@ -79,6 +86,10 @@ def request_deletion(conn, account_id):
     account = lock_account(conn, account_id)
     if account is None:
         raise LifecycleConflict("Аккаунт не найден")
+    try:
+        erasure_ledger.record(account)
+    except erasure_ledger.LedgerUnavailable:
+        raise LifecycleConflict("Реестр удаления недоступен; повторите позже") from None
     conn.execute("UPDATE accounts SET deletion_requested_at=CASE WHEN deletion_requested_at='' THEN ? ELSE deletion_requested_at END,status='canceled',updated_at=? WHERE id=?", (now(),now(),int(account_id)))
     return "blocked_payment" if unresolved(conn,account_id) else "ready"
 
@@ -91,6 +102,10 @@ def finalize_deletion(conn, account_id):
         raise LifecycleConflict("Платёжная операция ещё не сверена")
     if dict(account).get("deleted_at"):
         return
+    try:
+        erasure_ledger.record(account, finalized=True)
+    except erasure_ledger.LedgerUnavailable:
+        raise LifecycleConflict("Реестр удаления недоступен; повторите позже") from None
     # Fixed tables only; provider IDs/amounts/refund links are intentionally retained.
     conn.execute("DELETE FROM tenant_instances WHERE account_id=?",(int(account_id),))
     for table in ("sessions","tenant_memberships","telegram_link_codes","password_reset_tokens",

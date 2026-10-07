@@ -9,6 +9,7 @@ functions.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -25,7 +26,7 @@ import config  # noqa: E402
 import internal_routes  # noqa: E402
 import mailer  # noqa: E402
 import telegram_bot  # noqa: E402
-from logic import accounts  # noqa: E402
+from logic import accounts, erasure_ledger  # noqa: E402
 
 from .base import GatewayDbTestCase  # noqa: E402
 
@@ -140,6 +141,57 @@ class DeliverReportEmailTests(GatewayDbTestCase):
         self.assertEqual(ctx.exception.status_code, 413)
         self.assertEqual(upload.read_sizes, [internal_routes.MAX_REPORT_UPLOAD_BYTES + 1])
         deliver.assert_not_called()
+
+
+class RestoredErasedDeliveryTests(GatewayDbTestCase):
+    """Active SQL rows from an old snapshot must not bypass the independent guard."""
+
+    def setUp(self):
+        super().setUp()
+        self.init_db()
+        ledger_path = Path(self._tmpdir.name) / "independent-erasures.sqlite3"
+        erasure_ledger.initialize(ledger_path)
+        self.environment = mock.patch.dict(os.environ, {
+            "WB_SAAS_ERASURE_LEDGER_PATH": str(ledger_path),
+            "WB_SAAS_ERASURE_LEDGER_REQUIRED": "1",
+        })
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        with self.connect() as conn:
+            self.account_id = accounts.create_account(conn, "restored@synthetic.invalid", "synthetic-password-123")
+            accounts.set_account_status(conn, self.account_id, "active")
+            self.slug = "restored-synthetic"
+            tenant_id = accounts.create_tenant_instance(conn, self.account_id, self.slug)
+            accounts.set_tenant_status(conn, tenant_id, "running")
+            conn.execute("UPDATE tenant_instances SET telegram_chat_id='synthetic-chat' WHERE id=?", (tenant_id,))
+            original = dict(accounts.get_account_by_id(conn, self.account_id))
+        # Only the independent ledger changes; SQL represents the pre-deletion snapshot.
+        erasure_ledger.record(original)
+
+    def test_erased_owner_cannot_receive_email_even_with_active_snapshot_rows(self):
+        with self.connect() as conn:
+            row = accounts.get_account_by_id(conn, self.account_id)
+            self.assertEqual(row["deletion_requested_at"], "")
+            self.assertEqual(row["status"], "active")
+        with mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect)), \
+             mock.patch.object(mailer, "send_report_email") as send:
+            with self.assertRaises(HTTPException) as error:
+                internal_routes.deliver_report_email(self.slug, "Synthetic", b"%PDF-1.4", "synthetic.pdf")
+            self.assertEqual(error.exception.status_code, 404)
+        send.assert_not_called()
+
+    def test_erased_owner_cannot_receive_telegram_document_or_text(self):
+        with mock.patch.object(internal_routes, "control_db", mock.Mock(connect=self.connect)), \
+             mock.patch.object(telegram_bot, "send_document") as document, \
+             mock.patch.object(telegram_bot, "send_message") as message:
+            with self.assertRaises(HTTPException) as pdf_error:
+                internal_routes.deliver_report_telegram(self.slug, "Synthetic", b"%PDF-1.4", "synthetic.pdf")
+            self.assertEqual(pdf_error.exception.status_code, 409)
+            with self.assertRaises(HTTPException) as text_error:
+                internal_routes.deliver_text_telegram(self.slug, "Synthetic")
+            self.assertEqual(text_error.exception.status_code, 409)
+        document.assert_not_called()
+        message.assert_not_called()
 
 
 class TelegramLinkCodeTests(GatewayDbTestCase):

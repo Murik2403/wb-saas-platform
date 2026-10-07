@@ -39,6 +39,7 @@ from product_feedback_routes import router as product_feedback_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
 from logic import accounts, compliance, csrf, db as control_db, password_reset, growth, trial_emails
 from logic import login_throttle
+from logic import erasure_ledger, erasure_recovery
 from rate_limiter import RateLimiter
 from security_headers import SecurityHeadersMiddleware
 from sentry_integration import initialize as initialize_sentry
@@ -52,6 +53,7 @@ logger = logging.getLogger("wb_saas_gateway")
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    erasure_recovery.check()
     with control_db.connect() as conn:
         control_db.init_db(conn)
         login_throttle.initialize(conn)
@@ -59,6 +61,12 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
+
+
+@app.exception_handler(erasure_ledger.LedgerUnavailable)
+async def erasure_ledger_unavailable(_request: Request, _error: Exception):
+    return PlainTextResponse("Проверка безопасности аккаунта временно недоступна.", status_code=503)
+
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(growth_web.AcquisitionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -931,6 +939,10 @@ def account_delete(
     csrf_token: str = Form(""),
 ):
     account = _current_account(request)
+    if account is None:
+        token = request.cookies.get(config.SESSION_COOKIE_NAME, "")
+        with control_db.connect() as conn:
+            account = accounts.resolve_deletion_session(conn, token) if token else None
     if account is None:
         return RedirectResponse("/login", status_code=303)
     csrf_token_ok = csrf.verify(request, csrf_token)
