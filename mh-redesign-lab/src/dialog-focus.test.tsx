@@ -4,6 +4,17 @@ import {afterEach,it,expect,vi} from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import {createDialogFocusScope,useDialogFocus} from './dialog-focus';
 afterEach(cleanup);
+it('locks the document scroll until the last nested scope closes and restores inline styles',()=>{
+ const html=document.documentElement,body=document.body;
+ const originalHtml=html.style.overflow,originalBody=body.style.overflow;
+ html.style.overflow='scroll';body.style.overflow='clip';
+ const parent=document.createElement('section'),child=document.createElement('section');document.body.append(parent,child);
+ const closeParent=createDialogFocusScope(parent,vi.fn()),closeChild=createDialogFocusScope(child,vi.fn());
+ expect(html.style.overflow).toBe('hidden');expect(body.style.overflow).toBe('hidden');
+ closeParent();expect(html.style.overflow).toBe('hidden');
+ closeChild();expect(html.style.overflow).toBe('scroll');expect(body.style.overflow).toBe('clip');
+ parent.remove();child.remove();html.style.overflow=originalHtml;body.style.overflow=originalBody;
+});
 it('activates a pre-existing sibling native dialog and preserves isolation on out-of-order disposal',()=>{
  const background=document.createElement('button'),parent=document.createElement('section'),child=document.createElement('dialog');parent.innerHTML='<button>Parent</button>';child.innerHTML='<button>Native</button>';document.body.append(background,parent,child);
  const disposeParent=createDialogFocusScope(parent,vi.fn());expect(child).toHaveAttribute('inert');child.open=true;

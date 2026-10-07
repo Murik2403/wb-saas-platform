@@ -15,10 +15,14 @@ networks:
     ipam:
       config:
         - subnet: fd00:dead:beef::/64
-  provisioning_net:
-    # Only gateway and provisioner can communicate here. It has no route
-    # outside Docker and no published port, so tenant and edge containers
-    # cannot reach the Docker-control boundary.
+  control_api_net:
+    name: ${WB_SAAS_CONTROL_API_NETWORK:-wbsaas_control_api}
+    internal: true
+  docker_control_net:
+    name: ${WB_SAAS_DOCKER_CONTROL_NETWORK:-wbsaas_docker_control}
+    internal: true
+  docker_discovery_net:
+    name: ${WB_SAAS_DOCKER_DISCOVERY_NETWORK:-wbsaas_docker_discovery}
     internal: true
 
 volumes:
@@ -33,8 +37,7 @@ services:
     image: tecnativa/docker-socket-proxy:0.3
     restart: unless-stopped
     networks:
-      - wbsaas_net
-      - provisioning_net
+      - docker_control_net
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -58,6 +61,22 @@ services:
       - VOLUMES=1
       - VOLUMES_CREATE=1
 
+  docker-discovery-proxy:
+    # Only Traefik discovery reaches this read-only Docker API endpoint.
+    image: tecnativa/docker-socket-proxy:0.3
+    restart: unless-stopped
+    networks:
+      - docker_discovery_net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - POST=0
+      - CONTAINERS=1
+      - NETWORKS=1
+      - EVENTS=1
+      - PING=1
+      - VERSION=1
+
   provisioner:
     build: ./provisioner
     mem_limit: ${WB_SAAS_PROVISIONER_MEM_LIMIT:-256m}
@@ -69,13 +88,17 @@ services:
     depends_on:
       - docker-socket-proxy
     networks:
-      - provisioning_net
+      control_api_net:
+        aliases:
+          - provisioner
+      docker_control_net: {}
     volumes:
       # The daemon sees the host path from WB_SAAS_BACKUP_DIR while this
       # container sees the same fixed location at /backups for retention.
       - ${WB_SAAS_BACKUP_DIR:-/opt/wb-saas/backups}:/backups
     environment:
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - WB_SAAS_PROVISIONER_BEARER_KEY=${WB_SAAS_PROVISIONER_BEARER_KEY:?Provisioner purpose key is required}
       - WB_SAAS_PARENT_DOMAIN=${WB_SAAS_PARENT_DOMAIN}
       - WB_SAAS_TENANT_SUBDOMAIN_PREFIX=${WB_SAAS_TENANT_SUBDOMAIN_PREFIX:-app}
       - WB_SAAS_TENANT_IMAGE=${WB_SAAS_TENANT_IMAGE:-wb-dashboard-tenant:redesign}
@@ -145,7 +168,7 @@ services:
     restart: unless-stopped
     networks:
       - wbsaas_net
-      - provisioning_net
+      - docker_discovery_net
     ports:
       - "80:80"
       - "443:443"
@@ -154,7 +177,7 @@ services:
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
       - traefik_letsencrypt:/letsencrypt
     depends_on:
-      - docker-socket-proxy
+      - docker-discovery-proxy
     environment:
       # Traefik reads TRAEFIK_* env vars as static config directly (unlike
       # ${VAR} placeholders inside traefik.yml, which it does NOT expand).
@@ -178,7 +201,7 @@ services:
       wbsaas_net:
         aliases:
           - gateway
-      provisioning_net:
+      control_api_net:
         aliases:
           - gateway
     volumes:
@@ -202,7 +225,10 @@ services:
       - WB_SAAS_TENANT_CPU_QUOTA=${WB_SAAS_TENANT_CPU_QUOTA:-1.0}
       - WB_SAAS_PROVISION_TIMEOUT=${WB_SAAS_PROVISION_TIMEOUT:-180}
       - WB_SAAS_PROVISIONER_URL=http://provisioner:8001
+      - WB_SAAS_PROVISIONER_BEARER_KEY=${WB_SAAS_PROVISIONER_BEARER_KEY:?Provisioner purpose key is required}
       - WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY=${WB_SAAS_TENANT_ENCRYPTION_MASTER_KEY:-}
+      - WB_SAAS_TENANT_ENCRYPTION_KEY_ID=${WB_SAAS_TENANT_ENCRYPTION_KEY_ID:-current}
+      - WB_SAAS_TENANT_ENCRYPTION_KEYRING=${WB_SAAS_TENANT_ENCRYPTION_KEYRING:-}
       - WB_SAAS_COOKIE_SECURE=${WB_SAAS_COOKIE_SECURE:-1}
       # Optional public analytics and verification: .env alone does not
       # inject values into a service with an explicit environment list.

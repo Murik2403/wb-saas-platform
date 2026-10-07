@@ -14,7 +14,12 @@ it("all eleven destinations stay in the Ozon cabinet without a WB shop selector"
  expect(new URL(location.href).searchParams.get("marketplace")).toBe("ozon");expect(screen.queryByLabelText("Магазин кабинета")).not.toBeInTheDocument();
 });
 it("demo cannot edit even when role is owner",()=>{
- render(<OzonCabinetShell session={{...session,is_demo:true}}/>);expect(screen.getByTestId("ozon-page")).toHaveTextContent('"canWrite":false');
+ render(<OzonCabinetShell session={{...session,is_demo:true}}/>);expect(screen.getByTestId("ozon-page")).toHaveTextContent('"canWrite":false');expect(screen.getByTestId("ozon-page")).toHaveTextContent('"isOwner":false');
+});
+it.each([['manager',true],['viewer',false]] as const)('keeps %s operational capability separate from connection ownership', (role,canWrite)=>{
+ render(<OzonCabinetShell session={{...session,role,can_write:canWrite}}/>);
+ expect(screen.getByTestId('ozon-page')).toHaveTextContent(`"canWrite":${canWrite}`);
+ expect(screen.getByTestId('ozon-page')).toHaveTextContent('"isOwner":false');
 });
 it("invalid long date ranges never become active or trigger new report requests",()=>{
  render(<OzonCabinetShell session={session}/>);fireEvent.change(screen.getByLabelText("Ozon: начало периода"),{target:{value:"2025-01-01"}});fireEvent.click(screen.getByText("Применить период"));expect(screen.getByRole("alert")).toHaveTextContent("от 1 до 31 дня");expect(screen.getByTestId("ozon-page")).toHaveTextContent('"start":"2026-09-01"');

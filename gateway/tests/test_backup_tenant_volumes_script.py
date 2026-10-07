@@ -47,6 +47,8 @@ def _fake_response(payload: dict[str, Any]) -> Mock:
 
 
 class BackupTenantVolumesScriptTests(TestCase):
+    def setUp(self):
+        self.enterContext(patch('scripts.backup_tenant_volumes.provisioner_headers',return_value={'Authorization':'Bearer synthetic-purpose-key'}))
     @patch("scripts.backup_tenant_volumes.requests.post")
     @patch("scripts.backup_tenant_volumes.control_db.connect")
     def test_backup_script_backups_control_plane_and_all_tenants(

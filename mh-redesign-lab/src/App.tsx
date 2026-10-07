@@ -325,12 +325,7 @@ function App() {
 
   const handleLogout = () => {
     setSessionMenuOpen(false);
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = getLogoutUrl();
-    form.style.display = "none";
-    document.body.appendChild(form);
-    form.submit();
+    window.location.assign(getLogoutUrl());
   };
 
   const goToHomePage = () => {
@@ -479,6 +474,10 @@ function App() {
     const normalized = `${item.title} ${item.sku}`.toLocaleLowerCase("ru-RU");
     try {
       if (normalized.includes("копи") || normalized.includes("резервн")) {
+        if (session?.mode === "demo" || session?.user.role !== "owner") {
+          setToast("Резервные копии доступны владельцу кабинета.");
+          return;
+        }
         const backup = await createTenantBackup();
         await dashboard.refresh();
         await setPlanStatus(item, "done", `Резервная копия ${backup.name} создана.`);
@@ -1207,7 +1206,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <SettingsViewV2 canManage={session?.mode !== "demo" && session?.user.role === "owner"} sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} />} />) : null}
+        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <SettingsViewV2 canManage={session?.mode !== "demo" && session?.user.role === "owner"} canWriteOperations={session?.mode !== "demo" && (session?.user.role === "owner" || session?.user.role === "manager")} sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} />} />) : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">
@@ -1259,6 +1258,10 @@ function App() {
           onFilterChange={setPlanFilter}
           onOpenFifo={() => handleAction("Открыть сверку FIFO", "")}
           onExecute={executePlanItem}
+          canExecute={(item) => {
+            const text = `${item.title} ${item.sku}`.toLocaleLowerCase("ru-RU");
+            return !(text.includes("копи") || text.includes("резервн")) || (session?.mode !== "demo" && session?.user.role === "owner");
+          }}
           busyId={planBusyId}
           onUpdate={(id, patch) => {
             void updateActionPlanItem(id, patch)
@@ -1344,6 +1347,7 @@ function PlanDrawer({
   onFilterChange,
   onOpenFifo,
   onExecute,
+  canExecute,
   busyId,
   onUpdate,
 }: {
@@ -1353,6 +1357,7 @@ function PlanDrawer({
   onFilterChange: (filter: "all" | ActionPlanItem["status"]) => void;
   onOpenFifo: () => void;
   onExecute: (item: ActionPlanItem) => Promise<void>;
+  canExecute: (item: ActionPlanItem) => boolean;
   busyId: string | null;
   onUpdate: (id: string, patch: Partial<Pick<ActionPlanItem, "status" | "assignee" | "due_at" | "priority" | "result">>) => void;
 }) {
@@ -1410,12 +1415,12 @@ function PlanDrawer({
               </StatusPill>
               <div className="plan-item-actions">
                 {item.status === "created" || item.status === "in_progress" ? (
-                  <button className="secondary-button" type="button" disabled={busyId === item.id} onClick={() => void onExecute(item)}>
+                  <button className="secondary-button" type="button" disabled={busyId === item.id || !canExecute(item)} title={!canExecute(item) ? "Резервные копии доступны владельцу кабинета" : undefined} onClick={() => void onExecute(item)}>
                     {busyId === item.id ? "Выполняем…" : item.status === "in_progress" ? "Продолжить" : "В работу"}
                   </button>
                 ) : null}
                 {item.status === "blocked" ? (
-                  <button className="secondary-button" type="button" disabled={busyId === item.id} onClick={() => void onExecute(item)}>
+                  <button className="secondary-button" type="button" disabled={busyId === item.id || !canExecute(item)} title={!canExecute(item) ? "Резервные копии доступны владельцу кабинета" : undefined} onClick={() => void onExecute(item)}>
                     {busyId === item.id ? "Выполняем…" : "Запустить снова"}
                   </button>
                 ) : null}
@@ -2398,7 +2403,7 @@ export function ControlView({
   return <div className="workspace-view"><section className="hero-strip"><div><div className="eyebrow"><ClipboardCheck size={16} /> контроль</div><h2>{score.toFixed(0)}% готовности данных</h2><p>{String(data.fifo_guard.reason ?? "Проверка полноты и надёжности расчётов.")}</p></div><div className="hero-actions"><button className="secondary-button" type="button" onClick={onOpenFifo}><ClipboardCheck size={17} /><span>Открыть FIFO-сверку</span></button></div></section><MetricGrid metrics={[{label:"Критично",value:String(summary.critical ?? 0),delta:"блокирует",detail:"требует действий",tone:Number(summary.critical ?? 0) ? "danger" : "good"},{label:"Внимание",value:String(summary.warnings ?? 0),delta:"с оговорками",detail:"можно проверить",tone:"warn"},{label:"Готово",value:String(summary.ready ?? 0),delta:"проверок",detail:"можно использовать",tone:"good"},{label:"FIFO",value:String(data.fifo_guard.status ?? "—"),delta:"защита",detail:cabinetText(String(data.fifo_guard.guard_mode ?? "")),tone}]} onMetricClick={(metric) => metric.label === "FIFO" ? onOpenFifo() : onNavigate("control")} /><p className="form-hint">Нормы материала и себестоимость можно проверить в <button className="ghost-button" type="button" onClick={() => onNavigate("settings")}>настройках производства</button>.</p><WorkspaceTabs ariaLabel="Разделы страницы Контроль" storageKey="mh.tab.control" tabs={[{id:"attention",label:`Требует внимания · ${actionableChecks.length}`},{id:"ok",label:`В порядке · ${readyChecks.length}`}]} target={target} targetMap={{"control-checks":"attention"}} initial={actionableChecks.length ? "attention" : "ok"} panels={{attention:<section className="work-section" id="control-checks"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{actionableChecks.length ? <div className="data-quality-list">{actionableChecks.map((row,index) => { const status = String(row.Статус ?? ""); return <button className="data-quality-card detail-trigger" key={`${String(row.Проверка ?? "check")}-${index}`} type="button" onClick={() => openCheck(row)}><div className="data-quality-heading"><div><span>{cabinetText(String(row.Модуль ?? "Контроль"))}</span><strong>{cabinetText(String(row.Проверка ?? ""))}</strong></div><StatusPill tone={checkTone(status)}>{status}</StatusPill></div><p><span>Детали</span>{String(row.Детали ?? "—")}</p><p><span>Рекомендуемое действие</span>{String(row["Что сделать"] ?? "—")}</p></button>; })}</div> : <p className="plan-empty">{checks.length ? "Проверок, требующих внимания, нет" : "Проверок пока нет"}</p>}</section>,ok:<section className="work-section"><SectionHeader kicker="Проверки" title="Надёжность расчётов"><ClipboardCheck size={18} /></SectionHeader>{readyChecks.length ? <div className="data-quality-list">{readyChecks.map((row,index) => <button className="data-quality-card detail-trigger" type="button" key={index} onClick={() => openCheck(row)}><strong>{cabinetText(String(row.Проверка ?? ""))}</strong><p>{String(row.Детали ?? "—")}</p></button>)}</div> : <p className="plan-empty">Проверок в порядке пока нет</p>}</section>}} /></div>;
 }
 
-function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false }: { onSynced: () => Promise<void>; migration: React.ReactNode; sectionTarget?: string | null; canManage?: boolean }) {
+function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false, canWriteOperations = false }: { onSynced: () => Promise<void>; migration: React.ReactNode; sectionTarget?: string | null; canManage?: boolean; canWriteOperations?: boolean }) {
   const [requestedSection, setRequestedSection] = useState(sectionTarget);
   useEffect(() => { if (sectionTarget) setRequestedSection(sectionTarget); }, [sectionTarget]);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
@@ -2674,7 +2679,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false 
           <p>Токены остаются в защищённом хранилище кабинета. Резервные копии не содержат ключей доступа.</p>
         </div>
       </section>
-      <OnboardingPanel connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
+      <OnboardingPanel canManageConnections={canManage} canWrite={canWriteOperations} connected={settings.wb_connected} runs={syncRuns} costs={productCosts}
         days={settings.initial_history_days} busy={busy !== null} token={wbToken}
         onTokenChange={setWbToken} onConnect={() => void saveWBToken()}
         onDaysChange={(days) => setSettings({ ...settings, initial_history_days: days })}

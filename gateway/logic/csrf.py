@@ -16,11 +16,9 @@ forged cross-site POST has no way to read that cookie value to also put
 it in the hidden field, so the two won't match even in a browser that,
 for whatever reason, didn't enforce SameSite on the session cookie.
 
-Deliberately not applied to /logout: it's submitted from the tenant
-container's own subdomain (see tenant-app/app.py's sidebar), a different
-origin that has no access to this cookie at all -- and the worst case of
-a forged logout is mild annoyance, not data or money at risk, unlike
-/billing/cancel or /billing/checkout.
+Logout uses a gateway-origin confirmation page: the tenant navigates to
+GET /logout, which renders the hidden token, then POST /logout verifies
+it before revoking the session. Tenant JavaScript never reads this cookie.
 """
 from __future__ import annotations
 

@@ -12,16 +12,46 @@ vi.mock('./data-source', async () => ({
   useDashboardData: () => dashboard,
   getActionPlanItems: vi.fn(async () => []),
   getProductGroups: vi.fn(async () => []),
+  getTenantSettings: vi.fn(async()=>({sync_interval_minutes:30,initial_history_days:90,agent_interval_minutes:60,wb_connected:false,ozon_connected:false})),
+  getTenantBackups: vi.fn(async()=>({backups:[]})),
+  getTenantSyncHistory: vi.fn(async()=>({runs:[]})),
+  getProductCostSettings: vi.fn(async()=>({items:[{nm_id:123,product_name:'Manager product',supplier_article:'M',cost_per_wb_unit:100,note:''}]})),
+  getProductionNorms: vi.fn(async()=>({items:[{nm_id:123,product_name:'Manager product',supplier_article:'M',material_per_unit:2,material_unit:'м',min_batch:10,pack_size:4,enabled:1}]})),
+  getMaterialInventory: vi.fn(async()=>({items:[],fifo:[],opening_rate_rub_m:0})),
+  getWBTokenStatus: vi.fn(async()=>({scopes:[],missing_scopes:[],connected:false})),
+  getManualExpenses: vi.fn(async()=>({items:[]})),
+  getActivationSummary: vi.fn(async()=>({is_demo:false,wb_connected:false,sync:{state:'error',complete:false},selected_product:{nm_id:123,cost_configured:true,has_financial_rows:false},ready_for_report:false,next_step:'connect',first_value_verified:false})),
+  updateProductCostSettings: vi.fn(async()=>({saved:1})),
+  updateProductionNorms: vi.fn(async()=>({saved:1})),
   getDashboardSession: vi.fn(async () => ({user: {id:'u', name:'QA',role:'viewer'},tenant:{id:'t',name:'Учебный кабинет'},mode:'demo'})),
   getIncidentOperations: vi.fn(async () => ({cases:[],summary:{}})),
 }));
 import App from './App';
+import {getDashboardSession,getTenantBackups,updateProductCostSettings,updateProductionNorms} from './data-source';
 beforeEach(() => {
   dashboard = {...mock, sync:mock.dashboardSync, refreshing:false, refresh:vi.fn(async()=>undefined), connection:{mode:'live', label:'Данные обновлены',detail:'Учебная проверка'}, chartBarsWeek:mock.chartBars, sellerWarehouses:[],financeReport:{rows:[]},cashWindows:[],supplyNewOrders:[],acceptanceCoefficients:[],transitTariffs:[],supplyErrors:{},agentCandidates:[],agentHistory:[],productEconomics:[],productPrices:[],productPriceErrors:[],productCards:[],productCardErrors:[],customerQuality:null,dataQuality:null,procurementOrders:[]} as unknown as DashboardDataState;
   window.history.replaceState({},'', '/?view=today');
 });
 afterEach(cleanup);
 describe('remaining cabinet audit acceptance', () => {
+  it('manager can save cost and production norm while API onboarding stays owner-only', async()=>{
+    vi.mocked(getDashboardSession).mockResolvedValueOnce({user:{id:'u',name:'Manager',role:'manager'},tenant:{id:'t',name:'Cabinet'},mode:'live'});
+    window.history.replaceState({},'', '/?view=settings');
+    await renderAuthorizedWb(<App/>);
+    for(const button of await screen.findAllByRole('button',{name:'Проверить и сохранить'})) expect(button).toBeDisabled();
+    expect(getTenantBackups).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button',{name:'Производство'}).find(button=>button.hasAttribute('aria-pressed'))!);
+    fireEvent.click(await screen.findByRole('button',{name:'Изменить себестоимость: Manager product'}));
+    fireEvent.change(screen.getByLabelText('Себестоимость одной единицы, ₽'),{target:{value:'125'}});
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить'}));
+    await screen.findByText(/Себестоимость.*сохранена/);
+    expect(updateProductCostSettings).toHaveBeenCalledWith([expect.objectContaining({nm_id:123,cost_per_wb_unit:125})],'');
+    fireEvent.click(screen.getByRole('button',{name:'Изменить норму'}));
+    fireEvent.change(screen.getByLabelText('Расход на комплект, м'),{target:{value:'3'}});
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить норму'}));
+    await screen.findByText(/Норма.*сохранена/);
+    expect(updateProductionNorms).toHaveBeenCalledWith([expect.objectContaining({nm_id:123,material_per_unit:3})],'');
+  });
   it.each(['Не готово','not ok','broken','Неизвестно'])('keeps unconfirmed status %s out of completed checks', status => {
     expect(checkPriority(status)).not.toBe(3);
   });

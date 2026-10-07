@@ -1,4 +1,4 @@
-FROM node:22-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 
 WORKDIR /frontend
 ARG VITE_MH_API_BASE_URL=
@@ -51,6 +51,7 @@ COPY mh-redesign-lab/tenant-api/fbs_api.py mh-redesign-lab/tenant-api/self_buyou
 COPY mh-redesign-lab/tenant-api/ozon_accounting_api.py ./ozon_accounting_api.py
 COPY mh-redesign-lab/tenant-api/marketplace_context_api.py mh-redesign-lab/tenant-api/ozon_cabinet_api.py mh-redesign-lab/tenant-api/ozon_prices_api.py ./
 COPY mh-redesign-lab/tenant-api/gateway_request_auth.py ./
+COPY mh-redesign-lab/tenant-api/request_limits.py ./
 COPY mh-redesign-lab/tenant-api/ozon_normalization_api.py mh-redesign-lab/tenant-api/ozon_insights_api.py mh-redesign-lab/tenant-api/ozon_ads_api.py ./
 COPY mh-redesign-lab/tenant-api/migration_import_api.py ./migration_import_api.py
 COPY mh-redesign-lab/tenant-api/incident_workflow_api.py ./incident_workflow_api.py

@@ -3,7 +3,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: .6rem 1rem;
-  padding: .65rem 1rem;
+  padding: calc(.65rem + env(safe-area-inset-top)) 1rem .65rem;
   border-radius: 0;
   font-size: .82rem;
   line-height: 1.4;
@@ -27,9 +27,14 @@
 .shop-context-bar p { margin: 0; }
 .shop-context-access { color: var(--muted); }
 .shop-context-help { margin-left: auto; max-width: 44rem; }
-.shop-context-help summary { cursor: pointer; color: var(--teal); }
+.shop-context-help summary { cursor: pointer; color: var(--teal); min-height: 24px; padding-block: .2rem; }
 .shop-context-help[open] p { margin-top: .5rem; }
 .hero-strip[aria-label="Главный сигнал"] h2 { overflow-wrap: anywhere; }
 @media (max-width: 640px) {
+  .panel.shop-context-bar { gap: .35rem .6rem; padding: calc(.4rem + var(--mobile-status-bar, env(safe-area-inset-top))) .65rem .4rem; font-size: .75rem; }
+  .shop-context-bar label { gap: .4rem; }
+  .shop-context-bar select { min-height: 44px; min-width: 0; width: min(12rem,100%); font-size: 1rem; }
   .shop-context-help { margin-left: 0; }
+  /* The global marketplace bar owns the top safe area when present. */
+  :root:has(.marketplace-bar) .panel.shop-context-bar { padding-top: .4rem; }
 }

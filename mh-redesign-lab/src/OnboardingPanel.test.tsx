@@ -10,6 +10,7 @@ vi.mock("./data-source", () => ({ getActivationSummary: vi.fn(), getFirstGrowthR
 const summary: ActivationSummary = { schema_version: 1, is_demo: false, wb_connected: true, sync: { state: "success", complete: true, successful_full_sync_at: "2026-09-18" }, selected_product: { nm_id: 123, cost_configured: true, has_financial_rows: true }, ready_for_report: true, next_step: "open_report", first_value_verified: false, first_value_at: null };
 const report: FirstGrowthReport = { nm_id: 123, product: "Тестовый товар", period: { start: "2026-08-19", end: "2026-09-17" }, revenue: 2400, sales: 2, unit_cost: 420, margin: 1100, margin_pct: 45.8, limitation: "Налоги и внешние расходы не включены", report_revision: "a".repeat(64) };
 const props = {
+  canManageConnections: true, canWrite: true,
   connected: true, runs: [{ id: 1, started_at: "2026-09-18", finished_at: "2026-09-18", status: "success", details: "orders: 2, sales: 2, financial_rows: 2" }],
   costs: [{ nm_id: 123, product_name: "Тестовый товар", supplier_article: "test", cost_per_wb_unit: 420, updated_at: "2026-09-18", note: "" }],
   days: 30, busy: false, token: "", onTokenChange: vi.fn(), onConnect: vi.fn(), onDaysChange: vi.fn(), onSync: vi.fn(), onEditCost: vi.fn(),
@@ -22,6 +23,42 @@ beforeEach(() => {
 });
 
 describe("first report onboarding", () => {
+  it("manager can load history while viewer cannot submit the same action",async()=>{
+    vi.mocked(getActivationSummary).mockResolvedValue({...summary,sync:{state:"error",complete:false,successful_full_sync_at:null},ready_for_report:false,next_step:"sync"});
+    const view=render(<OnboardingPanel {...props} canManageConnections={false} canWrite />);
+    const sync=await screen.findByRole("button",{name:"Загрузить историю"});
+    expect(sync).toBeEnabled();await userEvent.click(sync);expect(props.onSync).toHaveBeenCalledOnce();
+    view.rerender(<OnboardingPanel {...props} canManageConnections={false} canWrite={false}/>);
+    expect(screen.getByRole("button",{name:"Загрузить историю"})).toBeDisabled();
+    expect(screen.getByLabelText("Глубина первой загрузки, дней")).toBeDisabled();
+  });
+  it("manager may edit costs but cannot enter or submit an API token",async()=>{
+    render(<OnboardingPanel {...props} connected={false} canManageConnections={false} />);
+    expect(screen.getByRole("button",{name:"Проверить и сохранить"})).toBeDisabled();
+    expect(screen.getByLabelText("WB API-токен для первого запуска")).toBeDisabled();
+    await userEvent.click(screen.getByRole("button",{name:"Проверить и сохранить"}));
+    expect(props.onConnect).not.toHaveBeenCalled();
+    await userEvent.selectOptions(screen.getByLabelText("Товар для первого отчёта"),"123");
+    await userEvent.click(screen.getByRole("button",{name:"Проверить стоимость"}));
+    expect(props.onEditCost).toHaveBeenCalledWith(props.costs[0]);
+  });
+  it("missing permissions are fail-closed and changing permission clears a token draft",async()=>{
+    const view=render(<OnboardingPanel {...props} connected={false} token="synthetic-draft" />);
+    expect(screen.getByRole("button",{name:"Проверить и сохранить"})).toBeEnabled();
+    view.rerender(<OnboardingPanel {...props} connected={false} token="synthetic-draft" canManageConnections={undefined} canWrite={undefined} />);
+    expect(screen.getByRole("button",{name:"Проверить и сохранить"})).toBeDisabled();
+    expect(screen.getByLabelText("WB API-токен для первого запуска")).toHaveValue("");
+    await waitFor(()=>expect(props.onTokenChange).toHaveBeenCalledWith(""));
+  });
+  it("demo cannot connect, sync or edit costs even with incorrectly enabled parent flags",async()=>{
+    vi.mocked(getActivationSummary).mockResolvedValue({...summary,is_demo:true});
+    render(<OnboardingPanel {...props} connected={false}/>);
+    await screen.findByText(/Это демонстрационные данные/);
+    expect(screen.getByRole("button",{name:"Проверить и сохранить"})).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("Товар для первого отчёта"),"123");
+    expect(screen.getByRole("button",{name:"Проверить стоимость"})).toBeDisabled();
+    expect(props.onConnect).not.toHaveBeenCalled();expect(props.onEditCost).not.toHaveBeenCalled();
+  });
   it("hides a completed onboarding strip only after server verification when requested", async () => {
     vi.mocked(getActivationSummary).mockResolvedValue({ ...summary, first_value_verified: true });
     const { container } = render(<OnboardingPanel {...props} hideCompleted />);

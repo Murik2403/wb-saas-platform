@@ -12,7 +12,7 @@ import time
 import requests
 
 import config
-from internal_auth import tenant_credential, tenant_data_key
+from internal_auth import tenant_credential, tenant_data_key, tenant_keyring, provisioner_credential
 from logic import accounts, billing, growth, db as control_db
 
 logger = logging.getLogger("wb_saas_gateway.provisioning")
@@ -22,13 +22,16 @@ _REQUEST_TIMEOUT_SECONDS = 20
 def _provisioner_url() -> str:
     return config.PROVISIONER_URL.rstrip("/")
 
+def tenant_keyring_for_slug(slug):
+    return tenant_keyring(config.TENANT_ENCRYPTION_KEYRING,slug)
+
 
 def _tenant_payload(slug: str, require_auth: bool = True) -> dict[str, object]:
     return {
         "internal_api_secret": tenant_credential(config.INTERNAL_API_SECRET, slug),
         "data_encryption_key": tenant_data_key(config.TENANT_ENCRYPTION_MASTER_KEY, slug),
         "data_encryption_key_id": config.TENANT_ENCRYPTION_KEY_ID,
-        "data_encryption_keyring": config.TENANT_ENCRYPTION_KEYRING,
+        "data_encryption_keyring": tenant_keyring_for_slug(slug),
         "billing_url": config.billing_url(),
         "logout_url": config.logout_url(),
         "internal_api_url": config.base_url(),
@@ -38,11 +41,17 @@ def _tenant_payload(slug: str, require_auth: bool = True) -> dict[str, object]:
     }
 
 
+def provisioner_headers():
+    token=config.PROVISIONER_BEARER_KEY or provisioner_credential(config.INTERNAL_API_SECRET)
+    if not token:raise RuntimeError('Provisioner control authentication is not configured')
+    return {'Authorization':'Bearer '+token}
+
 def _request(method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     response = requests.request(
         method,
         f"{_provisioner_url()}{path}",
         json=payload,
+        headers=provisioner_headers(),
         timeout=_REQUEST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
@@ -57,6 +66,7 @@ def export_tenant(slug: str):
     return requests.post(
         f"{_provisioner_url()}/v1/tenants/{slug}/export",
         json={"expected_internal_secret": tenant_credential(config.INTERNAL_API_SECRET, slug)},
+        headers=provisioner_headers(),
         timeout=(_REQUEST_TIMEOUT_SECONDS, 300),
         stream=True,
     )

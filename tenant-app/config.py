@@ -128,10 +128,9 @@ def save_token(token: str) -> None:
 def get_token() -> str | None:
     if TENANT_SLUG and TOKEN_FALLBACK_PATH.exists():
         value, legacy = read_encrypted(TOKEN_FALLBACK_PATH, DATA_ENCRYPTION_KEY)
-        # Existing tenants can still have the pre-encryption token file.  Keep
-        # it readable until the gateway supplies a Fernet key; attempting the
-        # migration with an empty key makes every dashboard endpoint fail.
-        if value and legacy and DATA_ENCRYPTION_KEY:
+        # read_encrypted validates the existing key even for legacy files.
+        # Migrate before returning the token; never generate or rotate keys.
+        if value and legacy:
             write_encrypted(TOKEN_FALLBACK_PATH, value, DATA_ENCRYPTION_KEY)
         return value
     try:

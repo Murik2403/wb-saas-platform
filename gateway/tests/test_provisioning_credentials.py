@@ -2,6 +2,9 @@ from unittest.mock import patch
 import provisioning
 import config
 from internal_auth import tenant_data_key, verify_credential
+import json,pytest
+from cryptography.fernet import Fernet
+from internal_auth import tenant_keyring,provisioner_credential,tenant_credential
 
 
 def test_container_gets_scoped_key_and_requested_image():
@@ -50,3 +53,23 @@ def test_tenant_payload_omits_sentry_when_missing():
 
     assert payload["sentry_dsn"] == ""
     assert payload["sentry_environment"] == "production"
+
+def test_retained_keys_never_cross_slug_and_still_decrypt_old_ciphertext():
+    a,b=Fernet.generate_key().decode(),Fernet.generate_key().decode()
+    raw=json.dumps({'shop-a':{'old':a},'shop-b':{'old':b}})
+    with patch.object(config,'TENANT_ENCRYPTION_KEYRING',raw):
+        selected=provisioning.tenant_keyring_for_slug('shop-a')
+        payload=provisioning._tenant_payload('shop-a')
+    assert json.loads(selected)=={'old':a} and b not in payload['data_encryption_keyring']
+    ciphertext=Fernet(a.encode()).encrypt(b'old-private-fixture')
+    assert Fernet(json.loads(selected)['old'].encode()).decrypt(ciphertext)==b'old-private-fixture'
+    with pytest.raises(ValueError):tenant_keyring(json.dumps({'old':a}),'shop-a')
+
+def test_provisioner_token_is_purpose_scoped_not_tenant_or_master():
+    token=provisioner_credential('synthetic-master')
+    assert token and token!='synthetic-master' and token!=tenant_credential('synthetic-master','shop-a')
+    assert token!=provisioner_credential('rotated-master')
+    with patch.object(config,'PROVISIONER_BEARER_KEY',''),patch.object(config,'INTERNAL_API_SECRET','synthetic-master'):
+        assert provisioning.provisioner_headers()=={'Authorization':'Bearer '+token}
+    with patch.object(config,'PROVISIONER_BEARER_KEY',''),patch.object(config,'INTERNAL_API_SECRET',''):
+        with pytest.raises(RuntimeError):provisioning.provisioner_headers()

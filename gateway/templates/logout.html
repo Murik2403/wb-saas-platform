@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Выход — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<h1>Завершить сеанс?</h1>
+<p class="subtitle">Вы выйдете из кабинета на этом устройстве. Данные магазина сохранятся.</p>
+<form method="post" action="/logout">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Выйти из аккаунта</button>
+</form>
+<p><a href="/account">Остаться в аккаунте</a></p>
+{% endblock %}

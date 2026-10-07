@@ -21,4 +21,7 @@
 .cash-accounts .cashflow-controls > label { flex: 1 1 180px; min-width: 0; }
 .cash-accounts .cashflow-controls > label input, .cash-accounts .cashflow-controls > label select { width: 100%; }
 .cash-accounts .secondary-button { white-space: normal; }
+.cashflow-panel :is(input:not([type=checkbox]):not([type=radio]), select, button),
+.cash-accounts :is(input:not([type=checkbox]):not([type=radio]), select, button) { min-height:44px; }
+.cashflow-panel summary,.cash-accounts summary { min-height:44px; padding-block:.6rem; cursor:pointer; }
 @media (max-width: 700px) { .cash-accounts { padding: 12px; } .cash-accounts fieldset { padding: 12px; } }

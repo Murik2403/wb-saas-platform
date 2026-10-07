@@ -963,21 +963,16 @@ async def invalidate_after_write(request, call_next):
         context_response_cache.clear()
     return response
 
-# Local-dev only: the Next.js dev server runs on a different port -- 3000 by
-# default, but whatever's free (see .claude/launch.json; this machine already
-# has something else on 3000, so the frontend runs on 3001). In production
-# this API sits behind the same Traefik/tenant-subdomain setup as the rest of
-# the stack (see gateway/provisioning.py) and does not need a wildcard CORS
-# policy -- tighten this before that cutover.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", "http://127.0.0.1:3000",
-        "http://localhost:3001", "http://127.0.0.1:3001",
-    ],
-    allow_methods=["GET", "POST", "PATCH"],
-    allow_headers=["*"],
-)
+# Development origins are opt-in and never available on configured tenants.
+from request_limits import development_cors_origins
+_dev_cors_origins = development_cors_origins(TENANT_SLUG, os.environ.get("MH_ENABLE_DEV_CORS", ""))
+if _dev_cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_dev_cors_origins,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["*"],
+    )
 
 
 def _startup() -> None:
@@ -3507,6 +3502,9 @@ def get_management_economics(
         return row, number("Выкупы по цене покупателя", "Выручка"), number("Продано нетто", "Продажи, шт", "Продажи", "Количество")
 
     row, revenue, units = product_numbers(data)
+    # Only scalar product evidence is needed below. Do not pin the full
+    # window's DataFrames while a partial-expense window is being built.
+    del data
     base_profit = next(
         (float(value) for key in ("Чистая прибыль", "Прибыль", "Маржа")
          if pd.notna(value := pd.to_numeric(row.get(key), errors="coerce"))),
@@ -3517,6 +3515,8 @@ def get_management_economics(
     else:
         status = "ok"
 
+    overlap_memo: dict[tuple[date,date],tuple[float,float,int]] = {}
+
     def overlap_metrics(expense: dict) -> tuple[float, float, int]:
         expense_start = date.fromisoformat(str(expense["period_start"]))
         expense_end = date.fromisoformat(str(expense["period_end"]))
@@ -3524,15 +3524,18 @@ def get_management_economics(
         overlap_days = max((overlap_end - overlap_start).days + 1, 0)
         if not overlap_days:
             return 0.0, 0.0, 0
+        if expense['allocation_basis']=='period_total':
+            return 0.0,0.0,overlap_days
         # Per-unit and revenue-percentage expenses are rates applied only to
         # operations inside the date intersection, so a partial overlap must
         # use a snapshot for that intersection rather than the full window.
         if overlap_start == start and overlap_end == end:
             return revenue, units, overlap_days
-        _, overlap_revenue, overlap_units = product_numbers(
-            _build_dashboard_cached(overlap_start, overlap_end)
-        )
-        return overlap_revenue, overlap_units, overlap_days
+        key=(overlap_start,overlap_end)
+        if key not in overlap_memo:
+            _, overlap_revenue, overlap_units = product_numbers(_build_dashboard_cached(overlap_start,overlap_end))
+            overlap_memo[key]=(overlap_revenue,overlap_units,overlap_days)
+        return overlap_memo[key]
 
     expenses = read_manual_expenses(nm_id=nm_id, start=start, end=end)
     rows = []
@@ -4142,4 +4145,6 @@ app.add_middleware(DashboardWorkGuard)
 
 # Last registered is outermost: validate proof before any queue or business logic.
 from gateway_request_auth import GatewayIdentityGuard
+from request_limits import RequestLimitsMiddleware
+app.add_middleware(RequestLimitsMiddleware, service="tenant")
 app.add_middleware(GatewayIdentityGuard,context=lambda:(IS_DEMO,TENANT_SLUG,INTERNAL_API_SECRET))

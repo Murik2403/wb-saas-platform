@@ -38,6 +38,7 @@ from growth_internal import router as growth_internal_router
 from product_feedback_routes import router as product_feedback_router
 from logging_config import StructuredLoggingMiddleware, bind_account_context, setup_logging
 from logic import accounts, compliance, csrf, db as control_db, password_reset, growth, trial_emails
+from logic import login_throttle
 from rate_limiter import RateLimiter
 from security_headers import SecurityHeadersMiddleware
 from sentry_integration import initialize as initialize_sentry
@@ -53,6 +54,7 @@ logger = logging.getLogger("wb_saas_gateway")
 async def _lifespan(_app: FastAPI):
     with control_db.connect() as conn:
         control_db.init_db(conn)
+        login_throttle.initialize(conn)
     yield
 
 
@@ -60,6 +62,8 @@ app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(growth_web.AcquisitionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+from request_limits import RequestLimitsMiddleware
+app.add_middleware(RequestLimitsMiddleware, service="gateway")
 app.include_router(growth_web.router)
 app.include_router(billing_router)
 app.include_router(admin_router)
@@ -589,11 +593,20 @@ def login_submit(
             request, "login.html", {"error": "Форма устарела, попробуйте ещё раз.", "email": email, "next": next, "invite": invite}, 400
         )
     with control_db.connect() as conn:
+        if login_throttle.remaining(conn, email, config.INTERNAL_API_SECRET):
+            return _render_auth_form_error(
+                request, "login.html",
+                {"error": "Слишком много неудачных попыток входа. Подождите несколько минут и попробуйте снова.",
+                 "email": email, "next": next, "invite": invite},
+                429,
+            )
         account = accounts.authenticate_account(conn, email, password)
         if account is None:
+            login_throttle.record_failure(conn, email, config.INTERNAL_API_SECRET)
             return _render_auth_form_error(
                 request, "login.html", {"error": "Неверный email или пароль.", "email": email, "next": next, "invite": invite}, 400
             )
+        login_throttle.clear(conn, email, config.INTERNAL_API_SECRET)
         if not accounts.is_email_verified(account):
             return _render_auth_form_error(
                 request,
@@ -698,8 +711,23 @@ def reset_password_submit(
     return response
 
 
+@app.get("/logout", response_class=HTMLResponse)
+def logout_confirmation(request: Request):
+    account = _current_account(request)
+    if account is None:
+        return RedirectResponse("/login", status_code=303)
+    token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(request, "logout.html", {"csrf_token": token})
+    csrf.set_cookie(response, token)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 @app.post("/logout")
-def logout(request: Request):
+def logout(request: Request, csrf_token: str = Form("")):
+    if not isinstance(csrf_token, str) or not csrf.verify(request, csrf_token):
+        return PlainTextResponse(
+            "Форма выхода устарела. Откройте страницу выхода и повторите действие.", status_code=403
+        )
     token = request.cookies.get(config.SESSION_COOKIE_NAME)
     if token:
         with control_db.connect() as conn:

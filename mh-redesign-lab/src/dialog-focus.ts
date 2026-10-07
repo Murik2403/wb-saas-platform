@@ -2,6 +2,15 @@ import {useCallback,useLayoutEffect,useRef,type RefCallback} from 'react';
 
 const activeScopes:HTMLElement[]=[];
 const background=new Map<Element,string|null>();
+let savedScrollStyles:{html:string;body:string}|null=null;
+function updateScrollLock(){
+ if(activeScopes.length){
+  if(!savedScrollStyles)savedScrollStyles={html:document.documentElement.style.overflow,body:document.body.style.overflow};
+  document.documentElement.style.overflow='hidden';document.body.style.overflow='hidden';
+ }else if(savedScrollStyles){
+  document.documentElement.style.overflow=savedScrollStyles.html;document.body.style.overflow=savedScrollStyles.body;savedScrollStyles=null;
+ }
+}
 function isolateTopScope(){
  for(const[element,value]of background){if(value===null)element.removeAttribute('inert');else element.setAttribute('inert',value);}
  background.clear();
@@ -28,6 +37,7 @@ export function createDialogFocusScope(root:HTMLElement,onClose:()=>void,opener:
  // aria-modal describes a modal; inert actually removes the background from
  // keyboard, pointer and assistive-technology interaction. Preserve nested scopes.
  activeScopes.push(root);
+ updateScrollLock();
  isolateTopScope();
  const first=()=>controls(root)[0]??root;
  first().focus();
@@ -50,6 +60,7 @@ export function createDialogFocusScope(root:HTMLElement,onClose:()=>void,opener:
   document.removeEventListener('keydown',keydown,true);
   document.removeEventListener('focusin',focusin,true);
   const wasTop=activeScopes.at(-1)===root,index=activeScopes.indexOf(root);if(index>=0)activeScopes.splice(index,1);
+  updateScrollLock();
   if(oldTabIndex===null)root.removeAttribute('tabindex');else root.setAttribute('tabindex',oldTabIndex);
   isolateTopScope();
   if(wasTop&&opener?.isConnected&&(!activeScopes.length||activeScopes.at(-1)!.contains(opener)))opener.focus();

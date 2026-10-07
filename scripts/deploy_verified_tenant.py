@@ -38,11 +38,11 @@ def _derive_tenant_encryption_env(gateway_container, original_env):
     if not gateway_container or not slug:
         raise RuntimeError("Tenant encryption key is missing and cannot be derived")
     code = (
-        "import json,sys; import config; from internal_auth import tenant_data_key; "
+        "import json,sys; import config; from internal_auth import tenant_data_key; from provisioning import tenant_keyring_for_slug; "
         "key=tenant_data_key(config.TENANT_ENCRYPTION_MASTER_KEY,sys.argv[1]); "
         "assert key; "
         "print(json.dumps({'key':key,'key_id':config.TENANT_ENCRYPTION_KEY_ID,"
-        "'keyring':config.TENANT_ENCRYPTION_KEYRING},separators=(',',':')))"
+        "'keyring':tenant_keyring_for_slug(sys.argv[1])},separators=(',',':')))"
     )
     result = subprocess.run(
         ["docker", "exec", gateway_container, "python", "-c", code, slug],

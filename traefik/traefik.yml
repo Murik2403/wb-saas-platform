@@ -25,7 +25,7 @@ entryPoints:
 
 providers:
   docker:
-    endpoint: "tcp://docker-socket-proxy:2375"
+    endpoint: "tcp://docker-discovery-proxy:2375"
     exposedByDefault: false   # only containers with traefik.enable=true are routed --
                               # otherwise every container on the shared network (including
                               # ones with no business being public) would get exposed.

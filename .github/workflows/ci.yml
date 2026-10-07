@@ -2,9 +2,10 @@ name: MARKETSHELPER CI
 
 on:
   push:
-    branches: [ main, master, dev ]
+    branches: [ main, master, dev, 'codex/**', 'claude/**' ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   test-provisioner:
@@ -54,6 +55,9 @@ jobs:
         # testcontainers needs -- that test self-skips if it isn't reachable.
         run: |
           cd gateway && python -m pytest -q
+
+      - name: Run Release and Deployment Script Tests
+        run: python -m pytest scripts/tests -q
 
   test-tenant-app:
     name: Tenant App Unit Tests
@@ -107,6 +111,9 @@ jobs:
         if: hashFiles('${{ matrix.project }}/package.json') != ''
       - run: npm audit --audit-level=high
         if: hashFiles('${{ matrix.project }}/package.json') != ''
+      - name: Run Cabinet Frontend Tests
+        if: matrix.project == 'mh-redesign-lab'
+        run: npm test
       - run: npm run build
         if: hashFiles('${{ matrix.project }}/package.json') != ''
       - name: Check history formatting

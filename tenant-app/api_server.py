@@ -11,6 +11,7 @@ covers all 12 sections.
 from __future__ import annotations
 
 import threading
+import os
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -27,7 +28,7 @@ from control_service import (
 )
 from calculations import build_dashboard
 from sentry_integration import initialize as initialize_sentry
-from config import DB_PATH, get_token, load_settings
+from config import DB_PATH, TENANT_SLUG, get_token, load_settings
 from db import init_db, last_sync, table_count
 from db.manual_expenses import delete_manual_expense, read_manual_expenses, save_manual_expense
 from overview_service import (
@@ -46,23 +47,18 @@ from agents_service import (
 app = FastAPI(title="MARKETSHELPER tenant API")
 initialize_sentry(service_name="tenant-api")
 
-# Local-dev only: the Next.js dev server runs on a different port -- 3000 by
-# default, but whatever's free (see .claude/launch.json; this machine already
-# has something else on 3000, so the frontend runs on 3001). In production
-# this API sits behind the same Traefik/tenant-subdomain setup as the rest of
-# the stack (see gateway/provisioning.py) and does not need a wildcard CORS
-# policy -- tighten this before that cutover.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", "http://127.0.0.1:3000",
-        "http://localhost:3001", "http://127.0.0.1:3001",
-    ],
-    # POST/DELETE are for the "Отчёты" screen -- the first migrated page with
-    # mutations (create/delete a report schedule, generate one on demand).
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
-)
+# Dormant legacy API: localhost development CORS remains explicit opt-in.
+# Configured tenants must never grant cross-origin browser access here.
+if not TENANT_SLUG and os.environ.get("MH_ENABLE_DEV_CORS", "").strip() == "1":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000", "http://127.0.0.1:3000",
+            "http://localhost:3001", "http://127.0.0.1:3001",
+        ],
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["*"],
+    )
 
 
 class ManualExpensePayload(BaseModel):

@@ -18,6 +18,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 
 import config  # noqa: E402
+from provisioning import provisioner_headers
 from logic import db as control_db  # noqa: E402
 try:
     from scripts.backup_offsite import alert
@@ -35,6 +36,7 @@ def _backup_one(slug: str, keep_days: int) -> dict[str, object]:
     response = requests.post(
         f"{config.PROVISIONER_URL.rstrip('/')}/v1/tenants/{slug}/backup",
         params={"keep_days": keep_days},
+        headers=provisioner_headers(),
         timeout=(5, 600),
     )
     response.raise_for_status()
@@ -48,6 +50,7 @@ def _backup_control_plane(keep_days: int) -> dict[str, object]:
     response = requests.post(
         f"{config.PROVISIONER_URL.rstrip('/')}/v1/control-plane/backup",
         params={"keep_days": keep_days},
+        headers=provisioner_headers(),
         timeout=(5, 600),
     )
     response.raise_for_status()

@@ -276,12 +276,26 @@ def compute_control(ctx: dict) -> dict:
     }
 
 
+def _csv_safe_cell(value):
+    """Prevent spreadsheet formula evaluation, preserving actual numbers."""
+    if isinstance(value, str) and (
+        value.startswith(("\t", "\r", "\n")) or value.lstrip().startswith(("=", "+", "-", "@"))
+    ):
+        return "'" + value
+    return value
+
+
 def _csv_response(frame: pd.DataFrame, prefix: str) -> tuple[bytes, str]:
     """(bytes, filename) for a download. utf-8-sig, exactly like the Streamlit
     st.download_button -- without the BOM Excel misreads the Cyrillic headers.
     Same `wb_<name>_<YYYYmmdd_HHMM>.csv` MSK-stamped filename too."""
     stamp = f"{datetime.now(ZoneInfo('Europe/Moscow')):%Y%m%d_%H%M}"
-    return frame.to_csv(index=False).encode("utf-8-sig"), f"{prefix}_{stamp}.csv"
+    safe = frame.copy(deep=False)
+    # A download must not mutate the dashboard's cached/source DataFrame.
+    for column in safe.columns:
+        safe[column] = safe[column].map(_csv_safe_cell)
+    safe.columns = [_csv_safe_cell(column) for column in safe.columns]
+    return safe.to_csv(index=False).encode("utf-8-sig"), f"{prefix}_{stamp}.csv"
 
 
 def quality_csv(ctx: dict) -> tuple[bytes, str]:

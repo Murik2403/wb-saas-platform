@@ -6,6 +6,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 import config
+from provisioning import provisioner_headers
 from internal_auth import tenant_credential
 from logic import db
 
@@ -22,6 +23,7 @@ def main() -> int:
             response = requests.post(
                 f"{config.PROVISIONER_URL.rstrip('/')}/v1/tenants/{slug}/verify-internal-secret",
                 json={"expected_secret": tenant_credential(config.INTERNAL_API_SECRET, slug)},
+                headers=provisioner_headers(),
                 timeout=20,
             )
             valid = response.ok and response.json().get("valid") is True

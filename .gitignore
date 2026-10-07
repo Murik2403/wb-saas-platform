@@ -49,6 +49,12 @@ pnpm-debug.log*
 
 # Local secrets / runtime config
 .env
+.env.*
+**/.env.*
+!.env*.example
+!**/.env*.example
+*.pem
+*.key
 standalone/config.yaml
 
 # Local/dev data (production data lives in per-tenant Docker volumes, not in git)

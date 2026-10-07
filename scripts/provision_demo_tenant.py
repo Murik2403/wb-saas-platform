@@ -13,7 +13,7 @@ import provisioning  # noqa: E402
 
 
 def main() -> int:
-    response = requests.post(f"{config.PROVISIONER_URL.rstrip('/')}/v1/demo/reseed", timeout=120)
+    response = requests.post(f"{config.PROVISIONER_URL.rstrip('/')}/v1/demo/reseed", headers=provisioning.provisioner_headers(),timeout=300)
     response.raise_for_status()
     healthy = provisioning._wait_until_healthy("demo", config.PROVISION_HEALTH_TIMEOUT_SECONDS)
     print("Demo tenant is", "healthy" if healthy else "NOT HEALTHY -- check provisioner logs")

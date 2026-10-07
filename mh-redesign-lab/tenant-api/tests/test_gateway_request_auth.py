@@ -61,7 +61,9 @@ def test_auth_ingress_before_waiting_and_rejects_encoded_path(client):
  from gateway_request_auth import GatewayIdentityGuard
  from dashboard_work_guard import DashboardWorkGuard
  assert api.app.user_middleware[0].cls is GatewayIdentityGuard
- assert api.app.user_middleware[1].cls is DashboardWorkGuard
+ from request_limits import RequestLimitsMiddleware
+ classes = [item.cls for item in api.app.user_middleware]
+ assert classes.index(GatewayIdentityGuard) < classes.index(RequestLimitsMiddleware) < classes.index(DashboardWorkGuard)
  assert client.get('/api/v1/session%3Fextra',headers=auth('GET','/api/v1/session%3Fextra')).status_code==403
 
 def test_manager_connections_backup_delete_denied_products_and_production_retained():

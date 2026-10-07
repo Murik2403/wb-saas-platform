@@ -6,7 +6,15 @@ services:
     image: wb-dashboard-redesign:staging
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m,uid=10001,gid=10001
+      - /var/run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8501/"]
       interval: 15s

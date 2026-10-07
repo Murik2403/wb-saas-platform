@@ -1,1 +1,8 @@
 .marketplace-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--line);color:var(--text);min-width:0}.marketplace-bar>span{font-size:14px;color:var(--text-muted)}.marketplace-bar [role=group]{display:flex;gap:6px;flex-wrap:wrap}.marketplace-bar button{padding:9px 16px;min-height:40px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit}.marketplace-bar button[aria-pressed=true]{background:var(--action);color:var(--teal-ink);font-weight:700}.marketplace-bar button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.marketplace-bar p{margin:0;font-size:13px;color:var(--text-muted);overflow-wrap:anywhere}.marketplace-error{margin:20px}@media(max-width:480px){.marketplace-bar{padding:10px 16px}.marketplace-bar p{flex-basis:100%}}
+
+.marketplace-bar { padding-top: calc(12px + env(safe-area-inset-top)); }
+@media(max-width:640px){
+ .marketplace-bar { gap: .35rem .6rem; padding: calc(.4rem + var(--mobile-status-bar, env(safe-area-inset-top))) .65rem .4rem; }
+ .marketplace-bar button { min-height:44px; padding:.5rem .7rem; }
+ .marketplace-bar p { font-size:.75rem; }
+}

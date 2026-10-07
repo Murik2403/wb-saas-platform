@@ -8,6 +8,7 @@ new endpoint is a security-sensitive change, not a convenience wrapper.
 from __future__ import annotations
 
 import os
+import hmac
 import json
 import re
 import sqlite3
@@ -20,7 +21,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from backup_crypto import decrypt_file, encrypt_file
@@ -38,6 +40,16 @@ async def _lifespan(_app):
 
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
+PROVISIONER_BEARER_KEY=os.environ.get('WB_SAAS_PROVISIONER_BEARER_KEY','')
+
+@app.middleware('http')
+async def control_authentication(request:Request,call_next):
+    if request.scope.get('path','').startswith('/v1/'):
+        if not PROVISIONER_BEARER_KEY:return JSONResponse(status_code=503,content={'detail':'Provisioner authentication is not configured'})
+        supplied=request.headers.get('authorization','')
+        expected='Bearer '+PROVISIONER_BEARER_KEY
+        if not hmac.compare_digest(supplied.encode(),expected.encode()):return JSONResponse(status_code=403,content={'detail':'Provisioner authentication required'})
+    return await call_next(request)
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TENANT_IMAGE = os.environ.get("WB_SAAS_TENANT_IMAGE", "wb-dashboard-tenant:redesign")
@@ -928,7 +940,7 @@ def verify_internal_secret(slug: str, request: CredentialCheckRequest) -> dict[s
         container = _client().containers.get(_container_name(slug))
         environment = container.attrs.get("Config", {}).get("Env", [])
         actual = next((value.split("=", 1)[1] for value in environment if value.startswith("WB_SAAS_INTERNAL_API_SECRET=")), "")
-        return {"valid": actual == request.expected_secret}
+        return {"valid": bool(actual) and hmac.compare_digest(actual.encode(),request.expected_secret.encode())}
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Tenant not found: {exc}") from exc
 

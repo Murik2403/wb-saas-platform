@@ -372,3 +372,19 @@ def test_tax_gate_defaults_off_without_complete_review_configuration(monkeypatch
     assert result["tax_estimates_enabled"] is False
     assert "tax" not in result["total"]
     assert all("tax" not in month for month in result["months"])
+
+def test_expense_windows_memoized_without_building_period_totals(monkeypatch):
+    calls=[]
+    def snapshot(start,end):
+        calls.append((start,end))
+        return SimpleNamespace(financial_products=pd.DataFrame([{'Артикул WB':123,'Выкупы по цене покупателя':200,'Продано нетто':2,'Чистая прибыль':100}]))
+    monkeypatch.setattr(api,'_build_dashboard_cached',snapshot)
+    base={'nm_id':123,'article':'packaging_labor','source':'manual','note':'','include_in_management_result':True,'created_at':'','updated_at':''}
+    expenses=[{**base,'id':1,'allocation_basis':'per_unit','amount_rub':1,'period_start':'2026-09-01','period_end':'2026-09-01'},
+              {**base,'id':2,'allocation_basis':'revenue_pct','amount_rub':5,'period_start':'2026-09-02','period_end':'2026-09-02'},
+              {**base,'id':3,'allocation_basis':'per_unit','amount_rub':3,'period_start':'2026-09-01','period_end':'2026-09-01'},
+              {**base,'id':4,'allocation_basis':'period_total','amount_rub':9,'period_start':'2026-09-10','period_end':'2026-09-12'}]
+    monkeypatch.setattr(api,'read_manual_expenses',lambda **_:expenses)
+    result=api.get_management_economics(123,date(2026,9,1),date(2026,9,30))
+    assert calls==[(date(2026,9,1),date(2026,9,30)),(date(2026,9,1),date(2026,9,1)),(date(2026,9,2),date(2026,9,2))]
+    assert [row['allocated_rub'] for row in result['items']]==[2,10,6,9]

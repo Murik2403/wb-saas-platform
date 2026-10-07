@@ -46,7 +46,9 @@ def test_gateway_wiring_surrounds_selected_shop_dispatch():
     from test_display_contract import api
     from gateway_request_auth import GatewayIdentityGuard
     assert api.app.user_middleware[0].cls is GatewayIdentityGuard
-    assert api.app.user_middleware[1].cls is DashboardWorkGuard
+    from request_limits import RequestLimitsMiddleware
+    classes = [item.cls for item in api.app.user_middleware]
+    assert classes.index(GatewayIdentityGuard) < classes.index(RequestLimitsMiddleware) < classes.index(DashboardWorkGuard)
 
 
 def test_complete_body_lifetime_serializes_distinct_routes_and_selected_shop():

@@ -7,6 +7,8 @@ import { trackMetrikaGoal } from "./metrika";
 import "./OnboardingProgress.css";
 
 type Props = {
+  canManageConnections?: boolean;
+  canWrite?: boolean;
   hideCompleted?: boolean;
   connected: boolean;
   runs: TenantSyncRun[];
@@ -56,6 +58,11 @@ function FirstReportCard({ report, onRecorded, trackFirstGoal }: { report: First
 export function OnboardingPanel(props: Props) {
   const [nmId, setNmId] = useState<number | null>(null);
   const [summary, setSummary] = useState<ActivationSummary | null>(null);
+  const canManageConnections = props.canManageConnections === true && summary?.is_demo !== true;
+  const canWrite = props.canWrite === true && summary?.is_demo !== true;
+  useEffect(() => {
+    if (!canManageConnections && props.token) props.onTokenChange("");
+  }, [canManageConnections, props.token, props.onTokenChange]);
   const [report, setReport] = useState<FirstGrowthReport | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -129,15 +136,15 @@ export function OnboardingPanel(props: Props) {
     <div className="onboarding-steps">
       <article className={`onboarding-step ${props.connected ? "done" : "current"}`}>
         <span className="onboarding-step-number">1</span><div><strong>Подключить WB</strong><small>{props.connected ? "Токен проверен и сохранён" : "Без токена данные не загружаются"}</small></div>
-        {props.connected ? <CheckCircle2 size={18} /> : <div className="onboarding-inline-form"><input aria-label="WB API-токен для первого запуска" autoComplete="off" type="password" value={props.token} onChange={(event) => props.onTokenChange(event.target.value)} placeholder="WB API-токен" /><button className="primary-button" disabled={props.busy} type="button" onClick={props.onConnect}>Проверить и сохранить</button></div>}
+        {props.connected ? <CheckCircle2 size={18} /> : <div className="onboarding-inline-form"><input aria-label="WB API-токен для первого запуска" autoComplete="off" type="password" disabled={!canManageConnections || props.busy} value={canManageConnections ? props.token : ""} onChange={(event) => { if (canManageConnections) props.onTokenChange(event.target.value); }} placeholder="WB API-токен" /><button className="primary-button" disabled={!canManageConnections || props.busy} type="button" onClick={() => { if (canManageConnections) props.onConnect(); }}>Проверить и сохранить</button>{!canManageConnections ? <p className="form-hint">Подключение API изменяет только владелец своего кабинета. В демо подключение отключено.</p> : null}</div>}
       </article>
       <article className={`onboarding-step ${!props.connected ? "locked" : syncComplete ? "done" : "current"}`}>
         <span className="onboarding-step-number">2</span><div><strong>Загрузить историю</strong><small>{syncMessage}</small>{progress ? <><progress className="onboarding-progress" max={progress.total} value={progress.done} aria-label={`Загрузка истории магазина, ${progress.percent}%`} /><small role="status">{progress.text}</small></> : null}</div>
-        {syncComplete ? <CheckCircle2 size={18} /> : props.connected ? <div className="onboarding-inline-form"><input aria-label="Глубина первой загрузки, дней" min="7" max="90" type="number" value={props.days} onChange={(event) => props.onDaysChange(Number(event.target.value))} /><span>дней</span><button className="secondary-button" disabled={props.busy || syncState === "running"} type="button" onClick={props.onSync}>Загрузить историю</button></div> : null}
+        {syncComplete ? <CheckCircle2 size={18} /> : props.connected ? <div className="onboarding-inline-form"><input aria-label="Глубина первой загрузки, дней" min="7" max="90" type="number" disabled={!canWrite || props.busy} value={props.days} onChange={(event) => { if (canWrite) props.onDaysChange(Number(event.target.value)); }} /><span>дней</span><button className="secondary-button" disabled={!canWrite || props.busy || syncState === "running"} type="button" onClick={() => { if (canWrite) props.onSync(); }}>Загрузить историю</button></div> : null}
       </article>
       <article className={`onboarding-step ${!syncComplete ? "locked" : costComplete ? "done" : "current"}`}>
         <span className="onboarding-step-number">3</span><div><strong>Выбрать товар и проверить себестоимость</strong><small>Укажите всю себестоимость единицы: закупку или сырьё, производство и упаковку. Нулевое значение не считается заполненным.</small></div>
-        <div className="onboarding-inline-form"><select aria-label="Товар для первого отчёта" value={nmId ?? ""} disabled={!syncComplete || loading} onChange={(event) => setNmId(event.target.value ? Number(event.target.value) : null)}><option value="">Выберите товар</option>{props.costs.map((cost) => <option key={cost.nm_id} value={cost.nm_id}>{cost.product_name || cost.supplier_article || cost.nm_id} · WB {cost.nm_id}</option>)}</select>{evidence.selected ? <button className="ghost-button" disabled={props.busy} type="button" onClick={() => props.onEditCost(evidence.selected!)}>{costComplete ? "Проверить стоимость" : "Указать стоимость"}</button> : null}</div>
+        <div className="onboarding-inline-form"><select aria-label="Товар для первого отчёта" value={nmId ?? ""} disabled={!syncComplete || loading} onChange={(event) => setNmId(event.target.value ? Number(event.target.value) : null)}><option value="">Выберите товар</option>{props.costs.map((cost) => <option key={cost.nm_id} value={cost.nm_id}>{cost.product_name || cost.supplier_article || cost.nm_id} · WB {cost.nm_id}</option>)}</select>{evidence.selected ? <button className="ghost-button" disabled={!canWrite || props.busy} type="button" onClick={() => { if (canWrite) props.onEditCost(evidence.selected!); }}>{costComplete ? "Проверить стоимость" : "Указать стоимость"}</button> : null}</div>
         {syncComplete && !props.costs.length ? <p className="form-hint">Товары ещё не появились. Проверьте каталог и историю загрузки ниже.</p> : null}
         {syncComplete && nmId && summary?.recommended_product?.nm_id === nmId && !summary.selected_product.nm_id ? <p className="form-hint" role="status">Предвыбран первый товар с продажами за загруженный период.</p> : null}
       </article>

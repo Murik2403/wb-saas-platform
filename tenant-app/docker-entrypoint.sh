@@ -9,14 +9,8 @@
 # stop grace period instead of shutting down cleanly.
 set -e
 
-python3 sync.py --loop &
-SYNC_PID=$!
-
-python3 agent_sync.py --loop &
-AGENT_SYNC_PID=$!
-
-python3 report_scheduler.py --loop &
-REPORT_SCHEDULER_PID=$!
+python3 background_worker.py &
+BACKGROUND_PID=$!
 
 python3 -m streamlit run app.py \
     --server.address=0.0.0.0 \
@@ -26,16 +20,14 @@ python3 -m streamlit run app.py \
 STREAMLIT_PID=$!
 
 cleanup() {
-    kill "$SYNC_PID" 2>/dev/null || true
-    kill "$AGENT_SYNC_PID" 2>/dev/null || true
-    kill "$REPORT_SCHEDULER_PID" 2>/dev/null || true
+    kill "$BACKGROUND_PID" 2>/dev/null || true
     kill "$STREAMLIT_PID" 2>/dev/null || true
 }
-trap cleanup TERM INT
+trap cleanup TERM INT EXIT
 
 # If any process dies on its own, bring the container down instead of
 # limping along with only part of the app working.
-wait -n "$SYNC_PID" "$AGENT_SYNC_PID" "$REPORT_SCHEDULER_PID" "$STREAMLIT_PID"
+wait -n "$BACKGROUND_PID" "$STREAMLIT_PID"
 EXIT_CODE=$?
 cleanup
 exit "$EXIT_CODE"

@@ -15,6 +15,25 @@ vi.mock("./CashAccountsPanel",()=>({CashAccountsPanel:()=> <p>Common accounts</p
 vi.mock("./ManufacturingCosts",()=>({ManufacturingCosts:()=> <p>Common manufacturing</p>}));
 vi.mock("./OzonPriceControls",()=>({OzonPriceControls:()=> <p>Ozon price drafts</p>}));
 const props={start:"2026-09-01",end:"2026-09-30",canWrite:false,isOwner:false,role:"viewer"};
+
+it('manager never gains connection or grant forms from an incorrect owner boolean but can edit product costs',async()=>{
+ fetch.mockResolvedValue(response({configured:true,products:[{sku:'123',offer_id:'A'}],items:[],loaded:true}));
+ render(<OzonCabinetViews {...props} page="settings" canWrite isOwner role="manager"/>);
+ await screen.findByText('Подключение: настроено.');
+ expect(screen.queryByLabelText('Api-Key Ozon')).toBeNull();expect(screen.queryByLabelText('Аккаунт участника')).toBeNull();
+ expect(screen.getByLabelText('Себестоимость SKU 123')).toBeEnabled();
+ expect(screen.getByRole('button',{name:'Загрузить данные Seller за период'})).toBeEnabled();
+});
+
+it('a downgraded role clears Seller secrets before ownership is restored',async()=>{
+ fetch.mockResolvedValue(response({configured:true,products:[],items:[],loaded:false}));
+ const view=render(<OzonCabinetViews {...props} page="settings" canWrite isOwner role="owner"/>);
+ await userEvent.type(screen.getByLabelText('Api-Key Ozon'),'synthetic-draft');
+ view.rerender(<OzonCabinetViews {...props} page="settings" canWrite role="manager"/>);
+ view.rerender(<OzonCabinetViews {...props} page="settings" canWrite isOwner role="owner"/>);
+ expect(screen.getByLabelText('Api-Key Ozon')).toHaveValue('');
+ expect(fetch.mock.calls.every(([,init])=>init.method==='GET')).toBe(true);
+});
 const snapshot={marketplace:"ozon",loaded:false,synced_at:null,blockers:[],items:[],metrics:{order_units:null,document_profit_rub:null}};
 const response=(body:unknown,status=200)=>({ok:status<400,status,json:async()=>body});
 afterEach(()=>{cleanup();fetch.mockReset();});

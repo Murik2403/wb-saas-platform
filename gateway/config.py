@@ -139,6 +139,7 @@ TELEGRAM_OWNER_CHAT_ID = os.environ.get("WB_SAAS_TELEGRAM_OWNER_CHAT_ID", "")
 # --------------------------------------------------------------------------
 
 INTERNAL_API_SECRET = os.environ.get("WB_SAAS_INTERNAL_API_SECRET", "")
+PROVISIONER_BEARER_KEY = os.environ.get('WB_SAAS_PROVISIONER_BEARER_KEY','')
 # A separate key may be configured; otherwise the internal key is used with
 # purpose-separated HMAC. Empty keys disable optional public analytics.
 GROWTH_COOKIE_SECRET = os.environ.get("WB_SAAS_GROWTH_COOKIE_SECRET", "")

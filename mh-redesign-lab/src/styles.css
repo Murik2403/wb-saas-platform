@@ -39,6 +39,7 @@ html {
   min-height: 100%;
   background: var(--bg);
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -1953,6 +1954,15 @@ button.creative-card {
   background: var(--lime);
 }
 
+button.signal.detail-trigger,
+button.funnel-bar {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .65rem;
+  color: var(--text);
+}
+
 .signal.active > span {
   background: var(--amber);
   box-shadow: 0 0 0 0.35rem rgba(245, 184, 75, 0.1);
@@ -3580,8 +3590,9 @@ td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .content-grid {
-    grid-template-columns: 1fr;
+  .content-grid,
+  .content-grid.compact-flow {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .stock-grid,
@@ -3601,7 +3612,7 @@ td {
     border: 1px solid var(--line-strong);
     border-radius: var(--radius);
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     background: var(--mobile-bg);
     backdrop-filter: blur(20px);
     box-shadow: var(--shadow);
@@ -3615,7 +3626,7 @@ td {
     gap: 0.18rem;
     color: var(--muted);
     padding-inline: 0.1rem;
-    font-size: clamp(0.5rem, 2.3vw, 0.64rem);
+    font-size: .75rem;
     line-height: 1.15;
   }
 
@@ -3647,6 +3658,18 @@ td {
     padding: 1rem 0.8rem 5.5rem;
   }
 
+  .plan-drawer.operation-dialog {
+    width: min(32rem, 100%);
+  }
+
+  html {
+    scroll-padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+
+  :is(button, input, select, textarea, a[href], summary, [tabindex]) {
+    scroll-margin-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+
   .plan-detail-grid {
     grid-template-columns: 1fr;
   }
@@ -3675,7 +3698,8 @@ td {
   }
 
   .topbar {
-    min-height: 7.7rem;
+    min-height: 0;
+    row-gap: .4rem;
   }
 
   .topbar-title h1 {
@@ -3717,6 +3741,10 @@ td {
   .production-task-fields input,
   .production-task-fields select {
     min-height: 2.75rem;
+  }
+
+  :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    font-size: 1rem;
   }
 
   .settings-form {
@@ -4033,7 +4061,7 @@ td {
   }
 
   .workspace {
-    padding-top: calc(0.7rem + var(--mobile-status-bar));
+    padding-top: .7rem;
   }
 
   .topbar {
