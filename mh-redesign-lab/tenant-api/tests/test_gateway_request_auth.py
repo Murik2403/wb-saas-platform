@@ -7,7 +7,9 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));sys.path.i
 import gateway_request_auth as proof
 spec=importlib.util.spec_from_file_location('gateway_proof_test_api',ROOT/'api_server.py');api=importlib.util.module_from_spec(spec);sys.modules[spec.name]=api;spec.loader.exec_module(api)
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch,tmp_path):
+ import db.core as core
+ monkeypatch.setattr(core,"DB_PATH",tmp_path/"role-guard.sqlite3");core.init_db()
  monkeypatch.setattr(api,'IS_DEMO',False);monkeypatch.setattr(api,'TENANT_SLUG','test-seller');monkeypatch.setattr(api,'INTERNAL_API_SECRET','tenant-scoped-secret')
  return TestClient(api.app,base_url='http://127.0.0.1')
 def auth(method,path,role='owner',account='1',issued=None):return {'x-tenant-role':role,'x-tenant-account':account,'x-mh-gateway-auth':proof.sign('tenant-scoped-secret',method,path,'test-seller',role,account,issued)}
@@ -92,3 +94,38 @@ def test_valid_proof_does_not_expire_while_waiting_behind_inner_guard(client,mon
  asyncio.run(guard(scope,receive,send))
  assert result[0]['status']==200
  assert not proof.verify('tenant-scoped-secret',headers['x-mh-gateway-auth'],'GET',path,'test-seller','owner','1')
+
+
+def test_signed_manager_price_write_reaches_mock_backend_viewer_does_not(client,monkeypatch):
+ calls=[]
+ class FakeWB:
+  def __init__(self,*args,**kwargs):pass
+  def upload_product_prices(self,goods):calls.append(goods);return {'error':False,'data':{}}
+ monkeypatch.setattr(api,'get_token',lambda:'synthetic-token')
+ monkeypatch.setattr(api,'WBAPI',FakeWB)
+ path='/api/v1/products/prices/upload';payload={'goods':[{'nmID':123,'price':1000,'discount':10}]}
+ assert client.post(path,json=payload,headers=auth('POST',path,'manager')).status_code==200
+ assert len(calls)==1 and calls[0][0]['price']==1000
+ assert client.post(path,json=payload,headers=auth('POST',path,'viewer')).status_code==403
+ assert len(calls)==1
+
+@pytest.mark.parametrize('method,path',[
+ ('POST','/api/v1/settings/wb-token'),('POST','/api/v1/settings/ozon'),
+ ('PUT','/api/v1/ozon-accounting/advertising/credentials'),
+ ('POST','/api/v1/operations/reports/telegram/link-code'),
+ ('GET','/api/v1/operations/backups'),('POST','/api/v1/operations/backups'),
+ ('POST','/api/v1/self-buyouts/delete'),('DELETE','/api/v1/settings/manual-expenses/1')])
+def test_signed_manager_sensitive_paths_denied_before_mutation(client,method,path):
+ assert client.request(method,path,json={},headers=auth(method,path,'manager')).status_code==403
+
+
+def test_signed_manager_production_release_reaches_mock_backend_viewer_does_not(client,monkeypatch):
+ import manufacturing_costs_api as manufacturing
+ calls=[]
+ monkeypatch.setattr(manufacturing.store,'post_manufacturing_release',lambda **kw:(calls.append(kw) or {'id':123}))
+ path='/api/v1/manufacturing-costs/releases'
+ payload={'nm_id':123,'quantity':2,'production_date':'2026-10-07','source_key':'isolated-role-test'}
+ assert client.post(path,json=payload,headers=auth('POST',path,'manager')).json()=={'id':123}
+ assert len(calls)==1 and calls[0]['quantity']==2
+ assert client.post(path,json=payload,headers=auth('POST',path,'viewer')).status_code==403
+ assert len(calls)==1

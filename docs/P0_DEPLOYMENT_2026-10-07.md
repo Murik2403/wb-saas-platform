@@ -30,9 +30,15 @@ All tenant volume mounts and network aliases were preserved. Tenant memory remai
 
 Detailed immutable-source manifests, restore/deployment proofs and authorization status records are in the local workspace `deliveries/audit-p0-20261007/release/`; server copies are in `/opt/wb-saas/releases/p0-480ff19/`. Owner settings screenshot: `deliveries/audit-p0-20261007/owner-settings-live-480ff19.jpg`.
 
+## Follow-up releases and current status
+
+This document records the original P0 release. Subsequent committed runtime releases are recorded in `AUDIT_DEPLOYMENT_STATUS_2026-10-07.md`; the image IDs above are historical, not current pins.
+
+On 7 October, the owner reconfirmed the role boundary above. The follow-up frontend exposes the same policy in onboarding and settings, and live manager requests to WB/Ozon connections, Telegram recipient linking and backup listing are rejected403. Signed manager/viewer settings reads remain200.
+
+Backup host scheduling, offsite migration and owner-side recovery were subsequently verified. All75 reviewed legacy remote plaintext objects were replaced with verified encrypted copies, then retired individually after recovery acceptance. An independent remote inventory found zero remaining legacy raw tar/partial objects; encrypted archives and three quarantined incomplete archives remain retained. Retirement proof SHA256: `2f47f06ac998a783c3a3d0200e3721d1898d054205ec86de35875e2f7c479eac`. Daily encrypted backups and hourly26h freshness checks are installed; no production test alert was sent.
+
 ## Still open
 
-- Host cron/offsite encryption, freshness alarms and migration of legacy plaintext backups need independent production acceptance. Deployed backup-helper changes alone do not close this item.
 - Owner must reissue the historically exposed Telegram bot token through the normal credential-management channel; never paste it into chat.
-- Onboarding connection controls need the same visible owner-only policy as the main settings panel; server authorization already rejects restricted attempts.
-- P1 and P2 remain separate, undeployed tranches. This report does not mark the entire audit complete.
+- Native/store, legal and remaining performance/product acceptance are tracked separately. This report does not mark the entire audit complete.
