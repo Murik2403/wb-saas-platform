@@ -2,6 +2,7 @@ import { scopedFetch as fetch } from "./selected-shop";
 import {useEffect,useRef,useState} from "react";
 import {API_BASE_URL,apiHeaders} from "./data-source";
 import "./MigrationImport.css";
+import { saveBlob } from "./download";
 type Kind="products"|"materials"|"opening_materials"|"finished_lots"|"historical_documents"|"historical_attachments";
 const fields:Record<string,string[]>={products:["source_id","nm_id","supplier_article","product_name"],materials:["source_id","material_name","unit"],opening_materials:["source_id","material_name","unit","quantity","unit_cost_rub","source_date"],finished_lots:["source_id","nm_id","chrt_id","source_date","cutover_date","location","original_units","remaining_units","unit_cost_rub","remaining_cost_rub","document_proof"],historical_documents:["source_id","document_id","rrd_id","nm_id","chrt_id","operation_date","sequence","event_type","quantity","lot_source_id","allocation_units","original_sale_document","retail_amount","ppvz_for_pay","commission","delivery_rub","storage_fee","deduction","penalty","acceptance","document_proof"]};
 fields.historical_attachments=[...fields.historical_documents,'source_srid','financial_fingerprint'];
@@ -44,7 +45,7 @@ export function MigrationImport({role,onRefresh}:{role:string;onRefresh:()=>Prom
       const response=await fetch(`${API_BASE_URL}/api/v1/migration-import/historical-attachments/template?start=${attachmentStart}&end=${attachmentEnd}`,{headers:apiHeaders(false)});
       if(!response.ok)throw new Error("Шаблон не получен: проверьте период, доступ и основной магазин.");
       const text=await response.text();setText(text);setMapping(Object.fromEntries(fields.historical_attachments.map(field=>[field,field])));change();
-      const url=URL.createObjectURL(new Blob([text],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download="historical-attachments.csv";anchor.click();URL.revokeObjectURL(url);
+      void saveBlob(new Blob([text],{type:"text/csv;charset=utf-8"}),"historical-attachments.csv");
     }catch(error){setMessage(error instanceof Error?error.message:"Шаблон не получен");}
   }
   async function runPreview(){

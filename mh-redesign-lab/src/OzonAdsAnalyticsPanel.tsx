@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { apiHeaders, API_BASE_URL } from "./data-source";
 import { scopedFetch as fetch } from "./selected-shop";
 import "./OzonAdsAnalyticsPanel.css";
+import { saveBlob } from "./download";
 
 type Metrics = Record<"spend" | "views" | "clicks" | "orders" | "ad_revenue" | "ctr" | "cpc" | "cpm" | "cpo" | "drr", number | string | null>;
 type Analytics = { loaded: boolean; has_data: boolean; source_complete: boolean; totals: Metrics; campaigns: Array<Metrics & { campaign_id: string }>; by_day: Array<Metrics & { day: string }>; by_day_available: boolean; loaded_at?: string };
@@ -98,7 +99,7 @@ export function OzonAdsAnalyticsPanel({ start, end, canWrite, isOwner }: { start
   }
   function download() {
     void action(async (signal, epoch) => { const response = await fetch(`${API_BASE_URL}${BASE}/export.csv?${query}`, { signal, headers: apiHeaders() });if (!response.ok) throw new Error(`CSV Ozon недоступен (HTTP ${response.status}).`);const blob = await response.blob();if (epoch !== generation.current || signal.aborted) return;
-      const url = URL.createObjectURL(blob);const anchor = document.createElement("a");anchor.href = url;anchor.download = `ozon-advertising-${start}-${end}.csv`;anchor.click();setTimeout(() => URL.revokeObjectURL(url), 0);
+      void saveBlob(blob, `ozon-advertising-${start}-${end}.csv`);
     });
   }
   return <section className="ozon-ads-panel" aria-labelledby="ozon-ads-title" aria-busy={loading || busy}>

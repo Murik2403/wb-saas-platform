@@ -5,6 +5,7 @@ import {
   type FbsAnalytics, type FbsOrders, type FbsState,
 } from "./fbs-orders-api";
 import "./FbsOrdersPanel.css";
+import { saveBlob } from "./download";
 
 const PAGE = 50;
 const STATUSES = [["", "Все статусы"], ["processing", "Сборка"], ["in_transit", "В пути"], ["at_pickup", "В пункте выдачи"], ["delivered", "Выкуплен"], ["cancelled", "Отменён"], ["defect", "Брак"]];
@@ -71,9 +72,7 @@ export function FbsOrdersPanel({ canWrite }: { canWrite: boolean }) {
   const exportCsv = () => {
     if (!orders) return;
     const rows = orders.items.map((o) => [o.order_id, o.article ?? "", o.nm_id, o.created_at ?? "", o.warehouse_id, o.supplier_status ?? "", o.wb_status ?? "", o.state_label, o.age_hours, o.overdue ? "просрочен" : ""]);
-    const url = URL.createObjectURL(new Blob([buildCsv(["Заказ", "Артикул", "Артикул WB", "Создан", "Склад", "Статус продавца", "Статус WB", "Состояние", "Часов в работе", "Просрочка"], rows)], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = "fbs-orders.csv"; a.click(); URL.revokeObjectURL(url);
+    void saveBlob(new Blob([buildCsv(["Заказ", "Артикул", "Артикул WB", "Создан", "Склад", "Статус продавца", "Статус WB", "Состояние", "Часов в работе", "Просрочка"], rows)], { type: "text/csv;charset=utf-8" }), "fbs-orders.csv");
   };
 
   const noScope = state?.has_marketplace_scope === false;

@@ -3,6 +3,7 @@ import { buildCsv, type CsvCell } from "./csv";
 import type { AdsMetrics, DashboardPeriod } from "./data-source";
 import { useAdsAnalytics } from "./useProductsTrend";
 import "./AdsAnalyticsPanel.css";
+import { saveBlob } from "./download";
 
 type Tone = "good" | "bad" | "neutral";
 type Fmt = "money" | "int" | "pct";
@@ -60,12 +61,7 @@ function Delta({ cur, prev, up }: { cur: number | null; prev: number | null | un
 type Row = AdsMetrics & { label: string };
 
 function download(name: string, headers: string[], rows: CsvCell[][]) {
-  const url = URL.createObjectURL(new Blob([buildCsv(headers, rows)], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
+  void saveBlob(new Blob([buildCsv(headers, rows)], { type: "text/csv;charset=utf-8" }), name);
 }
 
 function AdsTable({ title, firstCol, rows, file, sortable }: { title: string; firstCol: string; rows: Row[]; file: string; sortable?: boolean }) {

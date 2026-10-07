@@ -151,9 +151,10 @@ export function TaxReconciliationPanel() {
         {calculation?.negative_base ? <p className="warning-text">База отрицательная. Проверьте документы: основной налог ограничен нулём, но минимальный налог может сохраняться.</p> : null}
         {stats(tab === "calculation" ? [["Налоговая база", calculation?.base], ["Основной налог (оценка)", calculation?.income_tax], ["Минимальный налог", calculation?.minimum_tax], ["НДС к уплате (оценка)", calculation?.vat_to_pay], ["Превышение вычетов НДС", calculation?.vat_credit], ["Всего налогов (оценка)", calculation?.estimate], ["После оценки налога", calculation?.after_estimate], ["Взносы зачтены", calculation?.insurance_used], ["Убыток зачтён", calculation?.loss_used], ["Доплата основного налога после авансов", calculation?.income_tax_to_pay], ["Авансы сверх оценки", calculation?.advance_excess]] : [["Начислено по документам", data.values.fns_assessed], ["Начисление − оценка", calculation?.fns_difference], ["После начисления", calculation?.after_fns], ["Оплачено", data.values.paid], ["Начислено − оплачено", calculation?.assessed_minus_paid]])}
         <p className="form-hint">Превышение вычетов НДС — не автоматическое возмещение. Расчёт не меняет P&L и денежный журнал, не подаёт декларации. Для нескольких магазинов сведите данные налогоплательщика; ФНС / бухгалтер подтверждают итог.</p></div> : null}
-        <div className="tax-footer"><button className="ghost-button" type="button" onClick={() => { const url = URL.createObjectURL(new Blob([taxReconciliationCsv(data)], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `tax-${month}.csv`; link.click(); URL.revokeObjectURL(url); }}>Скачать сверку CSV</button><a href="https://www.nalog.gov.ru/new2026/" target="_blank" rel="noreferrer">Правила ФНС · 2026</a></div>
+        <div className="tax-footer"><button className="ghost-button" type="button" onClick={() => { void saveBlob(new Blob([taxReconciliationCsv(data)], { type: "text/csv;charset=utf-8" }), `tax-${month}.csv`); }}>Скачать сверку CSV</button><a href="https://www.nalog.gov.ru/new2026/" target="_blank" rel="noreferrer">Правила ФНС · 2026</a></div>
       </> : null}
     </details>
   </section>;
 }
 import { safeCsvText } from "./csv";
+import { saveBlob } from "./download";

@@ -3,6 +3,7 @@ import { API_BASE_URL, apiHeaders } from "./data-source";
 import { scopedFetch } from "./selected-shop";
 import "./OzonAccounting.css";
 import { previewMoney } from "./ozon-preview-money";
+import { saveBlob } from "./download";
 
 type Month = { month: string; document_lines: number; revenue_rub: string | null; net_document_total_rub: string | null; historical_cogs_rub: string | null; result_after_fifo_rub: string | null; unknown_cost_units: number | null };
 type Report = { items: Month[]; blockers: string[]; note: string };
@@ -54,7 +55,7 @@ export function OzonMonthlyPanel({ start, end, canWrite }: { start: string; end:
     try {
       const response = await scopedFetch(`${API_BASE_URL}/api/v1/ozon-insights/monthly.csv${query}`, { headers: apiHeaders() });
       if (!response.ok) throw new Error(`CSV: HTTP ${response.status}`);
-      const url = URL.createObjectURL(await response.blob()); const a = document.createElement("a"); a.href = url; a.download = "ozon-monthly.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await saveBlob(await response.blob(), "ozon-monthly.csv");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Не удалось выгрузить CSV"); }
   };
   return <section className="ozon-accounting" aria-label="Помесячный результат Ozon">
