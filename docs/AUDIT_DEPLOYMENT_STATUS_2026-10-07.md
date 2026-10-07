@@ -6,6 +6,8 @@ Owner confirmed twice: managers retain product, price and production work. API c
 
 ## Verified committed runtime releases
 
+Latest follow-up: Claude branch integration deployed API and frontend together to all three tenants and provisioner from committed `0a89f63132ba6d4b76c46477370f9f6a8052af4b`; see `AUDIT_MERGE_RELEASE_2026-10-07.md` for current image IDs, tests and live evidence. The table below records the preceding releases; gateway4926f48 remains current. No earlier runtime hardening was reverted.
+
 | Service | Committed source | Current immutable image |
 | --- | --- | --- |
 | Gateway | `4926f482c5368c1645d21a7a58bb734fb3b0647f` | `sha256:82b495cdbd817c2e0ea9f14d72fda5e2bc66102617b7883fd89e0e1e1a2a4b74` |
