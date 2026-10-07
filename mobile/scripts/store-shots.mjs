@@ -1,18 +1,22 @@
-// Store screenshots of the light-theme cabinet filled from scripts/demo-cabinet.json (demo tenant snapshot, no customer data).
-// Vite runs in the default API mode; /tenant-api/* is answered from the snapshot through CDP Fetch interception
-// (VITE_MH_API_MODE=mock never calls the API, so it would show the empty built-in mock).
+// Store assets: raw app frames (390x844 @3x, light theme, demo snapshot) -> composed marketing screenshots + Google Play feature graphic.
+// Raw frames: Vite from ../mh-redesign-lab, /tenant-api/* answered from scripts/demo-cabinet.json via CDP Fetch (demo tenant, no customer data).
+// Compose: store/compose/template.html rendered in headless Chrome.
 //   cd ../mh-redesign-lab && npx vite --port 5360     # other terminal
-// usage: node scripts/store-shots.mjs [http://127.0.0.1:5360/]
+// usage: node scripts/store-shots.mjs [http://127.0.0.1:5360/]   (env: ONLY=raw|compose, INSPECT=1 prints section layout)
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:5360/";
 const EDGE = process.env.EDGE_PATH ?? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
-// [file, ?view=, CSS anchor to scroll to so the shot starts at content rather than the search/toolbar rows]
-const PAGES = [["01-today", "today", ".workspace-view"], ["02-finance", "finance", ".metrics-grid"], ["03-products", "products", ".metrics-grid"], ["04-stock", "stock", ".metrics-grid"], ["05-ads", "ads", ".workspace-view"], ["06-reports", "reports", ".workspace-view"]];
-const DEVICES = { android: [360, 640, 3], ios: [430, 932, 3] }; // 1080x1920, 1290x2796
+const CHROME = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+// [file, ?view=, heading text to bring to the top of the frame, extra scrollY shift, optional workspace tab to open first]
+// frame-only CSS-level tidy-up: hide expense rows whose value is exactly 0 ₽ (the real rows stay as in the app)
+const ZERO_ROWS = "[...document.querySelectorAll('*')].filter((e) => /^финансовый.отчёт/i.test(e.innerText) && /(^|[^0-9])0.?₽$/.test(e.innerText.trim()) && e.innerText.length < 80).map((e) => (e.style.display = 'none')).length";
+const PAGES = [["01-today", "today", "Темп выручки", -300, "Неделя"], ["02-finance", "finance", "Доля расходов", -355, "Расходы и себестоимость", ZERO_ROWS], ["03-products", "products", "Товары по артикулам", -50], ["04-stock", "stock", "Остатки, маржа, сигнал", -50], ["05-ads", "ads", "Где менять ставки", -50], ["06-reports", "reports", "Быстрые отчёты", -188]];
+const VIEWPORT = [390, 844, 3]; // raw 1170x2532
 const DEMO = JSON.parse(readFileSync(new URL("./demo-cabinet.json", import.meta.url), "utf8"));
 const rub = (v) => Math.round(v).toLocaleString("ru-RU") + " ₽";
 function overview() {
@@ -28,21 +32,10 @@ function overview() {
     products: [], problem_products: [], alerts: [], cash_windows: [],
   };
 }
-// The snapshot was cut at the start of a day, so "today" is empty. For the store shots "today" is filled with the
-// previous day's revenue from the same snapshot (orders = revenue / average unit price, ads at the period's DRR).
 function today() {
-  const t = structuredClone(DEMO["dashboard/today"]);
-  const f = DEMO["dashboard/finance"].financial;
-  const week = t.revenue_trend;
-  const rev = week[week.length - 2].revenue_rub;
-  const orders = Math.round(rev / (f.sales / f.sale_units));
-  const drr = (100 * f.financial_ad_spend) / f.sales;
-  week[week.length - 1].revenue_rub = rev;
-  const set = (key, value, note) => Object.assign(t.kpis.find((k) => k.key === key), { value, note });
-  set("orders", String(orders), rub(rev));
-  set("sales", String(Math.round(orders * 0.92)), rub(rev * 0.92));
-  set("ads", rub((rev * drr) / 100), `ДРР ${drr.toFixed(1)}%`);
-  set("shift", "3/4", "Смена в работе");
+  const t = structuredClone(DEMO["dashboard/today"]); // real snapshot values only (zeros stay zeros; the frame scrolls to the real blocks)
+  // the snapshot was cut at the start of a day: drop the trailing empty current day from the weekly series (real days only)
+  for (const k of ["revenue_trend", "revenue_trend_week"]) { const a = t[k]; if (Array.isArray(a) && a.length && a.at(-1).revenue_rub === 0) a.pop(); }
   t.metrics = t.kpis;
   return t;
 }
@@ -68,49 +61,106 @@ function stub(path) {
   if (path === "/api/overview") return overview();
   return null;
 }
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
-const port = 10900 + Math.floor(Math.random() * 400);
-const proc = spawn(EDGE, ["--headless=new", "--disable-gpu", "--hide-scrollbars", `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "mh-shots-"))}`, "about:blank"], { stdio: "ignore" });
-let tabs;
-for (let i = 0; i < 80 && !tabs; i++) { try { tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); } catch { await sleep(150); } }
-const ws = new WebSocket(tabs.find((t) => t.type === "page").webSocketDebuggerUrl);
-await new Promise((r) => ws.addEventListener("open", r));
-let id = 1; const pend = new Map();
-ws.addEventListener("message", (e) => { const m = JSON.parse(e.data); pend.get(m.id)?.(m); });
-const send = (method, params = {}) => new Promise((res) => { const i = id++; pend.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
-ws.addEventListener("message", (e) => {
-  const m = JSON.parse(e.data);
-  if (m.method !== "Fetch.requestPaused") return;
-  const { requestId, request } = m.params;
-  const body = stub(new URL(request.url).pathname.replace(/^\/tenant-api/, ""));
-  if (process.env.DUMP && !body) console.log("  404", request.url);
-  send("Fetch.fulfillRequest", { requestId, responseCode: body ? 200 : 404, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body ?? { detail: "demo snapshot: not provided" })).toString("base64") });
-});
-const ev = (expression) => send("Runtime.evaluate", { expression, returnByValue: true });
+async function launch(exe) {
+  const port = 10900 + Math.floor(Math.random() * 400);
+  const proc = spawn(exe, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-color-profile=srgb", "--allow-file-access-from-files", `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "mh-shots-"))}`, "about:blank"], { stdio: "ignore" });
+  let tabs;
+  for (let i = 0; i < 80 && !tabs; i++) { try { tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); } catch { await sleep(150); } }
+  const ws = new WebSocket(tabs.find((t) => t.type === "page").webSocketDebuggerUrl);
+  await new Promise((r) => ws.addEventListener("open", r));
+  let id = 1; const pend = new Map();
+  ws.addEventListener("message", (e) => { const m = JSON.parse(e.data); pend.get(m.id)?.(m); });
+  const send = (method, params = {}) => new Promise((res) => { const i = id++; pend.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+  const ev = async (expression) => { const r = (await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })).result; if (r.exceptionDetails) console.log("EVAL ERR", r.exceptionDetails.exception?.description?.slice(0, 200)); return r.result.value; };
+  const shot = async () => Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64");
+  return { ws, send, ev, shot, close: () => { ws.close(); proc.kill(); } };
+}
 
-try {
-  await send("Page.enable"); await send("Network.enable"); await send("Network.setBypassServiceWorker", { bypass: true }); await send("Fetch.enable", { patterns: [{ urlPattern: "*/tenant-api/*" }] });
-  await send("Page.navigate", { url: BASE }); await sleep(1000);
-  await ev(`localStorage.setItem('marketshelper-theme','light')`); // index.html defaults to dark otherwise
-  for (const [dev, [w, h, dpr]] of Object.entries(DEVICES).slice(0, process.env.DUMP ? 1 : 9)) {
-    mkdirSync(new URL(`../store/screenshots/${dev}`, import.meta.url), { recursive: true });
+// page-side: section outline (INSPECT=1) to choose scroll targets
+function outline() {
+  const sel = "h1,h2,h3,nav,section,article,table";
+  const sc = [...document.querySelectorAll("*")].filter((e) => e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY)).map((e) => e.tagName + "." + e.className).join(",");
+  return "docH=" + document.documentElement.scrollHeight + " scrollers=" + sc + " ## " + [...document.querySelectorAll(sel)].filter((e) => e.getBoundingClientRect().height > 20).slice(0, 90)
+    .map((e) => e.tagName + "." + String(e.className).slice(0, 28) + "@" + Math.round(e.getBoundingClientRect().top + scrollY) + ":" + Math.round(e.getBoundingClientRect().height) + " " + e.innerText.slice(0, 32).replace(/\s+/g, "|")).join(" ## ");
+}
+
+// ---- stage 1: raw app frames ------------------------------------------------------------------------------
+async function raw() {
+  const b = await launch(EDGE);
+  const { send, ev } = b;
+  b.ws.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data);
+    if (m.method !== "Fetch.requestPaused") return;
+    const { requestId, request } = m.params;
+    const body = stub(new URL(request.url).pathname.replace(/^\/tenant-api/, ""));
+    send("Fetch.fulfillRequest", { requestId, responseCode: body ? 200 : 404, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body ?? { detail: "demo snapshot: not provided" })).toString("base64") });
+  });
+  try {
+    const [w, h, dpr] = VIEWPORT;
+    mkdirSync(here("../store/screenshots/raw"), { recursive: true });
+    await send("Page.enable"); await send("Network.enable"); await send("Network.setBypassServiceWorker", { bypass: true }); await send("Fetch.enable", { patterns: [{ urlPattern: "*/tenant-api/*" }] });
+    await send("Page.navigate", { url: BASE }); await sleep(1000);
+    await ev(`localStorage.setItem('marketshelper-theme','light')`); // index.html defaults to dark otherwise
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: dpr, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
-    for (const [name, view, anchor] of PAGES) {
+    for (const [name, view, text, shift, tab, prep] of PAGES) {
       await send("Page.navigate", { url: `${BASE}?view=${view}` });
-      await sleep(500);
-      await sleep(3000);
-      await ev(`document.head.appendChild(Object.assign(document.createElement('style'),{textContent:'.connection-banner,.marketplace-bar,.shop-context-bar{display:none!important}'}))`);
-      const theme = (await ev(`document.documentElement.dataset.theme`)).result.result.value;
-      if (theme !== "light") throw new Error("expected light theme, got " + theme);
-      await ev(`window.scrollTo(0, document.querySelector('${anchor}')?.getBoundingClientRect().top + scrollY - 12 || 0)`); // start at the content, not the search/toolbar rows
-      if (process.env.DUMP) console.log(name, JSON.stringify((await ev(`[...document.querySelectorAll('main > *, main > * > *')].slice(0,40).map(e=>e.tagName+'.'+e.className+'@'+Math.round(e.getBoundingClientRect().top+scrollY)+':'+Math.round(e.getBoundingClientRect().height))`)).result.result.value));
-      await sleep(300);
-      const shot = await send("Page.captureScreenshot", { format: "png" });
-      const file = new URL(`../store/screenshots/${dev}/${name}.png`, import.meta.url);
-      writeFileSync(file, Buffer.from(shot.result.data, "base64"));
-      console.log(dev, name, w * dpr + "x" + h * dpr);
+      await sleep(3500);
+      await ev(`document.head.appendChild(Object.assign(document.createElement('style'),{textContent:'.connection-banner,.marketplace-bar,.shop-context-bar,.mock-banner,.bottom-nav{display:none!important}#root{padding-bottom:500px!important}'}))`);
+      if ((await ev(`document.documentElement.dataset.theme`)) !== "light") throw new Error("expected light theme");
+      if (tab) { await ev(`(async () => { for (const t of ${JSON.stringify([].concat(tab))}) { [...document.querySelectorAll('button,a,[role=tab]')].find((e) => e.textContent.trim().startsWith(t))?.click(); await new Promise((r) => setTimeout(r, 900)); } })()`); await sleep(1200); }
+      if (prep) { console.log("prep hid", await ev(prep)); await sleep(300); }
+      if (process.env.INSPECT) console.log(name, (await ev(`(${outline})()`)).split(" ## ").join(String.fromCharCode(10)));
+      if (process.env.FULL) { const H = await ev("document.documentElement.scrollHeight"); await send("Emulation.setDeviceMetricsOverride", { width: w, height: H, deviceScaleFactor: 1, mobile: true }); await sleep(500); writeFileSync(process.env.TEMP + "/full-" + name + ".png", await b.shot()); await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: dpr, mobile: true }); continue; }
+      // scroll: bring the heading containing `text` (or a numeric scrollY) to just under the top edge
+      const y = await ev(`(() => { const t = ${JSON.stringify(text)}; if (typeof t === 'number') return t; if (!t) return 0;
+        const el = [...document.querySelectorAll('h1,h2,h3,h4,strong,b,span,p,div')].find((e) => e.children.length === 0 && e.textContent.toLowerCase().includes(t.toLowerCase()));
+        return el ? el.getBoundingClientRect().top + scrollY - 20 : 0; })()`);
+      await ev(`window.scrollTo(0, ${y} + ${shift})`);
+      await sleep(600);
+      writeFileSync(here(`../store/screenshots/raw/${name}.png`), await b.shot());
+      console.log("raw", name, `${w * dpr}x${h * dpr}`, "scrollY", await ev("Math.round(scrollY)"));
     }
-  }
-} finally { ws.close(); proc.kill(); }
+  } finally { b.close(); }
+}
+
+// ---- stage 2: composition (store/compose/template.html in Chrome) --------------------------------------------
+const SHOTS = [
+  ["01-today", "Главное за день|на одном экране", "Выручка, остатки и что требует действия"],
+  ["02-finance", "Куда уходят деньги|и что остаётся", "Структура расходов и итог за период"],
+  ["03-products", "Маржа|по каждому товару", "Прибыль, расходы и рентабельность по артикулам"],
+  ["04-stock", "Остатки и что|везти на склад", "Запас в днях и покрытие по каждому товару"],
+  ["05-ads", "Реклама: где окупается,|где нет", "Кампании, расходы и воронка по рекламе"],
+  ["06-reports", "Отчёты по расписанию|на email и в Telegram", "Сводки в PDF и доставка по расписанию"],
+];
+const TARGETS = { android: [1080, 1920], ios: [1290, 2796] };
+async function compose() {
+  const b = await launch(existsSync(CHROME) ? CHROME : EDGE);
+  const tpl = pathToFileURL(here("../store/compose/template.html")).href;
+  const out = (p) => here(`../store/screenshots/${p}`);
+  try {
+    await b.send("Page.enable");
+    const render = async (w, h, data, file) => {
+      await b.send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+      await b.send("Page.navigate", { url: tpl + "#" + encodeURIComponent(JSON.stringify(data)) });
+      await sleep(300);
+      await b.ev(`document.fonts.ready.then(() => Promise.all([...document.images].map((i) => i.decode().catch(() => 0)))).then(() => 1)`);
+      await b.ev(`location.reload()`); await sleep(700); // hash set before load: ensure a clean render
+      await b.ev(`document.fonts.ready.then(() => Promise.all([...document.images].map((i) => i.decode().catch(() => 0)))).then(() => 1)`);
+      writeFileSync(file, await b.shot());
+      console.log("compose", file.split(/[\/]/).slice(-2).join("/"), `${w}x${h}`);
+    };
+    for (const [dev, [w, h]] of Object.entries(TARGETS)) {
+      mkdirSync(out(dev), { recursive: true });
+      for (const [name, title, sub] of SHOTS) await render(w, h, { kind: "shot", title, sub, img: pathToFileURL(out(`raw/${name}.png`)).href }, out(`${dev}/${name}.png`));
+    }
+    await render(1024, 500, { kind: "feature", title: "Учёт себестоимости, остатков и маржи|для селлеров WB и Ozon", logo: pathToFileURL(here("../../mh-redesign-lab/public/icons/marketshelper.svg")).href }, out("feature-graphic-1024x500.png"));
+  } finally { b.close(); }
+}
+
+if (process.env.ONLY !== "compose") await raw();
+if (process.env.ONLY !== "raw" && !process.env.INSPECT) await compose();

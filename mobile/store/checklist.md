@@ -33,7 +33,7 @@
 ## 3. Google Play
 - [ ] Аккаунт разработчика Play Console (разовый взнос 25 USD; для организаций нужен D-U-N-S; для личных аккаунтов новых разработчиков действует обязательное закрытое тестирование: 12+ тестировщиков 14 дней перед выходом в прод; проверьте актуальные правила).
 - [ ] Создать приложение, пакет `ru.marketshelper.app`.
-- [ ] Заполнить: карточка (`listing-ru.md`), иконка 512, feature graphic 1024x500 (нужно сделать: в проекте нет), скриншоты (`screenshots/android`), политика, Data safety (`data-safety-google.md`), Content rating, Target audience 18+, App access (`review-notes.md`), Account deletion URL.
+- [ ] Заполнить: карточка (`listing-ru.md`), иконка 512, feature graphic 1024x500 (`screenshots/feature-graphic-1024x500.png`), скриншоты (`screenshots/android`, 1080x1920), политика, Data safety (`data-safety-google.md`), Content rating, Target audience 18+, App access (`review-notes.md`), Account deletion URL.
 - [ ] Загрузить AAB в Internal testing, затем Closed/Production.
 - [ ] Push: создать проект Firebase, добавить Android-приложение, скачать `google-services.json` в `mobile/android/app/` (не коммитить), серверный ключ FCM (service account) хранить на сервере; см. README.
 
