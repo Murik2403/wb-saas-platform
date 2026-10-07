@@ -93,7 +93,7 @@
 <div class="mk-shell">
   <header class="mk-nav">
     <a class="brand" href="/">MARKETSHELPER</a>
-    <nav aria-label="Основная навигация"><a href="/dlya-proizvoditeley-wb">Производителям</a><a href="/guides">Руководства</a><a href="/pricing">Тариф</a><a href="/login">Войти</a></nav>
+    <nav aria-label="Основная навигация"><a href="/dlya-proizvoditeley-wb">Производителям</a><a href="/guides">Руководства</a>{% if not request["store_app"] %}<a href="/pricing">Тариф</a>{% endif %}<a href="/login">Войти</a></nav>
   </header>
   <main id="main-content">
     <p class="mk-breadcrumb"><a href="/">Главная</a> / {% block breadcrumb %}{{ page_title }}{% endblock %}</p>
@@ -102,7 +102,7 @@
       <h2>Начните с одного товара</h2>
       <p>Посмотрите кабинет на вымышленных данных, затем проверьте свой сценарий на одной партии.</p>
       <div class="mk-actions"><a class="btn btn-primary" href="/register">Попробовать {{ trial_days }} дней</a><a class="btn btn-ghost" href="{{ demo_url }}">Посмотреть демо</a></div>
-      <p class="mk-small">Без привязки карты. Пробный период начинается после подготовки кабинета. Затем — {{ price_rub|int }} ₽ / {{ period_days }} дней. <a href="/pricing">Условия тарифа</a>.</p>
+      <p class="mk-small">Без привязки карты. Пробный период начинается после подготовки кабинета. {% if not request["store_app"] %}Затем — {{ price_rub|int }} ₽ / {{ period_days }} дней. <a href="/pricing">Условия тарифа</a>.{% endif %}</p>
     </aside>
   </main>
   <footer class="mk-footer"><a href="/sebestoimost-wb">Себестоимость WB</a><a href="/fifo-uchet">FIFO по партиям</a><a href="/sverka-ostatkov-wb">Сверка остатков</a><a href="/dlya-proizvoditeley-wb">Производство на WB</a><a href="/guides">Руководства</a><a href="/ob-avtore">Об авторе</a><a href="/contacts">Контакты</a><a href="/offer">Оферта</a></footer>

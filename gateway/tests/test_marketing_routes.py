@@ -45,7 +45,7 @@ class MarketingRouteTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_all_pages_render_and_navigation_resolves(self):
-        existing = {"/", "/pricing", "/capabilities", "/login", "/register", "/offer", "/privacy", "/consent", "/contacts"}
+        existing = {"/", "/pricing", "/capabilities", "/login", "/register", "/offer", "/privacy", "/consent", "/contacts", "/compliance", "/training", "/updates", "/delete-account"}
         for path in PUBLIC_MARKETING_PATHS:
             with self.subTest(path=path):
                 response = self.client.get(path + "?utm_source=test")

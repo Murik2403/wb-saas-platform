@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -43,7 +43,7 @@ from rate_limiter import RateLimiter
 from security_headers import SecurityHeadersMiddleware
 from sentry_integration import initialize as initialize_sentry
 from template_setup import create_templates
-from marketing_routes import create_marketing_router, llms_txt, PUBLIC_MARKETING_PATHS
+from marketing_routes import create_marketing_router, llms_txt, PUBLIC_MARKETING_PATHS, GUIDE_DATES
 
 setup_logging()
 initialize_sentry()
@@ -58,7 +58,31 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
+class RequestContextMiddleware:
+    """Flag the mobile-app user agent and trust X-Forwarded-Proto from Traefik so redirect_slashes redirects stay on https.
+
+    The gateway is only reachable through Traefik, which overwrites the header
+    (see traefik.yml forwardedHeaders), so it cannot be spoofed from outside.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            for key, value in scope["headers"]:
+                if key == b"user-agent":
+                    # Read by templates as request["store_app"] (missing key renders as false).
+                    scope["store_app"] = config.is_store_app(value.decode("latin-1"))
+                elif key == b"x-forwarded-proto":
+                    proto = value.decode("latin-1").split(",")[0].strip().lower()
+                    if proto in ("http", "https"):
+                        scope["scheme"] = proto
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(growth_web.AcquisitionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -210,6 +234,8 @@ def home(request: Request):
 
 @app.get("/pricing", response_class=HTMLResponse)
 def pricing_page(request: Request):
+    if config.is_store_app(request.headers.get("user-agent", "")):
+        return templates.TemplateResponse(request, "store_billing.html", {})
     return templates.TemplateResponse(
         request,
         "pricing.html",
@@ -257,6 +283,36 @@ def privacy_page(request: Request):
     return templates.TemplateResponse(request, "privacy.html", {"policy_version": accounts.PDN_POLICY_VERSION})
 
 
+@app.get("/delete-account", response_class=HTMLResponse)
+def delete_account_page(request: Request):
+    return templates.TemplateResponse(request, "delete_account.html", {"backup_keep_days": config.BACKUP_KEEP_DAYS})
+
+
+# Domain association files for the mobile apps. Public, static JSON: no auth,
+# no cookies, no redirects (Android/iOS verifiers reject redirects).
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+def assetlinks_json() -> JSONResponse:
+    data = []
+    if config.ANDROID_PACKAGE and config.ANDROID_SHA256:
+        data = [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": config.ANDROID_PACKAGE,
+                "sha256_cert_fingerprints": config.ANDROID_SHA256,
+            },
+        }]
+    return JSONResponse(data)
+
+
+@app.get("/.well-known/apple-app-site-association", include_in_schema=False)
+def apple_app_site_association() -> JSONResponse:
+    details = []
+    if config.IOS_APP_ID:
+        details = [{"appIDs": [config.IOS_APP_ID], "paths": ["/verify-email*", "/reset-password*", "/team/accept*"]}]
+    return JSONResponse({"applinks": {"apps": [], "details": details}})
+
+
 @app.get("/consent", response_class=HTMLResponse)
 def consent_page(request: Request):
     return templates.TemplateResponse(request, "consent.html", {"policy_version": accounts.PDN_POLICY_VERSION})
@@ -280,6 +336,7 @@ _SITEMAP_PATHS: tuple[tuple[str, str, str], ...] = (
     ("/offer", "yearly", "0.3"),
     ("/privacy", "yearly", "0.3"),
     ("/consent", "yearly", "0.3"),
+    ("/delete-account", "yearly", "0.3"),
 ) + tuple((path, "monthly", "0.7") for path in PUBLIC_MARKETING_PATHS)
 
 _ROBOTS_DISALLOW = (
@@ -336,6 +393,7 @@ def sitemap_xml() -> Response:
     base = config.base_url()
     urls = "".join(
         f"<url><loc>{base}{path}</loc>"
+        f"<lastmod>{GUIDE_DATES.get(path, (None, config.SITE_RELEASE_DATE))[1]}</lastmod>"
         f"<changefreq>{changefreq}</changefreq>"
         f"<priority>{priority}</priority></url>"
         for path, changefreq, priority in _SITEMAP_PATHS

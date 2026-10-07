@@ -5,7 +5,7 @@
   <h1>От сырья до готовой партии — в одном учёте</h1>
   <p class="mk-lead">Когда вы производите товар, за одной продажей стоят закупки, расход материалов и выпуск. MARKETSHELPER помогает вести эту цепочку рядом с данными вашего магазина Wildberries.</p>
   <div class="mk-actions"><a class="btn btn-primary" href="/register">Попробовать {{ trial_days }} дней</a><a class="btn btn-ghost" href="#one-batch">Разобрать одну партию</a></div>
-  <p class="mk-small">{{ price_rub|int }} ₽ / {{ period_days }} дней после пробы. Карта для начала не нужна.</p>
+  <p class="mk-small">{% if not request["store_app"] %}{{ price_rub|int }} ₽ / {{ period_days }} дней после пробы. {% endif %}Карта для начала не нужна.</p>
 </header>
 <section class="mk-section" aria-labelledby="tasks-title">
   <h2 id="tasks-title">Три вопроса, с которых удобно начать</h2>

@@ -205,6 +205,24 @@ YANDEX_VERIFICATION = os.environ.get("WB_SAAS_YANDEX_VERIFICATION", "").strip()
 GOOGLE_VERIFICATION = os.environ.get("WB_SAAS_GOOGLE_VERIFICATION", "").strip()
 
 
+# --------------------------------------------------------------------------
+# Mobile apps (Capacitor shell). Store builds must not sell the subscription.
+# --------------------------------------------------------------------------
+APP_UA_TOKEN = "MarketsHelperApp/"
+# Android Digital Asset Links (/.well-known/assetlinks.json); SHA-256 list is comma-separated.
+ANDROID_PACKAGE = os.environ.get("WB_SAAS_ANDROID_PACKAGE", "").strip()
+ANDROID_SHA256 = [v.strip() for v in os.environ.get("WB_SAAS_ANDROID_SHA256", "").split(",") if v.strip()]
+# Apple Team ID + bundle id, e.g. "ABCDE12345.ru.marketshelper.app".
+IOS_APP_ID = os.environ.get("WB_SAAS_IOS_APP_ID", "").strip()
+# Fallback <lastmod> for public pages that have no explicit date; bump when
+# a template changes materially (never "today").
+SITE_RELEASE_DATE = "2026-10-08"
+
+
+def is_store_app(user_agent: str) -> bool:
+    return APP_UA_TOKEN in (user_agent or "")
+
+
 def tenant_host(slug: str) -> str:
     return f"{slug}.{TENANT_SUBDOMAIN_PREFIX}.{PARENT_DOMAIN}"
 
