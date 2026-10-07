@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { buildCsv } from "./csv";
 import { getProductsHeatmap, type DashboardPeriod, type HeatmapMetric, type ProductsHeatmap as Heatmap } from "./data-source";
 import "./ProductsHeatmap.css";
+import { saveBlob } from "./download";
 
 export const HEATMAP_METRICS: Array<{ id: HeatmapMetric; label: string }> = [
   { id: "orders", label: "Заказы, шт" },
@@ -41,14 +42,7 @@ export function heatmapCsv(data: Heatmap, rows = data.rows): string {
 }
 
 function downloadCsv(content: string, metric: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `heatmap-${metric}-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  void saveBlob(new Blob([content], { type: "text/csv;charset=utf-8" }), `heatmap-${metric}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 type State = { data: Heatmap | null; loading: boolean; error: string | null };

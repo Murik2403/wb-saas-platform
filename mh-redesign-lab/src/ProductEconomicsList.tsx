@@ -4,6 +4,7 @@ import type { ProductEconomicsRow, ProductsTrend } from "./data-source";
 import { ProductSparkline } from "./ProductSparkline";
 import { buildCsv } from "./csv";
 import "./ProductEconomicsList.css";
+import { saveBlob } from "./download";
 
 export type ProductViewMode = "tiles" | "table" | "list";
 
@@ -124,14 +125,7 @@ function readColumns(): ColumnKey[] {
 }
 
 function downloadCsv(content: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `tovary-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  void saveBlob(new Blob([content], { type: "text/csv;charset=utf-8" }), `tovary-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 // "ABC по выручке — A: 3 SKU = 83% выручки · B: 5 · C: 12" (profit also counts loss-makers).

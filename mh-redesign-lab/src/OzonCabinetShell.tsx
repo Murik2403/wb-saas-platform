@@ -5,6 +5,8 @@ import type { OzonCabinetPage } from "./OzonCabinetViews";
 import { LazyPanel } from "./LazyPanel";
 const OzonCabinetViews=lazy(()=>import("./OzonCabinetViews").then(module=>({default:module.OzonCabinetViews})));
 import type { MarketplaceSession } from "./marketplace-context";
+import { MarketplaceSwitch } from "./MarketplaceBoundary";
+import { isNativeApp } from "./app-shell";
 import "./OzonCabinetShell.css";
 const navigation = [
   ["today","Сегодня",LayoutDashboard],["stock","Склад",Package],["ads","Реклама",Megaphone],["finance","Финансы",WalletCards],
@@ -21,6 +23,7 @@ function initialPeriod(){const query=new URL(location.href).searchParams;const s
 export function OzonCabinetShell({session}:{session:MarketplaceSession}){
   const [page,setPage]=useState(initialPage),[period,setPeriod]=useState(initialPeriod),[menu,setMenu]=useState(false),[revision,setRevision]=useState(0);
   const [draftStart,setDraftStart]=useState(period.start),[draftEnd,setDraftEnd]=useState(period.end),[dateError,setDateError]=useState("");
+  const [wide]=useState(()=>typeof matchMedia!=="function"||!matchMedia("(max-width: 600px)").matches);
   const rail=useRef<HTMLElement>(null),menuButton=useRef<HTMLButtonElement>(null);
   useEffect(()=>{if(!menu)return;const previous=document.activeElement;const node=rail.current;if(!node)return;const items=()=>Array.from(node.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));items()[0]?.focus();const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();setMenu(false);}else if(event.key==='Tab'){const buttons=items(),first=buttons[0],last=buttons[buttons.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};document.addEventListener('keydown',key);return()=>{document.removeEventListener('keydown',key);if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();else menuButton.current?.focus();};},[menu]);
   useEffect(()=>{const url=new URL(location.href);url.searchParams.set("marketplace","ozon");url.searchParams.set("view",page==='agents'?'assistant':page);url.searchParams.set("period","custom");url.searchParams.set("start",period.start);url.searchParams.set("end",period.end);url.searchParams.delete("shop");history.replaceState(null,"",url);},[page,period]);
@@ -32,14 +35,15 @@ export function OzonCabinetShell({session}:{session:MarketplaceSession}){
       <div className="brand-row"><div className="brand-mark"><Command size={18}/></div><div><p className="brand-title">MARKETSHELPER</p><p className="brand-subtitle">кабинет Ozon</p></div></div>
       {menu&&<button type="button" className="icon-button ozon-close-menu" aria-label="Закрыть меню Ozon" onClick={()=>setMenu(false)}><X/></button>}
       <nav className="nav-list">{navigation.map(([id,label,Icon])=><button type="button" key={id} className={`nav-item ${page===id?'active':''}`} aria-current={page===id?'page':undefined} onClick={()=>choose(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
+      <MarketplaceSwitch className="ozon-rail-marketplace" />
       <div className="side-status"><p>Ozon · {session.is_demo?'демо':session.can_write?'рабочий кабинет':'просмотр'}</p><span>Данные WB не подставляются</span></div>
     </aside>
     <main className="workspace">
       <header className="topbar"><button ref={menuButton} type="button" className="icon-button ozon-menu-toggle" aria-label="Открыть меню Ozon" aria-expanded={menu} onClick={()=>setMenu(v=>!v)}><Menu/></button><div><span className="eyebrow">Ozon · {navigation.find(([id])=>id===page)?.[1]}</span><h1>{titles[page]}</h1></div><div className="topbar-actions"><ThemeToggle/><button type="button" className="secondary-button" onClick={()=>setRevision(v=>v+1)}>Обновить Ozon</button><a className="secondary-button" href="https://marketshelper.ru/account">Аккаунт</a></div></header>
-      <section className="panel ozon-period-bar" aria-label="Период кабинета Ozon"><div><button type="button" className="secondary-button" onClick={()=>applyDays(7)}>7 дней</button><button type="button" className="secondary-button" onClick={()=>applyDays(30)}>30 дней</button></div><label>Ozon: начало периода<input type="date" value={draftStart} onChange={e=>setDraftStart(e.target.value)}/></label><label>Ozon: конец периода<input type="date" value={draftEnd} onChange={e=>setDraftEnd(e.target.value)}/></label><button type="button" className="secondary-button" onClick={applyRange}>Применить период</button>{dateError&&<p role="alert">{dateError}</p>}</section>
+      <details className="panel ozon-period-bar" aria-label="Период кабинета Ozon" open={wide}><summary>Период: {period.start} — {period.end}</summary><div><button type="button" className="secondary-button" onClick={()=>applyDays(7)}>7 дней</button><button type="button" className="secondary-button" onClick={()=>applyDays(30)}>30 дней</button></div><label>Ozon: начало периода<input type="date" value={draftStart} onChange={e=>setDraftStart(e.target.value)}/></label><label>Ozon: конец периода<input type="date" value={draftEnd} onChange={e=>setDraftEnd(e.target.value)}/></label><button type="button" className="secondary-button" onClick={applyRange}>Применить период</button>{dateError&&<p role="alert">{dateError}</p>}</details>
       {session.is_demo&&<p className="data-banner" role="status">Демонстрационный кабинет Ozon: внешние операции и запись отключены.</p>}
       <LazyPanel key={page} label={titles[page]}><OzonCabinetViews key={`${page}:${period.start}:${period.end}:${revision}`} page={page} start={period.start} end={period.end} canWrite={session.can_write&&!session.is_demo} isOwner={session.role==='owner'&&!session.is_demo} role={session.role}/></LazyPanel>
-      <footer className="ozon-cabinet-footer"><a href="https://marketshelper.ru/training">Видеоуроки</a><a href="https://marketshelper.ru/billing">Подписка</a><a href="https://marketshelper.ru/contacts">Поддержка</a></footer>
+      <footer className="ozon-cabinet-footer"><a href="https://marketshelper.ru/training">Видеоуроки</a>{isNativeApp()?null:<a href="https://marketshelper.ru/billing">Подписка</a>}<a href="https://marketshelper.ru/contacts">Поддержка</a></footer>
     </main>
   </div>;
 }

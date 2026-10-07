@@ -6,6 +6,9 @@ import "./CabinetUx.css";
 import "./Theme.css";
 import { trackMetrikaGoal } from "./metrika";
 import { startPwaUpdates } from "./pwa-updates";
+import { installStoreModeGuards } from "./app-shell";
+
+installStoreModeGuards();
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

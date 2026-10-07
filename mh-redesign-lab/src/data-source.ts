@@ -36,6 +36,7 @@ import type {
   Tone,
 } from "./contracts";
 import * as mock from "./mock-dashboard";
+import { saveBlob } from "./download";
 
 type ConnectionMode = "loading" | "live" | "stale" | "fallback" | "mock";
 
@@ -891,12 +892,7 @@ export async function downloadReportPdf(name = "Операционный отч�
   });
   if (!response.ok) throw new Error(`PDF returned HTTP ${response.status}`);
   const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "marketshelper-report.pdf";
-  link.click();
-  URL.revokeObjectURL(url);
+  await saveBlob(blob, "marketshelper-report.pdf");
 }
 
 export function decideAgentCandidate(id: number, outcome: "apply" | "reject"): Promise<{ status: string; detail?: string }> {
@@ -1284,12 +1280,7 @@ export async function downloadSavedReport(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/operations/reports/runs/${id}/download`, { headers: apiHeaders() });
   if (!response.ok) throw new Error(`PDF returned HTTP ${response.status}`);
   const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "marketshelper-report.pdf";
-  link.click();
-  URL.revokeObjectURL(url);
+  await saveBlob(blob, "marketshelper-report.pdf");
 }
 
 export function useDashboardData(activePage: PageId, selectedPeriod: DashboardPeriod): DashboardDataState {
