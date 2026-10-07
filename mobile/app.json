@@ -1,0 +1,7 @@
+{
+  "appId": "ru.marketshelper.app",
+  "appName": "MARKETSHELPER",
+  "loginUrl": "https://marketshelper.ru/login",
+  "userAgentSuffix": "MarketsHelperApp/1.0",
+  "allowNavigation": ["marketshelper.ru", "*.marketshelper.ru", "*.app.marketshelper.ru"]
+}
