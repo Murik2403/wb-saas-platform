@@ -8,7 +8,8 @@ function anchorDownload(blob: Blob, filename: string) {
     link.download = filename;
     link.click();
   } finally {
-    URL.revokeObjectURL(url);
+    // Some browsers start the download asynchronously; revoking right after click() can cancel it.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 }
 

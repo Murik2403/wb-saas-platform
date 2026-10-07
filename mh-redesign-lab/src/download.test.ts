@@ -10,9 +10,15 @@ afterEach(() => { vi.restoreAllMocks(); delete (window as any).Capacitor; Object
 
 describe("saveBlob", () => {
   it("uses an anchor download on the web", async () => {
+    vi.useFakeTimers();
     const click = stubUrl();
     await saveBlob(blob, "r.csv");
-    expect(click).toHaveBeenCalled(); expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:x");
+    expect(click).toHaveBeenCalled();
+    // The object URL must outlive click(): browsers may start the download asynchronously.
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(60_000);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:x");
+    vi.useRealTimers();
   });
   it("uses navigator.share in the app", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("MarketsHelperApp/1");
