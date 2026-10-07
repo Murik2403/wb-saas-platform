@@ -1,19 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiHeaders } from "./data-source";
 import { scopedFetch } from "./selected-shop";
 import { previewMoney } from "./ozon-preview-money";
-import { OzonProductInsights } from "./OzonProductInsights";
-import { OzonAdsAnalyticsPanel } from "./OzonAdsAnalyticsPanel";
-import { OzonMonthlyPanel } from "./OzonMonthlyPanel";
-import { OzonHistoricalPnl } from "./OzonHistoricalPnl";
-import { OzonNormalizationPanel } from "./OzonNormalizationPanel";
-import { OzonRealizationSource } from "./OzonRealizationSource";
+const OzonProductInsights=lazy(()=>import("./OzonProductInsights").then(module=>({default:module.OzonProductInsights})));
+const OzonAdsAnalyticsPanel=lazy(()=>import("./OzonAdsAnalyticsPanel").then(module=>({default:module.OzonAdsAnalyticsPanel})));
+const OzonMonthlyPanel=lazy(()=>import("./OzonMonthlyPanel").then(module=>({default:module.OzonMonthlyPanel})));
+const OzonHistoricalPnl=lazy(()=>import("./OzonHistoricalPnl").then(module=>({default:module.OzonHistoricalPnl})));
+const OzonNormalizationPanel=lazy(()=>import("./OzonNormalizationPanel").then(module=>({default:module.OzonNormalizationPanel})));
+const OzonRealizationSource=lazy(()=>import("./OzonRealizationSource").then(module=>({default:module.OzonRealizationSource})));
 import { CashflowPanel } from "./CashflowPanel";
 import { CashAccountsPanel } from "./CashAccountsPanel";
 import { ManufacturingCosts } from "./ManufacturingCosts";
-import { OzonPriceControls } from "./OzonPriceControls";
+const OzonPriceControls=lazy(()=>import("./OzonPriceControls").then(module=>({default:module.OzonPriceControls})));
 import { WorkspaceTabs } from "./WorkspaceTabs";
 import "./OzonCabinetViews.css";
+import { LazyPanel, LazyDisclosure } from "./LazyPanel";
 
 export type OzonCabinetPage = "today"|"stock"|"ads"|"finance"|"production"|"supply"|"agents"|"reports"|"products"|"control"|"settings";
 type Props = {page: OzonCabinetPage;start:string;end:string;canWrite:boolean;isOwner:boolean;role:string};
@@ -79,12 +80,12 @@ export function OzonCabinetViews(props:Props){
  const canWrite=props.canWrite&&['owner','manager'].includes(props.role);
  const isOwner=props.isOwner&&props.role==='owner';
  const readonly=<p>Показываем данные Ozon и явно отмечаем неполноту источников. Неизвестная себестоимость не считается нулевой.</p>;
- if(page==="products")return <div className="ozon-cabinet-views"><WorkspaceTabs ariaLabel="Товары Ozon" initial="ozon-products" tabs={[{id:"ozon-products",label:"Экономика и план"},{id:"ozon-prices",label:"Цены Ozon"}]} panels={{"ozon-products":<OzonProductInsights {...{start,end,canWrite}}/>,"ozon-prices":<OzonPriceControls canWrite={canWrite}/>}}/></div>;
- if(page==="ads")return <div className="ozon-cabinet-views"><OzonAdsAnalyticsPanel {...{start,end,canWrite,isOwner}}/></div>;
- if(page==="finance")return <div className="ozon-cabinet-views">{readonly}<OzonMonthlyPanel {...{start,end,canWrite}}/><details className="panel ozon-cabinet-panel"><summary>Сверка начислений API и документального реестра</summary><OzonNormalizationPanel {...{start,end,canWrite}}/></details><details className="panel ozon-cabinet-panel"><summary>Документальные партии и исторический FIFO</summary><OzonHistoricalPnl {...{start,end,canWrite}}/></details><details className="panel ozon-cabinet-panel"><summary>Документы реализации Ozon</summary><OzonRealizationSource canWrite={canWrite}/></details><details className="panel ozon-cabinet-panel"><summary>Общие счета и движение денег кабинета</summary><p>Счета общие для WB и Ozon. Это внесённые денежные операции, а не автоматические выплаты Ozon.</p><CashflowPanel role={canWrite?props.role:"viewer"}/><CashAccountsPanel role={canWrite?props.role:"viewer"} start={start} end={end}/></details></div>;
- if(page==="reports")return <div className="ozon-cabinet-views"><h2>Отчёты Ozon</h2><p>Помесячный ОПиУ по документам и выгрузка CSV. Начисления, выручка и выплаты — разные показатели.</p><OzonMonthlyPanel {...{start,end,canWrite:false}}/></div>;
+ if(page==="products")return <div className="ozon-cabinet-views"><WorkspaceTabs ariaLabel="Товары Ozon" initial="ozon-products" tabs={[{id:"ozon-products",label:"Экономика и план"},{id:"ozon-prices",label:"Цены Ozon"}]} panels={{"ozon-products":<LazyPanel label="экономику товаров Ozon"><OzonProductInsights {...{start,end,canWrite}}/></LazyPanel>,"ozon-prices":<LazyPanel label="цены Ozon"><OzonPriceControls canWrite={canWrite}/></LazyPanel>}}/></div>;
+ if(page==="ads")return <div className="ozon-cabinet-views"><LazyPanel label="аналитику рекламы Ozon"><OzonAdsAnalyticsPanel {...{start,end,canWrite,isOwner}}/></LazyPanel></div>;
+ if(page==="finance")return <div className="ozon-cabinet-views">{readonly}<LazyPanel label="ОПиУ Ozon"><OzonMonthlyPanel {...{start,end,canWrite}}/></LazyPanel><LazyDisclosure title="Сверка начислений API и документального реестра"><OzonNormalizationPanel {...{start,end,canWrite}}/></LazyDisclosure><LazyDisclosure title="Документальные партии и исторический FIFO"><OzonHistoricalPnl {...{start,end,canWrite}}/></LazyDisclosure><LazyDisclosure title="Документы реализации Ozon"><OzonRealizationSource canWrite={canWrite}/></LazyDisclosure><details className="panel ozon-cabinet-panel"><summary>Общие счета и движение денег кабинета</summary><p>Счета общие для WB и Ozon. Это внесённые денежные операции, а не автоматические выплаты Ozon.</p><CashflowPanel role={canWrite?props.role:"viewer"}/><CashAccountsPanel role={canWrite?props.role:"viewer"} start={start} end={end}/></details></div>;
+ if(page==="reports")return <div className="ozon-cabinet-views"><h2>Отчёты Ozon</h2><p>Помесячный ОПиУ по документам и выгрузка CSV. Начисления, выручка и выплаты — разные показатели.</p><LazyPanel label="ОПиУ Ozon"><OzonMonthlyPanel {...{start,end,canWrite:false}}/></LazyPanel></div>;
  if(page==="settings")return <div className="ozon-cabinet-views"><SellerSettings {...{start,end,canWrite,isOwner}}/>{isOwner&&canWrite?<OzonAccess/>:null}<p>Подключение рекламного Performance API доступно в разделе «Реклама».</p></div>;
  if(page==="production")return <div className="ozon-cabinet-views"><h2>Общее производство кабинета</h2><p>Сырьё, производственные партии и физический склад общие для кабинета. Физический каталог использует идентификаторы WB; SKU Ozon автоматически не сопоставляются. Документальные партии Ozon учитываются отдельно в «Финансах».</p><ManufacturingCosts canEdit={canWrite}/></div>;
- if(page==="agents")return <div className="ozon-cabinet-views"><h2>Автоматизация Ozon</h2><p>Автоматическое управление рекламным бюджетом и ставками Ozon пока не подключено. Аналитика Performance работает отдельно в «Рекламе».</p><p>Работа с ценами выполняется вручную через проверенный черновик и отдельное подтверждение. Автоматических правил изменения цен здесь нет.</p><OzonPriceControls canWrite={canWrite} mode="drafts"/></div>;
+ if(page==="agents")return <div className="ozon-cabinet-views"><h2>Автоматизация Ozon</h2><p>Автоматическое управление рекламным бюджетом и ставками Ozon пока не подключено. Аналитика Performance работает отдельно в «Рекламе».</p><p>Работа с ценами выполняется вручную через проверенный черновик и отдельное подтверждение. Автоматических правил изменения цен здесь нет.</p><LazyPanel label="черновики цен Ozon"><OzonPriceControls canWrite={canWrite} mode="drafts"/></LazyPanel></div>;
  return <div className="ozon-cabinet-views">{page==="today"?readonly:null}<ReadModel key={`${page}:${start}:${end}`} resource={page==="today"?"overview":page==="supply"?"orders":page==="stock"?"stock":"control"} {...{start,end}}/>{page==="supply"?<><h2>Возвраты Ozon</h2><ReadModel resource="returns" {...{start,end}}/><p>Здесь просмотр сохранённых отправлений и возвратов. Изменение статусов, создание поставки и возврат денег не выполняются.</p></>:null}</div>;
 }

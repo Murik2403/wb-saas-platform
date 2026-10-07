@@ -6,8 +6,8 @@ vi.mock("./OzonCabinetViews",()=>({OzonCabinetViews:(props:{page:string;start:st
 const session={marketplace:"ozon" as const,role:"owner",can_write:true,is_demo:false,authorized:true,shared_routes:[]};
 beforeEach(()=>{history.replaceState(null,"","/?marketplace=ozon&view=products&period=custom&start=2026-09-01&end=2026-09-30");});
 afterEach(cleanup);
-it("all eleven destinations stay in the Ozon cabinet without a WB shop selector",()=>{
- render(<OzonCabinetShell session={session}/>);expect(screen.getByTestId("ozon-page")).toHaveTextContent('"page":"products"');
+it("all eleven destinations stay in the Ozon cabinet without a WB shop selector",async()=>{
+ render(<OzonCabinetShell session={session}/>);expect(await screen.findByTestId("ozon-page")).toHaveTextContent('"page":"products"');
  for(const [label,page] of [["Сегодня","today"],["Склад","stock"],["Реклама","ads"],["Финансы","finance"],["Производство","production"],["Поставки","supply"],["Агенты","agents"],["Отчеты","reports"],["Товары","products"],["Контроль","control"],["Настройки","settings"]]){
   fireEvent.click(screen.getByRole("button",{name:label}));expect(screen.getByTestId("ozon-page")).toHaveTextContent(`"page":"${page}"`);
  }

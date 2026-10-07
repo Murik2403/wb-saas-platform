@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, useEffect, useRef, useState } from "react";
 import { Command, Menu, X, LayoutDashboard, Package, Megaphone, WalletCards, Factory, Truck, Bot, BarChart3, ClipboardCheck, SlidersHorizontal } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
-import { OzonCabinetViews, type OzonCabinetPage } from "./OzonCabinetViews";
+import type { OzonCabinetPage } from "./OzonCabinetViews";
+import { LazyPanel } from "./LazyPanel";
+const OzonCabinetViews=lazy(()=>import("./OzonCabinetViews").then(module=>({default:module.OzonCabinetViews})));
 import type { MarketplaceSession } from "./marketplace-context";
 import "./OzonCabinetShell.css";
 const navigation = [
@@ -36,7 +38,7 @@ export function OzonCabinetShell({session}:{session:MarketplaceSession}){
       <header className="topbar"><button ref={menuButton} type="button" className="icon-button ozon-menu-toggle" aria-label="Открыть меню Ozon" aria-expanded={menu} onClick={()=>setMenu(v=>!v)}><Menu/></button><div><span className="eyebrow">Ozon · {navigation.find(([id])=>id===page)?.[1]}</span><h1>{titles[page]}</h1></div><div className="topbar-actions"><ThemeToggle/><button type="button" className="secondary-button" onClick={()=>setRevision(v=>v+1)}>Обновить Ozon</button><a className="secondary-button" href="https://marketshelper.ru/account">Аккаунт</a></div></header>
       <section className="panel ozon-period-bar" aria-label="Период кабинета Ozon"><div><button type="button" className="secondary-button" onClick={()=>applyDays(7)}>7 дней</button><button type="button" className="secondary-button" onClick={()=>applyDays(30)}>30 дней</button></div><label>Ozon: начало периода<input type="date" value={draftStart} onChange={e=>setDraftStart(e.target.value)}/></label><label>Ozon: конец периода<input type="date" value={draftEnd} onChange={e=>setDraftEnd(e.target.value)}/></label><button type="button" className="secondary-button" onClick={applyRange}>Применить период</button>{dateError&&<p role="alert">{dateError}</p>}</section>
       {session.is_demo&&<p className="data-banner" role="status">Демонстрационный кабинет Ozon: внешние операции и запись отключены.</p>}
-      <OzonCabinetViews key={`${page}:${period.start}:${period.end}:${revision}`} page={page} start={period.start} end={period.end} canWrite={session.can_write&&!session.is_demo} isOwner={session.role==='owner'&&!session.is_demo} role={session.role}/>
+      <LazyPanel key={page} label={titles[page]}><OzonCabinetViews key={`${page}:${period.start}:${period.end}:${revision}`} page={page} start={period.start} end={period.end} canWrite={session.can_write&&!session.is_demo} isOwner={session.role==='owner'&&!session.is_demo} role={session.role}/></LazyPanel>
       <footer className="ozon-cabinet-footer"><a href="https://marketshelper.ru/training">Видеоуроки</a><a href="https://marketshelper.ru/billing">Подписка</a><a href="https://marketshelper.ru/contacts">Поддержка</a></footer>
     </main>
   </div>;

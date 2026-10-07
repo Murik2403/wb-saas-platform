@@ -52,4 +52,8 @@ Graphify query first confirmed App -> OzonCabinetShell -> OzonCabinetViews and i
 
 ## Current Status
 
-Read-only architecture review and baseline complete. No lazy runtime changes made in this tranche. Role UI regression suite independently passed 49 tests in five files; root owns the full final suite/release gate.
+First bounded runtime step implemented without App edits: OzonCabinetShell imports Views asynchronously; seven Ozon-only panels have separate imports and scoped Suspense/error handling. LazyDisclosure delays financial document panels until expansion, then keeps visited forms mounted. A failed chunk leaves the shell usable; the refresh button warns to save drafts and never refreshes automatically. Imports retain validated session props and existing APIs; there is no mock-data fallback.
+
+Fresh `npm run build -- --sourcemap` passed tsc and Vite. Entry JS **880.81 kB / gzip 241.04 kB**, down **8.0% raw / 7.2% gzip** from baseline; entry CSS **123.90 kB / gzip 22.81 kB**. Eight asynchronous JS chunks range from 5.37 to 18.34 kB. Local HTML references only entry JS/CSS, with no eager modulepreload of Ozon chunks. This does not close the whole bundle issue: App and shared heavy panels remain eager and the main JS still exceeds 500 kB. Browser network/live acceptance and committed deployment belong to root's final release gate.
+
+New tests cover deferred loader/fallback, rejected chunk with unrelated shell still available, unopened disclosure loader not called, draft preserved after close/reopen, and pending import resolving after unmount not restoring stale content. Existing shell/view role and navigation tests adapted to asynchronous resolution; first targeted gate passed 25 tests in three files. Role UI regression suite previously passed 49 tests in five files.
