@@ -18,4 +18,9 @@ describe("buildCsv", () => {
     expect(buildCsv(["a", "b"], [[null, NaN]])).toBe("﻿a;b\r\n;\r\n");
     expect(buildCsv(["a", "b"], [])).toBe("﻿a;b\r\n");
   });
+  it.each([" =1+1", "\n=1+1", "\r\n+1", "\t@SUM(A1)"])("keeps leading whitespace/control formula text inert: %j", (input) => {
+    const csv = buildCsv(["a"], [[input], [-7]]);
+    expect(csv).toContain(`'${input}`);
+    expect(csv).toContain("\r\n-7\r\n");
+  });
 });

@@ -52,7 +52,7 @@ export function taxReconciliationCsv(data: Result) {
     ["База", rub(data.calculation.base)], ["Оценка налога", rub(data.calculation.estimate)], ["После оценки", rub(data.calculation.after_estimate)],
     ["ФНС минус оценка", rub(data.calculation.fns_difference)], ["После начисления ФНС", rub(data.calculation.after_fns)], ["Начислено минус оплачено", rub(data.calculation.assessed_minus_paid)], ["Основной налог", rub(data.calculation.income_tax ?? null)], ["НДС к уплате (оценка)", rub(data.calculation.vat_to_pay ?? null)], ["Превышение вычетов НДС", rub(data.calculation.vat_credit ?? null)], ["Налогоплательщик", data.values.taxpayer_type ?? "ip"], ["Есть работники / ограничение 50%", data.values.has_staff ? "Да" : "Нет"], ["Основание", data.values.source]];
   // Formula-looking free text must remain text in spreadsheet applications.
-  return "\uFEFF" + rows.map(row => row.map(cell => `"${String(cell).replace(/^[=+@-]/, "'$&").replaceAll('"', '""')}"`).join(";")).join("\r\n");
+  return "\uFEFF" + rows.map(row => row.map(cell => `"${safeCsvText(String(cell)).replaceAll('"', '""')}"`).join(";")).join("\r\n");
 }
 
 export function TaxReconciliationPanel() {
@@ -156,3 +156,4 @@ export function TaxReconciliationPanel() {
     </details>
   </section>;
 }
+import { safeCsvText } from "./csv";
