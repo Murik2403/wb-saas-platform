@@ -32,6 +32,21 @@ def test_unconfirmed_separate_key_escrow_does_not_disable_existing_copy(tmp_path
     status=json.loads((tmp_path/'status.json').read_text())
     assert status['key_escrow_confirmed'] is False and status['alert']=='unconfigured'
 
+def test_retired_history_is_copied_without_becoming_a_live_freshness_requirement(tmp_path,monkeypatch):
+    env=environment(tmp_path);env['WB_SAAS_OFFSITE_ARCHIVE_GROUPS']='retired'
+    history=tmp_path/'retired';history.mkdir()
+    archive=history/'old.tar.gz.enc';archive.write_bytes(b'WBSAASBK1historic')
+    os.utime(archive,(time.time()-30*86400,)*2)
+    copied=[]
+    def run(args,**kwargs):
+        if args[1]=='copy':copied.extend(Path(args[args.index('--files-from')+1]).read_text().splitlines())
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(offsite.subprocess,'run',run)
+    assert offsite.run(env)==0
+    assert any(name.startswith('retired/') for name in copied)
+    assert any(name.startswith('control-plane/') for name in copied)
+    assert offsite.check_freshness(env)==0
+
 def test_26_hour_local_freshness_failure_alerts_without_remote_copy(tmp_path,monkeypatch):
     env=environment(tmp_path);env['WB_SAAS_BACKUP_ALERT_COMMAND_JSON']='["synthetic-alert"]'
     archive=tmp_path/'control-plane'/'fixture.tar.gz.enc';os.utime(archive,(time.time()-27*3600,)*2)

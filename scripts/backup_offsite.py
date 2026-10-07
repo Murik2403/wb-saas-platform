@@ -55,12 +55,14 @@ def run(env=None):
     status_path=Path(env.get('WB_SAAS_BACKUP_STATUS_FILE','/opt/wb-saas/backup-offsite-status.json'))
     now=time.time();status={'attempt_at':now,'local_fresh':False,'offsite_verified':False,'key_escrow_confirmed':env.get('WB_SAAS_OFFSITE_KEY_ESCROW_CONFIRMED')=='1','error':None,'alert':'not_needed'}
     try:
-        groups=env.get('WB_SAAS_BACKUP_REQUIRED_GROUPS','control-plane').split(',')
+        required=env.get('WB_SAAS_BACKUP_REQUIRED_GROUPS','control-plane').split(',')
+        history=[g for g in env.get('WB_SAAS_OFFSITE_ARCHIVE_GROUPS','').split(',') if g]
+        groups=list(dict.fromkeys(required+history))
         if any(not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',g) for g in groups):raise ValueError('invalid_groups')
         archives=[]
         for group in groups:
             files=[p for p in (root/group).glob('*.tar.gz.enc') if p.is_file() and not p.is_symlink()]
-            if not files or now-max(p.stat().st_mtime for p in files)>MAX_AGE:raise ValueError('local_backup_stale')
+            if group in required and (not files or now-max(p.stat().st_mtime for p in files)>MAX_AGE):raise ValueError('local_backup_stale')
             archives.extend(files)
         status['local_fresh']=True
         for path in archives:
