@@ -5,6 +5,7 @@ import "./styles.css";
 import "./CabinetUx.css";
 import "./Theme.css";
 import { trackMetrikaGoal } from "./metrika";
+import { startPwaUpdates } from "./pwa-updates";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -21,8 +22,6 @@ if (goal) {
   });
 }
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js");
-  });
+if (import.meta.env.PROD) {
+  window.addEventListener("load", () => { startPwaUpdates(); });
 }

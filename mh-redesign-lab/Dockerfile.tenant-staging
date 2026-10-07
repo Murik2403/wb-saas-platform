@@ -63,6 +63,7 @@ COPY mh-redesign-lab/tenant-api/growth_delivery.py ./growth_delivery.py
 COPY mh-redesign-lab/tenant-api/growth_outbox_worker.py ./growth_outbox_worker.py
 COPY mh-redesign-lab/tenant-api/store_expense_import.py ./store_expense_import.py
 COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
+RUN printf '%s\n' "$REDESIGN_BUILD_ID" > /usr/share/nginx/html/build-id.txt
 COPY mh-redesign-lab/deploy/nginx.tenant-staging.conf /etc/nginx/conf.d/default.conf
 COPY mh-redesign-lab/deploy/tenant-staging-entrypoint.sh /usr/local/bin/tenant-staging-entrypoint
 
