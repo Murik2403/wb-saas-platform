@@ -27,4 +27,6 @@ Live role checks: demo session user.role viewer; signed manager taxPUT/WBconnect
 
 Browser390px: production compact grid one353.875px column; supply dialog left16/right358.67 fits390px viewport. No dialog submission. UI screenshots/proofs outside Git at `deliveries/audit-p0-20261007/merge-0a89f63/`; matching server release `/opt/wb-saas/releases/merge-0a89f63/`.
 
+Real owner Ozon prices successfully read from Seller API. At390px, price rows render as grid cards305.21px wide; page scrollWidth375px, so no horizontal page overflow. No price input or marketplace send was performed. Temporary browser viewport reset after screenshots.
+
 This integration closes this branch's feasible release work, not the entire audit. Remaining external/mobile/legal/capacity items remain in `AUDIT_DEPLOYMENT_STATUS_2026-10-07.md`; historically exposed bot-token rotation still requires owner confirmation.
