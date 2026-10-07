@@ -36,7 +36,6 @@ export function createDialogFocusScope(root:HTMLElement,onClose:()=>void,opener:
  const oldTabIndex=root.getAttribute('tabindex');root.tabIndex=-1;
  // aria-modal describes a modal; inert actually removes the background from
  // keyboard, pointer and assistive-technology interaction. Preserve nested scopes.
- if(!activeScopes.length&&window.matchMedia?.('(max-width:1120px)').matches)document.documentElement.style.overflow='hidden';
  activeScopes.push(root);
  updateScrollLock();
  isolateTopScope();
@@ -64,7 +63,6 @@ export function createDialogFocusScope(root:HTMLElement,onClose:()=>void,opener:
   updateScrollLock();
   if(oldTabIndex===null)root.removeAttribute('tabindex');else root.setAttribute('tabindex',oldTabIndex);
   isolateTopScope();
-  if(!activeScopes.length)document.documentElement.style.overflow='';
   if(wasTop&&opener?.isConnected&&(!activeScopes.length||activeScopes.at(-1)!.contains(opener)))opener.focus();
  };
 }
