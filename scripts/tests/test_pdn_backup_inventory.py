@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from scripts.pdn_backup_inventory import inventory, remote_inventory, summarize
+import scripts.pdn_backup_inventory as module
 
 NOW = datetime(2026, 10, 8, tzinfo=timezone.utc).timestamp()
 
@@ -75,3 +76,25 @@ def test_staging_digest_sidecars_are_inventory_not_archive(tmp_path):
 def test_missing_root_is_failure(tmp_path):
     with pytest.raises(ValueError, match='invalid_root'):
         inventory(tmp_path / 'missing', 14, NOW)
+
+
+def test_nanosecond_s3_timestamps_are_normalized_for_python_310(monkeypatch):
+    class Python310Date(datetime):
+        @classmethod
+        def fromisoformat(cls, value):
+            if '.130030745' in value:
+                raise ValueError('Python 3.10 fractional precision')
+            return datetime.fromisoformat(value)
+    monkeypatch.setattr(module, 'datetime', Python310Date)
+    rows = remote_inventory([{'Path': 'synthetic/archive.tar.gz.enc', 'Size': 1,
+                             'ModTime': '2026-09-20T00:20:47.130030745Z'}], 14, NOW)
+    assert rows[0]['status'] == 'age_candidate'
+
+
+def test_sqlite_snapshots_have_explicit_kind(tmp_path):
+    group = tmp_path / 'synthetic'
+    group.mkdir()
+    for name in ['snapshot.sqlite3', 'snapshot.sqlite3.enc']:
+        (group / name).write_bytes(b'synthetic')
+    assert {row['kind'] for row in inventory(tmp_path, 14, NOW)} == {
+        'encrypted_database_snapshot', 'plaintext_database_snapshot'}

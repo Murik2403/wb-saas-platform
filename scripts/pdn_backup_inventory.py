@@ -25,6 +25,10 @@ def _kind(name):
         return 'digest_sidecar'
     if name.endswith('.tar.gz.enc'):
         return 'encrypted_archive'
+    if name.endswith('.sqlite3.enc'):
+        return 'encrypted_database_snapshot'
+    if name.endswith('.sqlite3'):
+        return 'plaintext_database_snapshot'
     if name.endswith('.tar.gz'):
         return 'plaintext_archive'
     if name.endswith('.partial'):
@@ -103,7 +107,10 @@ def remote_inventory(items, days, now):
         raw = item.get('ModTime')
         if isinstance(raw, str):
             try:
-                date = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+                # Python 3.10 rejects S3/rclone nanosecond fractions; retaining
+                # microseconds is sufficient for an age-only read-only report.
+                normalized = re.sub(r'(\.\d{6})\d+(?=Z|[+-]\d{2}:\d{2}$)', r'\1', raw)
+                date = datetime.fromisoformat(normalized.replace('Z', '+00:00'))
                 if date.tzinfo is not None:
                     stamp = date.timestamp()
             except (ValueError, OverflowError):
