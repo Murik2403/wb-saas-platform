@@ -257,6 +257,11 @@ def privacy_page(request: Request):
     return templates.TemplateResponse(request, "privacy.html", {"policy_version": accounts.PDN_POLICY_VERSION})
 
 
+@app.get("/consent", response_class=HTMLResponse)
+def consent_page(request: Request):
+    return templates.TemplateResponse(request, "consent.html", {"policy_version": accounts.PDN_POLICY_VERSION})
+
+
 # --------------------------------------------------------------------------
 # Crawler-facing endpoints
 # --------------------------------------------------------------------------
@@ -274,6 +279,7 @@ _SITEMAP_PATHS: tuple[tuple[str, str, str], ...] = (
     ("/compliance", "yearly", "0.3"),
     ("/offer", "yearly", "0.3"),
     ("/privacy", "yearly", "0.3"),
+    ("/consent", "yearly", "0.3"),
 ) + tuple((path, "monthly", "0.7") for path in PUBLIC_MARKETING_PATHS)
 
 _ROBOTS_DISALLOW = (
@@ -371,6 +377,10 @@ def register_submit(
     csrf_token: str = Form(""),
     invite: str = Form(""),
     marketing_consent: str | None = Form(None),
+    # The offer is accepted by its own checkbox, separately from the personal-data consent.
+    # Absent from the POST body (None) means unchecked; unit tests calling the handler
+    # directly get the Form default object instead, which is not None.
+    offer_accept: str | None = Form(None),
 ):
     if not isinstance(invite, str):
         invite = ""
@@ -381,6 +391,10 @@ def register_submit(
     if not csrf.verify(request, csrf_token):
         return _render_auth_form_error(
             request, "register.html", {"error": "Форма устарела, попробуйте ещё раз.", "email": email}, 400
+        )
+    if offer_accept is None:
+        return _render_auth_form_error(
+            request, "register.html", {"error": "Нужно принять условия публичной оферты.", "email": email, "invite": invite}, 400
         )
     policy_error = _password_policy_error(password)
     if policy_error:

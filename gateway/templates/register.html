@@ -14,10 +14,13 @@
   <label for="password">Пароль</label>
   <input type="password" id="password" name="password" required minlength="8">
   <label class="checkbox-line">
+    <input type="checkbox" id="offer_accept" name="offer_accept" required>
+    <span>Принимаю условия <a href="/offer" target="_blank">публичной оферты</a></span>
+  </label>
+  <label class="checkbox-line">
     <input type="checkbox" id="pdn_consent" name="pdn_consent" required>
-    <span>Согласен(на) с <a href="/offer" target="_blank">публичной офертой</a> и даю
-    <a href="/privacy" target="_blank">согласие на обработку персональных данных</a>
-    по Политике в редакции от {{ policy_version }}</span>
+    <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a>
+    в редакции от {{ policy_version }}. Согласие даётся отдельно от оферты и может быть отозвано в любой момент</span>
   </label>
   <label class="checkbox-line">
     <input type="checkbox" id="marketing_consent" name="marketing_consent" value="yes">
