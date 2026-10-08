@@ -240,13 +240,13 @@ def run(*,apply=False):
     identity_check="from logic import db\nwith db.connect() as c:\n assert c.execute(\"SELECT 1 FROM tenant_instances WHERE slug='67324db'\").fetchone() is None"
     command(['docker','exec','wb-saas-gateway-1','python','-c',identity_check])
     dates,sources,catalog_path,catalog_raw,trusted_envelopes=provenance()
-    local=retention.plan_local(ROOT,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['local'],creation_by_sha256=dates)
+    local=retention.plan_local(ROOT,days=14,namespace_replacements={k:v for k,v in ALIASES.items() if (ROOT/k).is_dir() and any(retention._kind(p.name) in {'encrypted','sqlite'} for p in (ROOT/k).iterdir())},legal_holds=holds['holds']['local'],creation_by_sha256=dates)
     staging=retention.plan_local(STAGING,days=14,legal_holds=holds['holds']['staging'],creation_by_sha256=dates)
     listed=json.loads(command(['rclone','lsjson',REMOTE,'--recursive','--files-only','--retries','1','--low-level-retries','1']))
     inspected=inspect_remote_listing(listed,dates)
     # Bind every inspected object's original age before any manifest is applied.
     backup_offsite.write_status(catalog_path,{'version':1,'creation_by_sha256':dates});catalog_raw=catalog_path.read_bytes()
-    remote=retention.plan_remote(inspected,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['remote'],creation_by_sha256=dates)
+    remote=retention.plan_remote(inspected,days=14,namespace_replacements={k:v for k,v in ALIASES.items() if any(retention._parts(r['path'],remote=True)[0]==k for r in inspected)},legal_holds=holds['holds']['remote'],creation_by_sha256=dates)
     for manifest in (local,staging,remote):
         if any(row['created_ns']<int((time.time()-14*86400)*1e9) for row in manifest['retained']):
             raise ValueError('expired_recovery_floor_requires_classification')
