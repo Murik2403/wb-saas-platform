@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime,timezone
 from pathlib import Path
 from unittest import mock
 import pytest
@@ -37,3 +38,15 @@ def test_restore_probe_is_valid_python_without_null_argv_bytes():
     with mock.patch.object(job,'command',side_effect=execute):
         job.restore_inner(job.ROOT/'synthetic/good.tar.gz.enc')
     assert '\0' not in commands[0][-1]
+    assert commands[0][3]=='10001:10001'
+
+
+def test_copy_does_not_restart_date_bearing_gateway_archive_age():
+    recent=int(datetime(2026,10,8,tzinfo=timezone.utc).timestamp()*1e9)
+    original=int(datetime(2026,9,19,23,42,44,tzinfo=timezone.utc).timestamp()*1e9)
+    assert job.archive_creation('manual-seo-20260919T234244Z.sqlite3',recent)==original
+    assert job.archive_creation('gateway-abcdef0-20260919-234244.sqlite3.enc',recent)==original
+
+
+def test_unknown_creation_name_remains_explicit_mtime_fallback():
+    assert job.archive_creation('unknown.sqlite3.enc',123456789)==123456789

@@ -303,3 +303,66 @@ def test_receipt_rewrite_failure_preserves_previous_durable_evidence(tmp_path, m
         module._private_write(path, {"state": "pending"})
     assert json.loads(path.read_text()) == original
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_copied_old_cipher_with_fresh_mtime_remains_expired(tmp_path):
+    copied = fixture_file(tmp_path, "copied-old.tar.gz.enc", 0, b"WBSAASBK1" + b"old" * 50)
+    fresh = fixture_file(tmp_path, "fresh.tar.gz.enc", 1, b"WBSAASBK1" + b"new" * 50)
+    digest = hashlib.sha256(copied.read_bytes()).hexdigest()
+    provenance = {digest: int((NOW - 30 * 86400) * 1e9)}
+    default = module.plan_local(tmp_path, now=NOW)
+    assert not default["candidates"]
+    manifest = module.plan_local(tmp_path, now=NOW, creation_by_sha256=provenance)
+    assert manifest["creation_by_sha256"] == provenance
+    row = manifest["candidates"][0]
+    assert row["path"] == "synthetic/copied-old.tar.gz.enc"
+    assert row["mtime_ns"] == int(NOW * 1e9)
+    assert row["created_ns"] == provenance[digest]
+    assert row["creation_basis"] == "sha256_provenance"
+    assert manifest["retained"][0]["path"] == "synthetic/fresh.tar.gz.enc"
+    apply(manifest, tmp_path)
+    assert not copied.exists() and fresh.exists()
+
+
+def test_remote_wrapped_old_cipher_uses_manifest_bound_original_age(tmp_path):
+    old = remote_row("synthetic/copied.tar.gz.enc", 0)
+    fresh = remote_row("synthetic/fresh.tar.gz.enc", 1, "2" * 64)
+    manifest = module.plan_remote([old, fresh], now=NOW, creation_by_sha256={old["sha256"]: int((NOW - 30 * 86400) * 1e9)})
+    deleted = []
+    module.apply_remote(manifest, acknowledgment=manifest["manifest_sha256"], proof=proof(manifest),
+                        receipt_path=tmp_path / "receipt.json", read_metadata=lambda path: old if path == old["path"] else fresh,
+                        delete_file=deleted.append, now=NOW)
+    assert deleted == [old["path"]]
+
+
+@pytest.mark.parametrize("catalog", [
+    {"not-a-sha": 1}, {"1" * 64: True}, {"1" * 64: 1.5},
+    {"1" * 64: 0}, {"1" * 64: -1}, {"1" * 64: int((NOW + 1) * 1e9)},
+    [("1" * 64, 1)],
+])
+def test_creation_provenance_rejects_invalid_hash_timestamp_or_future(catalog, tmp_path):
+    with pytest.raises(ValueError, match="invalid_creation_provenance"):
+        module.plan_local(tmp_path, now=NOW, creation_by_sha256=catalog)
+
+
+def test_changed_cipher_is_not_hidden_by_provenance_mapping(tmp_path):
+    old = fixture_file(tmp_path, "copied.tar.gz.enc", 0, b"WBSAASBK1" + b"old" * 50)
+    fixture_file(tmp_path, "fresh.tar.gz.enc", 1, b"WBSAASBK1" + b"new" * 50)
+    digest = hashlib.sha256(old.read_bytes()).hexdigest()
+    manifest = module.plan_local(tmp_path, now=NOW, creation_by_sha256={digest: int((NOW - 30 * 86400) * 1e9)})
+    stamp = old.stat().st_mtime_ns
+    old.write_bytes(b"WBSAASBK1" + b"bad" * 50)
+    os.utime(old, ns=(stamp, stamp))
+    with pytest.raises(ValueError, match="target_changed"):
+        apply(manifest, tmp_path)
+    assert old.exists()
+
+
+def test_untrusted_remote_original_timestamp_is_not_silently_used():
+    old = remote_row("synthetic/old.tar.gz.enc", 0)
+    old["original_created_ns"] = int((NOW - 30 * 86400) * 1e9)
+    fresh = remote_row("synthetic/fresh.tar.gz.enc", 1, "2" * 64)
+    manifest = module.plan_remote([old, fresh], now=NOW)
+    assert not manifest["candidates"]
+    assert manifest["retained"][0]["created_ns"] == old["mtime_ns"]
+    assert manifest["retained"][0]["creation_basis"] == "mtime_fallback"

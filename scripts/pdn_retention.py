@@ -120,7 +120,30 @@ def _replacement_map(value):
     return replacements
 
 
-def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_replacements=None):
+def _creation_map(value, now):
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("invalid_creation_provenance")
+    for digest, timestamp in value.items():
+        if not isinstance(digest, str) or not HASH.fullmatch(digest) or type(timestamp) is not int or not 0 < timestamp <= int(now * 1e9):
+            raise ValueError("invalid_creation_provenance")
+    return dict(value)
+
+
+def _with_creation(row, creation, now):
+    # Never trust arbitrary original_created_ns fields supplied by providers.
+    # Only the manifest-bound, digest-keyed provenance catalog supplies age.
+    if type(row["mtime_ns"]) is not int or not 0 < row["mtime_ns"] <= int(now * 1e9):
+        raise ValueError("invalid_file_timestamp")
+    original = creation.get(row["sha256"])
+    return {**row, "created_ns": min(row["mtime_ns"], original) if original is not None else row["mtime_ns"],
+            "creation_basis": "sha256_provenance" if original is not None else "mtime_fallback"}
+
+
+def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_replacements=None, creation_by_sha256=None):
+    creation = _creation_map(creation_by_sha256, now)
+    rows = [_with_creation(row, creation, now) for row in rows]
     replacements = _replacement_map(namespace_replacements)
     holds = set(legal_holds)
     for item in holds:
@@ -132,7 +155,7 @@ def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_rep
         or (row["kind"] == "sqlite" and row["format"] == "SQLite3"))]
     namespaces = sorted({row["namespace"] for row in valid})
     newest = {group: max((row for row in valid if row["namespace"] == group),
-                        key=lambda row: (row["mtime_ns"], row["path"])) for group in namespaces}
+                        key=lambda row: (row["created_ns"], row["path"])) for group in namespaces}
     for source, target in replacements.items():
         floor = newest.get(target)
         if source not in {row["namespace"] for row in rows} or floor is None or floor["kind"] != "encrypted" or target in holds or floor["path"] in holds or floor["mtime_ns"] > now * 1e9:
@@ -147,7 +170,7 @@ def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_rep
             retained.append(row)
         elif row not in valid and row["kind"] != "digest":
             excluded.append({"path": row["path"], "reason": "unverified_format"})
-        elif row["mtime_ns"] >= cutoff or row["mtime_ns"] > now * 1e9:
+        elif row["created_ns"] >= cutoff:
             excluded.append({"path": row["path"], "reason": "within_window_or_future"})
         elif replacements.get(group, group) not in newest:
             excluded.append({"path": row["path"], "reason": "no_retained_recovery"})
@@ -155,7 +178,7 @@ def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_rep
             base = row["path"][:-7]
             # Sidecars may follow their exact archive, never stand alone.
             archive = by_path.get(base)
-            if archive not in valid or (archive == newest.get(group) and group not in replacements) or archive["path"] in holds or archive["mtime_ns"] >= cutoff or row.get("archive_sha256") != archive["sha256"]:
+            if archive not in valid or (archive == newest.get(group) and group not in replacements) or archive["path"] in holds or archive["created_ns"] >= cutoff or row.get("archive_sha256") != archive["sha256"]:
                 excluded.append({"path": row["path"], "reason": "sidecar_not_verified_candidate"})
             else:
                 candidates.append(row)
@@ -163,13 +186,14 @@ def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_rep
             candidates.append(row)
     result = {"version": 1, "mode": mode, "root": root, "days": days, "planned_at": now,
               "legal_holds": sorted(holds), "namespace_replacements": replacements,
+              "creation_by_sha256": creation,
               "candidates": sorted(candidates, key=lambda row: row["path"]),
               "retained": sorted(retained, key=lambda row: row["path"]), "excluded": excluded}
     result["manifest_sha256"] = manifest_hash(result)
     return result
 
 
-def plan_local(root, *, days=14, now=None, legal_holds=(), namespace_replacements=None):
+def plan_local(root, *, days=14, now=None, legal_holds=(), namespace_replacements=None, creation_by_sha256=None):
     now = time.time() if now is None else now
     _policy(days, now)
     root = _root(root)
@@ -188,7 +212,7 @@ def plan_local(root, *, days=14, now=None, legal_holds=(), namespace_replacement
                 raw = path.read_text(encoding="ascii").strip().split()
                 row["archive_sha256"] = raw[0] if raw and HASH.fullmatch(raw[0]) else ""
             rows.append(row)
-    return _finish(rows, mode="local", root=str(root), days=days, now=now, legal_holds=legal_holds, excluded=excluded, namespace_replacements=namespace_replacements)
+    return _finish(rows, mode="local", root=str(root), days=days, now=now, legal_holds=legal_holds, excluded=excluded, namespace_replacements=namespace_replacements, creation_by_sha256=creation_by_sha256)
 
 
 def _remote_row(item):
@@ -201,7 +225,7 @@ def _remote_row(item):
             "archive_sha256": item.get("archive_sha256", "")}
 
 
-def plan_remote(metadata, *, days=14, now=None, legal_holds=(), namespace_replacements=None):
+def plan_remote(metadata, *, days=14, now=None, legal_holds=(), namespace_replacements=None, creation_by_sha256=None):
     now = time.time() if now is None else now
     _policy(days, now)
     rows, excluded, seen = [], [], set()
@@ -211,7 +235,7 @@ def plan_remote(metadata, *, days=14, now=None, legal_holds=(), namespace_replac
             raise ValueError("duplicate_remote_path")
         seen.add(row["path"])
         rows.append(row)
-    return _finish(rows, mode="remote", root=None, days=days, now=now, legal_holds=legal_holds, excluded=excluded, namespace_replacements=namespace_replacements)
+    return _finish(rows, mode="remote", root=None, days=days, now=now, legal_holds=legal_holds, excluded=excluded, namespace_replacements=namespace_replacements, creation_by_sha256=creation_by_sha256)
 
 
 def _authorize(manifest, acknowledgment, proof, now):
@@ -225,6 +249,10 @@ def _authorize(manifest, acknowledgment, proof, now):
     if any(proof.get(key) is not True for key in ("restore_ok", "erasure_guard_ok", "independent_copy")):
         raise ValueError("missing_independent_recovery_proof")
     retained = {row["namespace"]: row["sha256"] for row in manifest["retained"]}
+    creation = _creation_map(manifest.get("creation_by_sha256"), manifest["planned_at"])
+    for row in manifest["candidates"] + manifest["retained"]:
+        if _with_creation(row, creation, manifest["planned_at"]) != row:
+            raise ValueError("creation_provenance_mismatch")
     replacements = _replacement_map(manifest.get("namespace_replacements"))
     if proof.get("verified_namespace_replacements", {}) != replacements:
         raise ValueError("unverified_namespace_replacement")
@@ -237,7 +265,7 @@ def _authorize(manifest, acknowledgment, proof, now):
         recovery_group = replacements.get(row["namespace"], row["namespace"])
         if row["kind"] not in {"encrypted", "sqlite", "digest"} or recovery_group not in retained or verified_hashes.get(recovery_group) != retained[recovery_group]:
             raise ValueError("recovery_proof_scope_mismatch")
-        if row["mtime_ns"] >= int((manifest["planned_at"] - manifest["days"] * 86400) * 1e9) or row["path"] in manifest["legal_holds"] or row["namespace"] in manifest["legal_holds"] or any(saved["path"] == row["path"] for saved in manifest["retained"]):
+        if row["created_ns"] >= int((manifest["planned_at"] - manifest["days"] * 86400) * 1e9) or row["path"] in manifest["legal_holds"] or row["namespace"] in manifest["legal_holds"] or any(saved["path"] == row["path"] for saved in manifest["retained"]):
             raise ValueError("ineligible_candidate")
     if len({row["path"] for row in manifest["candidates"]}) != len(manifest["candidates"]):
         raise ValueError("duplicate_candidate")
@@ -273,16 +301,21 @@ def _private_write(path, value, *, exclusive=False):
 
 def _apply(manifest, acknowledgment, proof, receipt_path, reread, delete, now):
     _authorize(manifest, acknowledgment, proof, now)
+    def ensure_unchanged(row):
+        try:
+            equal = reread(row["path"]) == row
+        except (ValueError, OSError):
+            equal = False
+        if not equal:
+            raise ValueError("target_changed")
     # Validate whole batch before first delete, including preserved recovery.
     for row in manifest["candidates"] + manifest["retained"]:
-        if reread(row["path"]) != row:
-            raise ValueError("target_changed")
+        ensure_unchanged(row)
     receipt = {"manifest_sha256": acknowledgment, "started_at": now, "state": "started", "events": [], "deleted_count": 0}
     _private_write(receipt_path, receipt, exclusive=True)
     try:
         for row in manifest["candidates"]:
-            if reread(row["path"]) != row:
-                raise ValueError("target_changed")
+            ensure_unchanged(row)
             event = {"path": row["path"], "sha256": row["sha256"], "state": "pending", "attempted_at": time.time()}
             receipt["events"].append(event)
             # Durable intent precedes deletion, so disk failure stops mutation
@@ -305,12 +338,13 @@ def apply_local(manifest, *, acknowledgment, proof, receipt_path, now=None, guar
     if manifest.get("mode") != "local":
         raise ValueError("wrong_manifest_mode")
     root = _root(manifest["root"])
+    creation = _creation_map(manifest.get("creation_by_sha256"), manifest["planned_at"])
     def reread(relative):
         row = _local_row(root, relative)
         if row["kind"] == "digest":
             raw = root.joinpath(*relative.split("/")).read_text(encoding="ascii").strip().split()
             row["archive_sha256"] = raw[0] if raw and HASH.fullmatch(raw[0]) else ""
-        return row
+        return _with_creation(row, creation, manifest["planned_at"])
     def delete(relative):
         if guard is not None:guard()
         root.joinpath(*relative.split("/")).unlink()
@@ -321,8 +355,9 @@ def apply_local(manifest, *, acknowledgment, proof, receipt_path, now=None, guar
 def apply_remote(manifest, *, acknowledgment, proof, receipt_path, read_metadata, delete_file, now=None):
     if manifest.get("mode") != "remote" or any(proof.get(key) is not True for key in ("versions_checked", "object_lock_checked", "legal_holds_checked")):
         raise ValueError("remote_policy_not_verified")
+    creation = _creation_map(manifest.get("creation_by_sha256"), manifest["planned_at"])
     return _apply(manifest, acknowledgment, proof, receipt_path,
-                  lambda path: _remote_row(read_metadata(path)), delete_file, time.time() if now is None else now)
+                  lambda path: _with_creation(_remote_row(read_metadata(path)), creation, manifest["planned_at"]), delete_file, time.time() if now is None else now)
 
 
 def main():
@@ -333,6 +368,8 @@ def main():
     parser.add_argument("--legal-hold", action="append", default=[])
     parser.add_argument("--namespace-replacements", type=Path,
                         help="Explicit legacy-to-active namespace JSON; independently verify lineage before apply")
+    parser.add_argument("--creation-by-sha256", type=Path,
+                        help="Verified cipher-SHA256 to original creation unix-nanoseconds JSON")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--ack")
     parser.add_argument("--proof", type=Path)
@@ -349,7 +386,8 @@ def main():
             if args.root is None:
                 raise ValueError("dry_run_requires_root")
             replacements = json.loads(args.namespace_replacements.read_text(encoding="utf-8")) if args.namespace_replacements else None
-            report = plan_local(args.root, days=args.days, legal_holds=args.legal_hold, namespace_replacements=replacements)
+            creation = json.loads(args.creation_by_sha256.read_text(encoding="utf-8")) if args.creation_by_sha256 else None
+            report = plan_local(args.root, days=args.days, legal_holds=args.legal_hold, namespace_replacements=replacements, creation_by_sha256=creation)
             _private_write(args.manifest, report, exclusive=True)
             print(json.dumps({"mode": "dry_run", "manifest_sha256": report["manifest_sha256"], "candidates": len(report["candidates"])}))
         return 0

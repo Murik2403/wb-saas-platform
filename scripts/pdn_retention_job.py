@@ -1,6 +1,6 @@
 """Host scheduler: independently restore retained data before exact-file cleanup."""
 import argparse
-from datetime import datetime
+from datetime import datetime,timezone
 import hashlib
 import json
 import os
@@ -95,7 +95,7 @@ with tempfile.TemporaryDirectory(prefix='pdn-restore-') as tmp:
   assert count>0
  print(json.dumps({'restore_ok':True,'sqlite_databases':count}))
 '''
-    output=command(['docker','exec','--user','0','wb-saas-provisioner-1','python','-c',code])
+    output=command(['docker','exec','--user','10001:10001','wb-saas-provisioner-1','python','-c',code])
     if json.loads(output).get('restore_ok') is not True:raise ValueError('restore_failed')
 
 
@@ -112,6 +112,45 @@ def source_for(row,local_sources):
     else:raise ValueError('encrypted_recovery_required')
     if source_sha not in local_sources:raise ValueError('independent_recovery_source_missing')
     return local_sources[source_sha]
+
+
+def archive_creation(name,fallback):
+    # Date-bearing names are produced by the committed gateway/provisioner
+    # snapshot writers. A copy/envelope must not restart the source's age.
+    found=re.search(r'(?:^|[-_])(\d{8})[-_T](\d{6})(?:_|Z|[.\-])',name)
+    if found:
+        try:
+            stamp=int(datetime.strptime(found[1]+found[2],'%Y%m%d%H%M%S').replace(tzinfo=timezone.utc).timestamp()*1e9)
+            return min(fallback,stamp)
+        except ValueError:pass
+    found=re.search(r'-(1[6-9]\d{8})\.sqlite3\.enc$',name)
+    return min(fallback,int(found[1])*10**9) if found else fallback
+
+
+def provenance():
+    catalog_path=Path('/opt/wb-saas/pdn-archive-origins.json')
+    if catalog_path.is_symlink() or not catalog_path.is_file() or catalog_path.stat().st_mode&0o077:raise ValueError('creation_catalog_unavailable')
+    catalog=json.loads(catalog_path.read_text())
+    if catalog.get('version')!=1 or not isinstance(catalog.get('creation_by_sha256'),dict):raise ValueError('creation_catalog_invalid')
+    dates=catalog['creation_by_sha256'];sources={}
+    for group in ROOT.iterdir():
+        if not group.is_dir() or group.is_symlink() or retention._reserved([group.name]):continue
+        for file in group.iterdir():
+            if not file.is_file() or file.is_symlink() or retention._kind(file.name) not in {'encrypted','sqlite'}:continue
+            digest=retention._hash(file);stamp=archive_creation(file.name,file.stat().st_mtime_ns)
+            dates[digest]=min(dates.get(digest,stamp),stamp)
+            with file.open('rb') as stream:magic=stream.read(9)
+            if magic==b'WBSAASBK1':sources[digest]=file
+    for group in STAGING.iterdir():
+        if not group.is_dir() or group.is_symlink():continue
+        for file in group.glob('*.enc'):
+            if file.is_symlink():raise ValueError('unsafe_staging')
+            header,_=backup_offsite_envelope.header(file)
+            if header['source_sha256'] in dates:
+                digest=retention._hash(file);stamp=dates[header['source_sha256']]
+                dates[digest]=min(dates.get(digest,stamp),stamp)
+    backup_offsite.write_status(catalog_path,catalog)
+    return dates,sources,catalog_path,catalog_path.read_bytes()
 
 
 def run(*,apply=False):
@@ -133,15 +172,9 @@ def run(*,apply=False):
     # This retired directory contains a historical gateway DB, not a live tenant.
     identity_check="from logic import db\nwith db.connect() as c:\n assert c.execute(\"SELECT 1 FROM tenant_instances WHERE slug='67324db'\").fetchone() is None"
     command(['docker','exec','wb-saas-gateway-1','python','-c',identity_check])
-    local=retention.plan_local(ROOT,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['local'])
-    staging=retention.plan_local(STAGING,days=14,legal_holds=holds['holds']['staging'])
-    sources={}
-    for group in ROOT.iterdir():
-        if group.is_dir() and not group.is_symlink() and not retention._reserved([group.name]):
-            for file in group.iterdir():
-                if file.is_file() and not file.is_symlink() and retention._kind(file.name)=='encrypted':
-                    with file.open('rb') as f:magic=f.read(9)
-                    if magic==b'WBSAASBK1':sources[retention._hash(file)]=file
+    dates,sources,catalog_path,catalog_raw=provenance()
+    local=retention.plan_local(ROOT,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['local'],creation_by_sha256=dates)
+    staging=retention.plan_local(STAGING,days=14,legal_holds=holds['holds']['staging'],creation_by_sha256=dates)
     listed=json.loads(command(['rclone','lsjson',REMOTE,'--recursive','--files-only','--retries','1','--low-level-retries','1']))
     selected={};newest={};now=time.time()
     for item in listed:
@@ -155,7 +188,22 @@ def run(*,apply=False):
         if stamp<now-14*86400:selected[path]=item
         if kind!='digest' and (parts[0] not in newest or stamp>newest[parts[0]][0]):newest[parts[0]]=(stamp,item)
     for _,item in newest.values():selected[item['Path']]=item
-    remote=retention.plan_remote([metadata(path,item)[0] for path,item in selected.items()],days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['remote'])
+    inspected=[]
+    for path,item in selected.items():
+        row,head=metadata(path,item)
+        if row['format']=='MHOFFSITE2':
+            length=struct.unpack('>I',head[9:13])[0]
+            if not 1<=length<=4096:raise ValueError('envelope_invalid')
+            predecessor=json.loads(head[13:13+length])['source_sha256']
+            if predecessor in dates:dates[row['sha256']]=min(row['mtime_ns'],dates[predecessor])
+        else:dates[row['sha256']]=archive_creation(path,row['mtime_ns'])
+        inspected.append(row)
+    # Bind every inspected object's original age before any manifest is applied.
+    backup_offsite.write_status(catalog_path,{'version':1,'creation_by_sha256':dates});catalog_raw=catalog_path.read_bytes()
+    remote=retention.plan_remote(inspected,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['remote'],creation_by_sha256=dates)
+    for manifest in (local,staging,remote):
+        if any(row['created_ns']<int((time.time()-14*86400)*1e9) for row in manifest['retained']):
+            raise ValueError('expired_recovery_floor_requires_classification')
     alias_path=Path('/opt/wb-saas/pdn-namespace-replacements.json')
     if alias_path.is_symlink() or not alias_path.is_file() or alias_path.stat().st_mode&0o077:raise ValueError('namespace_proof_unavailable')
     aliases=json.loads(alias_path.read_text())
@@ -182,6 +230,7 @@ def run(*,apply=False):
         retention._private_write(folder/(name+'-proof.json'),proof,exclusive=True)
         if apply:
             holds_unchanged()
+            if catalog_path.read_bytes()!=catalog_raw:raise ValueError('creation_catalog_changed')
             if name=='remote':
                 def delete_remote(path):
                     holds_unchanged();command(['rclone','deletefile',REMOTE+'/'+path,'--retries','1','--low-level-retries','1'])
