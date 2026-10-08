@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import struct
 import subprocess
 import time
@@ -34,7 +35,9 @@ def object_content(path,size):
     digest=hashlib.sha256();header=b'';count=0;started=time.monotonic()
     try:
         while True:
-            block=process.stdout.read(1024*1024)
+            if time.monotonic()-started>180:raise ValueError('archive_read_limit')
+            if not select.select([process.stdout],[],[],1)[0]:continue
+            block=os.read(process.stdout.fileno(),1024*1024)
             if not block:break
             count+=len(block);digest.update(block)
             if len(header)<8192:header+=block[:8192-len(header)]
@@ -75,7 +78,7 @@ def sqlite_ok(path):
 with tempfile.TemporaryDirectory(prefix='pdn-restore-') as tmp:
  target=Path(tmp)/'restored';decrypt_file(source,target,os.environ['WB_SAAS_BACKUP_ENCRYPTION_KEY'])
  with target.open('rb') as f:magic=f.read(16)
- if magic==b'SQLite format 3\x00':sqlite_ok(target);count=1
+ if magic.hex()=='53514c69746520666f726d6174203300':sqlite_ok(target);count=1
  else:
   count=total=0;deadline=time.monotonic()+120
   with tarfile.open(target,'r:*') as archive:
@@ -84,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='pdn-restore-') as tmp:
     if not member.isfile():continue
     total+=member.size;assert total<=512*1024*1024 and time.monotonic()<deadline
     with archive.extractfile(member) as f:head=f.read(16)
-    if head==b'SQLite format 3\x00':
+    if head.hex()=='53514c69746520666f726d6174203300':
      p=Path(tmp)/('db-'+str(count))
      with archive.extractfile(member) as f,p.open('wb') as out:
       while block:=f.read(1024*1024):out.write(block)

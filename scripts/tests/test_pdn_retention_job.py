@@ -26,3 +26,14 @@ def test_remote_parser_recognizes_sqlite_header_and_stable_timestamp():
     with mock.patch.object(job,'object_content',return_value=('a'*64,b'SQLite format 3\0')):
         row,head=job.metadata('old/source.sqlite3',{'ModTime':'2026-09-01T00:00:00.123456789Z','Size':188416})
     assert row['format']=='SQLite3' and row['mtime_ns']>0 and row['path']=='old/source.sqlite3'
+
+
+def test_restore_probe_is_valid_python_without_null_argv_bytes():
+    commands=[]
+    def execute(args):
+        commands.append(args)
+        compile(args[-1],'<restore probe>','exec')
+        return b'{"restore_ok":true}'
+    with mock.patch.object(job,'command',side_effect=execute):
+        job.restore_inner(job.ROOT/'synthetic/good.tar.gz.enc')
+    assert '\0' not in commands[0][-1]
