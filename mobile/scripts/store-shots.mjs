@@ -13,9 +13,15 @@ const BASE = process.argv[2] ?? "http://127.0.0.1:5360/";
 const EDGE = process.env.EDGE_PATH ?? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const CHROME = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 // [file, ?view=, heading text to bring to the top of the frame, extra scrollY shift, optional workspace tab to open first]
-// frame-only CSS-level tidy-up: hide expense rows whose value is exactly 0 ₽ (the real rows stay as in the app)
-const ZERO_ROWS = "[...document.querySelectorAll('*')].filter((e) => /^финансовый.отчёт/i.test(e.innerText) && /(^|[^0-9])0.?₽$/.test(e.innerText.trim()) && e.innerText.length < 80).map((e) => (e.style.display = 'none')).length";
-const PAGES = [["01-today", "today", "Темп выручки", -300, "Неделя"], ["02-finance", "finance", "Доля расходов", -355, "Расходы и себестоимость", ZERO_ROWS], ["03-products", "products", "Товары по артикулам", -50], ["04-stock", "stock", "Остатки, маржа, сигнал", -50], ["05-ads", "ads", "Где менять ставки", -50], ["06-reports", "reports", "Быстрые отчёты", -188]];
+// frame-only tidy-up of the monthly P&L table (data untouched): narrower label/padding so 2 months + total fit 390px, rows that are 0 in every column hidden
+const PNL_FIT = `(${() => {
+  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: ".pnl-monthly-table{min-width:0!important}.pnl-monthly-table th,.pnl-monthly-table td{height:auto!important}.pnl-monthly-table tbody th{min-width:5.2rem!important;max-width:5.6rem!important;font-size:.72rem!important;padding:.4rem .2rem!important}.pnl-monthly-table th,.pnl-monthly-table td{padding:.4rem .2rem!important}.pnl-monthly-table td span{font-size:.74rem}.pnl-monthly-table td small{font-size:.62rem}.pnl-monthly-table thead th small{font-size:.58rem}" }));
+  return [...document.querySelectorAll(".pnl-monthly-table tbody tr")].filter((r) => [...r.querySelectorAll("td span")].every((x) => /^[-−]?0\s?₽$/.test(x.textContent.trim()))).map((r) => (r.style.display = "none")).length;
+}})()`;
+// frame-only: hide blocks without real values (the only ads campaign has no name; reports KPI tiles/analytics are empty in the demo)
+const HIDE_ADS = "(() => { const e = document.getElementById('ads-campaigns'); if (e) e.style.display = 'none'; return e ? 1 : 0; })()";
+const HIDE_REPORTS = "(() => [...document.querySelectorAll('.metrics-grid, .report-analytics-section')].map((e) => (e.style.display = 'none')).length)()";
+const PAGES = [["01-today", "today", "Очередь решений", -10, "Неделя"], ["02-finance", "finance", "Отчёт о прибылях и убытках по месяцам", -60, "Обзор", PNL_FIT], ["03-products", "products", "Товары по артикулам", -50], ["04-stock", "stock", "Остатки, маржа, сигнал", -50], ["05-ads", "ads", "Путь до заказа", -30, null, HIDE_ADS], ["06-reports", "reports", "Отчёты и расписания", -20, null, HIDE_REPORTS]];
 const VIEWPORT = [390, 844, 3]; // raw 1170x2532
 const DEMO = JSON.parse(readFileSync(new URL("./demo-cabinet.json", import.meta.url), "utf8"));
 const rub = (v) => Math.round(v).toLocaleString("ru-RU") + " ₽";
@@ -32,15 +38,17 @@ function overview() {
     products: [], problem_products: [], alerts: [], cash_windows: [],
   };
 }
-function today() {
-  const t = structuredClone(DEMO["dashboard/today"]); // real snapshot values only (zeros stay zeros; the frame scrolls to the real blocks)
+function today(period) {
+  const t = structuredClone(DEMO[`dashboard/today@${period}`] ?? DEMO["dashboard/today"]); // real snapshot values only (zeros stay zeros; the frame scrolls to the real blocks)
   // the snapshot was cut at the start of a day: drop the trailing empty current day from the weekly series (real days only)
   for (const k of ["revenue_trend", "revenue_trend_week"]) { const a = t[k]; if (Array.isArray(a) && a.length && a.at(-1).revenue_rub === 0) a.pop(); }
   t.metrics = t.kpis;
   return t;
 }
 // /tenant-api path -> JSON body (null = 404, pages degrade as they do without that optional source)
-function stub(path) {
+function stub(path, period = "30d") {
+  const pick = (key) => DEMO[`${key}@${period}`] ?? DEMO[key]; // period-specific snapshot first
+  if (path === "/api/v1/dashboard/finance/wb-costs") return { deductions: [], measurement_penalties: [], paid_storage: [], paid_storage_status: "ok", errors: [] };
   // Optional WB sources absent from the snapshot: answer "empty" (not an error) so no "data unavailable" banner appears.
   if (path === "/api/v1/dashboard/customer-quality") return { rating: {}, unread: {}, feedbacks: [], questions: [], quarantine: [], returns: {}, return_history: [], chats: [] };
   if (path === "/api/v1/products/prices") return { items: [] };
@@ -49,10 +57,10 @@ function stub(path) {
   if (path === "/api/v1/operations/reports") return { definitions: [], runs: [], metric_labels: {} };
   if (path === "/api/v1/operations/reports/delivery") return { configured: false, email_configured: false };
   if (path === "/api/v1/operations/incidents") return { cases: [], summary: {} };
-  let m = path.match(/^\/api\/v1\/(?:dashboard|control)\/([a-z-]+)$/);
-  if (path === "/api/v1/dashboard/today") return today();
+  let m = path.match(/^\/api\/v1\/(?:dashboard|control)\/([a-z/-]+)$/);
+  if (path === "/api/v1/dashboard/today") return today(period);
   if (path === "/api/v1/data-status") return { connected: true, state: "fresh", partial: false, updated_at: "2026-10-03T08:00:00Z", lag_minutes: 12, missing_costs: false, missing_material_inventory: false };
-  if (m) { const v = DEMO[`${path.includes("/control/") ? "control" : "dashboard"}/${m[1]}`]; return v && !v.__error__ ? v : null; }
+  if (m) { const v = pick(`${path.includes("/control/") ? "control" : "dashboard"}/${m[1]}`); return v && !v.__error__ ? v : null; }
   if (path === "/api/v1/marketplace-context/session") return { marketplace: "wb", role: "owner", can_write: false, is_demo: true, authorized: true, shared_routes: [] };
   if (path === "/api/v1/shop-context/session") return { shops: [{ id: 0, name: "Основной магазин", verified_identity: null, active: true, snapshot_revision: null, can_write: false, allowed_actions: [] }], role: "owner", selected_shop_id: 0, route_scopes: [] };
   if (path === "/api/products") { // legacy shape (English keys) built from the finance product table
@@ -96,7 +104,8 @@ async function raw() {
     const m = JSON.parse(e.data);
     if (m.method !== "Fetch.requestPaused") return;
     const { requestId, request } = m.params;
-    const body = stub(new URL(request.url).pathname.replace(/^\/tenant-api/, ""));
+    const u = new URL(request.url);
+    const body = stub(u.pathname.replace(/^\/tenant-api/, ""), u.searchParams.get("period") ?? "30d");
     send("Fetch.fulfillRequest", { requestId, responseCode: body ? 200 : 404, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body ?? { detail: "demo snapshot: not provided" })).toString("base64") });
   });
   try {
@@ -108,12 +117,12 @@ async function raw() {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: dpr, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     for (const [name, view, text, shift, tab, prep] of PAGES) {
-      await send("Page.navigate", { url: `${BASE}?view=${view}` });
+      await send("Page.navigate", { url: `${BASE}?view=${view}&period=${view === "finance" ? "30d" : "90d"}` });
       await sleep(3500);
       await ev(`document.head.appendChild(Object.assign(document.createElement('style'),{textContent:'.connection-banner,.marketplace-bar,.shop-context-bar,.mock-banner,.bottom-nav{display:none!important}#root{padding-bottom:500px!important}'}))`);
       if ((await ev(`document.documentElement.dataset.theme`)) !== "light") throw new Error("expected light theme");
       if (tab) { await ev(`(async () => { for (const t of ${JSON.stringify([].concat(tab))}) { [...document.querySelectorAll('button,a,[role=tab]')].find((e) => e.textContent.trim().startsWith(t))?.click(); await new Promise((r) => setTimeout(r, 900)); } })()`); await sleep(1200); }
-      if (prep) { console.log("prep hid", await ev(prep)); await sleep(300); }
+      if (prep) { await sleep(2500); if (process.env.DBG) console.log("DBG", await ev(`JSON.stringify([[document.querySelector(".pnl-monthly-scroll").clientWidth, document.querySelector(".pnl-monthly-table").offsetWidth, [...document.querySelectorAll(".pnl-monthly-table thead th")].map(t=>t.offsetWidth)],[...document.querySelectorAll(".pnl-monthly-table tbody tr:nth-child(2) td span")].map(x=>[...x.textContent].map(c=>c.charCodeAt(0)).join(",")),document.querySelectorAll(".pnl-monthly-table").length, [...document.querySelectorAll(".pnl-monthly-table tbody tr")].slice(0,3).map(r=>r.innerText)])`)); console.log("prep hid", await ev(prep)); if (process.env.DBG) console.log("DBG2", await ev(`JSON.stringify([document.querySelector(".pnl-monthly-scroll").clientWidth, document.querySelector(".pnl-monthly-table").offsetWidth, [...document.querySelectorAll(".pnl-monthly-table thead th")].map(t=>t.offsetWidth)])`)); await sleep(300); }
       if (process.env.INSPECT) console.log(name, (await ev(`(${outline})()`)).split(" ## ").join(String.fromCharCode(10)));
       if (process.env.FULL) { const H = await ev("document.documentElement.scrollHeight"); await send("Emulation.setDeviceMetricsOverride", { width: w, height: H, deviceScaleFactor: 1, mobile: true }); await sleep(500); writeFileSync(process.env.TEMP + "/full-" + name + ".png", await b.shot()); await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: dpr, mobile: true }); continue; }
       // scroll: bring the heading containing `text` (or a numeric scrollY) to just under the top edge
@@ -131,11 +140,11 @@ async function raw() {
 // ---- stage 2: composition (store/compose/template.html in Chrome) --------------------------------------------
 const SHOTS = [
   ["01-today", "Главное за день|на одном экране", "Выручка, остатки и что требует действия"],
-  ["02-finance", "Куда уходят деньги|и что остаётся", "Структура расходов и итог за период"],
+  ["02-finance", "Куда уходят деньги|и что остаётся", "ОПиУ по месяцам: выручка, расходы, результат"],
   ["03-products", "Маржа|по каждому товару", "Прибыль, расходы и рентабельность по артикулам"],
   ["04-stock", "Остатки и что|везти на склад", "Запас в днях и покрытие по каждому товару"],
-  ["05-ads", "Реклама: где окупается,|где нет", "Кампании, расходы и воронка по рекламе"],
-  ["06-reports", "Отчёты по расписанию|на email и в Telegram", "Сводки в PDF и доставка по расписанию"],
+  ["05-ads", "Реклама: где окупается,|где нет", "Воронка до заказа и ДРР по артикулам"],
+  ["06-reports", "Готовые отчёты|в PDF в один клик", "Сводки за 1, 7, 30 и 90 дней"],
 ];
 const TARGETS = { android: [1080, 1920], ios: [1290, 2796] };
 async function compose() {
