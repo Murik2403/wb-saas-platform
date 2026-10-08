@@ -224,4 +224,82 @@ def test_remote_failure_receipt_preserves_exact_confirmed_deletion_count(tmp_pat
                             receipt_path=tmp_path / "receipt.json", read_metadata=lambda path: next(row for row in rows if row["path"] == path), delete_file=failed_delete, now=NOW)
     receipt = json.loads((tmp_path / "receipt.json").read_text())
     assert receipt["state"] == "failed" and receipt["deleted_count"] == 0
-    assert not receipt["events"]
+    assert len(receipt["events"]) == 1
+    assert receipt["events"][0]["state"] == "pending"
+
+
+def test_legacy_namespace_floor_replacement_requires_lineage_proof(tmp_path):
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    source = legacy / "only.sqlite3"
+    source.write_bytes(b"SQLite format 3\x00" + b"x" * 100)
+    os.utime(source, (NOW - 30 * 86400,) * 2)
+    target = fixture_file(tmp_path, "current.tar.gz.enc", 1)
+    default = module.plan_local(tmp_path, now=NOW)
+    assert not default["candidates"]
+    manifest = module.plan_local(tmp_path, now=NOW, namespace_replacements={"legacy": "synthetic"})
+    assert [row["path"] for row in manifest["candidates"]] == ["legacy/only.sqlite3"]
+    assert [row["namespace"] for row in manifest["retained"]] == ["synthetic"]
+    evidence = proof(manifest)
+    with pytest.raises(ValueError, match="unverified_namespace_replacement"):
+        module.apply_local(manifest, acknowledgment=manifest["manifest_sha256"], proof=evidence,
+                           receipt_path=tmp_path / "receipt.json", now=NOW)
+    assert source.exists()
+    evidence["verified_namespace_replacements"] = {"legacy": "synthetic"}
+    report = module.apply_local(manifest, acknowledgment=manifest["manifest_sha256"], proof=evidence,
+                                receipt_path=tmp_path / "receipt.json", now=NOW)
+    assert report["deleted_count"] == 1 and not source.exists() and target.exists()
+    assert legacy.is_dir()  # Exact-file operation never recursively removes it.
+
+
+def test_remote_namespace_replacement_pins_real_target_not_fake_legacy_floor():
+    source = remote_row("legacy/old.sqlite3", 30)
+    source["format"] = "SQLite3"
+    target = remote_row("offsite-v2/active/new.tar.gz.enc", 1, "2" * 64)
+    manifest = module.plan_remote([source, target], now=NOW, namespace_replacements={"legacy": "active"})
+    assert manifest["namespace_replacements"] == {"legacy": "active"}
+    assert manifest["retained"][0]["path"] == target["path"]
+    assert manifest["retained"][0]["namespace"] == "active"
+    assert manifest["candidates"][0]["path"] == source["path"]
+    evidence = proof(manifest)
+    evidence["verified_namespace_replacements"] = {"legacy": "active"}
+    module._authorize(manifest, manifest["manifest_sha256"], evidence, NOW)
+    evidence["recovery_sha256_by_namespace"] = {"legacy": target["sha256"]}
+    with pytest.raises(ValueError, match="recovery_proof_scope_mismatch"):
+        module._authorize(manifest, manifest["manifest_sha256"], evidence, NOW)
+
+
+@pytest.mark.parametrize("mapping", [
+    {"legacy": "missing"}, {"legacy": "legacy"},
+    {"legacy": "active", "active": "other"}, {"legacy": "active", "active": "legacy"},
+    {"../legacy": "active"}, {"legacy": "active/child"}, {"legacy": "quarantine"},
+    {"erasure-ledger": "active"},
+])
+def test_namespace_replacement_rejects_missing_chain_cycle_or_unsafe_target(mapping):
+    source = remote_row("legacy/old.sqlite3", 30)
+    source["format"] = "SQLite3"
+    target = remote_row("active/new.tar.gz.enc", 1, "2" * 64)
+    with pytest.raises(ValueError):
+        module.plan_remote([source, target], now=NOW, namespace_replacements=mapping)
+
+
+def test_namespace_replacement_requires_encrypted_floor_not_plaintext():
+    source = remote_row("legacy/old.sqlite3", 30)
+    source["format"] = "SQLite3"
+    target = remote_row("active/new.sqlite3", 1, "2" * 64)
+    target["format"] = "SQLite3"
+    with pytest.raises(ValueError, match="replacement_requires_retained_encrypted_recovery"):
+        module.plan_remote([source, target], now=NOW, namespace_replacements={"legacy": "active"})
+
+
+def test_receipt_rewrite_failure_preserves_previous_durable_evidence(tmp_path, monkeypatch):
+    path = tmp_path / "receipt.json"
+    original = {"state": "started", "events": []}
+    module._private_write(path, original, exclusive=True)
+    def refuse_replace(*args):
+        raise OSError("synthetic receipt failure")
+    monkeypatch.setattr(module.os, "replace", refuse_replace)
+    with pytest.raises(OSError):
+        module._private_write(path, {"state": "pending"})
+    assert json.loads(path.read_text()) == original
+    assert list(tmp_path.iterdir()) == [path]

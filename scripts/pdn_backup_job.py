@@ -79,7 +79,7 @@ def main():
         from run_backup_cron import alert_command
         env['WB_SAAS_BACKUP_ALERT_COMMAND_JSON'] = json.dumps(alert_command('mvvorokov@yandex.ru'))
         status = {'attempt_at': time.time(), 'offsite_verified': False, 'error': 'ledger_backup_failed',
-                  'alert': backup_offsite.alert({'kind': 'erasure_backup_failure', 'code': 'ledger_backup_failed'}, env)}
+                  'alert': backup_offsite.alert({'kind': 'erasure_backup_failure', 'code': 'backup_transport_failed'}, env)}
         backup_offsite.write_status(args.state, status)
         print(json.dumps(status)); return 1
 
