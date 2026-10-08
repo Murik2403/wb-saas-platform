@@ -19,6 +19,7 @@ def test_local_age_and_unknown_formats_never_authorize_deletion(tmp_path):
     fresh.write_bytes(b'fixture')
     os.utime(fresh, (NOW - 86400,) * 2)
     (group / 'private.key').write_text('synthetic')
+    os.utime(group / 'private.key', (NOW, NOW))
     rows = inventory(tmp_path, 14, NOW)
     assert {r['status'] for r in rows} == {'age_candidate', 'within_window', 'unknown_format'}
     assert summarize(rows)['age_candidate'] == 1
