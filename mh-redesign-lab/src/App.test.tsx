@@ -316,7 +316,7 @@ describe("operational detail drawer", () => {
     await user.click(await screen.findByRole("button", { name: /Текущий аккаунт: Demo tenant/i }));
 
     expect(screen.getByRole("menuitem", { name: /Подписка и оплата/i })).toHaveAttribute("href", expect.stringMatching(/\/billing$/));
-    expect(screen.getByRole("menuitem", { name: /Аккаунт/i })).toHaveAttribute("href", expect.stringMatching(/\/account$/));
+    expect(screen.getByRole("menuitem", { name: /Аккаунт и удаление/i })).toHaveAttribute("href", expect.stringMatching(/\/account$/));
     expect(screen.getByRole("menuitem", { name: /Документы/i })).toHaveAttribute("href", expect.stringMatching(/\/offer$/));
     expect(screen.getByRole("menuitem", { name: /Поддержка/i })).toHaveAttribute("href", expect.stringMatching(/\/contacts$/));
   });

@@ -1,5 +1,6 @@
 /** Selected-shop transport. Context is validated before UI mounting. */
 import { currentMarketplace, marketplaceFetch, isOzonPath } from "./marketplace-context";
+import { saveBlob } from "./download";
 export type SelectedShop = {id:number;name:string;verified_identity:string|null;active:boolean;snapshot_revision:number|null;can_write:boolean;snapshot_available?:boolean;allowed_actions:string[]};
 type ResourceScope="shop_local"|"tenant_shared"|"forbidden";
 export type ShopRoute={method:string;path:string;scope:ResourceScope;action?:string;can_write?:boolean;query_scopes?:Record<string,Record<string,ResourceScope>>;requires_kind?:boolean};
@@ -137,8 +138,7 @@ export function validateShopSession(raw:unknown):ShopSession{
 
 export async function downloadScoped(url:string,filename:string){
  const r=await scopedFetch(url);if(!r.ok)throw new Error('Экспорт выбранного магазина недоступен');
- const blob=await r.blob();const objectUrl=URL.createObjectURL(blob);
- try{const link=document.createElement('a');link.href=objectUrl;link.download=filename;link.click();}finally{URL.revokeObjectURL(objectUrl);}
+ await saveBlob(await r.blob(),filename);
 }
 
 export function shopViewUrl(view:string){const url=new URL(window.location.href);url.searchParams.set('view',view);return url.pathname+url.search+url.hash;}

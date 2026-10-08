@@ -16,13 +16,42 @@ from config import DB_PATH
 from .core import connect
 
 
+def _stable_synthetic_id(row: dict[str, Any]) -> str:
+    """Stable fallback for rows without a marketplace identifier."""
+    payload = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+    return f"{row.get('nmId', 0)}:{row.get('barcode', '')}:{row.get('date', '')}:{digest}"
+
+
+def _reuse_legacy_fallback_ids(conn, table: str, payload):
+    # Preserve existing IDs (and references to them) for an identical legacy
+    # row. Do not delete historical duplicates or infer identity from dates alone.
+    assert table in {"orders", "sales"}
+    date_column = "order_date" if table == "orders" else "sale_date"
+    result = []
+    for entry in payload:
+        row = json.loads(entry[-1])
+        if not any(row.get(key) for key in (("srid", "odid", "gNumber") if table == "orders" else ("saleID", "srid", "odid"))):
+            candidates = conn.execute(
+                f"SELECT id,raw_json FROM {table} WHERE nm_id=? AND barcode=? AND {date_column} IS ? ORDER BY id",
+                (entry[3], entry[5], entry[1]),
+            ).fetchall()
+            for old in candidates:
+                suffix = str(old[0]).rsplit(":", 1)[-1]
+                if suffix.lstrip("-").isdigit() and json.loads(old[1]) == row:
+                    entry = (old[0], *entry[1:])
+                    break
+        result.append(entry)
+    return result
+
+
 def upsert_orders(rows: Iterable[dict[str, Any]]) -> int:
     from .core import _dump, _int, _num, connect
     payload = []
     for row in rows:
         identity = str(row.get("srid") or row.get("odid") or row.get("gNumber") or "")
         if not identity:
-            identity = f"{row.get('nmId', 0)}:{row.get('barcode', '')}:{row.get('date', '')}:{hash(_dump(row))}"
+            identity = _stable_synthetic_id(row)
         payload.append(
             (
                 identity,
@@ -45,6 +74,8 @@ def upsert_orders(rows: Iterable[dict[str, Any]]) -> int:
     if not payload:
         return 0
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        payload = _reuse_legacy_fallback_ids(conn, "orders", payload)
         conn.executemany(
             """
             INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -75,7 +106,7 @@ def upsert_sales(rows: Iterable[dict[str, Any]]) -> int:
         sale_id = str(row.get("saleID") or "")
         identity = sale_id or str(row.get("srid") or row.get("odid") or "")
         if not identity:
-            identity = f"{row.get('nmId', 0)}:{row.get('barcode', '')}:{row.get('date', '')}:{hash(_dump(row))}"
+            identity = _stable_synthetic_id(row)
         payload.append(
             (
                 identity,
@@ -99,6 +130,8 @@ def upsert_sales(rows: Iterable[dict[str, Any]]) -> int:
     if not payload:
         return 0
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        payload = _reuse_legacy_fallback_ids(conn, "sales", payload)
         conn.executemany(
             """
             INSERT INTO sales VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)

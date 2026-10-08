@@ -28,6 +28,16 @@ export function marketplaceSwitchUrl(next: Marketplace): string {
   return url.toString();
 }
 
+export function MarketplaceSwitch({ className }: { className?: string }) {
+  const current = new URL(window.location.href).searchParams.get("marketplace") === "ozon" ? "ozon" : "wb";
+  const go = (next: Marketplace) => { if (next !== current) window.location.assign(marketplaceSwitchUrl(next)); };
+  return <div className={`marketplace-switch ${className ?? ""}`} role="group" aria-label="Переключить площадку">
+    <span>Площадка</span>
+    <button type="button" aria-pressed={current === "wb"} onClick={() => go("wb")}>Wildberries</button>
+    <button type="button" aria-pressed={current === "ozon"} onClick={() => go("ozon")}>Ozon</button>
+  </div>;
+}
+
 export function MarketplaceBoundary({ wb, ozon }: { wb: ReactNode; ozon: (session: MarketplaceSession) => ReactNode }) {
   const [selected, setSelected] = useState(initialMarketplace);
   const [session, setSession] = useState<MarketplaceSession | null>(null);

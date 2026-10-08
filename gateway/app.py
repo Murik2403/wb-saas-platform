@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -44,7 +44,7 @@ from rate_limiter import RateLimiter
 from security_headers import SecurityHeadersMiddleware
 from sentry_integration import initialize as initialize_sentry
 from template_setup import create_templates
-from marketing_routes import create_marketing_router, llms_txt, PUBLIC_MARKETING_PATHS
+from marketing_routes import create_marketing_router, llms_txt, PUBLIC_MARKETING_PATHS, GUIDE_DATES
 
 setup_logging()
 initialize_sentry()
@@ -60,6 +60,29 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
+class RequestContextMiddleware:
+    """Flag the mobile-app user agent and trust X-Forwarded-Proto from Traefik so redirect_slashes redirects stay on https.
+
+    The gateway is only reachable through Traefik, which overwrites the header
+    (see traefik.yml forwardedHeaders), so it cannot be spoofed from outside.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            for key, value in scope["headers"]:
+                if key == b"user-agent":
+                    # Read by templates as request["store_app"] (missing key renders as false).
+                    scope["store_app"] = config.is_store_app(value.decode("latin-1"))
+                elif key == b"x-forwarded-proto":
+                    proto = value.decode("latin-1").split(",")[0].strip().lower()
+                    if proto in ("http", "https"):
+                        scope["scheme"] = proto
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 
 
@@ -67,6 +90,7 @@ app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
 async def erasure_ledger_unavailable(_request: Request, _error: Exception):
     return PlainTextResponse("Проверка безопасности аккаунта временно недоступна.", status_code=503)
 
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(growth_web.AcquisitionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -218,6 +242,8 @@ def home(request: Request):
 
 @app.get("/pricing", response_class=HTMLResponse)
 def pricing_page(request: Request):
+    if config.is_store_app(request.headers.get("user-agent", "")):
+        return templates.TemplateResponse(request, "store_billing.html", {})
     return templates.TemplateResponse(
         request,
         "pricing.html",
@@ -265,6 +291,36 @@ def privacy_page(request: Request):
     return templates.TemplateResponse(request, "privacy.html", {"policy_version": accounts.PDN_POLICY_VERSION})
 
 
+@app.get("/delete-account", response_class=HTMLResponse)
+def delete_account_page(request: Request):
+    return templates.TemplateResponse(request, "delete_account.html", {"backup_keep_days": config.BACKUP_KEEP_DAYS})
+
+
+# Domain association files for the mobile apps. Public, static JSON: no auth,
+# no cookies, no redirects (Android/iOS verifiers reject redirects).
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+def assetlinks_json() -> JSONResponse:
+    data = []
+    if config.ANDROID_PACKAGE and config.ANDROID_SHA256:
+        data = [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": config.ANDROID_PACKAGE,
+                "sha256_cert_fingerprints": config.ANDROID_SHA256,
+            },
+        }]
+    return JSONResponse(data)
+
+
+@app.get("/.well-known/apple-app-site-association", include_in_schema=False)
+def apple_app_site_association() -> JSONResponse:
+    details = []
+    if config.IOS_APP_ID:
+        details = [{"appIDs": [config.IOS_APP_ID], "paths": ["/verify-email*", "/reset-password*", "/team/accept*"]}]
+    return JSONResponse({"applinks": {"apps": [], "details": details}})
+
+
 @app.get("/consent", response_class=HTMLResponse)
 def consent_page(request: Request):
     return templates.TemplateResponse(request, "consent.html", {"policy_version": accounts.PDN_POLICY_VERSION})
@@ -288,6 +344,7 @@ _SITEMAP_PATHS: tuple[tuple[str, str, str], ...] = (
     ("/offer", "yearly", "0.3"),
     ("/privacy", "yearly", "0.3"),
     ("/consent", "yearly", "0.3"),
+    ("/delete-account", "yearly", "0.3"),
 ) + tuple((path, "monthly", "0.7") for path in PUBLIC_MARKETING_PATHS)
 
 _ROBOTS_DISALLOW = (
@@ -344,6 +401,7 @@ def sitemap_xml() -> Response:
     base = config.base_url()
     urls = "".join(
         f"<url><loc>{base}{path}</loc>"
+        f"<lastmod>{GUIDE_DATES.get(path, (None, config.SITE_RELEASE_DATE))[1]}</lastmod>"
         f"<changefreq>{changefreq}</changefreq>"
         f"<priority>{priority}</priority></url>"
         for path, changefreq, priority in _SITEMAP_PATHS
@@ -548,8 +606,66 @@ def resend_verification(
     return response
 
 
-@app.get("/verify-email")
-def verify_email(request: Request, background_tasks: BackgroundTasks, token: str = "", invite: str = ""):
+def _render_confirmation(
+    request: Request,
+    *,
+    title: str,
+    message: str,
+    action: str,
+    fields: dict[str, str],
+    button: str = "Подтвердить",
+) -> Response:
+    """Render a POST confirmation form for a link that used to act on GET.
+
+    Corporate mail scanners, link-preview bots and antivirus gateways prefetch
+    every URL in a message. While these routes consumed their token on GET, a
+    prefetch burned the link before the human clicked it -- and for
+    /account/confirm-email the action itself (change the login address, revoke
+    every session) would fire on the scanner's request. Requiring a POST means a
+    GET can no longer trigger any of it. /unsubscribe already worked this way.
+    """
+    csrf_token = csrf.get_or_create_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "confirm_action.html",
+        {
+            "confirm_title": title,
+            "confirm_message": message,
+            "confirm_action": action,
+            "confirm_fields": fields,
+            "confirm_button": button,
+            "csrf_token": csrf_token,
+        },
+    )
+    csrf.set_cookie(response, csrf_token)
+    return response
+
+
+@app.get("/verify-email", response_class=HTMLResponse)
+def verify_email_form(request: Request, token: str = "", invite: str = ""):
+    return _render_confirmation(
+        request,
+        title="Подтвердите email",
+        message="Нажмите кнопку — подтвердим адрес и подготовим ваш кабинет.",
+        action="/verify-email",
+        fields={"token": token, "invite": invite},
+        button="Подтвердить email",
+    )
+
+
+@app.post("/verify-email")
+def verify_email_submit(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    token: str = Form(""),
+    invite: str = Form(""),
+    csrf_token: str = Form(""),
+):
+    if not csrf.verify(request, csrf_token):
+        return templates.TemplateResponse(
+            request, "verify_email_sent.html",
+            {"error": "Ссылка устарела. Откройте её из письма заново."}, status_code=403,
+        )
     try:
         with control_db.connect() as conn:
             account_id = accounts.consume_email_verification_token(conn, token)
@@ -829,11 +945,28 @@ def account_team_invite(
     return _account_page(request, account, message="Приглашение отправлено.")
 
 
-@app.get("/team/accept")
-def team_accept(request: Request, token: str = ""):
+@app.get("/team/accept", response_class=HTMLResponse)
+def team_accept_form(request: Request, token: str = ""):
     account = _current_account(request)
     if account is None:
         return RedirectResponse("/login?" + urlencode({"invite": token}), status_code=303)
+    return _render_confirmation(
+        request,
+        title="Принять приглашение",
+        message="Нажмите кнопку, чтобы присоединиться к кабинету.",
+        action="/team/accept",
+        fields={"token": token},
+        button="Принять приглашение",
+    )
+
+
+@app.post("/team/accept")
+def team_accept_submit(request: Request, token: str = Form(""), csrf_token: str = Form("")):
+    account = _current_account(request)
+    if account is None:
+        return RedirectResponse("/login?" + urlencode({"invite": token}), status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return _account_page(request, account, error="Форма устарела. Откройте ссылку из письма заново.")
     try:
         with control_db.connect() as conn:
             tenant_id = accounts.consume_membership_invitation(conn, token, int(account["id"]))
@@ -886,8 +1019,28 @@ def account_email_submit(request: Request, new_email: str = Form(...), current_p
     return _account_page(request, account, message="Письмо с подтверждением отправлено на новый email.")
 
 
-@app.get("/account/confirm-email")
-def account_confirm_email(request: Request, token: str = ""):
+@app.get("/account/confirm-email", response_class=HTMLResponse)
+def account_confirm_email_form(request: Request, token: str = ""):
+    return _render_confirmation(
+        request,
+        title="Подтвердите новый email",
+        message=(
+            "Нажмите кнопку, чтобы сменить адрес входа. Все активные сессии будут завершены, "
+            "и войти нужно будет с новым адресом."
+        ),
+        action="/account/confirm-email",
+        fields={"token": token},
+        button="Сменить email",
+    )
+
+
+@app.post("/account/confirm-email")
+def account_confirm_email_submit(request: Request, token: str = Form(""), csrf_token: str = Form("")):
+    if not csrf.verify(request, csrf_token):
+        return templates.TemplateResponse(
+            request, "account_confirm.html",
+            {"error": "Ссылка устарела. Запросите смену email заново."}, status_code=403,
+        )
     try:
         with control_db.connect() as conn:
             accounts.consume_email_change_token(conn, token)

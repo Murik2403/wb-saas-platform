@@ -6,6 +6,7 @@ import {
   type BuyoutDelta, type BuyoutGroup, type BuyoutRecord, type BuyoutReport,
 } from "./self-buyouts-source";
 import "./SelfBuyoutsPanel.css";
+import { saveBlob } from "./download";
 
 export type BuyoutProduct = { nmId: string; article: string; product: string };
 type FormState = { day: string; nm: string; units: string; paid: string; cashback: string; format: string; note: string };
@@ -90,8 +91,7 @@ export function SelfBuyoutsPanel({ role, products, period, confirm }: {
   const exportCsv = () => {
     if (!report) return;
     const rows = report.records.map((r) => [r.day, r.vendor_code, r.nm_id, r.units, kopText(r.buyout_amount_kop), kopText(r.cashback_kop), kopText(r.net_cost_kop), r.format ?? "", r.note ?? ""]);
-    const url = URL.createObjectURL(new Blob([buildCsv(["Дата", "Артикул продавца", "Артикул WB", "Шт", "Оплачено, ₽", "Кешбэк, ₽", "Чистые затраты, ₽", "Метка", "Примечание"], rows)], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a"); link.href = url; link.download = `self-buyouts-${report.start}-${report.end}.csv`; link.click(); URL.revokeObjectURL(url);
+    void saveBlob(new Blob([buildCsv(["Дата", "Артикул продавца", "Артикул WB", "Шт", "Оплачено, ₽", "Кешбэк, ₽", "Чистые затраты, ₽", "Метка", "Примечание"], rows)], { type: "text/csv;charset=utf-8" }), `self-buyouts-${report.start}-${report.end}.csv`);
   };
 
   const cards: Array<[string, keyof BuyoutReport["deltas"], boolean]> = [["Штук", "units", false], ["Оплачено", "paid_kop", true], ["Кешбэк", "cashback_kop", true], ["Чистые затраты", "net_cost_kop", true]];

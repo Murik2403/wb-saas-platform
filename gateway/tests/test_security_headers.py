@@ -122,3 +122,10 @@ def test_stricter_route_policy_and_streaming_are_preserved():
         streamed = client.get("/stream")
         assert streamed.content == b"firstsecond"
         assert streamed.headers["x-frame-options"] == "SAMEORIGIN"
+
+
+def test_hsts_only_on_https():
+    with TestClient(gateway.app, base_url="https://testserver") as client:
+        assert client.get("/healthz").headers["strict-transport-security"] == "max-age=31536000"
+    with TestClient(gateway.app, base_url="http://testserver") as client:
+        assert "strict-transport-security" not in client.get("/healthz").headers

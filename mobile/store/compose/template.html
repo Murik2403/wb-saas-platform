@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>store compose</title>
+<!-- Rendered by scripts/store-shots.mjs; data arrives as JSON in location.hash: {kind:"shot"|"feature", title, sub, img, logo}. "|" in title = line break. -->
+<style>
+  :root { --u: calc(100vw / 1080); --teal: #22dfbb; --bg: #0b1115; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100vw; height: 100vh; overflow: hidden; background: var(--bg); }
+  body { position: relative; font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: #eef7f5;
+    background:
+      radial-gradient(120vw 70vw at 85% -8%, rgba(34,223,187,.34), transparent 62%),
+      radial-gradient(90vw 60vw at -10% 62%, rgba(34,223,187,.14), transparent 65%),
+      var(--bg); }
+  .head { position: absolute; left: 0; right: 0; top: calc(var(--u) * 92); padding: 0 calc(var(--u) * 70); }
+  h1 { font-size: calc(var(--u) * 70); line-height: 1.12; font-weight: 800; letter-spacing: -.01em; }
+  h1 span { display: block; }
+  h1 span + span { color: var(--teal); }
+  p.sub { margin-top: calc(var(--u) * 30); font-size: calc(var(--u) * 38); line-height: 1.3; color: #a9bcb7; font-weight: 400; }
+  .phone { position: absolute; left: 7vw; width: 86vw; top: calc(var(--u) * 440); padding: calc(var(--u) * 14);
+    border-radius: calc(var(--u) * 92); background: #151d23; border: calc(var(--u) * 4) solid #3b4852;
+    box-shadow: 0 calc(var(--u) * 40) calc(var(--u) * 120) rgba(0,0,0,.6), 0 0 calc(var(--u) * 160) rgba(34,223,187,.16); }
+  .phone img { display: block; width: 100%; border-radius: calc(var(--u) * 66); }
+  /* feature graphic */
+  .feature { position: absolute; inset: 0; display: none; }
+  .feature .brand { position: absolute; left: 60px; top: 56px; display: flex; align-items: center; gap: 22px; }
+  .feature .brand img { width: 84px; height: 84px; }
+  .feature .brand b { font-size: 40px; letter-spacing: .08em; font-weight: 800; }
+  .feature .brand b i { font-style: normal; color: var(--teal); }
+  .feature h2 { position: absolute; left: 60px; right: 60px; top: 190px; font-size: 44px; line-height: 1.22; font-weight: 800; }
+  .feature h2 span { display: block; }
+  .feature h2 span + span { color: var(--teal); }
+  .feature .line { position: absolute; left: 60px; bottom: 56px; width: 120px; height: 6px; border-radius: 3px; background: var(--teal); }
+</style></head>
+<body>
+  <div class="head" id="head"><h1 id="t"></h1><p class="sub" id="s"></p></div>
+  <div class="phone" id="phone"><img id="i" alt=""></div>
+  <div class="feature" id="f"><div class="brand"><img id="logo" alt=""><b>MARKETS<i>HELPER</i></b></div><h2 id="ft"></h2><div class="line"></div></div>
+<script>
+  const d = JSON.parse(decodeURIComponent(location.hash.slice(1) || "%7B%7D"));
+  const lines = (t = "") => t.split("|").map((x) => `<span>${x}</span>`).join("");
+  if (d.kind === "feature") {
+    document.documentElement.style.setProperty("--u", "1px");
+    head.style.display = phone.style.display = "none"; f.style.display = "block";
+    ft.innerHTML = lines(d.title); logo.src = d.logo;
+  } else { t.innerHTML = lines(d.title); s.textContent = d.sub; i.src = d.img; }
+</script></body></html>

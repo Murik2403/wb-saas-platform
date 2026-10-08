@@ -4,6 +4,7 @@ import { scopedFetch } from './selected-shop';
 import { previewMoney } from './ozon-preview-money';
 import { buildCsv } from './csv';
 import './OzonProductInsights.css';
+import { saveBlob } from "./download";
 
 type View = 'products' | 'heatmap' | 'rnp';
 type Metric = 'order_units' | 'document_sales_units' | 'document_revenue_rub';
@@ -30,8 +31,7 @@ async function request<T>(path:string,signal:AbortSignal,body?:unknown):Promise<
 function download(report:Report) {
   const csv=buildCsv(['SKU Ozon','Артикул продавца','Заказы, шт.','Продажи документов, шт.','Возвраты документов, шт.','Выручка документов, ₽','FIFO документов, ₽','Результат до нераспределённых сборов, ₽'],
     report.items.map(r=>[r.sku,r.offer_id??'',r.order_units,r.sales_units,r.return_units,r.revenue_rub,r.historical_cogs_rub,r.result_after_fifo_rub]));
-  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  const link=document.createElement('a');link.href=url;link.download='ozon-products.csv';link.click();URL.revokeObjectURL(url);
+  void saveBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'ozon-products.csv');
 }
 
 export function OzonProductInsights({start,end,canWrite}:{start:string;end:string;canWrite:boolean}) {

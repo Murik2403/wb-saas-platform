@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MARKETSHELPER</string>
+    <string name="title_activity_main">MARKETSHELPER</string>
+    <string name="package_name">ru.marketshelper.app</string>
+    <string name="custom_url_scheme">ru.marketshelper.app</string>
+</resources>

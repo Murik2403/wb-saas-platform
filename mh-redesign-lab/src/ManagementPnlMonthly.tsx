@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getManagementPnlMonthly } from "./data-source";
 import type { DashboardPeriod, MonthlyPnl, MonthlyPnlLines, MonthlyTax } from "./data-source";
 import "./ManagementPnl.css";
+import { saveBlob } from "./download";
 
 type LineKey = Exclude<keyof MonthlyPnlLines, "units" | "report_rows">;
 type Kind = "total" | "income" | "expense";
@@ -103,14 +104,7 @@ export function buildMonthlyPnlCsv(data: MonthlyPnl): string {
 
 function downloadCsv(data: MonthlyPnl) {
   const blob = new Blob([buildMonthlyPnlCsv(data)], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `opiu-po-mesyacam_${data.period.start}_${data.period.end}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  void saveBlob(blob, `opiu-po-mesyacam_${data.period.start}_${data.period.end}.csv`);
 }
 
 export function ManagementPnlMonthly({ period, onOpenTaxSettings }: { period: DashboardPeriod; onOpenTaxSettings?: () => void }) {

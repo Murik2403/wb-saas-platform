@@ -6,3 +6,4 @@
  .marketplace-bar button { min-height:44px; padding:.5rem .7rem; }
  .marketplace-bar p { font-size:.75rem; }
 }
+.marketplace-switch{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 0 4px}.marketplace-switch>span{flex-basis:100%;font-size:13px;color:var(--text-muted)}.marketplace-switch button{min-height:44px;padding:8px 14px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit}.marketplace-switch button[aria-pressed=true]{background:var(--action);color:var(--teal-ink);font-weight:700}

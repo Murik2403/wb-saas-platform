@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ confirm_title }} — MARKETSHELPER{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<h1>{{ confirm_title }}</h1>
+<p class="subtitle">{{ confirm_message }}</p>
+<form method="post" action="{{ confirm_action }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% for name, value in confirm_fields.items() %}
+  <input type="hidden" name="{{ name }}" value="{{ value }}">
+  {% endfor %}
+  <button type="submit">{{ confirm_button }}</button>
+</form>
+<div class="footer-link"><a href="/login">Вернуться ко входу</a></div>
+{% endblock %}

@@ -35,7 +35,8 @@ import { SelfBuyoutsPanel } from "./SelfBuyoutsPanel";
 import { CashflowPanel } from "./CashflowPanel";
 import { MigrationImport } from "./MigrationImport";
 import { ShopWorkspaces } from "./ShopWorkspaces";
-import { MarketplaceBoundary } from "./MarketplaceBoundary";
+import { MarketplaceBoundary, MarketplaceSwitch } from "./MarketplaceBoundary";
+import { isNativeApp } from "./app-shell";
 import { OzonCabinetShell } from "./OzonCabinetShell";
 import { FinanceProfitHeading } from "./FinanceProfitHeading";
 import { PriceScenarios } from "./PriceScenarios";
@@ -1033,8 +1034,8 @@ function App() {
                       <strong>На главную</strong>
                       <small>Перейти в сводный обзор</small>
                     </button>
-                    <a href={getGatewayUrl("/billing")} role="menuitem"><strong>Подписка и оплата</strong><small>Статус тарифа и история платежей</small></a>
-                    <a href={getGatewayUrl("/account")} role="menuitem"><strong>Аккаунт</strong><small>Пароль и email</small></a>
+                    {isNativeApp() ? null : <a href={getGatewayUrl("/billing")} role="menuitem"><strong>Подписка и оплата</strong><small>Статус тарифа и история платежей</small></a>}
+                    <a href={getGatewayUrl("/account")} role="menuitem"><strong>Аккаунт и удаление</strong><small>Пароль, email, удаление аккаунта</small></a>
                     <a href={getGatewayUrl("/offer")} role="menuitem"><strong>Документы</strong><small>Оферта и политика конфиденциальности</small></a>
                     <a href={getGatewayUrl("/contacts")} role="menuitem"><strong>Поддержка</strong><small>Контакты и помощь по кабинету</small></a>
                     <button className="session-logout" type="button" onClick={handleLogout}>
@@ -1311,6 +1312,7 @@ function MobileNavigationDialog({items,activeNav,onSelect,onClose}:{items:NavIte
         <button type="button" className="icon-button" aria-label="Закрыть меню" onClick={onClose}><X size={20}/></button>
       </div>
       <nav aria-label="Разделы кабинета">{items.map(item=><NavButton active={activeNav===item.id} item={item} key={item.id} onSelect={()=>onSelect(item.id)}/>)}</nav>
+      <MarketplaceSwitch className="mobile-menu-marketplace" />
     </section>
   </div>;
 }

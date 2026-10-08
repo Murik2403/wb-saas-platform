@@ -14,7 +14,7 @@
       <a href="/guides">Руководства</a>
       <a href="/training">Видеоуроки</a>
       <a class="section-link" href="#faq">Вопросы</a>
-      <a href="/pricing">Тарифы</a>
+      {% if not request["store_app"] %}<a href="/pricing">Тарифы</a>{% endif %}
       <a href="/login">Войти</a>
       <button class="theme-toggle" data-theme-toggle type="button" aria-label="Включить светлую тему" aria-pressed="false">☀ Светлая тема</button>
       <a class="cta" href="/register">Начать бесплатно</a>
@@ -48,7 +48,7 @@
         <a class="btn btn-primary" href="/register">Начать бесплатно</a>
         <a class="btn btn-ghost" href="/dlya-proizvoditeley-wb#one-batch">Посмотреть пример на одной партии</a>
       </div>
-      <div class="trial-note">{{ trial_days }} дней пробного периода, карта не нужна. Затем {{ price_rub|int }} ₽ / {{ period_days }} дней</div>
+      <div class="trial-note">{{ trial_days }} дней пробного периода, карта не нужна. {% if not request["store_app"] %}Затем {{ price_rub|int }} ₽ / {{ period_days }} дней{% endif %}</div>
     </div>
     <div class="mini-dash" id="heroDash">
       <div class="mini-dash-head"><span>Пример показателей</span><span>Вымышленные данные</span></div>
@@ -219,15 +219,25 @@
   </div>
 
   <div class="price-strip">
-    <div class="p-left">Пробный период {{ trial_days }} дней, затем <b>{{ price_rub|int }} ₽</b> / {{ period_days }} дней</div>
+    <div class="p-left">Пробный период {{ trial_days }} дней{% if not request["store_app"] %}, затем <b>{{ price_rub|int }} ₽</b> / {{ period_days }} дней{% endif %}</div>
     <a class="btn btn-primary" href="/register">Попробовать бесплатно</a>
   </div>
+
+  <nav class="footer-link" aria-label="Полезное">
+    <b>Полезное:</b>
+    <a href="/guides/fifo-po-partiyam">как считать FIFO по партиям</a> ·
+    <a href="/guides/zamena-servisov-analitiki">как выбрать сервис аналитики WB</a> ·
+    <a href="/calculator">калькулятор маржи WB</a> ·
+    <a href="/capabilities">все возможности сервиса</a> ·
+    <a href="/training">обучение работе в кабинете</a> ·
+    <a href="/compliance">защита персональных данных</a>
+  </nav>
 
   <div class="footer-link">Уже есть аккаунт? <a href="/login">Войти</a></div>
 
   <div class="landing-footer">
     <div>
-      <a href="/pricing">Тарифы</a>
+      {% if not request["store_app"] %}<a href="/pricing">Тарифы</a>{% endif %}
       <a href="/dlya-proizvoditeley-wb">Производителям WB</a>
       <a href="/guides">Руководства</a>
       <a href="/training">Видеоуроки</a>
@@ -237,6 +247,9 @@
       <a href="/offer">Оферта</a>
       <a href="/privacy">Обработка персональных данных</a>
       <a href="/contacts">Контакты и реквизиты</a>
+      <a href="/calculator">Калькулятор маржи</a>
+      <a href="/compliance">Соответствие 152-ФЗ</a>
+      <a href="/delete-account">Удаление аккаунта</a>
       <a href="https://t.me/marketshelper_support_bot" target="_blank" rel="noopener">Написать в Telegram</a>
     </div>
     <div>© {{ current_year }} MARKETSHELPER</div>
@@ -450,7 +463,7 @@
         "Рекомендации цены в черновик и журнал отправок",
         "Вкладки разделов, светлая и тёмная темы",
         "Обучающие видео и текстовые инструкции"
-      ],
+      ]{% if not request["store_app"] %},
       "offers": {
         "@type": "Offer",
         "price": "{{ price_rub|int }}",
@@ -458,7 +471,7 @@
         "url": "{{ site_base_url() }}/pricing",
         "availability": "https://schema.org/InStock",
         "description": "{{ trial_days }} дней пробного периода без привязки карты, далее {{ price_rub|int }} ₽ за {{ period_days }} дней"
-      }
+      }{% endif %}
     },
     {
       "@type": "FAQPage",

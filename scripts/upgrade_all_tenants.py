@@ -46,12 +46,12 @@ def main() -> int:
         try:
             ok = provisioning.upgrade_tenant(slug, image=args.image)
         except Exception as exc:  # noqa: BLE001
-            print(f"ERROR: {exc}")
-            failures.append(slug)
-            continue
+            print(f"ERROR: {type(exc).__name__}; rollout stopped")
+            return 1
         print("OK" if ok else "FAILED health check")
         if not ok:
             failures.append(slug)
+            break
 
     if failures:
         print(f"\n{len(failures)} tenant(s) need attention: {', '.join(failures)}")

@@ -65,8 +65,19 @@ def _current_account(request: Request):
     return account
 
 
+def store_billing_page(request: Request):
+    """Store builds of the mobile app must not sell: neutral page, no payment UI."""
+    return templates.TemplateResponse(request, "store_billing.html", {})
+
+
+def _is_store_app(request: Request) -> bool:
+    return config.is_store_app(request.headers.get("user-agent", ""))
+
+
 @router.get("/billing", response_class=HTMLResponse)
 def billing_status(request: Request):
+    if _is_store_app(request):
+        return store_billing_page(request)
     account = _current_account(request)
     if account is None:
         return RedirectResponse("/login", status_code=303)
@@ -98,6 +109,8 @@ def billing_status(request: Request):
 
 @router.post("/billing/checkout")
 def billing_checkout(request: Request, csrf_token: str = Form("")):
+    if _is_store_app(request):
+        return store_billing_page(request)
     account = _current_account(request)
     if account is None:
         return RedirectResponse("/login", status_code=303)
@@ -166,6 +179,8 @@ def billing_checkout(request: Request, csrf_token: str = Form("")):
 
 @router.get("/billing/return", response_class=HTMLResponse)
 def billing_return(request: Request):
+    if _is_store_app(request):
+        return store_billing_page(request)
     # The customer lands here right after leaving YooKassa's hosted page --
     # the payment may not have been confirmed by the webhook yet, so this
     # is deliberately just a "we're processing it" page, not a final
@@ -176,6 +191,8 @@ def billing_return(request: Request):
 
 @router.get("/billing/cancel", response_class=HTMLResponse)
 def billing_cancel_confirm(request: Request):
+    if _is_store_app(request):
+        return store_billing_page(request)
     """Confirmation step before self-service cancellation -- deliberately a
     separate GET page rather than a bare button on /billing, so a client
     can't lose access to their own data from a single accidental click."""
@@ -192,6 +209,8 @@ def billing_cancel_confirm(request: Request):
 
 @router.post("/billing/cancel")
 def billing_cancel_submit(request: Request, background_tasks: BackgroundTasks, csrf_token: str = Form("")):
+    if _is_store_app(request):
+        return store_billing_page(request)
     account = _current_account(request)
     if account is None:
         return RedirectResponse("/login", status_code=303)

@@ -104,7 +104,32 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
         self.assertEqual(response.status_code, 403)
         self.assertNotIn("marketshelper_session=", response.headers.get("set-cookie", ""))
 
-    def test_verification_consumes_token_sets_session_and_queues_provisioning(self) -> None:
+    def test_verification_link_renders_confirmation_without_consuming_the_token(self) -> None:
+        """A mail scanner prefetching the link must not burn it.
+
+        The GET used to consume the token, create a session and queue
+        provisioning, so a corporate scanner clicking first left the real user
+        with an already-used link.
+        """
+        with self.connect() as conn:
+            account_id = accounts.create_account(
+                conn, "seller@example.test", "safe-password-123", email_verified=False
+            )
+            token = accounts.create_email_verification_token(conn, account_id)
+        with mock.patch.object(app.control_db, "connect", side_effect=self._app_connect):
+            response = app.verify_email_form(_request("/verify-email", "GET"), token)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.body.decode("utf-8")
+        self.assertIn('method="post"', body)
+        self.assertIn('name="csrf_token"', body)
+        with self.connect() as conn:
+            row = conn.execute("SELECT consumed_at FROM email_verification_tokens").fetchone()
+            self.assertFalse(row["consumed_at"])
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS c FROM sessions").fetchone()["c"], 0)
+            self.assertFalse(accounts.is_email_verified(accounts.get_account_by_id(conn, account_id)))
+
+    def test_verification_submit_consumes_token_sets_session_and_queues_provisioning(self) -> None:
         with self.connect() as conn:
             account_id = accounts.create_account(
                 conn, "seller@example.test", "safe-password-123", email_verified=False
@@ -115,9 +140,10 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
         background = BackgroundTasks()
         with (
             mock.patch.object(app.control_db, "connect", side_effect=self._app_connect),
+            mock.patch.object(app.csrf, "verify", return_value=True),
             mock.patch("provisioning.provision_tenant_background"),
         ):
-            response = app.verify_email(_request("/verify-email", "GET"), background, token)
+            response = app.verify_email_submit(_request("/verify-email"), background, token, "", "csrf")
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/provisioning")
         self.assertIn(f"{app.config.SESSION_COOKIE_NAME}=", response.headers.get("set-cookie", ""))
@@ -126,6 +152,24 @@ class EmailVerificationRouteTests(GatewayDbTestCase):
             account = accounts.get_account_by_id(conn, account_id)
             self.assertTrue(accounts.is_email_verified(account))
             self.assertEqual(accounts.get_tenant_for_account(conn, account_id)["id"], tenant_id)
+
+    def test_verification_submit_without_a_csrf_token_is_rejected(self) -> None:
+        with self.connect() as conn:
+            account_id = accounts.create_account(
+                conn, "seller@example.test", "safe-password-123", email_verified=False
+            )
+            token = accounts.create_email_verification_token(conn, account_id)
+        background = BackgroundTasks()
+        with (
+            mock.patch.object(app.control_db, "connect", side_effect=self._app_connect),
+            mock.patch.object(app.csrf, "verify", return_value=False),
+        ):
+            response = app.verify_email_submit(_request("/verify-email"), background, token, "", "")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(len(background.tasks), 0)
+        with self.connect() as conn:
+            row = conn.execute("SELECT consumed_at FROM email_verification_tokens").fetchone()
+            self.assertFalse(row["consumed_at"])
 
     def test_resend_verification_queues_new_token_without_enumeration(self) -> None:
         with self.connect() as conn:

@@ -3,7 +3,7 @@
 Framing applies to this document's ancestors, not its outgoing demo iframe.
 Script/style/media source restrictions need a separate nonce/analytics inventory;
 do not accidentally disable the inline theme boot script or public video lessons.
-TLS/HSTS is managed at the reverse proxy, not inferred from client headers here.
+HSTS is emitted only for HTTPS scopes; the reverse proxy establishes the scheme.
 """
 from starlette.datastructures import MutableHeaders
 
@@ -25,6 +25,8 @@ class SecurityHeadersMiddleware:
                 message = {**message, "headers": list(message.get("headers", []))}
                 headers = MutableHeaders(scope=message)
                 headers["X-Content-Type-Options"] = "nosniff"
+                if scope.get("scheme") == "https":
+                    headers.setdefault("Strict-Transport-Security", "max-age=31536000")
                 content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
                 if content_type in {"text/html", "application/xhtml+xml"}:
                     headers.setdefault("X-Frame-Options", "SAMEORIGIN")
