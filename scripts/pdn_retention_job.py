@@ -99,14 +99,22 @@ with tempfile.TemporaryDirectory(prefix='pdn-restore-') as tmp:
     if json.loads(output).get('restore_ok') is not True:raise ValueError('restore_failed')
 
 
-def source_for(row,local_sources):
+def envelope_header(raw):
+    offset=len(backup_offsite_envelope.MAGIC)
+    if not raw.startswith(backup_offsite_envelope.MAGIC) or len(raw)<offset+4:raise ValueError('envelope_invalid')
+    length=struct.unpack('>I',raw[offset:offset+4])[0]
+    if not 1<=length<=4096 or len(raw)<offset+4+length:raise ValueError('envelope_invalid')
+    return json.loads(raw[offset+4:offset+4+length])
+
+
+def source_for(row,local_sources,trusted_envelopes=None):
     if row['format']=='WBSAASBK1':source_sha=row['sha256']
     elif row['format']=='MHOFFSITE2':
-        if row.get('mode')=='remote':_,raw=metadata(row['path'])
+        if row.get('mode')=='remote':
+            if trusted_envelopes is None or row['sha256'] not in trusted_envelopes:raise ValueError('untrusted_remote_envelope')
+            _,raw=metadata(row['path'])
         else:raw=Path(row['absolute']).read_bytes()[:8192]
-        length=struct.unpack('>I',raw[9:13])[0]
-        if not 1<=length<=4096:raise ValueError('envelope_invalid')
-        header=json.loads(raw[13:13+length]);source_sha=header['source_sha256']
+        header=envelope_header(raw);source_sha=header['source_sha256']
         public=backup_offsite_envelope.public_key('/opt/wb-saas/offsite-recipient-public.pem')
         if header['recipient']!=backup_offsite_envelope.recipient_id(public):raise ValueError('recipient_changed')
     else:raise ValueError('encrypted_recovery_required')
@@ -132,7 +140,7 @@ def provenance():
     if catalog_path.is_symlink() or not catalog_path.is_file() or catalog_path.stat().st_mode&0o077:raise ValueError('creation_catalog_unavailable')
     catalog=json.loads(catalog_path.read_text())
     if catalog.get('version')!=1 or not isinstance(catalog.get('creation_by_sha256'),dict):raise ValueError('creation_catalog_invalid')
-    dates=catalog['creation_by_sha256'];sources={}
+    dates=catalog['creation_by_sha256'];sources={};trusted_envelopes=set()
     for group in ROOT.iterdir():
         if not group.is_dir() or group.is_symlink() or retention._reserved([group.name]):continue
         for file in group.iterdir():
@@ -146,11 +154,12 @@ def provenance():
         for file in group.glob('*.enc'):
             if file.is_symlink():raise ValueError('unsafe_staging')
             header,_=backup_offsite_envelope.header(file)
+            cipher_sha=retention._hash(file);trusted_envelopes.add(cipher_sha)
             if header['source_sha256'] in dates:
-                digest=retention._hash(file);stamp=dates[header['source_sha256']]
+                digest=cipher_sha;stamp=dates[header['source_sha256']]
                 dates[digest]=min(dates.get(digest,stamp),stamp)
     backup_offsite.write_status(catalog_path,catalog)
-    return dates,sources,catalog_path,catalog_path.read_bytes()
+    return dates,sources,catalog_path,catalog_path.read_bytes(),trusted_envelopes
 
 
 def run(*,apply=False):
@@ -172,7 +181,7 @@ def run(*,apply=False):
     # This retired directory contains a historical gateway DB, not a live tenant.
     identity_check="from logic import db\nwith db.connect() as c:\n assert c.execute(\"SELECT 1 FROM tenant_instances WHERE slug='67324db'\").fetchone() is None"
     command(['docker','exec','wb-saas-gateway-1','python','-c',identity_check])
-    dates,sources,catalog_path,catalog_raw=provenance()
+    dates,sources,catalog_path,catalog_raw,trusted_envelopes=provenance()
     local=retention.plan_local(ROOT,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['local'],creation_by_sha256=dates)
     staging=retention.plan_local(STAGING,days=14,legal_holds=holds['holds']['staging'],creation_by_sha256=dates)
     listed=json.loads(command(['rclone','lsjson',REMOTE,'--recursive','--files-only','--retries','1','--low-level-retries','1']))
@@ -192,9 +201,7 @@ def run(*,apply=False):
     for path,item in selected.items():
         row,head=metadata(path,item)
         if row['format']=='MHOFFSITE2':
-            length=struct.unpack('>I',head[9:13])[0]
-            if not 1<=length<=4096:raise ValueError('envelope_invalid')
-            predecessor=json.loads(head[13:13+length])['source_sha256']
+            predecessor=envelope_header(head)['source_sha256']
             if predecessor in dates:dates[row['sha256']]=min(row['mtime_ns'],dates[predecessor])
         else:dates[row['sha256']]=archive_creation(path,row['mtime_ns'])
         inspected.append(row)
@@ -223,7 +230,7 @@ def run(*,apply=False):
         for group in needed:
             row=dict(floor[group]);row['mode']=name
             if name!='remote':row['absolute']=str(Path(manifest['root'])/row['path'])
-            source=source_for(row,sources)
+            source=source_for(row,sources,trusted_envelopes)
             if source not in validated:restore_inner(source);validated.add(source)
             hashes[group]=row['sha256']
         proof={'manifest_sha256':manifest['manifest_sha256'],'verified_at':time.time(),'restore_ok':True,'erasure_guard_ok':True,'independent_copy':True,'recovery_sha256_by_namespace':hashes,'verified_namespace_replacements':manifest['namespace_replacements'],'versions_checked':True,'object_lock_checked':True,'legal_holds_checked':True}

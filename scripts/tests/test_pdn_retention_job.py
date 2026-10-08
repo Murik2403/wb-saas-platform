@@ -1,4 +1,5 @@
 import sys
+import json,struct
 from datetime import datetime,timezone
 from pathlib import Path
 from unittest import mock
@@ -50,3 +51,14 @@ def test_copy_does_not_restart_date_bearing_gateway_archive_age():
 
 def test_unknown_creation_name_remains_explicit_mtime_fallback():
     assert job.archive_creation('unknown.sqlite3.enc',123456789)==123456789
+
+
+def test_envelope_header_uses_actual_ten_byte_magic():
+    value={'source_sha256':'a'*64,'recipient':'b'*64}
+    raw=json.dumps(value).encode()
+    assert job.envelope_header(b'MHOFFSITE2'+struct.pack('>I',len(raw))+raw+b'cipher')==value
+
+
+def test_remote_envelope_without_independent_local_ciphertext_is_refused():
+    with pytest.raises(ValueError,match='untrusted_remote_envelope'):
+        job.source_for({'format':'MHOFFSITE2','mode':'remote','sha256':'a'*64,'path':'remote/copy.enc'},{},{'b'*64})
