@@ -43,7 +43,9 @@ def _protected(path, *, file=True):
     info = path.stat()
     if file and (not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES):
         raise ValueError('rehearsal_invalid_file')
-    if os.name != 'nt' and (info.st_mode & (0o077 if file else 0o022) or info.st_uid != 0):
+    archive_scope = (file and path.parent.parent == ROOT and path.parent.name in NAMESPACES) or (not file and path.parent == ROOT and path.name in NAMESPACES)
+    archive_owner = archive_scope and info.st_uid == 10001
+    if os.name != 'nt' and (info.st_mode & (0o077 if file else 0o022) or (info.st_uid != 0 and not archive_owner)):
         raise ValueError('rehearsal_protected_file_required')
     return path
 
