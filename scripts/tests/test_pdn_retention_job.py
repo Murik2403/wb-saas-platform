@@ -62,3 +62,76 @@ def test_envelope_header_uses_actual_ten_byte_magic():
 def test_remote_envelope_without_independent_local_ciphertext_is_refused():
     with pytest.raises(ValueError,match='untrusted_remote_envelope'):
         job.source_for({'format':'MHOFFSITE2','mode':'remote','sha256':'a'*64,'path':'remote/copy.enc'},{},{'b'*64})
+
+
+def _envelope(source_sha):
+    raw=json.dumps({'source_sha256':source_sha,'recipient':'f'*64}).encode()
+    return b'MHOFFSITE2'+struct.pack('>I',len(raw))+raw
+
+
+def test_remote_selection_inspects_recent_old_copy_and_actual_original_creation_floor():
+    now=datetime(2026,10,8,tzinfo=timezone.utc).timestamp()
+    ns=lambda age:int((now-age*86400)*1e9)
+    # All upload dates are within14d. The middle item contains expired data,
+    # while the real creation-date floor has an older upload than the first.
+    definitions=[('a'*64,1,'1'*64,8),('b'*64,2,'2'*64,30),('c'*64,3,'3'*64,3)]
+    listing=[{'Path':'offsite-v2/synthetic/'+digest+'.enc','Size':200,'ModTime':'recent'} for digest,_,_,_ in definitions]
+    listing.append({'Path':'offsite-v2/synthetic/source.py','Size':200,'ModTime':'old'})
+    rows={item['Path']:{'path':item['Path'],'size':200,'mtime_ns':ns(upload_age),
+                         'sha256':digest,'format':'MHOFFSITE2','version_id':''}
+          for item,(digest,upload_age,_,_) in zip(listing,definitions)}
+    predecessor={listing[index]['Path']:source_sha for index,(_,_,source_sha,_) in enumerate(definitions)}
+    dates={source_sha:ns(original_age) for _,_,source_sha,original_age in definitions}
+    calls=[]
+    def inspect(path,item):
+        calls.append(path)
+        return rows[path],_envelope(predecessor[path])
+    inspected=job.inspect_remote_listing(listing,dates,inspector=inspect)
+    assert set(calls)==set(rows) and len(inspected)==3
+    manifest=job.retention.plan_remote(inspected,now=now,creation_by_sha256=dates)
+    assert [row['sha256'] for row in manifest['candidates']]==['b'*64]
+    assert [row['sha256'] for row in manifest['retained']]==['c'*64]
+    assert dates['b'*64]==ns(30)
+
+
+def test_remote_selection_preserves_catalog_date_and_reads_recent_digest_sidecars():
+    now=datetime(2026,10,8,tzinfo=timezone.utc).timestamp()
+    original=int((now-30*86400)*1e9)
+    names=['synthetic/copy.tar.gz.enc','synthetic/copy.tar.gz.enc.sha256']
+    listing=[{'Path':name,'Size':200,'ModTime':'recent'} for name in names]
+    calls=[]
+    def inspect(path,item):
+        calls.append(path)
+        row={'path':path,'size':200,'mtime_ns':int(now*1e9),'sha256':'a'*64 if path==names[0] else 'b'*64,
+             'format':'WBSAASBK1' if path==names[0] else '', 'version_id':''}
+        if path==names[1]:row['archive_sha256']='a'*64
+        return row,b''
+    dates={'a'*64:original}
+    inspected=job.inspect_remote_listing(listing,dates,inspector=inspect)
+    assert set(calls)==set(names) and len(inspected)==2
+    assert dates['a'*64]==original
+
+
+def test_remote_inspection_parallelism_is_bounded_to_four():
+    import threading,time
+    lock=threading.Lock();active=maximum=0
+    listing=[{'Path':f'synthetic/archive-{index}.tar.gz.enc','Size':200} for index in range(12)]
+    def inspect(path,item):
+        nonlocal active,maximum
+        with lock:active+=1;maximum=max(maximum,active)
+        try:
+            time.sleep(.01)
+            return {'path':path,'size':200,'mtime_ns':1,'sha256':'a'*64,'format':'WBSAASBK1'},b''
+        finally:
+            with lock:active-=1
+    result=job.inspect_remote_listing(listing,{},inspector=inspect)
+    assert len(result)==12 and 1<=maximum<=4 and active==0
+    with pytest.raises(ValueError,match='remote_inspection_workers_invalid'):
+        job.inspect_remote_listing(listing,{},inspector=inspect,max_workers=5)
+
+
+def test_remote_inspection_failure_never_returns_partial_selection():
+    listing=[{'Path':'synthetic/a.tar.gz.enc','Size':200}]
+    def inspect(path,item):raise RuntimeError('synthetic read failure')
+    with pytest.raises(RuntimeError,match='synthetic read failure'):
+        job.inspect_remote_listing(listing,{},inspector=inspect)

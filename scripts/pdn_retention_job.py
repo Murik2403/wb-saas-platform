@@ -11,6 +11,7 @@ import struct
 import subprocess
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import backup_offsite
 import backup_offsite_envelope
@@ -135,6 +136,45 @@ def archive_creation(name,fallback):
     return min(fallback,int(found[1])*10**9) if found else fallback
 
 
+def inspect_remote_listing(listed, dates, *, inspector=None, max_workers=4):
+    """Inspect every known recovery object before selecting by original age.
+
+    ModTime is transport metadata: a recently uploaded old envelope can expire,
+    and the newest recovery by creation may not have the newest upload time.
+    Only exact known layouts/formats are read; no deletion is performed here.
+    Catalog updates are sequential after bounded parallel content inspection.
+    """
+    if type(max_workers) is not int or not 1<=max_workers<=4:
+        raise ValueError('remote_inspection_workers_invalid')
+    inspector=metadata if inspector is None else inspector
+    selected=[];seen=set()
+    for item in listed:
+        path=item['Path']
+        try:parts=retention._parts(path,remote=True)
+        except ValueError:continue
+        if item.get('IsDir') is True or retention._kind(parts[-1])=='unknown':continue
+        if path in seen:raise ValueError('duplicate_remote_path')
+        seen.add(path);selected.append((path,item))
+    def inspect(pair):
+        return inspector(pair[0],pair[1])
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results=list(executor.map(inspect,selected))
+    inspected=[]
+    for row,head in results:
+        digest=row['sha256']
+        if row['format']=='MHOFFSITE2':
+            predecessor=envelope_header(head)['source_sha256']
+            if not isinstance(predecessor,str) or not retention.HASH.fullmatch(predecessor):
+                raise ValueError('envelope_source_digest_invalid')
+            stamp=min(row['mtime_ns'],dates.get(predecessor,dates.get(digest,row['mtime_ns'])))
+        else:stamp=archive_creation(row['path'],row['mtime_ns'])
+        # Preserve already established creation dates; rereading/copying must
+        # never replace a protected older catalog value with a recent ModTime.
+        dates[digest]=min(dates.get(digest,stamp),stamp)
+        inspected.append(row)
+    return inspected
+
+
 def provenance():
     catalog_path=Path('/opt/wb-saas/pdn-archive-origins.json')
     if catalog_path.is_symlink() or not catalog_path.is_file() or catalog_path.stat().st_mode&0o077:raise ValueError('creation_catalog_unavailable')
@@ -185,26 +225,7 @@ def run(*,apply=False):
     local=retention.plan_local(ROOT,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['local'],creation_by_sha256=dates)
     staging=retention.plan_local(STAGING,days=14,legal_holds=holds['holds']['staging'],creation_by_sha256=dates)
     listed=json.loads(command(['rclone','lsjson',REMOTE,'--recursive','--files-only','--retries','1','--low-level-retries','1']))
-    selected={};newest={};now=time.time()
-    for item in listed:
-        path=item['Path']
-        try:parts=retention._parts(path,remote=True)
-        except ValueError:continue
-        kind=retention._kind(parts[-1])
-        if kind=='unknown':continue
-        raw=re.sub(r'(\.\d{6})\d+(?=[+-]|Z)',r'\1',item['ModTime']).replace('Z','+00:00')
-        stamp=datetime.fromisoformat(raw).timestamp()
-        if stamp<now-14*86400:selected[path]=item
-        if kind!='digest' and (parts[0] not in newest or stamp>newest[parts[0]][0]):newest[parts[0]]=(stamp,item)
-    for _,item in newest.values():selected[item['Path']]=item
-    inspected=[]
-    for path,item in selected.items():
-        row,head=metadata(path,item)
-        if row['format']=='MHOFFSITE2':
-            predecessor=envelope_header(head)['source_sha256']
-            if predecessor in dates:dates[row['sha256']]=min(row['mtime_ns'],dates[predecessor])
-        else:dates[row['sha256']]=archive_creation(path,row['mtime_ns'])
-        inspected.append(row)
+    inspected=inspect_remote_listing(listed,dates)
     # Bind every inspected object's original age before any manifest is applied.
     backup_offsite.write_status(catalog_path,{'version':1,'creation_by_sha256':dates});catalog_raw=catalog_path.read_bytes()
     remote=retention.plan_remote(inspected,days=14,namespace_replacements=ALIASES,legal_holds=holds['holds']['remote'],creation_by_sha256=dates)
