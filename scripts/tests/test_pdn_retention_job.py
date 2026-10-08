@@ -32,8 +32,9 @@ def test_remote_parser_recognizes_sqlite_header_and_stable_timestamp():
 
 def test_restore_probe_is_valid_python_without_null_argv_bytes():
     commands=[]
-    def execute(args):
+    def execute(args, **kwargs):
         commands.append(args)
+        assert kwargs['timeout']==job.RESTORE_TIMEOUT_SECONDS
         compile(args[-1],'<restore probe>','exec')
         return b'{"restore_ok":true}'
     with mock.patch.object(job,'command',side_effect=execute):
@@ -135,3 +136,36 @@ def test_remote_inspection_failure_never_returns_partial_selection():
     def inspect(path,item):raise RuntimeError('synthetic read failure')
     with pytest.raises(RuntimeError,match='synthetic read failure'):
         job.inspect_remote_listing(listing,{},inspector=inspect)
+
+
+@pytest.mark.parametrize('size',[int(1.1*1024**3),int(2.2*1024**3),4*1024**3])
+def test_large_realistic_archives_pass_stream_gate_without_buffering_object(size):
+    with mock.patch.object(job.subprocess,'Popen',side_effect=RuntimeError('synthetic_stream_open')) as popen:
+        with pytest.raises(RuntimeError,match='synthetic_stream_open'):
+            job.object_content('synthetic/large.tar.gz.enc',size)
+    popen.assert_called_once()
+
+
+@pytest.mark.parametrize('size',[4*1024**3+1,0,-1,True,2.0])
+def test_out_of_bounds_remote_size_rejected_before_transport(size):
+    with mock.patch.object(job.subprocess,'Popen') as popen:
+        with pytest.raises(ValueError,match='archive_size_limit'):
+            job.object_content('synthetic/oversize.tar.gz.enc',size)
+    popen.assert_not_called()
+
+
+def test_restore_capacity_gate_prevents_decryption_without_free_disk(tmp_path,monkeypatch):
+    import sys,types
+    source=tmp_path/'synthetic'/'backup.tar.gz.enc'
+    source.parent.mkdir();source.write_bytes(b'synthetic cipher')
+    captured=[]
+    def command(args,**kwargs):
+        captured.append(args[-1]);return b'{"restore_ok":true}'
+    with mock.patch.object(job,'command',side_effect=command):
+        job.restore_inner(job.ROOT/'synthetic'/'backup.tar.gz.enc')
+    code=captured[0].replace("Path('/backups')",'Path('+repr(str(tmp_path))+')')
+    decrypt=mock.Mock(side_effect=AssertionError('decryption must not start'))
+    monkeypatch.setitem(sys.modules,'backup_crypto',types.SimpleNamespace(decrypt_file=decrypt))
+    with mock.patch('shutil.disk_usage',return_value=types.SimpleNamespace(free=0)):
+        with pytest.raises(AssertionError):exec(compile(code,'<capacity probe>','exec'),{})
+    decrypt.assert_not_called()

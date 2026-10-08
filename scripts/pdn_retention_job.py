@@ -22,6 +22,11 @@ ROOT=Path('/opt/wb-saas/backups')
 STAGING=Path('/opt/wb-saas/offsite-v2-staging')
 REMOTE='timeweb-s3:marketshelper-backups'
 ALIASES={'67324db':'control-plane'}
+MAX_REMOTE_OBJECT_BYTES=4*1024**3
+REMOTE_READ_TIMEOUT_SECONDS=900
+MAX_RESTORE_UNCOMPRESSED_BYTES=8*1024**3
+RESTORE_TIMEOUT_SECONDS=900
+RESTORE_DISK_RESERVE_BYTES=256*1024**2
 
 
 def command(args, *, timeout=180):
@@ -31,18 +36,18 @@ def command(args, *, timeout=180):
 
 
 def object_content(path,size):
-    if not 0<size<=512*1024*1024:raise ValueError('archive_size_limit')
+    if type(size) is not int or not 0<size<=MAX_REMOTE_OBJECT_BYTES:raise ValueError('archive_size_limit')
     process=subprocess.Popen(['rclone','cat',REMOTE+'/'+path,'--retries','1','--low-level-retries','1'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
     digest=hashlib.sha256();header=b'';count=0;started=time.monotonic()
     try:
         while True:
-            if time.monotonic()-started>180:raise ValueError('archive_read_limit')
+            if time.monotonic()-started>REMOTE_READ_TIMEOUT_SECONDS:raise ValueError('archive_read_limit')
             if not select.select([process.stdout],[],[],1)[0]:continue
             block=os.read(process.stdout.fileno(),1024*1024)
             if not block:break
             count+=len(block);digest.update(block)
             if len(header)<8192:header+=block[:8192-len(header)]
-            if count>size or time.monotonic()-started>180:raise ValueError('archive_read_limit')
+            if count>size or time.monotonic()-started>REMOTE_READ_TIMEOUT_SECONDS:raise ValueError('archive_read_limit')
         if process.wait(timeout=10)!=0 or count!=size:raise RuntimeError('retention_transport_failed')
         return digest.hexdigest(),header
     finally:
@@ -68,35 +73,48 @@ def metadata(path,item=None):
 def restore_inner(path):
     relative=path.relative_to(ROOT).as_posix()
     retention._parts(relative)
-    code='''import json,os,tempfile,sqlite3,tarfile,time
+    code='''import json,os,tempfile,sqlite3,tarfile,time,shutil
 from pathlib import Path
 from backup_crypto import decrypt_file
 source=Path('/backups')/'''+repr(relative)+'''
+MAX_SOURCE_BYTES='''+str(MAX_REMOTE_OBJECT_BYTES)+'''
+MAX_UNCOMPRESSED_BYTES='''+str(MAX_RESTORE_UNCOMPRESSED_BYTES)+'''
+DISK_RESERVE_BYTES='''+str(RESTORE_DISK_RESERVE_BYTES)+'''
+deadline=time.monotonic()+'''+str(RESTORE_TIMEOUT_SECONDS)+'''
+def guard_space(folder,needed):
+ assert time.monotonic()<deadline and needed>=0
+ assert shutil.disk_usage(folder).free>=needed+DISK_RESERVE_BYTES
 def sqlite_ok(path):
  c=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)
+ c.set_progress_handler(lambda: time.monotonic()>=deadline,10000)
  try: assert c.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
  finally:c.close()
 with tempfile.TemporaryDirectory(prefix='pdn-restore-') as tmp:
+ assert 0<source.stat().st_size<=MAX_SOURCE_BYTES
+ guard_space(tmp,source.stat().st_size)
  target=Path(tmp)/'restored';decrypt_file(source,target,os.environ['WB_SAAS_BACKUP_ENCRYPTION_KEY'])
+ assert target.stat().st_size<=MAX_SOURCE_BYTES and time.monotonic()<deadline
  with target.open('rb') as f:magic=f.read(16)
  if magic.hex()=='53514c69746520666f726d6174203300':sqlite_ok(target);count=1
  else:
-  count=total=0;deadline=time.monotonic()+120
+  count=total=0
   with tarfile.open(target,'r:*') as archive:
    for member in archive:
     assert not member.issym() and not member.islnk() and not member.name.startswith('/') and '..' not in Path(member.name).parts
     if not member.isfile():continue
-    total+=member.size;assert total<=512*1024*1024 and time.monotonic()<deadline
+    total+=member.size;assert 0<=member.size and total<=MAX_UNCOMPRESSED_BYTES and time.monotonic()<deadline
     with archive.extractfile(member) as f:head=f.read(16)
     if head.hex()=='53514c69746520666f726d6174203300':
      p=Path(tmp)/('db-'+str(count))
+     guard_space(tmp,member.size)
      with archive.extractfile(member) as f,p.open('wb') as out:
-      while block:=f.read(1024*1024):out.write(block)
-     sqlite_ok(p);count+=1
+      while block:=f.read(1024*1024):
+       assert time.monotonic()<deadline;out.write(block)
+     sqlite_ok(p);p.unlink();count+=1
   assert count>0
  print(json.dumps({'restore_ok':True,'sqlite_databases':count}))
 '''
-    output=command(['docker','exec','--user','10001:10001','wb-saas-provisioner-1','python','-c',code])
+    output=command(['docker','exec','--user','10001:10001','wb-saas-provisioner-1','python','-c',code],timeout=RESTORE_TIMEOUT_SECONDS)
     if json.loads(output).get('restore_ok') is not True:raise ValueError('restore_failed')
 
 
