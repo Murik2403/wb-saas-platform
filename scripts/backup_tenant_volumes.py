@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 import os
+import re
 import time
 from pathlib import Path
 
@@ -28,8 +29,13 @@ except ImportError:
 
 def _all_slugs() -> list[str]:
     with control_db.connect() as conn:
-        rows = conn.execute("SELECT DISTINCT slug FROM tenant_instances ORDER BY slug").fetchall()
-    return [str(row["slug"]) for row in rows]
+        rows = conn.execute("SELECT DISTINCT slug FROM tenant_instances ORDER BY slug LIMIT 10001").fetchall()
+    slugs = [row["slug"] for row in rows]
+    if len(slugs)>10000 or any(not isinstance(slug,str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',slug) for slug in slugs):
+        raise RuntimeError('backup_inventory_unavailable')
+    # Public demo has no customer registry row, but is an existing mandatory
+    # backup namespace. Never silently skip its daily snapshot.
+    return list(dict.fromkeys(['demo',*slugs]))
 
 
 # Multi-GB archives: provisioner may legitimately take many minutes to answer.
@@ -71,7 +77,12 @@ def main() -> int:
     args = parser.parse_args()
     if not 1<=args.keep_days<=3650:parser.error('--keep-days must be between 1 and 3650')
 
-    slugs = _all_slugs()
+    try:
+        slugs = _all_slugs()
+    except Exception:
+        event={'kind':'backup_inventory_failure','code':'backup_inventory_unavailable','at':time.time()}
+        print('backup inventory unavailable; failure alert: '+alert(event,os.environ))
+        return 1
     if args.only:
         requested = {slug.strip() for slug in args.only.split(",") if slug.strip()}
         slugs = [slug for slug in slugs if slug in requested]

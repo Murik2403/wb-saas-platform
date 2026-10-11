@@ -49,6 +49,39 @@ def _fake_response(payload: dict[str, Any]) -> Mock:
 class BackupTenantVolumesScriptTests(TestCase):
     def setUp(self):
         self.enterContext(patch('scripts.backup_tenant_volumes.provisioner_headers',return_value={'Authorization':'Bearer synthetic-purpose-key'}))
+        self.alert_mock=self.enterContext(patch('scripts.backup_tenant_volumes.alert',return_value='accepted'))
+
+    @patch('scripts.backup_tenant_volumes.control_db.connect')
+    def test_public_demo_is_backed_up_without_a_registry_row(self,connect_mock):
+        connect_mock.return_value=_make_db(['new-client'])
+        self.assertEqual(script._all_slugs(),['demo','new-client'])
+        connect_mock.return_value=_make_db([])
+        self.assertEqual(script._all_slugs(),['demo'])
+
+    @patch('scripts.backup_tenant_volumes.control_db.connect')
+    def test_demo_and_registry_slugs_are_unique(self,connect_mock):
+        connect_mock.return_value=_make_db(['alpha','demo','alpha'])
+        self.assertEqual(script._all_slugs(),['demo','alpha'])
+
+    @patch('scripts.backup_tenant_volumes.requests.post')
+    @patch('scripts.backup_tenant_volumes.control_db.connect')
+    def test_inventory_failure_is_not_treated_as_empty_registry(self,connect_mock,requests_post_mock):
+        import io
+        from contextlib import redirect_stdout
+        connect_mock.side_effect=RuntimeError('private-database-credential')
+        output=io.StringIO()
+        with patch.object(sys,'argv',['script']),redirect_stdout(output):
+            self.assertEqual(script.main(),1)
+        requests_post_mock.assert_not_called()
+        self.assertEqual(self.alert_mock.call_args.args[0]['code'],'backup_inventory_unavailable')
+        self.assertNotIn('private-database-credential',output.getvalue())
+
+    @patch('scripts.backup_tenant_volumes.control_db.connect')
+    def test_invalid_registry_slug_is_not_interpolated_into_provider_path(self,connect_mock):
+        connect_mock.return_value=_make_db(['../private'])
+        with self.assertRaisesRegex(RuntimeError,'backup_inventory_unavailable'):
+            script._all_slugs()
+
     @patch("scripts.backup_tenant_volumes.requests.post")
     @patch("scripts.backup_tenant_volumes.control_db.connect")
     def test_backup_script_backups_control_plane_and_all_tenants(
@@ -59,6 +92,7 @@ class BackupTenantVolumesScriptTests(TestCase):
         connect_mock.return_value = _make_db(["alpha", "beta"])
         requests_post_mock.side_effect = [
             _fake_response({"archive": "control-plane.tar.gz.enc", "pruned": 1}),
+            _fake_response({"archive": "demo.tar.gz.enc", "pruned": 0}),
             _fake_response({"archive": "alpha.tar.gz.enc", "pruned": 0}),
             _fake_response({"archive": "beta.tar.gz.enc", "pruned": 0}),
         ]
@@ -70,10 +104,11 @@ class BackupTenantVolumesScriptTests(TestCase):
                 result = script.main()
 
         self.assertEqual(result, 0)
-        self.assertEqual(requests_post_mock.call_count, 3)
+        self.assertEqual(requests_post_mock.call_count, 4)
         self.assertIn("v1/control-plane/backup", str(requests_post_mock.call_args_list[0]))
-        self.assertIn("v1/tenants/alpha/backup", str(requests_post_mock.call_args_list[1]))
-        self.assertIn("v1/tenants/beta/backup", str(requests_post_mock.call_args_list[2]))
+        self.assertIn("v1/tenants/demo/backup", str(requests_post_mock.call_args_list[1]))
+        self.assertIn("v1/tenants/alpha/backup", str(requests_post_mock.call_args_list[2]))
+        self.assertIn("v1/tenants/beta/backup", str(requests_post_mock.call_args_list[3]))
 
     @patch("scripts.backup_tenant_volumes.requests.post")
     @patch("scripts.backup_tenant_volumes.control_db.connect")
@@ -85,6 +120,7 @@ class BackupTenantVolumesScriptTests(TestCase):
         connect_mock.return_value = _make_db(["alpha"])
         requests_post_mock.side_effect = [
             RuntimeError("control-plane endpoint unavailable"),
+            _fake_response({"archive": "demo.tar.gz.enc", "pruned": 0}),
             _fake_response({"archive": "alpha.tar.gz.enc", "pruned": 0}),
         ]
         with patch.object(sys, "argv", ["script"]):
@@ -94,7 +130,7 @@ class BackupTenantVolumesScriptTests(TestCase):
                 result = script.main()
 
         self.assertEqual(result, 1)
-        self.assertEqual(requests_post_mock.call_count, 2)
+        self.assertEqual(requests_post_mock.call_count, 3)
 
     @patch("scripts.backup_tenant_volumes.requests.post")
     @patch("scripts.backup_tenant_volumes.control_db.connect")

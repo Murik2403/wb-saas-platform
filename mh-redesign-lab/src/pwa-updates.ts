@@ -4,13 +4,27 @@ import "./pwa-updates.css";
 export function startPwaUpdates(reload: () => void = () => window.location.reload()): () => void {
   let disposed = false;
   let optedIn = false;
+  let reloaded = false;
+  let serviceWorkerRegistration: ServiceWorkerRegistration | null = null;
   let banner: HTMLElement | null = null;
   let baseline: string | null = null;
   let dismissed = "";
   let checking = false;
   let controller: AbortController | null = null;
   const cleanups: (() => void)[] = [];
-  function offer(key: string, apply: () => void) {
+  function reloadOnce() {
+    if (disposed || reloaded) return;
+    reloaded = true;
+    reload();
+  }
+  function applyUpdate() {
+    // Resolve the action at click time: a worker may arrive after the build
+    // banner, or have been activated by another tab since it was offered.
+    const waiting = serviceWorkerRegistration?.waiting;
+    if (waiting) waiting.postMessage({ type: "MH_ACTIVATE_UPDATE" });
+    else reloadOnce();
+  }
+  function offer(key: string) {
     if (disposed || banner || key === dismissed) return;
     banner = document.createElement("aside");
     banner.className = "pwa-update-banner";
@@ -19,7 +33,7 @@ export function startPwaUpdates(reload: () => void = () => window.location.reloa
     text.textContent = "Доступно обновление. Сначала сохраните введённые данные и завершите операции: обновление перезагрузит страницу.";
     const update = document.createElement("button");
     update.type = "button"; update.textContent = "Обновить страницу";
-    update.onclick = () => { optedIn = true; update.disabled = true; apply(); };
+    update.onclick = () => { optedIn = true; update.disabled = true; applyUpdate(); };
     const later = document.createElement("button");
     later.type = "button"; later.textContent = "Позже";
     later.onclick = () => { dismissed = key; banner?.remove(); banner = null; };
@@ -35,19 +49,20 @@ export function startPwaUpdates(reload: () => void = () => window.location.reloa
       const version = (await response.text()).trim();
       if (!/^[a-f0-9]{7,64}$/i.test(version) || disposed) return;
       if (baseline === null) baseline = version;
-      else if (version !== baseline) offer(version, reload);
+      else if (version !== baseline) offer(version);
     } catch { /* Offline or unauthenticated probes do not create update claims. */ }
     finally { window.clearTimeout(timeout); checking = false; }
   }
-  function changed() { if (optedIn && !disposed) reload(); }
+  function changed() { if (optedIn) reloadOnce(); }
   async function register() {
     if (!("serviceWorker" in navigator) || disposed) return;
     try {
       const registration = await navigator.serviceWorker.register("/sw.js");
       if (disposed) return;
+      serviceWorkerRegistration = registration;
       const waiting = () => {
         if (registration.waiting && navigator.serviceWorker.controller)
-          offer("service-worker", () => registration.waiting?.postMessage({ type: "MH_ACTIVATE_UPDATE" }));
+          offer("service-worker");
       };
       waiting();
       const found = () => {

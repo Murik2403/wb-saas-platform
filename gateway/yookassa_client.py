@@ -118,7 +118,12 @@ def get_payment(payment_id: str) -> dict[str, Any]:
 
 def get_refund(refund_id: str) -> dict[str, Any]:
     """Fetch authoritative refund status for an unsigned webhook."""
-    response = requests.get(f"{_base_url()}/refunds/{refund_id}", auth=_auth(), timeout=30)
+    import requests
+
+    try:
+        response = requests.get(f"{_base_url()}/refunds/{refund_id}", auth=_auth(), timeout=30)
+    except requests.RequestException:
+        raise YooKassaError("YooKassa refund lookup unavailable") from None
     if response.status_code >= 400:
         raise YooKassaError(f"YooKassa refund lookup failed ({response.status_code}): {response.text}")
     return response.json()

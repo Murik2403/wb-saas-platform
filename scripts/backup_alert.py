@@ -6,6 +6,7 @@ import config
 import mailer
 
 CODES={'invalid_groups','local_backup_stale','offsite_backup_stale','encrypted_archive_format_invalid',
+       'backup_inventory_unavailable',
        'offsite_unconfigured','separate_key_escrow_unconfirmed','offsite_copy_failed','offsite_verification_failed',
        'remote_retention_unconfirmed','remote_retention_failed','backup_transport_failed','local_backup_failed',
        'offsite_recipient_unconfigured','offsite_public_key_invalid','offsite_envelope_invalid','offsite_source_invalid',
