@@ -1,3 +1,4 @@
+import { lazyLoaded } from "./test-lazy";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -17,8 +18,8 @@ const row = (nmId: string, revenue: number, margin: number, daysOfStock: number 
 });
 // revenue 1500, profit 150 => margin 10%, 1 SKU at risk, 2 SKU
 const products = [row("1", 1000, 100, 3), row("2", 500, 50, 30)];
-const view = () => render(<ProductsView period={{ id: "30d" }} products={products} prices={[]} productCards={[]} productCardErrors={[]} productPriceErrors={[]}
-  customerQuality={null} onRefresh={vi.fn(async () => {})} setPeriod={vi.fn()} onOpenProduct={vi.fn()} />);
+const view = async () => { const utils = render(<ProductsView period={{ id: "30d" }} products={products} prices={[]} productCards={[]} productCardErrors={[]} productPriceErrors={[]}
+  customerQuality={null} onRefresh={vi.fn(async () => {})} setPeriod={vi.fn()} onOpenProduct={vi.fn()} />); await lazyLoaded(); return utils; };
 const prev = (p: Partial<NonNullable<ds.ProductsPreviousTotals["totals"]>> | null): ds.ProductsPreviousTotals => ({
   start: "2026-08-01", end: "2026-08-30", hasData: !!p,
   totals: p ? { revenue: 1000, marginPct: 8, atRisk: 2, skuCount: 2, ...p } : null,
@@ -28,7 +29,7 @@ const nb = (s: string | null) => (s ?? "").replace(/ | /g, " ");
 describe("Products KPI deltas", () => {
   it("renders tiles immediately and adds deltas when the previous period arrives", async () => {
     vi.mocked(ds.getProductsPrevious).mockResolvedValue(prev({}));
-    view();
+    await view();
     expect(screen.getByText("Выручка")).toBeVisible();
     await waitFor(() => expect(screen.getByText(/\+500 ₽ \(\+50%\) к прошлому периоду/, { normalizer: nb })).toBeVisible());
     expect(screen.getByText("+2 п.п. к прошлому периоду")).toBeVisible();
@@ -37,20 +38,20 @@ describe("Products KPI deltas", () => {
   });
   it("shows no extra text when the request fails", async () => {
     vi.mocked(ds.getProductsPrevious).mockRejectedValue(new Error("HTTP 500"));
-    const { container } = view();
+    const { container } = await view();
     await new Promise((r) => setTimeout(r, 20));
     expect(container.querySelector(".metric-change")).toBeNull();
     expect(screen.queryByText(/ошибк/i)).toBeNull();
   });
   it("says there is no previous data when the previous period is empty or zero", async () => {
     vi.mocked(ds.getProductsPrevious).mockResolvedValue(prev(null));
-    const { container } = view();
+    const { container } = await view();
     await waitFor(() => expect(container.querySelectorAll(".metric-change")).toHaveLength(4));
     for (const el of container.querySelectorAll(".metric-change")) expect(el).toHaveTextContent("нет данных за прошлый период");
   });
   it("zero previous revenue: no percentage, margin says no data", async () => {
     vi.mocked(ds.getProductsPrevious).mockResolvedValue(prev({ revenue: 0, marginPct: 0, atRisk: 0, skuCount: 2 }));
-    const { container } = view();
+    const { container } = await view();
     await waitFor(() => expect(container.querySelectorAll(".metric-change")).toHaveLength(4));
     const texts = [...container.querySelectorAll(".metric-change")].map((e) => e.textContent);
     expect(texts[0]).toBe("нет данных за прошлый период");

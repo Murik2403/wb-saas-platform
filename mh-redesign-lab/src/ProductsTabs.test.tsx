@@ -15,8 +15,8 @@ beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
 
 const price: ds.ProductPriceRow = { nmId: 7, vendorCode: "V7", price: 1000, discount: 10, clubDiscount: 0, discountedPrice: 900 };
-const view = (target?: string | null) => render(<ProductsView period={{ id: "30d" }} products={[]} prices={[price]} productCards={[]} productCardErrors={[]} productPriceErrors={[]}
-  customerQuality={null} onRefresh={vi.fn(async () => {})} setPeriod={vi.fn()} onOpenProduct={vi.fn()} target={target} />);
+const view = async (target?: string | null) => { const utils = render(<ProductsView period={{ id: "30d" }} products={[]} prices={[price]} productCards={[]} productCardErrors={[]} productPriceErrors={[]}
+  customerQuality={null} onRefresh={vi.fn(async () => {})} setPeriod={vi.fn()} onOpenProduct={vi.fn()} target={target} />); await lazyLoaded(); return utils; };
 const BLOCKS: Array<[string, () => HTMLElement | null]> = [
   ["Товары по артикулам", () => screen.queryByRole("heading", { name: "Товары по артикулам" })],
   ["Тепловая карта", () => screen.queryByRole("region", { name: "Тепловая карта товаров по дням" })],
@@ -35,30 +35,30 @@ describe("Products tabs", () => {
     ["Контент и качество", ["Карточки и медиа", "Качество магазина"]],
     ["Цены", ["Рекомендации по ценам", "Цены и скидки"]],
   ])("tab %s shows exactly its blocks", async (tab, blocks) => {
-    view();
+    await view();
     await userEvent.click(screen.getByRole("button", { name: tab }));
     await lazyLoaded();
     expect(shown()).toEqual(blocks);
   });
 
   it("opens the tab that owns a deep-link target", async () => {
-    view("price-uploads");
+    await view("price-uploads");
     await lazyLoaded();
     expect(screen.getByRole("button", { name: "Цены" })).toHaveAttribute("aria-pressed", "true");
     expect(shown()).toContain("Цены и скидки");
   });
 
   it("remembers the last tab", async () => {
-    view();
+    await view();
     await userEvent.click(screen.getByRole("button", { name: "Аналитика" }));
     cleanup();
-    view();
+    await view();
     expect(screen.getByRole("button", { name: "Аналитика" })).toHaveAttribute("aria-pressed", "true");
     expect(window.localStorage.getItem("mh.tab.products")).toBe("analytics");
   });
 
   it("keeps the price draft while switching Цены -> Товары -> Цены", async () => {
-    view();
+    await view();
     await userEvent.click(screen.getByRole("button", { name: "Цены" }));
     await lazyLoaded();
     const input = screen.getByLabelText("Цена V7");

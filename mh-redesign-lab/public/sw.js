@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "marketshelper-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}v3`;
-const MAX_ASSETS = 64;
+const MAX_ASSETS = 128; // ~63 chunks per build after lazy loading, room for one previous build
 function cacheable(response) {
   return response.ok && response.type === "basic" && !response.redirected
     && !/private|no-store/i.test(response.headers?.get("cache-control") || "");

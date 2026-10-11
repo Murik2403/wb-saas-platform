@@ -73,6 +73,7 @@ describe('remaining cabinet audit acceptance', () => {
     dashboard.productCardErrors=['/api/v1/cards: HTTP 409'];
     window.history.replaceState({},'', '/?view=products');
     await renderAuthorizedWb(<App/>);
+    await lazyLoaded();
     expect(screen.getAllByText(/Часть данных WB недоступна/)).toHaveLength(1);
     expect(document.body.textContent).not.toMatch(/\/api\/v1|HTTP 409/);
   });
@@ -80,6 +81,7 @@ describe('remaining cabinet audit acceptance', () => {
     dashboard.dataQuality={summary:{},reliability:[],fifo_guard:{},checks:[{Проверка:'Неопределённая проверка',Статус:'Неизвестно',Детали:'Нет подтверждения'},{Проверка:'Успешная проверка',Статус:'Готово',Детали:'Подтверждено'}]};
     window.history.replaceState({},'', '/?view=control');
     await renderAuthorizedWb(<App/>);
+    await lazyLoaded();
     expect(screen.getByText('Неопределённая проверка')).toBeVisible();
     expect(screen.getByText('Неизвестно')).not.toHaveClass('good');
     expect(screen.queryByText('Успешная проверка')).toBeNull();

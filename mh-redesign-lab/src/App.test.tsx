@@ -340,6 +340,7 @@ describe("operational detail drawer", () => {
     await renderAuthorizedWb(<App />);
 
     await user.click((await screen.findAllByRole("button", { name: "Открыть действие" }))[0]);
+    await lazyLoaded();
 
     expect(new URL(window.location.href).searchParams.get("view")).toBe("ads");
     expect(document.getElementById("ads-campaigns")).toBeInTheDocument();
@@ -779,6 +780,7 @@ describe("operational detail drawer", () => {
     const checkCard = await screen.findByRole("button", { name: /Нормы производства/i });
     await user.click(checkCard);
     await user.click(await screen.findByRole("button", { name: /^Открыть раздел$/i }));
+    await lazyLoaded();
 
     expect(window.location.href).toContain("view=settings");
     expect(await screen.findByRole("heading", { name: /Нормы материала/i })).toBeInTheDocument();
