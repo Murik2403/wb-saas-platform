@@ -1,3 +1,4 @@
+import { lazyLoaded } from "./test-lazy";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
@@ -19,7 +20,9 @@ const quality: CustomerQualityData = { rating: { valuation: 4.8, feedbackCount: 
 async function products(data: CustomerQualityData | null) {
   const view = render(<ProductsView period={{ id: "30d" }} products={[]} prices={[]} productCards={[]} productCardErrors={[]} productPriceErrors={[]}
     customerQuality={data} onRefresh={vi.fn(async () => {})} setPeriod={vi.fn()} onOpenProduct={vi.fn()} />);
+  await lazyLoaded();
   await userEvent.click(screen.getByRole("button", { name: "Контент и качество" }));
+  await lazyLoaded();
   return view;
 }
 function metric(label: string) { return screen.getByText(label).closest(".stat") as HTMLElement; }
@@ -53,6 +56,7 @@ describe("reports presentation", () => {
   it("hides paused Telegram controls while keeping email delivery visible",async()=>{
     vi.mocked(getReportDelivery).mockResolvedValueOnce({configured:true,email_configured:true,email:'synthetic@example.test',telegram_configured:false,telegram_linked:false,telegram_paused:true});
     render(<ReportsView exportItems={[]} reportCards={[]} reportMetrics={[]} onAction={vi.fn()} onQuickReport={vi.fn(async()=>{})}/>);
+    await lazyLoaded();
     fireEvent.click(screen.getByRole('button',{name:'Доставка'}));
     expect(await screen.findByText('Доставка по email')).toBeVisible();
     expect(screen.queryByRole('button',{name:'Привязать Telegram'})).toBeNull();
@@ -62,6 +66,7 @@ describe("reports presentation", () => {
   it("recipient linking stays unavailable without owner permission",async()=>{
     vi.mocked(getReportDelivery).mockResolvedValueOnce({configured:true,email_configured:false,telegram_configured:true,telegram_linked:false});
     render(<ReportsView canLinkTelegram={false} exportItems={[]} reportCards={[]} reportMetrics={[]} onAction={vi.fn()} onQuickReport={vi.fn(async()=>{})}/>);
+    await lazyLoaded();
     fireEvent.click(screen.getByRole('button',{name:'Доставка'}));
     const button=await screen.findByRole('button',{name:'Привязать Telegram'});
     expect(button).toBeDisabled();expect(button).toHaveAttribute('title','Получателя Telegram изменяет только владелец');fireEvent.click(button);expect(requestTelegramLinkCode).not.toHaveBeenCalled();
@@ -69,6 +74,7 @@ describe("reports presentation", () => {
   it("uses readable metric emphasis and correct count declensions without changing values", async () => {
     render(<ReportsView exportItems={[]} reportCards={[]} onAction={vi.fn()} onQuickReport={vi.fn(async () => {})}
       reportMetrics={[{ label: "Резервная копия", value: "2026-09-23T23:55:39", delta: "настройки tenant", detail: "настройки tenant", tone: "info" }]} />);
+    await lazyLoaded();
     expect(screen.getByText("23.09.2026 23:55")).toBeVisible();
     expect(screen.getAllByText("настройки кабинета")).toHaveLength(2);
     expect(screen.queryByText("настройки tenant")).toBeNull();

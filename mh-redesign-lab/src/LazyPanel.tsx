@@ -1,4 +1,4 @@
-import { Component, Suspense, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useState, type ComponentType, type ReactNode } from "react";
 
 class PanelErrorBoundary extends Component<{children:ReactNode;label:string},{failed:boolean}> {
   state={failed:false};
@@ -15,4 +15,9 @@ export function LazyPanel({children,label="раздел"}:{children:ReactNode;la
 export function LazyDisclosure({title,children}:{title:string;children:ReactNode}){
   const [visited,setVisited]=useState(false);
   return <details className="panel ozon-cabinet-panel" onToggle={event=>{if(event.currentTarget.open)setVisited(true);}}><summary>{title}</summary>{visited?<LazyPanel label={title}>{children}</LazyPanel>:null}</details>;
+}
+
+/** React.lazy for a named export: `const X = lazyNamed(() => import("./X"), "X")`; prop types are preserved. */
+export function lazyNamed<K extends string, M extends Record<K, ComponentType<any>>>(load: () => Promise<M>, name: K) {
+  return lazy<M[K]>(() => load().then((module) => ({ default: module[name] })));
 }

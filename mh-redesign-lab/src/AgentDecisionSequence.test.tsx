@@ -1,3 +1,4 @@
+import {lazyLoaded} from './test-lazy';
 import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 import '@testing-library/jest-dom/vitest';
 import {cleanup,fireEvent,render,screen,within,waitFor} from '@testing-library/react';
@@ -24,6 +25,7 @@ beforeEach(()=>{
 afterEach(cleanup);
 it('allows a second recommendation after the first confirmation succeeds',async()=>{
  await renderAuthorizedWb(<App/>);
+ await lazyLoaded();
  fireEvent.click(screen.getAllByRole('button',{name:'Применить'})[0]);
  let dialog=screen.getByRole('dialog',{name:'Применить рекомендацию?'});
  fireEvent.click(within(dialog).getByRole('button',{name:'Применить'}));

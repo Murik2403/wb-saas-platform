@@ -21,5 +21,5 @@ for(const response of [{ok:false,type:"basic",clone(){return this;}},{ok:true,ty
 {const r=runtime();await request(r,"/assets/app.js");assert.equal(r.puts.length,1);assert.equal(r.skip(),0);r.handlers.message({data:{type:"MH_ACTIVATE_UPDATE"}});assert.equal(r.skip(),1);}
 {const r=runtime();let activation;r.handlers.activate({waitUntil:p=>{activation=p;}});await activation;assert.deepEqual(r.deletes,["marketshelper-shell-v1"]);assert.equal(r.skip(),0);}
 {const r=runtime();let installation;r.handlers.install({waitUntil:p=>{installation=p;}});await installation;assert.equal(r.puts.length,5);assert.equal(r.skip(),0);}
-{const r=runtime();r.setEntries(Array.from({length:70},(_,i)=>({url:`https://demo.app.marketshelper.ru/assets/${i}.js`})));await r.context.storeStatic({url:"https://demo.app.marketshelper.ru/assets/new.js"},{ok:true,type:"basic"});assert.equal(r.deletes.length,6);}
+{const r=runtime();r.setEntries(Array.from({length:134},(_,i)=>({url:`https://demo.app.marketshelper.ru/assets/${i}.js`})));await r.context.storeStatic({url:"https://demo.app.marketshelper.ru/assets/new.js"},{ok:true,type:"basic"});assert.equal(r.deletes.length,6);}
 console.log("PWA service-worker checks passed: private/API exclusions, basic+ok cache, explicit activation, scoped cleanup, bounded assets.");

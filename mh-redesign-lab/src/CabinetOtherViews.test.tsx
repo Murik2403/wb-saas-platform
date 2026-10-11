@@ -1,3 +1,4 @@
+import {lazyLoaded} from './test-lazy';
 import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -39,8 +40,10 @@ describe('remaining cabinet audit acceptance', () => {
     window.history.replaceState({},'', '/?view=settings');
     await renderAuthorizedWb(<App/>);
     for(const button of await screen.findAllByRole('button',{name:'Проверить и сохранить'})) expect(button).toBeDisabled();
+    await lazyLoaded();
     expect(getTenantBackups).not.toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button',{name:'Производство'}).find(button=>button.hasAttribute('aria-pressed'))!);
+    await lazyLoaded();
     fireEvent.click(await screen.findByRole('button',{name:'Изменить себестоимость: Manager product'}));
     fireEvent.change(screen.getByLabelText('Себестоимость одной единицы, ₽'),{target:{value:'125'}});
     fireEvent.click(screen.getByRole('button',{name:'Сохранить'}));
@@ -70,6 +73,7 @@ describe('remaining cabinet audit acceptance', () => {
     dashboard.productCardErrors=['/api/v1/cards: HTTP 409'];
     window.history.replaceState({},'', '/?view=products');
     await renderAuthorizedWb(<App/>);
+    await lazyLoaded();
     expect(screen.getAllByText(/Часть данных WB недоступна/)).toHaveLength(1);
     expect(document.body.textContent).not.toMatch(/\/api\/v1|HTTP 409/);
   });
@@ -77,6 +81,7 @@ describe('remaining cabinet audit acceptance', () => {
     dashboard.dataQuality={summary:{},reliability:[],fifo_guard:{},checks:[{Проверка:'Неопределённая проверка',Статус:'Неизвестно',Детали:'Нет подтверждения'},{Проверка:'Успешная проверка',Статус:'Готово',Детали:'Подтверждено'}]};
     window.history.replaceState({},'', '/?view=control');
     await renderAuthorizedWb(<App/>);
+    await lazyLoaded();
     expect(screen.getByText('Неопределённая проверка')).toBeVisible();
     expect(screen.getByText('Неизвестно')).not.toHaveClass('good');
     expect(screen.queryByText('Успешная проверка')).toBeNull();

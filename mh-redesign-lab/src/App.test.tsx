@@ -1,3 +1,4 @@
+import { lazyLoaded } from "./test-lazy";
 import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 vi.mock("./ShopContextBoundary",()=>({ShopContextBoundary:({children}:{children:unknown})=>children}));
 import "@testing-library/jest-dom/vitest";
@@ -339,6 +340,7 @@ describe("operational detail drawer", () => {
     await renderAuthorizedWb(<App />);
 
     await user.click((await screen.findAllByRole("button", { name: "Открыть действие" }))[0]);
+    await lazyLoaded();
 
     expect(new URL(window.location.href).searchParams.get("view")).toBe("ads");
     expect(document.getElementById("ads-campaigns")).toBeInTheDocument();
@@ -376,6 +378,7 @@ describe("operational detail drawer", () => {
     await renderAuthorizedWb(<App />);
     await userEvent.click(await screen.findByRole("button", { name: "Контент и качество" }));
 
+    await lazyLoaded();
     expect(await screen.findByText("Часть данных WB недоступна. Проверьте подключение и права токена в настройках.")).toBeInTheDocument();
     expect(screen.getByText("После исправления доступа обновите раздел.")).toBeInTheDocument();
   });
@@ -386,9 +389,11 @@ describe("operational detail drawer", () => {
     const user = userEvent.setup();
     const first = await renderAuthorizedWb(<App />);
     const nav = await screen.findByRole("navigation", { name: "Разделы рекламы" });
+    await lazyLoaded();
     expect(screen.getByText("Где менять ставки")).toBeInTheDocument();
     expect(document.getElementById("ads-analytics")).toBeNull();
     await user.click(within(nav).getByRole("button", { name: "Аналитика РК" }));
+    await lazyLoaded();
     expect(document.getElementById("ads-analytics")).not.toBeNull();
     expect(screen.queryByText("Где менять ставки")).toBeNull();
     first.unmount();
@@ -775,6 +780,7 @@ describe("operational detail drawer", () => {
     const checkCard = await screen.findByRole("button", { name: /Нормы производства/i });
     await user.click(checkCard);
     await user.click(await screen.findByRole("button", { name: /^Открыть раздел$/i }));
+    await lazyLoaded();
 
     expect(window.location.href).toContain("view=settings");
     expect(await screen.findByRole("heading", { name: /Нормы материала/i })).toBeInTheDocument();
