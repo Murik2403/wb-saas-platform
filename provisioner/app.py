@@ -26,7 +26,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from backup_crypto import decrypt_file, encrypt_file
+from backup_crypto import DEFAULT_KEY_ID, decrypt_file, encrypt_file, parse_keyring, validate_key_id
 from demo_refresh import DailyDemoRefresh
 from demo_recovery import DemoRecoveryJournal
 from docker.errors import NotFound as DockerNotFound
@@ -66,10 +66,31 @@ BACKUP_DIR = os.environ.get("WB_SAAS_BACKUP_DIR", "/opt/wb-saas/backups")
 BACKUP_MOUNT = Path("/backups")
 BACKUP_HELPER_IMAGE = "alpine:3.20"
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
+BACKUP_KEY_ID = validate_key_id(os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY_ID", DEFAULT_KEY_ID))
+BACKUP_KEYRING = parse_keyring(os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEYRING", ""))
+BACKUP_LEGACY_KEY_ID = os.environ.get("WB_SAAS_BACKUP_LEGACY_KEY_ID", "")
+if BACKUP_LEGACY_KEY_ID:
+    validate_key_id(BACKUP_LEGACY_KEY_ID)
 CONTROL_PLANE_BACKUP_GROUP = "control-plane"
 _DEMO_RESEED_LOCK = threading.Lock()
 _TENANT_LIFECYCLE_LOCK = threading.RLock()
 _PURGE_MAX_REFERENCES = 32
+
+
+def _encrypt_backup(source, destination):
+    options = {"key_id": BACKUP_KEY_ID} if BACKUP_KEY_ID != DEFAULT_KEY_ID else {}
+    encrypt_file(source, destination, BACKUP_ENCRYPTION_KEY, **options)
+
+
+def _decrypt_backup(source, destination):
+    options = {}
+    if BACKUP_KEY_ID != DEFAULT_KEY_ID:
+        options["key_id"] = BACKUP_KEY_ID
+    if BACKUP_KEYRING:
+        options["keyring"] = BACKUP_KEYRING
+    if BACKUP_LEGACY_KEY_ID:
+        options["legacy_key_id"] = BACKUP_LEGACY_KEY_ID
+    decrypt_file(source, destination, BACKUP_ENCRYPTION_KEY, **options)
 
 
 def _serialized_lifecycle(function):
@@ -456,8 +477,8 @@ def migrate_legacy_backups(backup_group,keep_days,remove_expired=False):
         if destination.is_symlink():raise ValueError('Invalid legacy replacement')
         temporary=directory/('.legacy-verified-'+uuid.uuid4().hex+'.partial')
         try:
-            if created:encrypt_file(source,destination,BACKUP_ENCRYPTION_KEY);result['migrated']+=1
-            decrypt_file(destination,temporary,BACKUP_ENCRYPTION_KEY)
+            if created:_encrypt_backup(source,destination);result['migrated']+=1
+            _decrypt_backup(destination,temporary)
             if digest(temporary)!=original or digest(source)!=original:raise ValueError('Legacy backup replacement did not verify')
             result['verified']+=1
             if remove_expired and stamp<time.time()-keep_days*86400:
@@ -544,7 +565,7 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
         outcome=helper.wait(timeout=240)
         if not isinstance(outcome,dict) or outcome.get('StatusCode')!=0:
             raise RuntimeError('Archive helper did not complete successfully')
-        encrypt_file(plain_path, archive_path, BACKUP_ENCRYPTION_KEY)
+        _encrypt_backup(plain_path, archive_path)
     except Exception as exc:
         plain_path.unlink(missing_ok=True)
         archive_path.unlink(missing_ok=True)
@@ -742,7 +763,7 @@ def _verify_demo_backup(archive_name: str, slug: str) -> str:
     with tempfile.TemporaryDirectory(prefix="demo-backup-verify-", dir=backup_dir) as temp_dir:
         plain = Path(temp_dir) / "verified.tar.gz"
         database = Path(temp_dir) / "verified.sqlite3"
-        decrypt_file(encrypted, plain, BACKUP_ENCRYPTION_KEY)
+        _decrypt_backup(encrypted, plain)
         with tarfile.open(plain, "r:gz") as archive:
             db_member = None
             members = archive.getmembers()
@@ -780,7 +801,7 @@ def _verify_demo_backup(archive_name: str, slug: str) -> str:
     verified_name = f".{Path(archive_name).stem}.verified.tar.gz"
     verified_path = backup_dir / verified_name
     try:
-        decrypt_file(encrypted, verified_path, BACKUP_ENCRYPTION_KEY)
+        _decrypt_backup(encrypted, verified_path)
         os.chmod(verified_path, 0o600)
     except Exception:
         verified_path.unlink(missing_ok=True)

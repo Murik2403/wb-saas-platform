@@ -153,7 +153,7 @@ class PageMetadataTests(unittest.TestCase):
 
     def test_home_page_ships_valid_structured_data(self) -> None:
         html = self.client.get("/").text
-        raw = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+        raw = re.search(r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>', html, re.S)
         self.assertIsNotNone(raw, "home page lost its JSON-LD block")
         graph = json.loads(raw.group(1))["@graph"]
         types = [node["@type"] for node in graph]
@@ -173,7 +173,7 @@ class PageMetadataTests(unittest.TestCase):
         for path in ("/sebestoimost-wb", "/calculator"):
             with self.subTest(path=path):
                 html = self.client.get(path).text
-                blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+                blocks = re.findall(r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>', html, re.S)
                 faq_blocks = [json.loads(block) for block in blocks if '"@type": "FAQPage"' in block]
                 self.assertEqual(len(faq_blocks), 1)
                 faq = faq_blocks[0]
@@ -189,7 +189,7 @@ class PageMetadataTests(unittest.TestCase):
         for path in ("/sebestoimost-wb", "/calculator"):
             with self.subTest(path=path):
                 html = self.client.get(path).text
-                blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+                blocks = re.findall(r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>', html, re.S)
                 faq = next(json.loads(block) for block in blocks if '"@type": "FAQPage"' in block)
                 answer = next(question["acceptedAnswer"]["text"] for question in faq["mainEntity"]
                               if question["name"] == "Калькулятор на сайте показывает чистую прибыль?")
@@ -229,7 +229,7 @@ class GuideAuthorshipTests(unittest.TestCase):
 
     def _article_graph(self, html: str) -> dict:
         """The guide's JSON-LD graph, keyed by @type."""
-        for raw in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+        for raw in re.findall(r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>', html, re.S):
             graph = {node["@type"]: node for node in json.loads(raw).get("@graph", [])}
             if "Article" in graph:
                 return graph
@@ -287,7 +287,7 @@ class AuthorPageTests(unittest.TestCase):
         self.client = TestClient(gateway_app.app)
 
     def _person(self, html: str) -> dict:
-        for raw in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+        for raw in re.findall(r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>', html, re.S):
             for node in json.loads(raw).get("@graph", []):
                 if node["@type"] == "Person":
                     return node

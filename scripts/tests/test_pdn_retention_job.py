@@ -19,9 +19,10 @@ def test_unknown_recovery_format_is_never_blessed():
         job.source_for({'format':'SQLite3','sha256':'a'*64},{})
 
 
-def test_encrypted_recovery_requires_exact_independent_ciphertext():
+@pytest.mark.parametrize('format', ['WBSAASBK1', 'WBSAASBK2'])
+def test_encrypted_recovery_requires_exact_independent_ciphertext(format):
     with pytest.raises(ValueError,match='independent_recovery_source_missing'):
-        job.source_for({'format':'WBSAASBK1','sha256':'a'*64},{'b'*64:Path('/different')})
+        job.source_for({'format':format,'sha256':'a'*64},{'b'*64:Path('/different')})
 
 
 def test_remote_parser_recognizes_sqlite_header_and_stable_timestamp():

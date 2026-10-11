@@ -23,6 +23,9 @@ def post_dispatches(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {"posted": 0, "skipped": 0, "errors": [], "units": 0, "cost_rub": 0.0}
     keys = [str(k) for k in (task_keys or []) if str(k).strip()]
     with connect() as conn:
+        # Lock before reading task state and idempotency, not at the first
+        # UPDATE: two stale readers could otherwise post the same task twice.
+        conn.execute("BEGIN IMMEDIATE")
         sql = """
             SELECT * FROM execution_tasks
              WHERE task_type='dispatch' AND status='Отгружено' AND actual_units>0
@@ -119,6 +122,9 @@ def post_wb_receipts(task_keys: Iterable[str] | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {"posted": 0, "skipped": 0, "errors": [], "units": 0, "cost_rub": 0.0}
     keys = [str(k) for k in (task_keys or []) if str(k).strip()]
     with connect() as conn:
+        # The referenced dispatch's "open" state and receipt idempotency must
+        # be read under the same writer lock as the pipeline/FIFO updates.
+        conn.execute("BEGIN IMMEDIATE")
         sql = """
             SELECT * FROM execution_tasks
              WHERE task_type='dispatch' AND status IN ('Принято WB','Закрыто') AND actual_units>0

@@ -121,7 +121,7 @@ def prepare(source_root,staging_root,recipient,groups):
         for source in sorted(directory.glob('*.tar.gz.enc')):
             if source.is_symlink() or not source.is_file() or not re.fullmatch(r'[a-zA-Z0-9_.-]+',source.name):raise ValueError('offsite_source_invalid')
             with source.open('rb') as stream:
-                if stream.read(9)!=b'WBSAASBK1':raise ValueError('encrypted_archive_format_invalid')
+                if stream.read(9) not in (b'WBSAASBK1', b'WBSAASBK2'):raise ValueError('encrypted_archive_format_invalid')
             checksum=digest(source)
             target=staging_root/group/(source.name[:-len('.tar.gz.enc')]+'-'+checksum+'-'+identity+'.tar.gz.enc')
             proof=target.with_suffix(target.suffix+'.sha256')

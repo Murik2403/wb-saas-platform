@@ -24,7 +24,7 @@ import stat
 import tempfile
 import time
 
-FORMATS = {"WBSAASBK1", "MHOFFSITE2", "SQLite3"}
+FORMATS = {"WBSAASBK1", "WBSAASBK2", "MHOFFSITE2", "SQLite3"}
 SAFE_GROUP = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
 SAFE_FILE = re.compile(r"[a-zA-Z0-9_.-]+\Z")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -92,7 +92,7 @@ def _local_row(root, relative):
         prefix = stream.read(16)
     kind = _kind(path.name)
     fmt = "SQLite3" if prefix.startswith(b"SQLite format 3\x00") else (
-        "WBSAASBK1" if prefix.startswith(b"WBSAASBK1") else "MHOFFSITE2" if prefix.startswith(b"MHOFFSITE2") else "")
+        "WBSAASBK1" if prefix.startswith(b"WBSAASBK1") else "WBSAASBK2" if prefix.startswith(b"WBSAASBK2") else "MHOFFSITE2" if prefix.startswith(b"MHOFFSITE2") else "")
     digest = _hash(path)
     after = path.stat(follow_symlinks=False)
     signature = lambda value: (value.st_size, value.st_mtime_ns, value.st_ino, value.st_dev)
@@ -151,7 +151,7 @@ def _finish(rows, *, mode, root, days, now, legal_holds, excluded, namespace_rep
             raise ValueError("invalid_legal_hold")
     candidates, retained = [], []
     valid = [row for row in rows if row["size"] > 16 and (
-        (row["kind"] == "encrypted" and row["format"] in {"WBSAASBK1", "MHOFFSITE2"})
+        (row["kind"] == "encrypted" and row["format"] in {"WBSAASBK1", "WBSAASBK2", "MHOFFSITE2"})
         or (row["kind"] == "sqlite" and row["format"] == "SQLite3"))]
     namespaces = sorted({row["namespace"] for row in valid})
     newest = {group: max((row for row in valid if row["namespace"] == group),
@@ -257,7 +257,7 @@ def _authorize(manifest, acknowledgment, proof, now):
     if proof.get("verified_namespace_replacements", {}) != replacements:
         raise ValueError("unverified_namespace_replacement")
     for target in replacements.values():
-        if not any(row["namespace"] == target and row["kind"] == "encrypted" and row["format"] in {"WBSAASBK1", "MHOFFSITE2"} for row in manifest["retained"]):
+        if not any(row["namespace"] == target and row["kind"] == "encrypted" and row["format"] in {"WBSAASBK1", "WBSAASBK2", "MHOFFSITE2"} for row in manifest["retained"]):
             raise ValueError("replacement_requires_retained_encrypted_recovery")
     verified_hashes = proof.get("recovery_sha256_by_namespace", {})
     for row in manifest["candidates"]:

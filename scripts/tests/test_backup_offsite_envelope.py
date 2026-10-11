@@ -40,9 +40,10 @@ def test_public_recipient_rejects_private_or_weak_keys(tmp_path,keys):
     path.write_bytes(weak.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo))
     with pytest.raises(ValueError,match='public_key'):envelope.public_key(path)
 
-def test_staging_returns_only_verified_envelopes_never_plaintext_leftovers(tmp_path,keys):
+@pytest.mark.parametrize('magic', [b'WBSAASBK1', b'WBSAASBK2'])
+def test_staging_returns_only_verified_envelopes_never_plaintext_leftovers(tmp_path,keys,magic):
     source=tmp_path/'source';stage=tmp_path/'stage';(source/'demo').mkdir(parents=True);(stage/'demo').mkdir(parents=True)
-    (source/'demo'/'valid.tar.gz.enc').write_bytes(b'WBSAASBK1fixture')
+    (source/'demo'/'valid.tar.gz.enc').write_bytes(magic+b'fixture')
     leftover=stage/'demo'/'old.tar.gz.enc';leftover.write_bytes(b'plaintext-leftover')
     paths=envelope.prepare(source,stage,keys[0],['demo'])
     assert len(paths)==1 and paths[0]!=leftover

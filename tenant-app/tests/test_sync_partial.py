@@ -7,7 +7,7 @@ import sync
 class PartialSyncTests(TestCase):
     def run_sync(self, fail_ads=False, fail_finance=False, empty_ads=False):
         with ExitStack() as stack:
-            names = ['init_db', 'ensure_financial_schema', 'clear_demo_data', 'replace_product_catalog', 'upsert_orders', 'upsert_sales', 'upsert_financial', 'insert_stocks', 'process_sales_fifo_events', 'delete_ads_period', 'upsert_ads', 'cleanup_orphan_zero_costs', 'finish_sync_log', 'update_sync_progress']
+            names = ['init_db', 'ensure_financial_schema', 'clear_demo_data', 'replace_product_catalog', 'upsert_orders', 'upsert_sales', 'upsert_financial', 'insert_stocks', 'process_sales_fifo_events', 'replace_ads_period', 'cleanup_orphan_zero_costs', 'finish_sync_log', 'update_sync_progress']
             mocks = {name: stack.enter_context(mock.patch.object(sync, name, return_value=3)) for name in names}
             stack.enter_context(mock.patch.object(sync, 'get_token', return_value='test-only'))
             stack.enter_context(mock.patch.object(sync, 'load_settings', return_value={}))
@@ -31,8 +31,7 @@ class PartialSyncTests(TestCase):
         result, mocks, growth_event = self.run_sync(fail_ads=True)
         self.assertEqual(result['orders'], 3)
         self.assertIn('ads_error', result)
-        mocks['delete_ads_period'].assert_not_called()
-        mocks['upsert_ads'].assert_not_called()
+        mocks['replace_ads_period'].assert_not_called()
         self.assertEqual(mocks['finish_sync_log'].call_args.args[1], 'partial')
         self.assertIn('orders: 3', mocks['finish_sync_log'].call_args.args[2])
         growth_event.assert_not_called()
@@ -51,6 +50,6 @@ class PartialSyncTests(TestCase):
     def test_empty_ad_response_preserves_history_and_is_partial(self):
         result, mocks, growth_event = self.run_sync(empty_ads=True)
         self.assertIn('ads_skipped', result)
-        mocks['delete_ads_period'].assert_not_called()
+        self.assertEqual(mocks['replace_ads_period'].call_args.args[3], set())
         self.assertEqual(mocks['finish_sync_log'].call_args.args[1], 'partial')
         growth_event.assert_not_called()

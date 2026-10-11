@@ -59,7 +59,7 @@ class LandingRefreshTests(unittest.TestCase):
 
     def test_structured_data_and_faq_do_not_preserve_stale_features(self):
         html = self.client.get('/').text
-        raw = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S).group(1)
+        raw = re.search(r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>', html, re.S).group(1)
         graph = json.loads(raw)['@graph']
         software = next(item for item in graph if item['@type'] == 'SoftwareApplication')
         features = ' '.join(software['featureList'])

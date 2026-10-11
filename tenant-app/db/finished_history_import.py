@@ -208,12 +208,22 @@ def project(c,financial_rows,rows):
 
 
 def physical_amount(c,layer_id,location,quantity):
- """Imported physical basis in integer cents, including active moves/returns/reversals."""
+ """Exact physical basis, where recorded, including active moves/returns/reversals."""
  from .imported_shared_basis import location_amount
  central=location_amount(c,layer_id,location,quantity)
  if central is not None:return central
  layer=c.execute('SELECT * FROM finished_goods_cost_layers WHERE id=?',(layer_id,)).fetchone()
- if not layer or layer['source_type']!='migration_finished_opening':return None
+ if not layer:return None
+ if layer['source_type']!='migration_finished_opening':
+  if not exists(c,'finished_goods_money_basis'):return None
+  basis=c.execute('SELECT * FROM finished_goods_money_basis WHERE layer_id=?',(layer_id,)).fetchone()
+  if not basis:return None  # Preexisting ordinary layers retain recorded legacy semantics.
+  from .shared_warehouse import managed
+  if managed(c,layer['nm_id'],layer['chrt_id']):return None  # Central warehouse owns its separate money ledger.
+  allocations=c.execute("SELECT * FROM finished_goods_fifo_allocations WHERE layer_id=? AND status='applied' AND reversed_at IS NULL ORDER BY id",(layer_id,)).fetchall()
+  units,money=ordinary_residual(layer,basis,allocations)
+  if quantity<0 or quantity>units[location]:raise ValueError('FIFO physical shortage')
+  return part(money[location],quantity,units[location])/100 if quantity else 0.0
  lot=c.execute('SELECT * FROM migration_finished_lots WHERE source_id=?',(layer['source_ref'][len('csv:0:'):],)).fetchone()
  if not lot:raise ValueError('CSV physical provenance missing')
  original=json.loads(lot['snapshot_json']);units={loc:0 for loc in ('ready','inbound','wb')};money={loc:0 for loc in units}
@@ -225,6 +235,40 @@ def physical_amount(c,layer_id,location,quantity):
  if any(units[loc]!=layer[loc+'_units'] or money[loc]<0 or units[loc]<0 for loc in units):raise ValueError('CSV physical quantity/money lineage does not reconcile')
  if quantity>units[location]:raise ValueError('CSV physical shortage')
  return part(money[location],quantity,units[location])/100
+
+
+def record_ordinary_money_basis(c,layer_id,location):
+ """Opt new local layers into exact cents; never reinterpret preexisting history."""
+ layer=c.execute('SELECT * FROM finished_goods_cost_layers WHERE id=?',(layer_id,)).fetchone()
+ if not layer or layer['source_type'] in {'migration_finished_opening','reconstruction_cost_pending'}:return
+ from .shared_warehouse import managed
+ if managed(c,layer['nm_id'],layer['chrt_id']):return
+ c.execute("""CREATE TABLE IF NOT EXISTS finished_goods_money_basis(
+  layer_id INTEGER PRIMARY KEY,initial_location TEXT NOT NULL CHECK(initial_location IN ('ready','inbound','wb')),
+  initial_units INTEGER NOT NULL CHECK(initial_units>0),initial_cents INTEGER NOT NULL CHECK(initial_cents>=0),
+  policy_version INTEGER NOT NULL CHECK(policy_version=1),
+  FOREIGN KEY(layer_id) REFERENCES finished_goods_cost_layers(id))""")
+ for op in ('UPDATE','DELETE'):
+  c.execute(f"CREATE TRIGGER IF NOT EXISTS finished_goods_money_basis_no_{op.lower()} BEFORE {op} ON finished_goods_money_basis BEGIN SELECT RAISE(ABORT,'FIFO money basis immutable'); END")
+ c.execute("CREATE TRIGGER IF NOT EXISTS finished_goods_money_basis_no_replace BEFORE INSERT ON finished_goods_money_basis WHEN EXISTS(SELECT 1 FROM finished_goods_money_basis WHERE layer_id=NEW.layer_id) BEGIN SELECT RAISE(ABORT,'FIFO money basis immutable'); END")
+ c.execute('INSERT INTO finished_goods_money_basis VALUES(?,?,?,?,1)',(layer_id,location,layer['original_units'],cents(layer['original_amount_rub'])))
+
+
+def ordinary_residual(layer,basis,allocations):
+ """Replay recorded money once per location; transfers aren't disposal expenses."""
+ if layer['original_units']!=basis['initial_units'] or cents(layer['original_amount_rub'])!=basis['initial_cents']:
+  raise ValueError('FIFO original money basis changed')
+ units={loc:0 for loc in ('ready','inbound','wb')};money={loc:0 for loc in units}
+ units[basis['initial_location']]=basis['initial_units'];money[basis['initial_location']]=basis['initial_cents']
+ for allocation in allocations:
+  amount=cents(allocation['amount_rub'])
+  if allocation['from_location'] in units:
+   units[allocation['from_location']]-=allocation['units'];money[allocation['from_location']]-=amount
+  if allocation['to_location'] in units:
+   units[allocation['to_location']]+=allocation['units'];money[allocation['to_location']]+=amount
+ if sum(units.values())>basis['initial_units'] or sum(money.values())>basis['initial_cents'] or any(units[loc]!=layer[loc+'_units'] or units[loc]<0 or money[loc]<0 or (units[loc]==0 and money[loc]!=0) for loc in units):
+  raise ValueError('FIFO physical quantity/money lineage does not reconcile')
+ return units,money
 
 
 def central_setup_guard(c,nm_id):
@@ -253,4 +297,16 @@ def register_valuation(c):
    for location in ('ready','inbound','wb'):
     qty=layer[location+'_units']
     values[(layer['id'],location)]=physical_amount(c,layer['id'],location,qty) if qty else 0.0
+ if exists(c,'finished_goods_money_basis'):
+  # Batch reads keep valuation from becoming one allocation-history query per
+  # layer/location. No schema creation or historical backfill on read paths.
+  layers=c.execute("SELECT l.*,b.initial_location,b.initial_units,b.initial_cents FROM finished_goods_cost_layers l JOIN finished_goods_money_basis b ON b.layer_id=l.id WHERE l.status<>'reversed'").fetchall()
+  allocations=defaultdict(list)
+  for allocation in c.execute("SELECT a.* FROM finished_goods_fifo_allocations a JOIN finished_goods_money_basis b ON b.layer_id=a.layer_id WHERE a.status='applied' AND a.reversed_at IS NULL ORDER BY a.id"):
+   allocations[allocation['layer_id']].append(allocation)
+  managed_ids={r['nm_id'] for r in c.execute('SELECT nm_id FROM warehouse_items')} if exists(c,'warehouse_items') else set()
+  for layer in layers:
+   if layer['nm_id'] in managed_ids:continue
+   units,money=ordinary_residual(layer,layer,allocations[layer['id']])
+   for location in units:values[(layer['id'],location)]=money[location]/100
  c.create_function('finished_location_amount',4,lambda lid,loc,qty,rate:values.get((lid,loc),float(qty or 0)*float(rate or 0)))

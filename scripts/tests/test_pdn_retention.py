@@ -30,9 +30,10 @@ def apply(manifest, tmp_path, **kwargs):
                               receipt_path=tmp_path / "receipt.json", now=NOW, **kwargs)
 
 
-def test_dry_run_keeps_newest_even_when_all_backups_are_old_and_never_recurses(tmp_path):
-    old = fixture_file(tmp_path, "old.tar.gz.enc", 30)
-    newest = fixture_file(tmp_path, "newest.tar.gz.enc", 20)
+@pytest.mark.parametrize('magic', [b'WBSAASBK1', b'WBSAASBK2'])
+def test_dry_run_keeps_newest_even_when_all_backups_are_old_and_never_recurses(tmp_path,magic):
+    old = fixture_file(tmp_path, "old.tar.gz.enc", 30, magic+b'synthetic')
+    newest = fixture_file(tmp_path, "newest.tar.gz.enc", 20, magic+b'synthetic')
     lock = fixture_file(tmp_path, "cleanup.lock", 90, b"state")
     nested = tmp_path / "synthetic" / "unexpected"
     nested.mkdir()

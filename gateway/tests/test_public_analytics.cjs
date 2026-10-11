@@ -17,7 +17,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function boot({ choice = '', available = true, counter = '12345678', goals = '', href = 'https://marketshelper.test/', stored = {}, respond } = {}) {
+function boot({ choice = '', available = true, counter = '12345678', goals = '', href = 'https://marketshelper.test/', stored = {}, respond, nonce = '' } = {}) {
   const scripts = [];
   const requests = [];
   const storage = new Map(Object.entries(stored));
@@ -39,6 +39,7 @@ function boot({ choice = '', available = true, counter = '12345678', goals = '',
     return respond ? respond(url, options) : Promise.resolve({ ok: true });
   };
   const document = {
+    currentScript: { nonce },
     getElementById: id => nodes[id],
     createElement: tagName => ({ tagName }),
     head: { appendChild(element) { scripts.push(element); } },
@@ -50,6 +51,7 @@ function boot({ choice = '', available = true, counter = '12345678', goals = '',
       setItem: (key, value) => storage.set(key, String(value)),
     },
   }, { filename: 'public-analytics.js' });
+  document.currentScript = null;
   return {
     scripts, requests, storage, nodes,
     events: () => plain((window.ym?.a || []).map(args => Array.from(args))),
@@ -57,6 +59,15 @@ function boot({ choice = '', available = true, counter = '12345678', goals = '',
     reloads: () => reloads,
   };
 }
+
+test('delayed consent preserves trusted nonce after currentScript is gone', async () => {
+  const nonce = 'nonce-for-this-document';
+  const page = boot({ nonce });
+  assert.equal(page.scripts.length, 0);
+  await page.click('cookie-accept');
+  assert.equal(page.scripts.length, 1);
+  assert.equal(page.scripts[0].nonce, nonce);
+});
 
 test('before current server consent, old local choices cannot load analytics', () => {
   for (const choice of ['', 'essential']) {

@@ -1,4 +1,5 @@
 import json,os,time
+import pytest
 from types import SimpleNamespace
 from pathlib import Path
 import scripts.backup_offsite as offsite
@@ -16,8 +17,10 @@ def environment(tmp_path):
             'WB_SAAS_OFFSITE_PUBLIC_RECIPIENT':str(public),'WB_SAAS_OFFSITE_STAGING_DIR':str(tmp_path.parent/(tmp_path.name+'-staging')),
             'WB_SAAS_OFFSITE_REMOTE':'synthetic:bucket/prefix','WB_SAAS_OFFSITE_KEY_ESCROW_CONFIRMED':'1'}
 
-def test_copy_and_check_include_encrypted_only_and_never_sync_or_delete(tmp_path,monkeypatch):
+@pytest.mark.parametrize('magic', [b'WBSAASBK1', b'WBSAASBK2'])
+def test_copy_and_check_include_encrypted_only_and_never_sync_or_delete(tmp_path,monkeypatch,magic):
     calls=[];env=environment(tmp_path)
+    (tmp_path/'control-plane'/'fixture.tar.gz.enc').write_bytes(magic+b'fixture')
     monkeypatch.setattr(offsite.subprocess,'run',lambda args,**kwargs:(calls.append(args),SimpleNamespace(returncode=0))[1])
     assert offsite.run(env)==0
     assert [a[1] for a in calls]==['copy','check']

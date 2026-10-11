@@ -6,8 +6,9 @@ import sqlite3
 import hashlib
 from pathlib import Path
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -157,8 +158,14 @@ def upsert_sales(rows: Iterable[dict[str, Any]]) -> int:
     return len(payload)
 
 def insert_stocks(rows: Iterable[dict[str, Any]], snapshot_at: str | None = None) -> int:
+    """Store the observation time, not each SKU's last change date.
+
+    Stock/FIFO consumers compare Moscow-local naive ISO timestamps. A current
+    response has no common historical timestamp; explicit imported snapshots
+    keep their caller-supplied time.
+    """
     from .core import _dump, _int, connect
-    snapshot_at = snapshot_at or datetime.now().replace(second=0, microsecond=0).isoformat()
+    snapshot_at = snapshot_at or datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None, second=0, microsecond=0).isoformat()
     payload = []
     for row in rows:
         payload.append(
@@ -186,8 +193,8 @@ def insert_stocks(rows: Iterable[dict[str, Any]], snapshot_at: str | None = None
         )
     return len(payload)
 
-def upsert_ads(rows: Iterable[dict[str, Any]]) -> int:
-    from .core import _dump, _int, _num, connect
+def _ads_payload(rows: Iterable[dict[str, Any]]) -> list[tuple]:
+    from .core import _dump, _int, _num
     payload = []
     for row in rows:
         payload.append(
@@ -207,26 +214,87 @@ def upsert_ads(rows: Iterable[dict[str, Any]]) -> int:
                 _dump(row.get("raw", row)),
             )
         )
+    return payload
+
+
+def _write_ads(conn, payload: list[tuple]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO ads_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(campaign_id, day, nm_id) DO UPDATE SET
+            product_name=excluded.product_name,
+            views=excluded.views,
+            clicks=excluded.clicks,
+            spend=excluded.spend,
+            atbs=excluded.atbs,
+            orders_count=excluded.orders_count,
+            canceled=excluded.canceled,
+            shks=excluded.shks,
+            ad_revenue=excluded.ad_revenue,
+            raw_json=excluded.raw_json
+        """,
+        payload,
+    )
+
+
+def upsert_ads(rows: Iterable[dict[str, Any]]) -> int:
+    from .core import connect
+    payload = _ads_payload(rows)
     if not payload:
         return 0
     with connect() as conn:
-        conn.executemany(
-            """
-            INSERT INTO ads_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(campaign_id, day, nm_id) DO UPDATE SET
-                product_name=excluded.product_name,
-                views=excluded.views,
-                clicks=excluded.clicks,
-                spend=excluded.spend,
-                atbs=excluded.atbs,
-                orders_count=excluded.orders_count,
-                canceled=excluded.canceled,
-                shks=excluded.shks,
-                ad_revenue=excluded.ad_revenue,
-                raw_json=excluded.raw_json
-            """,
-            payload,
-        )
+        _write_ads(conn, payload)
+    return len(payload)
+
+
+def replace_ads_period(rows: Iterable[dict[str, Any]], date_from: str, date_to: str,
+                       campaign_ids: Iterable[int]) -> int:
+    """Atomically replace a complete fetched period for the named campaigns.
+
+    An omitted/inactive campaign is not proof that its historical spend is
+    zero. Only the caller's verified complete campaign responses are eligible;
+    empty rows can clear those campaigns but never other campaigns or dates.
+    All parsing/validation finishes before the destructive statement.
+    """
+    from .core import connect
+    start, end = date.fromisoformat(date_from), date.fromisoformat(date_to)
+    if start > end:
+        raise ValueError("Invalid advertising period")
+    campaigns = {int(value) for value in campaign_ids}
+    if any(value <= 0 for value in campaigns):
+        raise ValueError("Invalid advertising campaign")
+    rows = list(rows)
+    for row in rows:
+        # Unlike additive legacy upsert callers, replacement cannot turn an
+        # omitted/nonfinite monetary field into zero and erase valid history.
+        spend = row.get("spend")
+        if isinstance(spend, bool):
+            raise ValueError("Invalid replacement advertising spend")
+        try:
+            spend = float(spend)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Replacement advertising spend missing or invalid") from exc
+        if not math.isfinite(spend) or spend < 0:
+            raise ValueError("Invalid replacement advertising spend")
+    payload = _ads_payload(rows)
+    seen = set()
+    for row in payload:
+        campaign, day, nm_id = row[:3]
+        if campaign not in campaigns or not start <= date.fromisoformat(day) <= end or nm_id < 0:
+            raise ValueError("Advertising row outside verified campaign period")
+        key = (campaign, day, nm_id)
+        if key in seen:
+            raise ValueError("Duplicate advertising row in replacement")
+        seen.add(key)
+    if not campaigns:
+        return 0
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        # Per-campaign deletes avoid SQLite's host-parameter limit for shops
+        # with many campaigns while remaining in the same transaction.
+        conn.executemany("DELETE FROM ads_daily WHERE campaign_id=? AND day>=? AND day<=?",
+                         [(value, start.isoformat(), end.isoformat()) for value in sorted(campaigns)])
+        _write_ads(conn, payload)
     return len(payload)
 
 def replace_product_catalog(rows: Iterable[dict[str, Any]]) -> int:

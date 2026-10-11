@@ -6,7 +6,10 @@ import growth_web
 
 
 def create_templates() -> Jinja2Templates:
-    templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+    templates = Jinja2Templates(
+        directory=str(Path(__file__).resolve().parent / "templates"),
+        context_processors=[lambda request: {"csp_nonce": getattr(request.state, "csp_nonce", "")}],
+    )
     templates.env.globals.update(
         site_base_url=config.base_url,
         yandex_metrika_id=config.YANDEX_METRIKA_ID,

@@ -1,5 +1,8 @@
 /* Optional public-page analytics. Auth/payment screens never receive a counter. */
 (() => {
+  // Capture while this trusted deferred script executes; currentScript is null
+  // later when a user clicks the consent button.
+  const cspNonce = document.currentScript?.nonce || "";
   const root = document.getElementById("privacy-settings");
   if (!root) return;
   const notice = document.getElementById("cookie-notice");
@@ -17,6 +20,7 @@
     window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
     window.ym.l = Date.now();
     const script = document.createElement("script");
+    if (cspNonce) script.nonce = cspNonce;
     script.async = true;
     script.src = "https://mc.yandex.ru/metrika/tag.js";
     document.head.appendChild(script);

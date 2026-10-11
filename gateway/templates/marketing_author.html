@@ -5,7 +5,7 @@
    of its own. One author in the graph, not two: @id is identical to the one in
    the Article markup in marketing_base.html. `sameAs` is deliberately absent --
    the site publishes no public profile, and a guessed link is worse than none. #}
-<script type="application/ld+json">
+<script nonce="{{ csp_nonce }}" type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@graph": [

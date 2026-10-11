@@ -23,6 +23,7 @@ from .ingest import (
     upsert_sales,
     insert_stocks,
     upsert_ads,
+    replace_ads_period,
     replace_product_catalog,
     delete_ads_period,
     cleanup_orphan_zero_costs,

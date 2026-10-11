@@ -112,7 +112,10 @@ def _create_finished_goods_layer(
             max(0, int(chrt_id or 0)),
         ),
     )
-    return int(cur.lastrowid)
+    layer_id = int(cur.lastrowid)
+    from .finished_history_import import record_ordinary_money_basis
+    record_ordinary_money_basis(conn, layer_id, location)
+    return layer_id
 
 def _update_finished_layer_status(conn: sqlite3.Connection, layer_id: int) -> None:
     row = conn.execute(
@@ -314,14 +317,14 @@ def _move_dispatch_allocation_to_wb(
         if imported_amount is not None:
             from .finished_history_import import cents,part
             movement=conn.execute('SELECT reference_movement_id FROM inventory_movements WHERE id=?',(receipt_movement_id,)).fetchone()
-            if not movement or movement['reference_movement_id']!=dispatch_movement_id:raise ValueError('CSV receipt requires its original dispatch document')
+            if not movement or movement['reference_movement_id']!=dispatch_movement_id:raise ValueError('Valued FIFO receipt requires its original dispatch document')
             consumed=conn.execute("SELECT COALESCE(SUM(a.units),0) units,COALESCE(SUM(a.amount_rub),0) amount FROM finished_goods_fifo_allocations a JOIN inventory_movements m ON m.id=a.movement_id WHERE a.layer_id=? AND a.from_location='inbound' AND a.to_location='wb' AND a.status='applied' AND a.reversed_at IS NULL AND m.reference_movement_id=?",(row['layer_id'],dispatch_movement_id)).fetchone()
             available_source=int(row['units'])-int(consumed['units'])
             take=min(take,max(0,available_source))
             if take<=0:continue
             source_money=cents(row['amount_rub'])-cents(consumed['amount'])
             amount_cents=part(source_money,take,available_source)
-            if source_money<0 or amount_cents>cents(imported_amount):raise ValueError('CSV dispatch cost lineage mismatch')
+            if source_money<0 or amount_cents>cents(imported_amount):raise ValueError('Valued FIFO dispatch cost lineage mismatch')
             imported_amount=amount_cents/100
         amount = imported_amount if imported_amount is not None else round(take * float(row["unit_cost_rub"] or 0), 2)
         conn.execute(
@@ -422,6 +425,10 @@ def initialize_finished_goods_fifo(reconcile_wb: bool = False) -> dict[str, Any]
     from .production import _active_movement, _next_event_key
     result: dict[str, Any] = {"created": 0, "units": 0, "wb_consumed": 0, "warnings": []}
     with connect() as conn:
+        # Opening balances/reconciliation are read-modify-write operations.
+        # Acquire the writer lock before valuation opens a deferred snapshot,
+        # so concurrent initializers see the committed layers on their turn.
+        conn.execute("BEGIN IMMEDIATE")
         ids = conn.execute(
             """
             SELECT nm_id,0 AS chrt_id FROM products_catalog WHERE nm_id>0

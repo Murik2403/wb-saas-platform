@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -13,11 +14,10 @@ from db import (
     insert_stocks,
     clear_demo_data,
     replace_product_catalog,
-    delete_ads_period,
+    replace_ads_period,
     cleanup_orphan_zero_costs,
     max_value,
     start_sync_log,
-    upsert_ads,
     upsert_orders,
     upsert_sales,
     upsert_financial,
@@ -226,25 +226,123 @@ def _sync_ads(api, settings, result):
         ad_days = max(1, min(int(settings.get("advert_history_days", 31)), 365))
         ad_end = datetime.now(ZoneInfo("Europe/Moscow")).date()
         ad_start = ad_end - timedelta(days=ad_days - 1)
-        stats = api.get_ad_stats(campaign_ids, ad_start, ad_end)
-        # Replace the requested interval so rows produced by older parser
-        # versions cannot remain and distort totals -- but ONLY when the API
-        # actually returned data. A transient WB advert-API glitch that returns
-        # an empty list (HTTP 200, no rows) while live campaigns exist would
-        # otherwise wipe a month of real ad-spend history and replace it with
-        # nothing. If there genuinely are campaigns but zero rows came back,
-        # skip the destructive delete and leave the existing data untouched.
-        flattened = flatten_ad_stats(stats)
-        if flattened or not campaign_ids:
-            delete_ads_period(ad_start.isoformat(), ad_end.isoformat())
-            result["ads"] = upsert_ads(flattened)
-        else:
-            result["ads"] = 0
-            result["ads_skipped"] = "empty API response with live campaigns -- kept existing data"
+        requested = {int(value) for value in campaign_ids}
+        complete = set(requested)
+        stats = []
+        window_start = ad_start
+        while requested and window_start <= ad_end:
+            window_end = min(window_start + timedelta(days=30), ad_end)
+            chunk = api.get_ad_stats(campaign_ids, window_start, window_end)
+            returned = _validated_ad_campaigns(chunk, requested, window_start, window_end)
+            complete.intersection_update(returned)
+            stats.extend(chunk)
+            window_start = window_end + timedelta(days=1)
+        # Missing campaigns (including cancelled/deleted campaigns omitted by promotion/count)
+        # retain history. A campaign explicitly returned with days=[] is a
+        # complete zero result; an empty/malformed HTTP response is not.
+        verified = [item for item in stats if int(item.get("advertId") or item.get("advert_id")) in complete]
+        flattened = flatten_ad_stats(verified)
+        result["ads"] = replace_ads_period(flattened, ad_start.isoformat(), ad_end.isoformat(), complete)
+        if requested - complete:
+            result["ads_skipped"] = "incomplete API response for campaigns -- kept their existing data"
         result["campaigns"] = len(campaign_ids)
     except Exception as exc:
         # Keep existing ad history and report the sections already saved.
         result["ads_error"] = str(exc)[:400]
+
+
+def _validated_ad_campaigns(stats, requested: set[int], start: date, end: date) -> set[int]:
+    """Reject malformed/out-of-range results before replacing any history."""
+    if not isinstance(stats, list):
+        raise ValueError("Invalid advertising response")
+    returned = set()
+    seen_days = set()
+    for item in stats:
+        if not isinstance(item, dict):
+            raise ValueError("Invalid advertising campaign response")
+        campaign = int(item.get("advertId") or item.get("advert_id") or 0)
+        if campaign not in requested or campaign in returned or not isinstance(item.get("days"), list):
+            raise ValueError("Unexpected or incomplete advertising campaign response")
+        totals = _ad_metrics(item, require_spend=not item["days"])
+        if not item["days"]:
+            # An explicitly empty day list is only a verified zero when the
+            # campaign-level spend confirms it. Missing/contradicting totals
+            # can be another partial response and must not erase saved spend.
+            if any(value != 0 for value in totals.values()):
+                raise ValueError("Empty advertising days without verified zero spend")
+        returned.add(campaign)
+        day_spend = Decimal(0)
+        for day in item["days"]:
+            if not isinstance(day, dict):
+                raise ValueError("Invalid advertising day response")
+            day_date = date.fromisoformat(str(day.get("date") or day.get("day") or "")[:10])
+            if not start <= day_date <= end or (campaign, day_date) in seen_days:
+                raise ValueError("Advertising day outside requested period or duplicated")
+            seen_days.add((campaign, day_date))
+            daily = _ad_metrics(day, require_spend=True)
+            day_spend += daily["sum"]
+            apps = day.get("apps") or []
+            if not isinstance(apps, list):
+                raise ValueError("Invalid advertising app breakdown")
+            app_spend = Decimal(0)
+            products_spend = Decimal(0)
+            product_count = 0
+            for app in apps:
+                if not isinstance(app, dict):
+                    raise ValueError("Invalid advertising app breakdown")
+                app_metrics = _ad_metrics(app)
+                app_spend += app_metrics.get("sum", Decimal(0))
+                products = app.get("nms") or app.get("nm") or []
+                if not isinstance(products, list):
+                    raise ValueError("Invalid advertising product breakdown")
+                app_product_spend = Decimal(0)
+                for product in products:
+                    if not isinstance(product, dict):
+                        raise ValueError("Invalid advertising product breakdown")
+                    # Product rows are summed across device/app types by the
+                    # flattener, not deduplicated by SKU. Validate each observed
+                    # component once; never add app and SKU totals together.
+                    app_product_spend += _ad_metrics(product, require_spend=True)["sum"]
+                if "sum" in app_metrics:
+                    _ad_subtotal(app_product_spend, app_metrics["sum"], len(products))
+                products_spend += app_product_spend
+                product_count += len(products)
+            _ad_subtotal(products_spend, daily["sum"], product_count)
+            _ad_subtotal(app_spend, daily["sum"], len(apps))
+        if "sum" in totals:
+            tolerance = Decimal(0) if totals["sum"] == 0 or day_spend == 0 else Decimal("0.01") * max(1, len(item["days"]))
+            if abs(totals["sum"] - day_spend) > tolerance:
+                raise ValueError("Campaign advertising spend disagrees with daily spend")
+    return returned
+
+
+def _ad_metrics(row, *, require_spend: bool = False) -> dict[str, Decimal]:
+    """Missing optional counters are allowed; missing money is never zero."""
+    if require_spend and "sum" not in row:
+        raise ValueError("Advertising spend missing from response")
+    metrics = {}
+    for key in ("sum", "views", "clicks", "atbs", "orders", "canceled", "shks", "sum_price"):
+        if key not in row:
+            continue
+        try:
+            if isinstance(row[key], bool):
+                raise ValueError("Invalid advertising metric")
+            value = Decimal(str(row[key]))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("Invalid advertising metric") from exc
+        if not value.is_finite() or value < 0:
+            raise ValueError("Invalid advertising metric")
+        metrics[key] = value
+    return metrics
+
+
+def _ad_subtotal(parts: Decimal, total: Decimal, count: int) -> None:
+    # Attribution can be incomplete: do not require equality or synthesize
+    # missing SKU spend. Rounding may accumulate one kopeck per component, but
+    # a confirmed zero total must never coexist with positive components.
+    tolerance = Decimal(0) if total == 0 else Decimal("0.01") * max(1, count)
+    if parts - total > tolerance:
+        raise ValueError("Advertising breakdown exceeds authoritative spend")
 
 
 def sync_finances(days: int = 90) -> dict[str, int]:

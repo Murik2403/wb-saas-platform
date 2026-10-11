@@ -34,7 +34,7 @@ class SyncProgressFlowTests(DbTestCase):
     def run_sync(self, progress_side_effect=None, fail_orders=False):
         with ExitStack() as stack:
             names = ["clear_demo_data", "replace_product_catalog", "upsert_orders", "upsert_sales", "upsert_financial",
-                     "insert_stocks", "process_sales_fifo_events", "delete_ads_period", "upsert_ads", "cleanup_orphan_zero_costs"]
+                     "insert_stocks", "process_sales_fifo_events", "replace_ads_period", "cleanup_orphan_zero_costs"]
             for name in names:
                 stack.enter_context(mock.patch.object(sync, name, return_value={} if name == "process_sales_fifo_events" else 1))
             stack.enter_context(mock.patch.object(sync, "get_token", return_value="test-only"))

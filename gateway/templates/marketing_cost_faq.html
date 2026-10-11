@@ -29,7 +29,7 @@
   <details open><summary>{{ item.question }}</summary><p>{{ item.answer }}{% if loop.index == 2 %} <a href="/guides/pribyl-i-rashody-wb">Руководство по расходам WB</a>.{% elif loop.index == 3 %} <a href="/guides/fifo-po-partiyam">Посмотрите числовой пример FIFO</a>.{% elif loop.index == 5 %} <a href="/calculator">Откройте калькулятор предварительной маржи</a>.{% elif loop.index == 6 %} <a href="/guides/iz-excel-v-uchet">План перехода из Excel к учёту партий</a>.{% endif %}</p></details>
   {% endfor %}
 </section>
-<script type="application/ld+json">
+<script nonce="{{ csp_nonce }}" type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "FAQPage",

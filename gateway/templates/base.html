@@ -27,8 +27,8 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0a0b12">
 {# Blocking, first-party initialization restores the palette before CSS paints. #}
-<script src="/static/theme.js"></script>
-{% if request["store_app"] %}<script src="/static/app-shell.js" defer></script>{% endif %}
+<script nonce="{{ csp_nonce }}" src="/static/theme.js"></script>
+{% if request["store_app"] %}<script nonce="{{ csp_nonce }}" src="/static/app-shell.js" defer></script>{% endif %}
 {% if yandex_verification %}<meta name="yandex-verification" content="{{ yandex_verification }}">{% endif %}
 {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
 <style>
@@ -611,6 +611,6 @@
 </section>
 {# The old marketshelper_cookie_notice choice did not cover optional tracking.
    v2 requires a fresh explicit choice, validated by a signed server cookie. #}
-<script src="/static/public-analytics.js" defer></script>
+<script nonce="{{ csp_nonce }}" src="/static/public-analytics.js" defer></script>
 </body>
 </html>

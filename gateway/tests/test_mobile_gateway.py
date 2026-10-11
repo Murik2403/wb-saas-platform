@@ -149,11 +149,11 @@ class SeoFixTests(GatewayDbTestCase):
 
 
 class AppShellScriptTests(GatewayDbTestCase):
-    SCRIPT = '<script src="/static/app-shell.js" defer></script>'
-
     def test_script_only_for_app_ua(self) -> None:
         client = TestClient(gateway_app.app, follow_redirects=False)
-        self.assertIn(self.SCRIPT, client.get("/login", headers=APP_UA).text)
+        response = client.get("/login", headers=APP_UA)
+        nonce = re.search(r"'nonce-([^']+)'", response.headers["content-security-policy"]).group(1)
+        self.assertIn(f'<script nonce="{nonce}" src="/static/app-shell.js" defer></script>', response.text)
         self.assertNotIn("app-shell.js", client.get("/login").text)
 
     def test_script_served_same_origin_and_in_sync(self) -> None:

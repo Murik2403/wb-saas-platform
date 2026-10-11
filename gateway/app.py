@@ -83,7 +83,9 @@ class RequestContextMiddleware:
         await self.app(scope, receive, send)
 
 
-app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan)
+app = FastAPI(title="MARKETSHELPER Gateway", lifespan=_lifespan, docs_url=None, redoc_url=None)
+from api_docs import install_documentation_routes
+install_documentation_routes(app)
 
 
 @app.exception_handler(erasure_ledger.LedgerUnavailable)

@@ -67,7 +67,7 @@ def run(env=None):
         status['local_fresh']=True
         for path in archives:
             with path.open('rb') as source:
-                if source.read(9)!=b'WBSAASBK1':raise ValueError('encrypted_archive_format_invalid')
+                if source.read(9) not in (b'WBSAASBK1', b'WBSAASBK2'):raise ValueError('encrypted_archive_format_invalid')
         remote=env.get('WB_SAAS_OFFSITE_REMOTE','')
         if ':' not in remote or not remote.split(':',1)[1].strip('/') or '..' in remote.split(':',1)[1].split('/'):raise ValueError('offsite_unconfigured')
         recipient=env.get('WB_SAAS_OFFSITE_PUBLIC_RECIPIENT')

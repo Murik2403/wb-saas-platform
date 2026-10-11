@@ -32,9 +32,8 @@ def test_public_and_auth_html_have_browser_protection(path):
     assert "frame-ancestors 'self'" in policy
     assert "object-src 'none'" in policy
     assert "base-uri 'self'" in policy
-    # Existing inline theme code, consent-gated analytics and outgoing demo iframe
-    # remain permitted. This is a framing policy, not a script-source rollout.
-    assert "script-src" not in policy
+    # Nonce-authorized scripts execute; media and outgoing frames are unaffected.
+    assert "script-src 'nonce-" in policy
     assert "default-src" not in policy
     assert "frame-src" not in policy
     assert response.headers["cache-control"] == "private, no-store"
@@ -116,9 +115,10 @@ def test_stricter_route_policy_and_streaming_are_preserved():
         response = client.get("/strict")
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["referrer-policy"] == "no-referrer"
-        assert response.headers.get_list("content-security-policy") == [
-            "frame-ancestors 'none'", "frame-ancestors 'self'; object-src 'none'; base-uri 'self'",
-        ]
+        policies = response.headers.get_list("content-security-policy")
+        assert len(policies) == 2
+        assert policies[0] == "frame-ancestors 'none'"
+        assert policies[1].startswith("frame-ancestors 'self'; object-src 'none'; base-uri 'self'; script-src 'nonce-")
         streamed = client.get("/stream")
         assert streamed.content == b"firstsecond"
         assert streamed.headers["x-frame-options"] == "SAMEORIGIN"

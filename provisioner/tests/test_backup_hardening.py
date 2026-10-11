@@ -52,6 +52,7 @@ def test_two_gib_source_is_consumed_only_in_bounded_chunks(tmp_path,monkeypatch)
         def open(self,mode):assert mode=='rb';return Stream()
     class Encryptor:
         calls=0;tag=b'x'*16
+        def authenticate_additional_data(self,value):assert value.startswith(b'WBSAASBK2')
         def update(self,value):self.calls+=1;return b''
         def finalize(self):return b''
     encryptor=Encryptor()

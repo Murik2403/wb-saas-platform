@@ -62,7 +62,7 @@ def metadata(path,item=None):
     raw=re.sub(r'(\.\d{6})\d+(?=[+-]|Z)',r'\1',item['ModTime']).replace('Z','+00:00')
     stamp=int(datetime.fromisoformat(raw).timestamp()*1e9)
     digest,head=object_content(path,item['Size'])
-    fmt='SQLite3' if head.startswith(b'SQLite format 3\0') else next((value for value in ('WBSAASBK1','MHOFFSITE2') if head.startswith(value.encode())), '')
+    fmt='SQLite3' if head.startswith(b'SQLite format 3\0') else next((value for value in ('WBSAASBK1','WBSAASBK2','MHOFFSITE2') if head.startswith(value.encode())), '')
     row={'path':path,'size':item['Size'],'mtime_ns':stamp,'sha256':digest,'format':fmt,'version_id':item.get('VersionID','')}
     if retention._kind(path)=='digest':
         match=re.match(rb'^([0-9a-f]{64})(?:\s|$)',head)
@@ -92,7 +92,14 @@ def sqlite_ok(path):
 with tempfile.TemporaryDirectory(prefix='pdn-restore-') as tmp:
  assert 0<source.stat().st_size<=MAX_SOURCE_BYTES
  guard_space(tmp,source.stat().st_size)
- target=Path(tmp)/'restored';decrypt_file(source,target,os.environ['WB_SAAS_BACKUP_ENCRYPTION_KEY'])
+ target=Path(tmp)/'restored'
+ options={}
+ for env_name,option_name in (('WB_SAAS_BACKUP_ENCRYPTION_KEY_ID','key_id'),('WB_SAAS_BACKUP_LEGACY_KEY_ID','legacy_key_id')):
+  if os.environ.get(env_name):options[option_name]=os.environ[env_name]
+ if os.environ.get('WB_SAAS_BACKUP_ENCRYPTION_KEYRING'):
+  from backup_crypto import parse_keyring
+  options['keyring']=parse_keyring(os.environ['WB_SAAS_BACKUP_ENCRYPTION_KEYRING'])
+ decrypt_file(source,target,os.environ['WB_SAAS_BACKUP_ENCRYPTION_KEY'],**options)
  assert target.stat().st_size<=MAX_SOURCE_BYTES and time.monotonic()<deadline
  with target.open('rb') as f:magic=f.read(16)
  if magic.hex()=='53514c69746520666f726d6174203300':sqlite_ok(target);count=1
@@ -127,7 +134,7 @@ def envelope_header(raw):
 
 
 def source_for(row,local_sources,trusted_envelopes=None):
-    if row['format']=='WBSAASBK1':source_sha=row['sha256']
+    if row['format'] in ('WBSAASBK1','WBSAASBK2'):source_sha=row['sha256']
     elif row['format']=='MHOFFSITE2':
         if row.get('mode')=='remote':
             if trusted_envelopes is None or row['sha256'] not in trusted_envelopes:raise ValueError('untrusted_remote_envelope')
@@ -206,7 +213,7 @@ def provenance():
             digest=retention._hash(file);stamp=archive_creation(file.name,file.stat().st_mtime_ns)
             dates[digest]=min(dates.get(digest,stamp),stamp)
             with file.open('rb') as stream:magic=stream.read(9)
-            if magic==b'WBSAASBK1':sources[digest]=file
+            if magic in (b'WBSAASBK1',b'WBSAASBK2'):sources[digest]=file
     for group in STAGING.iterdir():
         if not group.is_dir() or group.is_symlink():continue
         for file in group.glob('*.enc'):

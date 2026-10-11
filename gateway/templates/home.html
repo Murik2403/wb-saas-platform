@@ -266,7 +266,7 @@
   <img id="lightboxImg" src="" alt="">
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   "use strict";
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -418,7 +418,7 @@
 .learning-links a:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 @media(max-width:760px){.workspace-grid,.learning-links{grid-template-columns:1fr}.workspace-card{padding:22px}}
 </style>
-<script type="application/ld+json">
+<script nonce="{{ csp_nonce }}" type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@graph": [
