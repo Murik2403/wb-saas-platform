@@ -1,3 +1,4 @@
+import { lazyLoaded } from "./test-lazy";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -41,6 +42,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe("Product groups", () => {
   it("creates a group from the picker, then the filter narrows the products", async () => {
     view();
+    await lazyLoaded();
     fireEvent.click(screen.getByText(/Группы товаров/));
     fireEvent.click(screen.getByRole("button", { name: "Новая группа" }));
     fireEvent.change(screen.getByLabelText("Название группы"), { target: { value: "Лето" } });

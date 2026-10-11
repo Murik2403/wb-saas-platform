@@ -1,3 +1,4 @@
+import { lazyLoaded } from "./test-lazy";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
@@ -20,6 +21,7 @@ async function products(data: CustomerQualityData | null) {
   const view = render(<ProductsView period={{ id: "30d" }} products={[]} prices={[]} productCards={[]} productCardErrors={[]} productPriceErrors={[]}
     customerQuality={data} onRefresh={vi.fn(async () => {})} setPeriod={vi.fn()} onOpenProduct={vi.fn()} />);
   await userEvent.click(screen.getByRole("button", { name: "Контент и качество" }));
+  await lazyLoaded();
   return view;
 }
 function metric(label: string) { return screen.getByText(label).closest(".stat") as HTMLElement; }

@@ -1,46 +1,16 @@
 import { ThemeToggle } from "./ThemeToggle";
 import { secondaryActions } from "./CabinetSupplementary";
 import { plural, cabinetDate, cabinetText, checkPriority, wbAvailabilityMessage } from "./cabinet-copy";
-import { SettingsWorkspace } from "./SettingsWorkspace";
 import {createDialogFocusScope,useDialogFocus} from './dialog-focus';
 import { downloadScoped, currentShop } from "./selected-shop";
 import {fifoReasonLabel} from './fifo-reason';
-import { SelectedShopSettings } from "./SelectedShopSettings";
-import { SharedWarehouse } from './SharedWarehouse';
 import { ShopContextBoundary } from "./ShopContextBoundary";
-import { IncidentWorkflow } from "./IncidentWorkflow";
-import { WorkcenterCalendar } from "./WorkcenterCalendar";
-import { ProductionWorkspace } from "./ProductionWorkspace";
 import { WorkspaceTabs } from "./WorkspaceTabs";
-import { ManufacturingCosts } from "./ManufacturingCosts";
-import { AdsAnalyticsPanel } from "./AdsAnalyticsPanel";
-import { ProductEconomicsList, periodLengthDays } from "./ProductEconomicsList";
-import { ProductsHeatmap } from "./ProductsHeatmap";
-import { ProductGroupFilter, ProductGroupsPanel } from "./ProductGroupsPanel";
+import { periodLengthDays } from "./periodLength";
 import { useGroupSelection, useProductGroups, ALL_PRODUCTS } from "./useProductGroups";
-import { ProductCardsPanel } from "./ProductCardsPanel";
-import { ShopQualityPanel } from "./ShopQualityPanel";
-import { ProductPricesPanel } from "./ProductPricesPanel";
-import { PriceAdvisorPanel } from "./PriceAdvisorPanel";
-import { RnpPlanFact } from "./RnpPlanFact";
-import { ManagementPnlSummary } from "./ManagementPnlSummary";
-import { ManagementPnlMonthly } from "./ManagementPnlMonthly";
-import { TaxSettingsPanel } from "./TaxSettingsPanel";
-import { TaxReconciliationPanel } from "./TaxReconciliationPanel";
-import { ExpenseCoveragePanel } from "./ExpenseCoveragePanel";
-import { ManualStoreExpenseManager } from "./ManualStoreExpenseManager";
-import { SettingsChangeHistory } from "./SettingsChangeHistory";
-import { SupplyPlanning } from "./SupplyPlanning";
-import { SelfBuyoutsPanel } from "./SelfBuyoutsPanel";
-import { CashflowPanel } from "./CashflowPanel";
-import { MigrationImport } from "./MigrationImport";
-import { ShopWorkspaces } from "./ShopWorkspaces";
 import { MarketplaceBoundary, MarketplaceSwitch } from "./MarketplaceBoundary";
 import { isNativeApp } from "./app-shell";
-import { OzonCabinetShell } from "./OzonCabinetShell";
 import { FinanceProfitHeading } from "./FinanceProfitHeading";
-import { PriceScenarios } from "./PriceScenarios";
-import { SyncHistory, BackupHistory } from "./SyncHistory";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { ProductFeedbackLink } from "./ProductFeedbackLink";
 import { RuntimeStatus } from "./RuntimeStatus";
@@ -114,9 +84,43 @@ import type {
 } from "./contracts";
 import { financeExportUrl, getFinanceFifoReconciliationPage, answerCustomerFeedback, answerCustomerQuestion, processCustomerReturn, sendCustomerChatMessage, connectWBToken, disconnectWBToken, getWBTokenStatus, connectOzonCredentials, disconnectOzonCredentials, getPriceUploadStatus, getPriceUploadHistory, applyFifoReconciliation, applyIncidentLoss, closeProductionExecution, createActionPlanItem, createIncidentCase, createIncidentCompensation, createProcurementOperation, createProcurementPayment, createProductionShift, createReportDefinition, updateReportDefinition, setReportDefinitionEnabled, createTenantBackup, decideAgentCandidate, deleteReportDefinition, downloadReportPdf, downloadSavedReport, generateQuickReport, generateReportDefinition, getActionPlanItems, getDashboardSession, getFifoReconciliation, getIncidentOperations, getMaterialInventory, getProcurementOperations, getProductionExecution, getProductionNorms, getProductCostSettings, getReportDelivery, getReportOperations, getAnalyticsDashboard, getSuppliers, getTenantBackups, getTenantSettings, getTenantSyncHistory, getTenantSyncStatus, getFbsSupplyBarcode, getFbsSupplyDetails, initializeMaterialFifo, postSupplyReceipt, refreshAgentRecommendations, requestTelegramLinkCode, saveProductionExecution, saveSupplier, startTenantSync, updateActionPlanItem, updateMaterialInventory, updateProcurementStatus, updateProductCostSettings, updateProductionNorms, updateTenantSettings, uploadProductPrices, updateProductCard, saveProductCardMedia, getManualExpenses, createManualExpense, deleteManualExpense, updateManualExpenseInclusion, getManagementEconomics, useDashboardData, type ActionPlanItem, type AnalyticsDashboard, type CustomerQualityData, type DashboardPeriod, type DashboardPeriodId, type DashboardSession, type DashboardViewModel, type DataQualityData, type FbsSupplyBarcode, type FbsSupplyDetail, type FifoReconciliationData, type FinanceFifoDetailPage, type IncidentOperations, type ManagementEconomics, type ManualExpense, type MaterialFifoRow, type MaterialInventory, type ProductCard, type ProductCostSetting, type ProductEconomicsRow, type ProductPriceRow, type PriceUploadHistoryItem, type ProductionExecutionTask, type ProductionNorm, type ReportDefinition, type ReportDelivery, type ReportOperations, type SupplierRecord, type TenantSettings, type TenantSyncRun } from "./data-source";
 import { useProductsPrevious, useProductsTrend } from "./useProductsTrend";
-import { FbsOrdersPanel } from "./FbsOrdersPanel";
 import { compareAmount, compareCount, comparePoints } from "./productsDelta";
 import { navItems as fallbackNavItems } from "./mock-dashboard";
+import { LazyPanel, lazyNamed } from "./LazyPanel";
+const SettingsWorkspace = lazyNamed(() => import("./SettingsWorkspace"), "SettingsWorkspace");
+const SelectedShopSettings = lazyNamed(() => import("./SelectedShopSettings"), "SelectedShopSettings");
+const SharedWarehouse = lazyNamed(() => import("./SharedWarehouse"), "SharedWarehouse");
+const IncidentWorkflow = lazyNamed(() => import("./IncidentWorkflow"), "IncidentWorkflow");
+const WorkcenterCalendar = lazyNamed(() => import("./WorkcenterCalendar"), "WorkcenterCalendar");
+const ProductionWorkspace = lazyNamed(() => import("./ProductionWorkspace"), "ProductionWorkspace");
+const ManufacturingCosts = lazyNamed(() => import("./ManufacturingCosts"), "ManufacturingCosts");
+const AdsAnalyticsPanel = lazyNamed(() => import("./AdsAnalyticsPanel"), "AdsAnalyticsPanel");
+const ProductEconomicsList = lazyNamed(() => import("./ProductEconomicsList"), "ProductEconomicsList");
+const ProductsHeatmap = lazyNamed(() => import("./ProductsHeatmap"), "ProductsHeatmap");
+const ProductGroupFilter = lazyNamed(() => import("./ProductGroupsPanel"), "ProductGroupFilter");
+const ProductGroupsPanel = lazyNamed(() => import("./ProductGroupsPanel"), "ProductGroupsPanel");
+const ProductCardsPanel = lazyNamed(() => import("./ProductCardsPanel"), "ProductCardsPanel");
+const ShopQualityPanel = lazyNamed(() => import("./ShopQualityPanel"), "ShopQualityPanel");
+const ProductPricesPanel = lazyNamed(() => import("./ProductPricesPanel"), "ProductPricesPanel");
+const PriceAdvisorPanel = lazyNamed(() => import("./PriceAdvisorPanel"), "PriceAdvisorPanel");
+const RnpPlanFact = lazyNamed(() => import("./RnpPlanFact"), "RnpPlanFact");
+const ManagementPnlSummary = lazyNamed(() => import("./ManagementPnlSummary"), "ManagementPnlSummary");
+const ManagementPnlMonthly = lazyNamed(() => import("./ManagementPnlMonthly"), "ManagementPnlMonthly");
+const TaxSettingsPanel = lazyNamed(() => import("./TaxSettingsPanel"), "TaxSettingsPanel");
+const TaxReconciliationPanel = lazyNamed(() => import("./TaxReconciliationPanel"), "TaxReconciliationPanel");
+const ExpenseCoveragePanel = lazyNamed(() => import("./ExpenseCoveragePanel"), "ExpenseCoveragePanel");
+const ManualStoreExpenseManager = lazyNamed(() => import("./ManualStoreExpenseManager"), "ManualStoreExpenseManager");
+const SettingsChangeHistory = lazyNamed(() => import("./SettingsChangeHistory"), "SettingsChangeHistory");
+const SupplyPlanning = lazyNamed(() => import("./SupplyPlanning"), "SupplyPlanning");
+const SelfBuyoutsPanel = lazyNamed(() => import("./SelfBuyoutsPanel"), "SelfBuyoutsPanel");
+const CashflowPanel = lazyNamed(() => import("./CashflowPanel"), "CashflowPanel");
+const MigrationImport = lazyNamed(() => import("./MigrationImport"), "MigrationImport");
+const ShopWorkspaces = lazyNamed(() => import("./ShopWorkspaces"), "ShopWorkspaces");
+const OzonCabinetShell = lazyNamed(() => import("./OzonCabinetShell"), "OzonCabinetShell");
+const PriceScenarios = lazyNamed(() => import("./PriceScenarios"), "PriceScenarios");
+const SyncHistory = lazyNamed(() => import("./SyncHistory"), "SyncHistory");
+const BackupHistory = lazyNamed(() => import("./SyncHistory"), "BackupHistory");
+const FbsOrdersPanel = lazyNamed(() => import("./FbsOrdersPanel"), "FbsOrdersPanel");
 
 const iconByKey: Record<IconKey, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -1082,7 +1086,7 @@ function App() {
         ) : null}
 
         {activeNav === "stock" ? (
-          <><SharedWarehouse/><StockView
+          <><LazyPanel label="общий склад"><SharedWarehouse/></LazyPanel><StockView
             inventory={dashboard.inventory}
             onAction={handleAction}
             onOpenStockRow={openStockRowDetail}
@@ -1113,8 +1117,8 @@ function App() {
         ) : null}
 
         {activeNav === "finance" ? (
-          <><FinanceView target={pendingScrollTarget} cashflow={<CashflowPanel compact role={session?.user.role ?? "viewer"} />}
-            selfBuyouts={<SelfBuyoutsPanel role={session?.user.role ?? "viewer"} period={dashboardPeriod} confirm={askConfirm} products={dashboard.productEconomics.map((p) => ({ nmId: p.nmId, article: p.article, product: p.product }))} />}
+          <><FinanceView target={pendingScrollTarget} cashflow={<LazyPanel label="движение денег"><CashflowPanel compact role={session?.user.role ?? "viewer"} /></LazyPanel>}
+            selfBuyouts={<LazyPanel label="самовыкупы"><SelfBuyoutsPanel role={session?.user.role ?? "viewer"} period={dashboardPeriod} confirm={askConfirm} products={dashboard.productEconomics.map((p) => ({ nmId: p.nmId, article: p.article, product: p.product }))} /></LazyPanel>}
             cashWindows={dashboard.cashWindows}
             expenseSplit={dashboard.expenseSplit}
             financeLedger={dashboard.financeLedger}
@@ -1207,7 +1211,7 @@ function App() {
             onOpenCheck={(row) => openControlCheckDetail(row)}
           />
         ) : null}
-        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <SelectedShopSettings/> : <SettingsViewV2 canManage={session?.mode !== "demo" && session?.user.role === "owner"} canWriteOperations={session?.mode !== "demo" && (session?.user.role === "owner" || session?.user.role === "manager")} sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} />} />) : null}
+        {activeNav === "settings" ? ((currentShop()?.id??0)!==0 ? <LazyPanel label="настройки магазина"><SelectedShopSettings/></LazyPanel> : <SettingsViewV2 canManage={session?.mode !== "demo" && session?.user.role === "owner"} canWriteOperations={session?.mode !== "demo" && (session?.user.role === "owner" || session?.user.role === "manager")} sectionTarget={pendingScrollTarget} onSynced={dashboard.refresh} migration={<LazyPanel label="перенос данных"><MigrationImport role={session?.user.role ?? "viewer"} onRefresh={dashboard.refresh} /></LazyPanel>} />) : null}
 
         {toast ? (
           <div className="toast" role="status" aria-live="polite">
@@ -1694,7 +1698,7 @@ function StockView({
 }) {
   return (
     <div className="workspace-view">
-      <IncidentWorkflow />
+      <LazyPanel label="инциденты"><IncidentWorkflow /></LazyPanel>
       <section className="split-hero">
         <button className={cx("hero-card", "detail-trigger", stockHero.tone === "danger" ? "urgent" : "calm")} type="button" onClick={() => onAction("Поставка", "Пополнение")}>
           <div className="eyebrow">
@@ -1879,7 +1883,7 @@ function AdsView({
         storageKey="mh.tab.ads"
         target={target}
         targetMap={{ "ads-campaigns": "campaigns", "ads-funnel": "campaigns", "ads-signals": "campaigns", "ads-analytics": "analytics" }}
-        panels={{ campaigns: campaignsPanel, analytics: <AdsAnalyticsPanel period={period} /> }}
+        panels={{ campaigns: campaignsPanel, analytics: <LazyPanel label="аналитику рекламы"><AdsAnalyticsPanel period={period} /></LazyPanel> }}
       />
     </div>
   );
@@ -1964,7 +1968,7 @@ export function FinanceView({
       </> : null}
       <WorkspaceTabs tabs={financeTabs} ariaLabel="Разделы финансов" storageKey="mh.tab.finance" target={tabTarget} targetMap={financeTargetMap} keepMounted={["tax", "accounts"]} panels={{
         overview: <>
-      <ManagementPnlSummary period={period} />
+      <LazyPanel label="управленческий ОПиУ"><ManagementPnlSummary period={period} /></LazyPanel>
       <section className="work-section finance-movement-panel" aria-label="Денежное движение">
         <SectionHeader kicker="P&L" title="Денежное движение">
           <DashboardPeriodControl period={period} setPeriod={setPeriod} />
@@ -1973,7 +1977,7 @@ export function FinanceView({
             {financeLedger.map((item) => <FinanceLedgerRow item={item} key={item.label} onOpen={() => onAction("Отчет", item.label)} />)}
           </div> : <p className="plan-empty">Нет данных о движении денег</p>}
       </section>
-      <ManagementPnlMonthly period={period} onOpenTaxSettings={() => onAction("Налоги", "")} />
+      <LazyPanel label="ОПиУ по месяцам"><ManagementPnlMonthly period={period} onOpenTaxSettings={() => onAction("Налоги", "")} /></LazyPanel>
         </>,
         money: <>
       {cashflow}
@@ -1985,7 +1989,7 @@ export function FinanceView({
           </section>
         </>,
         tax: <>
-      <TaxReconciliationPanel />
+      <LazyPanel label="сверку налогов"><TaxReconciliationPanel /></LazyPanel>
         </>,
         costs: <>
       <div className="content-grid finance-expenses-grid" aria-label="Расходы и их структура">
@@ -2061,9 +2065,9 @@ export function FinanceView({
       </details>
         </>,
         accounts: <>
-      <details className="cabinet-disclosure"><summary>Магазины WB</summary><ShopWorkspaces /></details>
+      <details className="cabinet-disclosure"><summary>Магазины WB</summary><LazyPanel label="магазины"><ShopWorkspaces /></LazyPanel></details>
       <p>Кабинет Ozon открывается переключателем площадки вверху страницы.</p>
-      <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><PriceScenarios /></details>
+      <details className="cabinet-disclosure"><summary>Сценарии цены и закупки</summary><LazyPanel label="сценарии цен"><PriceScenarios /></LazyPanel></details>
       {selfBuyouts}
         </>,
       }} />
@@ -2276,21 +2280,21 @@ export function ProductsView({
           <section className="hero-strip finance-hero"><div><div className="eyebrow"><PackageCheck size={16} /> товары</div><h2>{products.length} SKU в экономике</h2><p>Выручка, выкуп, реклама, запас и чистая маржинальность по каждому артикулу WB.</p></div></section>
           <MetricGrid metrics={[{ label: "Выручка", value: `${Math.round(revenue).toLocaleString("ru-RU")} ₽`, delta: "за период", detail: "по товарам", tone: "good", change: changes[0] }, { label: "Расчётная маржинальность", value: `${netMarginPct.toFixed(1)}%`, delta: "по учтённым затратам", detail: "себестоимость и комиссия WB учтены", tone: netMarginPct >= 0 ? "good" : "warn", change: changes[1] }, { label: "Риск запаса", value: String(atRisk), delta: "SKU", detail: "меньше 7 дней", tone: atRisk ? "warn" : "good", change: changes[2] }, { label: "Артикулы", value: String(products.length), delta: "в выборке", detail: "данные WB", tone: "info", change: changes[3] }]} onMetricClick={(metric) => setQuery(metric.label === "Артикулы" ? "" : metric.label)} />
           <p className="form-hint">ДРР — доля рекламных расходов в выручке: значение выше 100% означает, что расходы на рекламу превышают выручку. Отрицательная маржа означает превышение учтённых затрат над выручкой; при небольшой выручке процент может быть большим.</p>
-          <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label><ProductGroupFilter groups={productGroups.groups} value={groupId} onChange={setGroupId} /><ProductGroupsPanel products={products} groups={productGroups.groups} error={productGroups.error} onChanged={productGroups.reload} />{visible.length ? <ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
+          <section className="work-section"><SectionHeader kicker="Экономика" title="Товары по артикулам"><DashboardPeriodControl period={period} setPeriod={setPeriod} /></SectionHeader><label className="search-box product-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Артикул или товар" type="search" /></label><LazyPanel label="фильтр групп"><ProductGroupFilter groups={productGroups.groups} value={groupId} onChange={setGroupId} /></LazyPanel><LazyPanel label="группы товаров"><ProductGroupsPanel products={products} groups={productGroups.groups} error={productGroups.error} onChanged={productGroups.reload} /></LazyPanel>{visible.length ? <LazyPanel label="экономику товаров"><ProductEconomicsList items={visible} onOpen={onOpenProduct} trend={trend} periodDays={periodLengthDays(period)} /></LazyPanel> : <p className="plan-empty">По этому запросу товары не найдены</p>}</section>
         </>,
         analytics: <>
-          <ProductsHeatmap period={period} />
-          <RnpPlanFact products={products} />
+          <LazyPanel label="карту товаров"><ProductsHeatmap period={period} /></LazyPanel>
+          <LazyPanel label="план-факт"><RnpPlanFact products={products} /></LazyPanel>
         </>,
         content: <>
-          <ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} />
-          <ShopQualityPanel data={customerQuality} actions={qualityActions} />
+          <LazyPanel label="карточки товаров"><ProductCardsPanel cards={productCards} errors={productCardErrors} onEdit={setEditingCard} /></LazyPanel>
+          <LazyPanel label="качество магазина"><ShopQualityPanel data={customerQuality} actions={qualityActions} /></LazyPanel>
         </>,
         prices: <>
-          <PriceAdvisorPanel period={period} prices={prices ?? []} onApply={(items) => setPriceDrafts((rows) => ({ ...rows, ...Object.fromEntries(items.map((i) => [i.nmId, { price: i.price, discount: i.discount }])) }))} />
-          <ProductPricesPanel prices={prices ?? []} query={query} drafts={priceDrafts} onDraft={(nmId, draft) => setPriceDrafts((rows) => ({ ...rows, [nmId]: draft }))}
+          <LazyPanel label="советник по ценам"><PriceAdvisorPanel period={period} prices={prices ?? []} onApply={(items) => setPriceDrafts((rows) => ({ ...rows, ...Object.fromEntries(items.map((i) => [i.nmId, { price: i.price, discount: i.discount }])) }))} /></LazyPanel>
+          <LazyPanel label="цены"><ProductPricesPanel prices={prices ?? []} query={query} drafts={priceDrafts} onDraft={(nmId, draft) => setPriceDrafts((rows) => ({ ...rows, [nmId]: draft }))}
             onSubmit={() => void submitPrices()} busy={priceSubmitting || !!priceUploadId} message={priceMessage} uploadStatus={priceUploadStatus}
-            results={priceResults} history={priceUploadHistory} hasErrors={productPriceErrors.length > 0} />
+            results={priceResults} history={priceUploadHistory} hasErrors={productPriceErrors.length > 0} /></LazyPanel>
         </>,
       }} />
       {editingCard ? <ProductCardEditor card={editingCard} onClose={() => setEditingCard(null)} onSaved={async () => { setEditingCard(null); await onRefresh(); }} /> : null}
@@ -2689,7 +2693,7 @@ function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false,
         onEditCost={(item) => setEditingCost({ ...item })} />
       <ProductFeedbackLink />
       {message ? <p className="operation-error" role="status">{message}</p> : null}
-      <SettingsWorkspace sectionTarget={requestedSection}
+      <LazyPanel label="настройки"><SettingsWorkspace sectionTarget={requestedSection}
         connections={<>      <div className="settings-connections-grid">
         <section className="work-section">
           <SectionHeader kicker="Обновление" title="Интервалы работы"><SlidersHorizontal size={18} /></SectionHeader>
@@ -2725,11 +2729,11 @@ function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false,
           <button className="secondary-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync()}><RefreshCw size={17} />{busy === "sync" ? "Синхронизируем" : "Синхронизировать сейчас"}</button>
           <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("finance", 90)}>Обновить финансовый отчёт WB (90 дней)</button>
         </div>
-        <SyncHistory runs={syncRuns} />
+        <LazyPanel label="историю синхронизаций"><SyncHistory runs={syncRuns} /></LazyPanel>
         <button className="ghost-button" disabled={busy !== null || !settings.wb_connected} type="button" onClick={() => void startSync("ads")}>Повторить только рекламу</button>
         <RuntimeStatus />
       </section>
-      <SettingsChangeHistory refreshKey={historyRefreshKey} /></>}
+      <LazyPanel label="историю изменений"><SettingsChangeHistory refreshKey={historyRefreshKey} /></LazyPanel></>}
         production={<>      <section className="work-section" id="material-inventory">
         <SectionHeader kicker="Производство" title="Остатки сырья и сверка FIFO"><ClipboardCheck size={18} /></SectionHeader>
         <div className="operation-actions">
@@ -2768,9 +2772,9 @@ function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false,
           <button className="primary-button" disabled={busy !== null} type="submit">{busy === "expense" ? "Сохраняем" : "Добавить расход"}</button>
         </form>
         {manualExpenses.length ? <div className="cost-settings-list">{manualExpenses.map((item) => <div className="cost-setting-row" key={item.id}><div className="cost-setting-product"><strong>{item.article}</strong><span>WB {item.nm_id} · {item.period_start} — {item.period_end} · источник: {item.source === "manual" ? "вручную" : "импорт"} · {item.article === "wb_commission" ? "исключён: комиссия уже в выплате WB" : item.include_in_management_result ? "включён в результат после подтверждения" : "исключён: требуется проверить отсутствие в WB, рекламе и себестоимости"}</span></div><div className="cost-setting-amount"><span>{item.allocation_basis}</span><strong>{Number(item.amount_rub).toLocaleString("ru-RU")} ₽</strong></div>{item.article !== "wb_commission" ? <button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void toggleExpenseInclusion(item)}>{item.include_in_management_result ? "Исключить из результата" : "Включить в результат"}</button> : <span className="muted-tag">Комиссия WB уже учтена</span>}<button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void calculateManagement(item)}>Рассчитать</button><button className="ghost-button" disabled={busy !== null} type="button" onClick={() => void removeExpense(item.id)}>Удалить</button></div>)}</div> : <p className="plan-empty">Ручных расходов пока нет.</p>}
-        <ManualStoreExpenseManager />
-        <ExpenseCoveragePanel products={productCosts} />
-        <TaxSettingsPanel />
+        <LazyPanel label="ручные расходы"><ManualStoreExpenseManager /></LazyPanel>
+        <LazyPanel label="покрытие расходов"><ExpenseCoveragePanel products={productCosts} /></LazyPanel>
+        <LazyPanel label="налоги"><TaxSettingsPanel /></LazyPanel>
         <a className="secondary-button" href="?view=finance#tax-reconciliation">Финансы → Налоги: расчёт, сверка и история</a>
         {managementEconomics ? <div className="operation-actions"><strong>Управленческий результат · WB {managementEconomics.nm_id}</strong>{managementEconomics.data_status !== "ok" ? <span className="warning-text">По этому SKU нет данных продаж за выбранный период.</span> : null}<span>Прибыль по учётным данным: {managementEconomics.accounting_profit_rub.toLocaleString("ru-RU")} ₽ → после подтверждённых дополнительных расходов: {managementEconomics.management_profit_rub.toLocaleString("ru-RU")} ₽</span><span>Включено вручную: {managementEconomics.manual_expenses_rub.toLocaleString("ru-RU")} ₽ · исключено без подтверждения: {managementEconomics.excluded_manual_expenses_rub.toLocaleString("ru-RU")} ₽ · комиссия WB всегда исключена из повторного вычитания.</span>{managementEconomics.items.filter((item) => item.excluded_from_result).map((item) => <span className="muted-tag" key={item.id}>{item.article}: {item.exclusion_reason}</span>)}</div> : null}
       </section>
@@ -2781,10 +2785,10 @@ function SettingsViewV2({ onSynced, migration, sectionTarget, canManage = false,
           <p className="plan-empty">Копируется база кабинета и настройки без токенов. Хранится до 14 последних копий.</p>
           <button className="secondary-button" disabled={!canManage || busy !== null} type="button" onClick={() => void createBackup()}><Download size={17} />{busy === "backup" ? "Создаём копию" : "Создать резервную копию"}</button>
         </div>
-        {canManage ? <BackupHistory backups={backups} /> : <p className="plan-empty">Резервные копии доступны владельцу кабинета.</p>}
+        {canManage ? <LazyPanel label="резервные копии"><BackupHistory backups={backups} /></LazyPanel> : <p className="plan-empty">Резервные копии доступны владельцу кабинета.</p>}
       </section>
 </>}
-      />
+      /></LazyPanel>
       {editingCost ? <ProductCostDialog busy={busy === "cost"} item={editingCost} onClose={() => setEditingCost(null)} onSubmit={(item, reason) => { void saveCost(item, reason).then((saved) => { if (saved) setEditingCost(null); }); }} /> : null}
       {editingNorm ? <ProductionNormDialog busy={busy === "cost"} item={editingNorm} onClose={() => setEditingNorm(null)} onSubmit={(item, reason) => { void saveNorm(item, reason); }} /> : null}
     </div>
@@ -2959,9 +2963,9 @@ function ProductionView({
         </aside>
       </div>
       </div>
-      <ProductionWorkspace view={productionTab === "wip" || productionTab === "capacity" ? productionTab : "hidden"} onChanged={() => void onRefresh()} />
-      <div hidden={productionTab !== "capacity"}><WorkcenterCalendar /></div>
-      <div hidden={productionTab !== "costs"}><ManufacturingCosts onChanged={() => void onRefresh()} /></div>
+      <LazyPanel label="производство"><ProductionWorkspace view={productionTab === "wip" || productionTab === "capacity" ? productionTab : "hidden"} onChanged={() => void onRefresh()} /></LazyPanel>
+      <div hidden={productionTab !== "capacity"}><LazyPanel label="календарь производства"><WorkcenterCalendar /></LazyPanel></div>
+      <div hidden={productionTab !== "costs"}><LazyPanel label="себестоимость"><ManufacturingCosts onChanged={() => void onRefresh()} /></LazyPanel></div>
     </div>
   );
 }
@@ -3308,17 +3312,17 @@ function SupplyView({
         </div>
         </>),
         plan: (<>
-      <SupplyPlanning
+      <LazyPanel label="планирование поставок"><SupplyPlanning
         readOnly={!session || session.mode === "demo" || !["owner", "manager"].includes(session.user.role.toLowerCase())}
         onRefresh={onRefresh}
-      />
+      /></LazyPanel>
         </>),
         fbs: (<>
       <section className="work-section">
         <SectionHeader kicker="WB FBS" title="Новые сборочные задания"><PackageCheck size={18} /></SectionHeader>
         {supplyNewOrders.length ? <div className="shipment-list">{supplyNewOrders.slice(0, 12).map((order, index) => <article className="shipment-row" key={String(order.orderId ?? order.id ?? index)}><div><strong>Заказ {String(order.orderId ?? order.id ?? "WB")}</strong><span>{String(order.address ?? order.deliveryType ?? "Новое сборочное задание")}</span></div><StatusPill tone="warn">ожидает сборки</StatusPill></article>)}</div> : <p className="plan-empty">Новых сборочных заданий FBS нет или раздел недоступен для токена.</p>}
       </section>
-      <FbsOrdersPanel canWrite={!!session && session.mode !== "demo" && ["owner", "manager"].includes(session.user.role.toLowerCase())} />
+      <LazyPanel label="заказы FBS"><FbsOrdersPanel canWrite={!!session && session.mode !== "demo" && ["owner", "manager"].includes(session.user.role.toLowerCase())} /></LazyPanel>
         </>),
       }} />
       {paymentOrder ? <ProcurementPaymentDialog busy={busyOrder === Number(paymentOrder.id)} order={paymentOrder} onClose={() => { if (!busyOrder) setPaymentOrder(null); }} onSubmit={submitPayment} /> : null}
@@ -4437,4 +4441,4 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: Tone }) {
   return <span className={cx("status-pill", tone)}>{children}</span>;
 }
 
-export default function SelectedShopApp(){return <MarketplaceBoundary wb={<ShopContextBoundary><App /></ShopContextBoundary>} ozon={session=><OzonCabinetShell session={session}/>}/>;}
+export default function SelectedShopApp(){return <MarketplaceBoundary wb={<ShopContextBoundary><App /></ShopContextBoundary>} ozon={session=><LazyPanel label="кабинет Ozon"><OzonCabinetShell session={session}/></LazyPanel>}/>;}

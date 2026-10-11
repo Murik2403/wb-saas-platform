@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { lazyLoaded } from "./test-lazy";
 import userEvent from "@testing-library/user-event";
 import { ProductsView } from "./App";
 import * as ds from "./data-source";
@@ -36,11 +37,13 @@ describe("Products tabs", () => {
   ])("tab %s shows exactly its blocks", async (tab, blocks) => {
     view();
     await userEvent.click(screen.getByRole("button", { name: tab }));
+    await lazyLoaded();
     expect(shown()).toEqual(blocks);
   });
 
-  it("opens the tab that owns a deep-link target", () => {
+  it("opens the tab that owns a deep-link target", async () => {
     view("price-uploads");
+    await lazyLoaded();
     expect(screen.getByRole("button", { name: "Цены" })).toHaveAttribute("aria-pressed", "true");
     expect(shown()).toContain("Цены и скидки");
   });
@@ -57,6 +60,7 @@ describe("Products tabs", () => {
   it("keeps the price draft while switching Цены -> Товары -> Цены", async () => {
     view();
     await userEvent.click(screen.getByRole("button", { name: "Цены" }));
+    await lazyLoaded();
     const input = screen.getByLabelText("Цена V7");
     await userEvent.clear(input);
     await userEvent.type(input, "1234");

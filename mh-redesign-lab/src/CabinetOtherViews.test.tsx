@@ -1,3 +1,4 @@
+import {lazyLoaded} from './test-lazy';
 import { renderAuthorizedWb } from "./test-fixtures/marketplace-app-fixture";
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -39,8 +40,10 @@ describe('remaining cabinet audit acceptance', () => {
     window.history.replaceState({},'', '/?view=settings');
     await renderAuthorizedWb(<App/>);
     for(const button of await screen.findAllByRole('button',{name:'Проверить и сохранить'})) expect(button).toBeDisabled();
+    await lazyLoaded();
     expect(getTenantBackups).not.toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button',{name:'Производство'}).find(button=>button.hasAttribute('aria-pressed'))!);
+    await lazyLoaded();
     fireEvent.click(await screen.findByRole('button',{name:'Изменить себестоимость: Manager product'}));
     fireEvent.change(screen.getByLabelText('Себестоимость одной единицы, ₽'),{target:{value:'125'}});
     fireEvent.click(screen.getByRole('button',{name:'Сохранить'}));
