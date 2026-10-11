@@ -24,7 +24,7 @@
 Location, Contacts, Photos or Videos, Audio, Health and Fitness, Browsing History, Search History, Sensitive Info, Advertising Data, данные платёжной карты (карту видит только ЮKassa).
 
 ## Export compliance
-Только стандартное HTTPS: `ITSAppUsesNonExemptEncryption = NO` (добавить в ios/App/App/Info.plist перед архивированием).
+Только стандартное HTTPS: `ITSAppUsesNonExemptEncryption = NO` (уже стоит в ios/App/App/Info.plist).
 
 ## Риски отклонения
 - 3.1.1 (IAP): в приложении нет продажи цифровых товаров. Не добавляйте кнопки «купить/оплатить» и призывы оплатить на сайте внутри приложения без согласования.
