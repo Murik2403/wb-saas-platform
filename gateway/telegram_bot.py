@@ -46,6 +46,8 @@ AUTO_REPLY = (
 
 
 def _call(method: str, **params) -> dict:
+    if not config.TELEGRAM_ENABLED:
+        raise RuntimeError('Telegram temporarily disabled')
     url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method=method)
     try:
         response = requests.post(url, json=params, timeout=35)
@@ -58,6 +60,8 @@ def _call(method: str, **params) -> dict:
 def send_document(chat_id: str, file_bytes: bytes, filename: str, caption: str = "") -> dict:
     """Separate from _call() because sendDocument needs multipart/form-data
     (a file part), not the plain JSON body every other method here uses."""
+    if not config.TELEGRAM_ENABLED:
+        raise RuntimeError('Telegram temporarily disabled')
     url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method="sendDocument")
     data = {"chat_id": chat_id}
     if caption:
@@ -75,6 +79,8 @@ def send_message(chat_id: str, text: str) -> dict:
     """Plain text on purpose (no parse_mode): nothing in `text` is interpreted
     as markup, so there is nothing to escape. Short timeout -- a notification
     must not hold a request open like a document upload may."""
+    if not config.TELEGRAM_ENABLED:
+        raise RuntimeError('Telegram temporarily disabled')
     url = API_URL.format(token=config.TELEGRAM_BOT_TOKEN, method="sendMessage")
     try:
         response = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=15)
@@ -86,7 +92,7 @@ def send_message(chat_id: str, text: str) -> dict:
 
 @lru_cache(maxsize=1)
 def get_bot_username() -> str:
-    if not config.TELEGRAM_BOT_TOKEN:
+    if not config.TELEGRAM_ENABLED or not config.TELEGRAM_BOT_TOKEN:
         return ""
     if config.TELEGRAM_BOT_USERNAME:
         return config.TELEGRAM_BOT_USERNAME
@@ -174,6 +180,9 @@ def run() -> None:
     """Long-polls getUpdates forever. Never raises -- a Telegram outage or
     misconfiguration must not take the gateway process down with it (this
     runs as a sibling process to uvicorn, see docker-entrypoint.sh)."""
+    if not config.TELEGRAM_ENABLED:
+        logger.info('Telegram support relay temporarily disabled by operator')
+        return
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning("WB_SAAS_TELEGRAM_BOT_TOKEN is not configured -- Telegram support relay disabled.")
         return
@@ -182,7 +191,7 @@ def run() -> None:
     failures = 0
     last_warning = 0.0
     previous_delay = None
-    while True:
+    while config.TELEGRAM_ENABLED:
         try:
             params = {"timeout": 30}
             if offset is not None:

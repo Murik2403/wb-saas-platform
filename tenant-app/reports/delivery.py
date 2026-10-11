@@ -11,12 +11,17 @@ container's environment at provision time.
 from __future__ import annotations
 
 import logging
+import os
 
 import requests
 
 import config
 
 logger = logging.getLogger("wb_dashboard.reports.delivery")
+
+
+def telegram_is_paused() -> bool:
+    return os.environ.get('WB_SAAS_TELEGRAM_ENABLED', '1').strip().lower() in {'0', 'false', 'no', 'off'}
 
 
 def internal_api_is_configured() -> bool:
@@ -45,6 +50,7 @@ def get_delivery_status() -> dict:
         "telegram_configured": False,
         "telegram_linked": False,
         "telegram_bot_username": "",
+        "telegram_paused": telegram_is_paused(),
     }
     if not internal_api_is_configured():
         return fallback
@@ -63,9 +69,10 @@ def get_delivery_status() -> dict:
             "configured": True,
             "email_configured": bool(payload.get("email_configured")),
             "email": str(payload.get("email") or ""),
-            "telegram_configured": bool(payload.get("telegram_configured")),
-            "telegram_linked": bool(payload.get("linked")),
-            "telegram_bot_username": str(payload.get("bot_username") or ""),
+            "telegram_configured": bool(payload.get("telegram_configured")) and not telegram_is_paused(),
+            "telegram_linked": bool(payload.get("linked")) and not telegram_is_paused(),
+            "telegram_bot_username": "" if telegram_is_paused() else str(payload.get("bot_username") or ""),
+            "telegram_paused": telegram_is_paused() or bool(payload.get('telegram_paused')),
         }
     except Exception:
         logger.exception("Failed to read report delivery status")
@@ -109,7 +116,7 @@ def telegram_is_linked() -> bool:
 def request_telegram_link_code(actor_account: str = '') -> tuple[str, int] | None:
     """Returns (code, ttl_minutes) on success, None on any failure -- the
     caller (reports_page.py) shows an error message in that case."""
-    if not internal_api_is_configured():
+    if telegram_is_paused() or not internal_api_is_configured():
         return None
     try:
         response = requests.post(
@@ -137,7 +144,7 @@ def send_report_telegram(report_name: str, pdf_bytes: bytes, filename: str) -> b
     module docstring) -- this must stay comfortably above that, or a
     request that's still succeeding server-side gets reported as a failure
     here just because this client gave up first."""
-    if not internal_api_is_configured():
+    if telegram_is_paused() or not internal_api_is_configured():
         logger.warning("Telegram delivery requested but gateway internal API is not configured -- skipping.")
         return False
     try:
@@ -151,7 +158,7 @@ def send_text_telegram(text: str) -> bool:
     """Short plain-text Telegram message to the linked chat. Never raises;
     False when the internal API is not configured, Telegram is not linked
     (gateway answers 409) or anything else fails."""
-    if not internal_api_is_configured():
+    if telegram_is_paused() or not internal_api_is_configured():
         return False
     try:
         response = requests.post(

@@ -116,6 +116,7 @@ SMTP_FROM_EMAIL = os.environ.get("WB_SAAS_SMTP_FROM_EMAIL", "no-reply@" + PARENT
 # From @BotFather. Empty disables the relay entirely -- telegram_bot.py's
 # polling loop exits immediately instead of erroring, same pattern as an
 # unconfigured SMTP_HOST in mailer.py.
+TELEGRAM_ENABLED = os.environ.get("WB_SAAS_TELEGRAM_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 TELEGRAM_BOT_TOKEN = os.environ.get("WB_SAAS_TELEGRAM_BOT_TOKEN", "")
 
 # Public @username from BotFather. Keeping it in configuration lets tenant

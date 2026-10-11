@@ -12,6 +12,7 @@
 <p class="mk-lead">{{ training_lessons|length }} уроков по разделам MARKETSHELPER: короткие видео и текстовые шаги для чтения экранов и проверки данных. Все цифры в записи — учебные. Они не относятся к вашему магазину.</p>
 <p>{% if training_has_narration %}Видео с русской озвучкой. {% endif %}{% if training_has_silent_media %}Для видео без озвучки инструкции показаны на экране. {% endif %}Текстовые инструкции доступны под каждым уроком. Перед действием проверьте выбранный магазин, период, данные и свои права.</p></section>
 <p>В записи внешние операции WB не выполняются. Уроки знакомят с разделами; они не заменяют подробный разбор выпуска, платежей, импорта и других операций на ваших данных.</p>
+{% if not telegram_available() %}<p role="status">Доставка и поддержка через Telegram временно приостановлены. Если этот канал показан в записи урока, сейчас используйте email или скачивание PDF в кабинете.</p>{% endif %}
 {% if training_overview %}<section class="mk-section mk-card" aria-labelledby="overview-title"><h2 id="overview-title">Краткий обзор кабинета</h2>
 <video class="training-video" controls playsinline preload="none" aria-label="Краткий обзор кабинета на учебных данных"><source src="{{ training_overview.url }}" type="video/mp4">Ваш браузер не поддерживает видео. Используйте ссылку для скачивания.</video>
 <a href="{{ training_overview.url }}" download>Скачать обзор MP4</a></section>{% endif %}

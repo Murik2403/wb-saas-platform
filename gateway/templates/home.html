@@ -250,14 +250,14 @@
       <a href="/calculator">Калькулятор маржи</a>
       <a href="/compliance">Соответствие 152-ФЗ</a>
       <a href="/delete-account">Удаление аккаунта</a>
-      <a href="https://t.me/marketshelper_support_bot" target="_blank" rel="noopener">Написать в Telegram</a>
+      {% if telegram_available() %}<a href="https://t.me/marketshelper_support_bot" target="_blank" rel="noopener">Написать в Telegram</a>{% else %}<a href="mailto:mvvorokov@yandex.ru">Написать в поддержку</a>{% endif %}
     </div>
     <div>© {{ current_year }} MARKETSHELPER</div>
   </div>
 
 </div>
 
-<a href="https://t.me/marketshelper_support_bot" target="_blank" rel="noopener" class="floating-tg" title="Написать в поддержку MARKETSHELPER в Telegram">✈</a>
+{% if telegram_available() %}<a href="https://t.me/marketshelper_support_bot" target="_blank" rel="noopener" class="floating-tg" title="Написать в поддержку MARKETSHELPER в Telegram">✈</a>{% endif %}
 
 <a href="/register" class="floating-cta" id="floatingCta">Начать бесплатно</a>
 

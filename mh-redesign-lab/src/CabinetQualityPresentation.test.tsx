@@ -50,6 +50,15 @@ describe("customer quality source failures", () => {
 });
 
 describe("reports presentation", () => {
+  it("hides paused Telegram controls while keeping email delivery visible",async()=>{
+    vi.mocked(getReportDelivery).mockResolvedValueOnce({configured:true,email_configured:true,email:'synthetic@example.test',telegram_configured:false,telegram_linked:false,telegram_paused:true});
+    render(<ReportsView exportItems={[]} reportCards={[]} reportMetrics={[]} onAction={vi.fn()} onQuickReport={vi.fn(async()=>{})}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Доставка'}));
+    expect(await screen.findByText('Доставка по email')).toBeVisible();
+    expect(screen.queryByRole('button',{name:'Привязать Telegram'})).toBeNull();
+    expect(screen.queryByText('Telegram',{exact:true})).toBeNull();
+    expect(screen.getByText(/synthetic@example.test/)).toBeVisible();
+  });
   it("recipient linking stays unavailable without owner permission",async()=>{
     vi.mocked(getReportDelivery).mockResolvedValueOnce({configured:true,email_configured:false,telegram_configured:true,telegram_linked:false});
     render(<ReportsView canLinkTelegram={false} exportItems={[]} reportCards={[]} reportMetrics={[]} onAction={vi.fn()} onQuickReport={vi.fn(async()=>{})}/>);

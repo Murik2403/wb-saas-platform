@@ -33,6 +33,11 @@ def test_tenant_receives_only_derived_data_key():
     assert tenant_container_spec("shop-a", request)["environment"]["WB_SAAS_DATA_ENCRYPTION_KEY"] == "derived-key"
 
 
+def test_new_tenant_inherits_operator_telegram_pause(monkeypatch):
+    monkeypatch.setenv('WB_SAAS_TELEGRAM_ENABLED','0')
+    assert tenant_container_spec('shop-a',_request())['environment']['WB_SAAS_TELEGRAM_ENABLED']=='0'
+
+
 def test_tenant_receives_sentry_configuration_only_when_configured():
     request = _request().model_copy(
         update={

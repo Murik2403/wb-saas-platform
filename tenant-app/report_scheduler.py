@@ -120,7 +120,7 @@ def deliver_report(
     results: dict[str, bool] = {}
     if definition.get("email_enabled"):
         results["email"] = delivery.send_report_email(definition["name"], pdf_bytes, filename)
-    if definition.get("telegram_enabled"):
+    if definition.get("telegram_enabled") and not delivery.telegram_is_paused():
         results["telegram"] = delivery.send_report_telegram(definition["name"], pdf_bytes, filename)
     if store is not None and run_id is not None:
         failures = [channel for channel, ok in results.items() if not ok]

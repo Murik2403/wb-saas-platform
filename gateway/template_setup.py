@@ -15,5 +15,6 @@ def create_templates() -> Jinja2Templates:
         analytics_consent=growth_web.consent_choice,
         analytics_available=growth_web.optional_analytics_available,
         public_metrika_counter=growth_web.metrika_counter,
+        telegram_available=lambda: bool(config.TELEGRAM_ENABLED and config.TELEGRAM_BOT_TOKEN),
     )
     return templates

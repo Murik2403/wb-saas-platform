@@ -107,7 +107,7 @@ export type CustomerQualityData = { rating: Record<string, unknown>; unread: Rec
 export type ReportDefinition = { id: number; name: string; metrics: string; schedule_type: "daily" | "weekly" | "monthly"; schedule_time: string; schedule_weekday: number | null; schedule_day: number | null; enabled: number; email_enabled?: number; telegram_enabled?: number; last_run_at: string | null };
 export type ReportRun = { id: number; definition_id: number; definition_name?: string; definition_metrics?: string; metric_count?: number; started_at: string; finished_at: string | null; status: string; file_path: string | null; file_available?: boolean; error: string | null; delivery_requested?: number; delivery_status?: string; delivery_error?: string | null };
 export type ReportOperations = { definitions: ReportDefinition[]; runs: ReportRun[]; metric_labels: Record<string, string> };
-export type ReportDelivery = { configured: boolean; email_configured: boolean; email?: string; telegram_configured?: boolean; telegram_linked?: boolean; telegram_bot_username?: string };
+export type ReportDelivery = { configured: boolean; email_configured: boolean; email?: string; telegram_configured?: boolean; telegram_linked?: boolean; telegram_bot_username?: string; telegram_paused?: boolean };
 export type AnalyticsDashboard = {
   period: { start: string; end: string };
   sales_funnel: { stages: Array<{ key: string; label: string; value: number }>; totals: Record<string, number>; products: Array<{ nm_id?: number; name: string; open_card: number; cart: number; orders: number; buyouts: number }>; source: string };

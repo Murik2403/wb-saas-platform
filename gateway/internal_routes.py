@@ -119,6 +119,8 @@ async def send_report_email(
 def create_telegram_link_code(slug: str, actor_account: str = '') -> str:
     """Raises HTTPException(404) for an unknown slug. Separate from the
     route function for the same testability reason as deliver_report_email."""
+    if not config.TELEGRAM_ENABLED:
+        raise HTTPException(status_code=503, detail='Telegram temporarily disabled')
     with control_db.connect() as conn:
         tenant = accounts.get_tenant_by_slug(conn, slug)
         if tenant is None:
@@ -134,6 +136,8 @@ def create_telegram_link_code(slug: str, actor_account: str = '') -> str:
 
 
 def telegram_is_linked(slug: str) -> bool:
+    if not config.TELEGRAM_ENABLED:
+        return False
     with control_db.connect() as conn:
         return bool(accounts.get_telegram_chat_id_for_slug(conn, slug))
 
@@ -149,15 +153,18 @@ def report_delivery_status(slug: str) -> dict:
         raise HTTPException(status_code=404, detail="unknown account")
     bot_username = telegram_bot.get_bot_username()
     return {
-        "linked": linked,
+        "linked": linked and config.TELEGRAM_ENABLED,
         "email": account["email"],
         "email_configured": bool(config.SMTP_HOST),
-        "telegram_configured": bool(config.TELEGRAM_BOT_TOKEN and bot_username),
+        "telegram_configured": bool(config.TELEGRAM_ENABLED and config.TELEGRAM_BOT_TOKEN and bot_username),
+        "telegram_paused": not config.TELEGRAM_ENABLED,
         "bot_username": bot_username,
     }
 
 
 def deliver_report_telegram(slug: str, report_name: str, pdf_bytes: bytes, filename: str) -> None:
+    if not config.TELEGRAM_ENABLED:
+        raise HTTPException(status_code=503, detail='Telegram temporarily disabled')
     with control_db.connect() as conn:
         chat_id = accounts.get_telegram_chat_id_for_slug(conn, slug)
     if not chat_id:
@@ -213,6 +220,8 @@ MAX_NOTIFY_TEXT_CHARS = 500
 def deliver_text_telegram(slug: str, text: str) -> None:
     """Short plain-text notification to the chat linked to `slug`. Same error
     contract as deliver_report_telegram; the text is capped, never parsed."""
+    if not config.TELEGRAM_ENABLED:
+        raise HTTPException(status_code=503, detail='Telegram temporarily disabled')
     text = (text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="empty text")

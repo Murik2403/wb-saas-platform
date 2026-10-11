@@ -263,6 +263,7 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
         "WB_SAAS_TENANT_SLUG": slug,
         "WB_SAAS_INTERNAL_API_URL": request.internal_api_url,
         "WB_SAAS_INTERNAL_API_SECRET": request.internal_api_secret,
+        "WB_SAAS_TELEGRAM_ENABLED": os.environ.get('WB_SAAS_TELEGRAM_ENABLED', '1'),
         "MH_ALLOWED_HOSTS": f"localhost,127.0.0.1,{_tenant_host(slug)}",
     }
     if request.data_encryption_key:
