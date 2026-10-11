@@ -322,6 +322,35 @@ def _volume(client: Any, slug: str):
         return client.volumes.create(name)
 
 
+def _prepare_tenant_volume(client: Any, slug: str) -> None:
+    """Make only the validated tenant volume root writable by the runtime UID.
+
+    Docker creates fresh named volumes as root. The hardened tenant cannot
+    initialize SQLite or worker locks until this directory belongs to 10001.
+    Never recursively change existing customer files or mount host paths.
+    """
+    _validate_slug(slug)
+    helper = None
+    try:
+        helper = client.containers.run(
+            BACKUP_HELPER_IMAGE, user='0:0',
+            command=['sh', '-c', 'chown 10001:10001 /data && chmod 700 /data'],
+            volumes={_volume_name(slug): {'bind': '/data', 'mode': 'rw'}},
+            detach=True, remove=False, network_disabled=True,
+            security_opt=['no-new-privileges:true'], cap_drop=['ALL'],
+            cap_add=['CHOWN', 'FOWNER'], read_only=True,
+        )
+        outcome = helper.wait(timeout=15)
+        if not isinstance(outcome, dict) or outcome.get('StatusCode') != 0:
+            raise RuntimeError('Tenant data directory initialization failed')
+    finally:
+        if helper is not None:
+            try:
+                helper.remove(force=True)
+            except Exception:
+                pass
+
+
 def _control_plane_volume_name(client: Any) -> str:
     """Resolve this Compose project's gateway_data volume without caller input."""
     try:
@@ -538,8 +567,9 @@ def create_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
     client = _client()
     _prepare_backup_directory(client,slug)
-    network = _network(client, slug)
     _volume(client, slug)
+    _prepare_tenant_volume(client, slug)
+    network = _network(client, slug)
     _attach_traefik(client, network)
     try:
         client.containers.run(**tenant_container_spec(slug, request))
