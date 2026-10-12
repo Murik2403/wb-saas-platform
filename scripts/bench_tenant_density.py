@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -35,28 +36,49 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "provisioner"))
 
 LABEL = "wb-saas.benchmark"
 HELPER_IMAGE = "alpine:3.20"  # present wherever the provisioner runs; used only to chown a fresh volume
 MIB = 1048576
+_LOCAL_ENDPOINT: str | None = None
 
 
 def docker(*args: str, check: bool = True, timeout: int = 300) -> str:
-    done = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
+    command = ["docker", *(["--host", _LOCAL_ENDPOINT] if _LOCAL_ENDPOINT else []), *args]
+    environment = os.environ.copy()
+    if _LOCAL_ENDPOINT:
+        # A user's context switch during the run must not redirect load or cleanup.
+        environment.pop("DOCKER_CONTEXT", None)
+        environment.pop("DOCKER_HOST", None)
+    done = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=environment)
     if check and done.returncode != 0:
         raise RuntimeError(f"docker {' '.join(args[:3])} failed: {done.stderr.strip()[:300]}")
     return done.stdout.strip()
 
 
 def assert_local_engine() -> None:
+    global _LOCAL_ENDPOINT
+    _LOCAL_ENDPOINT = None
     if os.environ.get("DOCKER_HOST"):
         raise SystemExit("Refusing to run: DOCKER_HOST is set, the engine may be remote.")
     context = docker("context", "show")
-    endpoint = docker("context", "inspect", "--format", "{{.Endpoints.docker.Host}}")
-    if any(word in (context + endpoint).lower() for word in ("ssh://", "tcp://", "staging", "prod", "marketshelper")):
-        raise SystemExit(f"Refusing to run: context {context!r} / {endpoint!r} does not look like a local engine.")
+    endpoint = docker("context", "inspect", context, "--format", "{{.Endpoints.docker.Host}}")
+    try:
+        address = urlsplit(endpoint)
+        local_unix = (address.scheme == "unix" and not address.netloc and address.path.startswith("/")
+                      and not address.path.startswith("//") and "\\" not in address.path
+                      and address.path != "/" and not address.query and not address.fragment)
+    except ValueError:
+        local_unix = False
+    local_pipe = re.fullmatch(r"npipe:////\./pipe/[A-Za-z0-9_.-]+", endpoint) is not None
+    if (not (local_unix or local_pipe) or any(char.isspace() for char in endpoint)
+            or any(word in context.lower() for word in ("staging", "prod", "marketshelper"))):
+        # Do not echo remote URLs: their user-info may contain credentials.
+        raise SystemExit("Refusing to run: only a local Unix socket or local Windows named pipe is allowed.")
+    _LOCAL_ENDPOINT = endpoint
 
 
 def mib(value: int) -> float:
@@ -213,9 +235,11 @@ class Bench:
     def create_tenant(self, index: int) -> str:
         name, volume = self.tenant(index)
         docker("volume", "create", *self.label(), volume)
-        docker("run", "--rm", "-u", "0", "--network", "none", "--cap-drop", "ALL", "--cap-add", "CHOWN", "-v", f"{volume}:/data",
+        if not self.owns("volume", volume):
+            raise RuntimeError("Refusing to seed a volume without this benchmark's ownership label")
+        docker("run", "--rm", "--name", f"{self.prefix}-chown{index}-{self.run_id}", *self.label(), "-u", "0", "--network", "none", "--cap-drop", "ALL", "--cap-add", "CHOWN", "-v", f"{volume}:/data",
                HELPER_IMAGE, "chown", "10001:10001", "/data")
-        docker("run", "--rm", "--network", "none", "-u", "10001:10001", "--read-only", "--cap-drop", "ALL",
+        docker("run", "--rm", "--name", f"{self.prefix}-seed{index}-{self.run_id}", *self.label(), "--network", "none", "-u", "10001:10001", "--read-only", "--cap-drop", "ALL",
                "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "-v", f"{volume}:/app/data",
                "-e", "WB_SAAS_IS_DEMO=1", "-e", "WB_SAAS_TENANT_SLUG=demo", "-e", "WB_SAAS_DATA_DIR=/app/data",  # the seeder only runs for slug demo
                "--entrypoint", "python3", "-w", "/app/tenant-app", self.args.image, "seed_demo_data.py", timeout=300)
@@ -254,7 +278,10 @@ class Bench:
     def admission(self, next_slug: str) -> dict:
         import docker as sdk
         from tenant_budget import CapacityExhausted, TenantBudget, parse_size
-        client = sdk.from_env()
+        if _LOCAL_ENDPOINT is None:
+            raise RuntimeError("Local engine guard must pass before admission measurement")
+        # Docker SDK does not interpret DOCKER_CONTEXT; use the same pinned engine as CLI.
+        client = sdk.DockerClient(base_url=_LOCAL_ENDPOINT)
         budget = TenantBudget()
         read_available = lambda: self.available_now() * MIB  # the VM's own MemAvailable, also before the first tenant exists
         need = parse_size(self.args.reservation)
@@ -390,7 +417,7 @@ class Bench:
     def available_now(self) -> int:
         if self.names:
             return vm_available_mib(self.names[0])
-        out = docker("run", "--rm", "--entrypoint", "cat", self.args.image, "/proc/meminfo")
+        out = docker("run", "--rm", "--name", f"{self.prefix}-memory-{uuid.uuid4().hex[:8]}", *self.label(), "--entrypoint", "cat", self.args.image, "/proc/meminfo")
         return next(int(line.split()[1]) // 1024 for line in out.splitlines() if line.startswith("MemAvailable:"))
 
     def can_start(self, extra: int) -> tuple[bool, dict]:
@@ -510,11 +537,21 @@ class Bench:
 
     def cleanup(self) -> None:
         ids = docker("ps", "-aq", "--filter", f"label={LABEL}={self.run_id}", check=False).split()
+        ids = [cid for cid in ids if self.owns("container", cid)]
         if ids:
             docker("rm", "-f", *ids, check=False, timeout=600)
         for volume in docker("volume", "ls", "-q", "--filter", f"label={LABEL}={self.run_id}", check=False).split():
-            docker("volume", "rm", "-f", volume, check=False)
-        docker("network", "rm", self.network, check=False)
+            if self.owns("volume", volume):
+                docker("volume", "rm", "-f", volume, check=False)
+        if self.owns("network", self.network):
+            docker("network", "rm", self.network, check=False)
+
+    def owns(self, kind: str, reference: str) -> bool:
+        labels = ".Config.Labels" if kind == "container" else ".Labels"
+        template = '{{.Name}} {{index ' + labels + ' "' + LABEL + '"}}'
+        metadata = docker(kind, "inspect", "--format", template, reference, check=False).split()
+        return (len(metadata) == 2 and metadata[0].lstrip("/").startswith(self.prefix + "-")
+                and metadata[1] == self.run_id)
 
 
 def main() -> int:
