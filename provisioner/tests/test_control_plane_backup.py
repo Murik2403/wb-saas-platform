@@ -42,8 +42,10 @@ def test_control_plane_backup_mounts_only_resolved_gateway_volume(tmp_path, monk
 
     assert result["archive"].endswith(".tar.gz.enc")
     run_kwargs = client.containers.run.call_args.kwargs
+    # rw on purpose: a reader of a WAL database updates the shared -shm; the helper opens databases read-only
     assert run_kwargs["volumes"] == {
-        "project_gateway_data": {"bind": "/data", "mode": "ro"},
+        "project_gateway_data": {"bind": "/data", "mode": "rw"},
         "/host/backups": {"bind": "/backup", "mode": "rw"},
     }
-    assert run_kwargs["command"][2].startswith("/backup/control-plane/.")
+    assert run_kwargs["command"][0] == "/data"
+    assert run_kwargs["command"][1].startswith("/backup/control-plane/.")

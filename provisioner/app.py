@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hmac
 import os
+import shutil
 import json
+import logging
 import re
 import sqlite3
 import tarfile
@@ -74,6 +76,10 @@ TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "http-resolver")
 BACKUP_DIR = os.environ.get("WB_SAAS_BACKUP_DIR", "/opt/wb-saas/backups")
 BACKUP_MOUNT = Path("/backups")
 BACKUP_HELPER_IMAGE = "alpine:3.20"
+# Volume snapshots need Python with sqlite3 (the online backup API), which alpine lacks: the tenant image, already on
+# the host because tenants run from it, is the default. Override only with another image that has python and sqlite3.
+BACKUP_SNAPSHOT_IMAGE = os.environ.get("WB_SAAS_BACKUP_SNAPSHOT_IMAGE", "").strip()
+_BACKUP_SNAPSHOT_SOURCE = Path(__file__).with_name("backup_snapshot.py")
 BACKUP_ENCRYPTION_KEY = os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY", "")
 BACKUP_KEY_ID = validate_key_id(os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEY_ID", DEFAULT_KEY_ID))
 BACKUP_KEYRING = parse_keyring(os.environ.get("WB_SAAS_BACKUP_ENCRYPTION_KEYRING", ""))
@@ -581,6 +587,7 @@ def _cleanup_stale_backup_partials():
                 for path in directory.glob(pattern):
                     if not path.is_symlink() and path.is_file() and path.stat().st_mtime<time.time()-3600:
                         path.unlink();removed+=1
+            _remove_stale_stage_dirs(directory)
         except OSError:continue  # Independent freshness watchdog reports inaccessible/missing groups.
     return removed
 
@@ -602,8 +609,37 @@ def _prepare_backup_directory(client, backup_group):
             except Exception:pass
 
 
+_STAGE_NAME = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,31}-\d{8}_\d{6}_\d{6}-[0-9a-f]{12}\.stage$")
+
+
+def _remove_stale_stage_dirs(directory: Path) -> None:
+    """Remove only this module's own abandoned staging directories (``.<stem>.stage``), never anything else."""
+    for stage in directory.glob(".*.stage"):
+        try:
+            if not _STAGE_NAME.fullmatch(stage.name):
+                continue
+            if stage.is_dir() and not stage.is_symlink() and stage.stat().st_mtime < time.time() - 3600:
+                shutil.rmtree(stage, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _snapshot_helper_log(helper: Any) -> str:
+    try:
+        raw = helper.logs(tail=5)
+        return (raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)).strip()[-500:]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: Any) -> dict[str, str | int]:
-    """Archive one fixed Docker volume to an encrypted archive namespace."""
+    """Archive one fixed Docker volume, as a consistent snapshot, to an encrypted archive namespace.
+
+    The helper (``backup_snapshot.py`` in the tenant image) copies every SQLite database through SQLite's online
+    backup API and everything else as a point-in-time copy; the tenant keeps running. The volume is mounted
+    read-write on purpose: a reader of a WAL database must update the shared -shm lock file, and the helper opens
+    databases read-only so it never checkpoints or writes pages.
+    """
     if not BACKUP_ENCRYPTION_KEY:
         raise HTTPException(status_code=503, detail="WB_SAAS_BACKUP_ENCRYPTION_KEY is not configured")
     if not 1<=keep_days<=3650:raise HTTPException(status_code=422,detail='Invalid backup retention')
@@ -616,10 +652,12 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
     for partial in backup_dir.glob('.*.partial'):
         if partial.is_file() and not partial.is_symlink() and partial.stat().st_mtime<time.time()-3600:
             partial.unlink()
+    _remove_stale_stage_dirs(backup_dir)
     import uuid
     stem = f"{backup_group}-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}-{uuid.uuid4().hex[:12]}"
     archive_name = f"{stem}.tar.gz.enc"
     plain_name = f".{stem}.tar.gz.partial"
+    stage_name = f".{stem}.stage"
     plain_path = backup_dir / plain_name
     archive_path = backup_dir / archive_name
     helper=None
@@ -627,11 +665,12 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
         descriptor=os.open(plain_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         os.close(descriptor)
         helper=client.containers.run(
-            BACKUP_HELPER_IMAGE,
+            BACKUP_SNAPSHOT_IMAGE or TENANT_IMAGE,
             user="10001:10001",
-            command=["tar", "czf", f"/backup/{backup_group}/{plain_name}", "-C", "/data", "."],
+            entrypoint=["python", "-I", "-B", "-c", _BACKUP_SNAPSHOT_SOURCE.read_text(encoding="utf-8")],
+            command=["/data", f"/backup/{backup_group}/{plain_name}", f"/backup/{backup_group}/{stage_name}"],
             volumes={
-                volume_name: {"bind": "/data", "mode": "ro"},
+                volume_name: {"bind": "/data", "mode": "rw"},
                 BACKUP_DIR: {"bind": "/backup", "mode": "rw"},
             },
             detach=True,
@@ -640,21 +679,25 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
             security_opt=["no-new-privileges:true"],
             cap_drop=["ALL"],
             read_only=True,
+            mem_limit="512m",
             tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
         )
         outcome=helper.wait(timeout=240)
         if not isinstance(outcome,dict) or outcome.get('StatusCode')!=0:
-            raise RuntimeError('Archive helper did not complete successfully')
+            raise RuntimeError('Archive helper did not complete successfully: '+_snapshot_helper_log(helper))
         _encrypt_backup(plain_path, archive_path)
     except Exception as exc:
         plain_path.unlink(missing_ok=True)
         archive_path.unlink(missing_ok=True)
+        shutil.rmtree(backup_dir / stage_name, ignore_errors=True)
+        logging.getLogger("wb_saas_provisioner.backup").error("Backup of %s failed: %s", backup_group, exc)
         raise HTTPException(status_code=502, detail="Docker backup failed; partial files removed") from exc
     finally:
         if helper is not None:
             try:helper.remove(force=True)
             except Exception:pass
     plain_path.unlink(missing_ok=True)
+    shutil.rmtree(backup_dir / stage_name, ignore_errors=True)
     return {"archive": archive_name, "pruned": _prune_old_backups(backup_group, keep_days)}
 
 
