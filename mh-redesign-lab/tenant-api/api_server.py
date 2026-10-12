@@ -3101,13 +3101,26 @@ def get_dashboard_assistant() -> dict:
 def get_data_quality_control() -> dict:
     settings = load_settings()
     sync_info = last_sync() or {}
-    quality, summary, reliability, _cost_quality = build_data_quality_overview(
-        settings, bool(get_token()), sync_info, latest_backup()
-    )
+    token_available = bool(get_token())
+    backup_info = latest_backup()
+    # Serialize the complete request's large frames through DashboardWorkGuard.
+    # Cache compact diagnostic presentation for the existing 20-second window;
+    # the operational fifo_guard below always recomputes permissions/history.
+    # Diagnostic FIFO check text may lag that guard by this window.
+    # Settings/sync/backup changes also
+    # select a new entry, including changes made by the background worker.
+    basis = json.dumps(json_safe({"settings": settings, "token": token_available,
+                                 "sync": sync_info, "backup": backup_info}), sort_keys=True)
+    def build_overview():
+        quality, summary, reliability, _cost_quality = build_data_quality_overview(
+            settings, token_available, sync_info, backup_info
+        )
+        return json_safe({"summary": summary, "checks": _records(quality), "reliability": _records(reliability)})
+    overview = _dashboard_response("control:data-quality:" + hashlib.sha256(basis.encode()).hexdigest(), build_overview)
     guard = finished_goods_fifo_guard_status(
         str(sync_info.get("finished_at") or sync_info.get("started_at") or "")
     )
-    return json_safe({"summary": summary, "checks": _records(quality), "reliability": _records(reliability), "fifo_guard": guard})
+    return {**overview, "fifo_guard": json_safe(guard)}
 
 
 @app.get("/api/v1/operations/backups")

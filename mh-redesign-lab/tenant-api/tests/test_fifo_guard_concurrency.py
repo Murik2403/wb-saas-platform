@@ -32,6 +32,14 @@ def guard_db(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "last_sync", lambda: {"finished_at": "2026-10-13T12:00:00"})
     monkeypatch.setattr(api, "latest_backup", lambda: None)
     monkeypatch.setattr(api, "build_data_quality_overview", lambda *a: (pd.DataFrame(), {}, pd.DataFrame(), {}))
+    # A single worker's heap lease now serializes this heavy endpoint. Bypass
+    # ONLY that lease here to reproduce separate workers/processes sharing
+    # SQLite; the real route, auth middleware, SQL and WAL snapshots remain.
+    import dashboard_work_guard
+    actual_guarded = dashboard_work_guard.guarded_request
+    monkeypatch.setattr(dashboard_work_guard, "guarded_request", lambda scope:
+                        False if scope.get("path") == "/api/v1/control/data-quality"
+                        else actual_guarded(scope))
     return path
 
 
