@@ -14,8 +14,12 @@ script needing an update to match. Tables are copied in FK-safe order (a
 table referenced by another table's FOREIGN KEY is always copied first) and
 each INSERT uses "ON CONFLICT (<primary key>) DO NOTHING", so re-running
 this against a Postgres database that already has some of the rows is a
-no-op for those rows rather than a duplicate-key error -- safe to re-run if
-it's interrupted partway through.
+no-op only when the existing content is identical. The entire source is
+read under one SQLite snapshot; destination tables are locked and their
+full row multisets are checked before commit. Conflicts or unexpected rows
+roll back the transfer. Keyless tables must be empty or exactly identical.
+Run only against an offline destination and stop source writers for cutover;
+this does not synchronize changes made after the source snapshot.
 
 Requires `psycopg[binary]` (in gateway/requirements.txt already) and must
 run with the SAME sys.path setup as the other
@@ -33,13 +37,17 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gateway"))
 
 import config  # noqa: E402
 from logic import db as control_db  # noqa: E402
+
+
+def _sqlite_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
 
 
 def _topo_sorted_tables(sqlite_conn: sqlite3.Connection) -> list[str]:
@@ -53,7 +61,7 @@ def _topo_sorted_tables(sqlite_conn: sqlite3.Connection) -> list[str]:
     # depends_on[t] = set of tables t has a FOREIGN KEY into.
     depends_on: dict[str, set[str]] = defaultdict(set)
     for t in tables:
-        cur.execute(f"PRAGMA foreign_key_list('{t}')")
+        cur.execute(f"PRAGMA foreign_key_list({_sqlite_identifier(t)})")
         for fk in cur.fetchall():
             ref_table = fk[2]
             if ref_table in tables and ref_table != t:
@@ -76,13 +84,42 @@ def _topo_sorted_tables(sqlite_conn: sqlite3.Connection) -> list[str]:
                 queue.append(child)
 
     if len(ordered) != len(tables):
-        print(
-            "warning: FK cycle detected among control-plane tables; "
-            "falling back to sqlite_master's declaration order",
-            file=sys.stderr,
-        )
-        return tables
+        raise ValueError("Migration verification failed: cyclic table dependencies")
     return ordered
+
+
+def _rows_equal(source_rows, target_rows) -> bool:
+    # Multisets retain duplicate counts in keyless tables; no values printed.
+    def normalized(rows):
+        return Counter(tuple(bytes(v) if isinstance(v, memoryview) else v for v in row) for row in rows)
+    return normalized(source_rows) == normalized(target_rows)
+
+
+def _advance_sequences(pg_conn, table: str, columns: list[str]) -> None:
+    """Identity imports preserve IDs and leave future generated IDs collision-free.
+
+    ALTER SEQUENCE is transactional (unlike setval). Never move its position
+    backwards on an exact re-run, including IDs of previously deleted rows.
+    """
+    from psycopg import sql
+    for column in columns:
+        sequence = pg_conn.execute("SELECT pg_get_serial_sequence(%s, %s)",
+                                   (_sqlite_identifier(table), column)).fetchone()[0]
+        if not sequence:
+            continue
+        namespace, name, start, increment, last = pg_conn.execute(
+            "SELECT n.nspname,c.relname,s.seqstart,s.seqincrement,pg_sequence_last_value(c.oid) "
+            "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "JOIN pg_sequence s ON s.seqrelid=c.oid WHERE c.oid=%s::regclass", (sequence,)
+        ).fetchone()
+        if increment <= 0:
+            raise ValueError("Migration verification failed: unsupported descending sequence")
+        largest = pg_conn.execute(sql.SQL("SELECT MAX({}) FROM {}").format(
+            sql.Identifier(column), sql.Identifier(table))).fetchone()[0]
+        next_id = max(start, (last + increment) if last is not None else start,
+                      (largest + increment) if largest is not None else start)
+        pg_conn.execute(sql.SQL("ALTER SEQUENCE {} RESTART WITH {}").format(
+            sql.Identifier(namespace, name), sql.Literal(next_id)))
 
 
 def migrate(sqlite_path: Path, pg_dsn: str) -> None:
@@ -95,25 +132,39 @@ def migrate(sqlite_path: Path, pg_dsn: str) -> None:
             "inside the gateway container first (see DEPLOY.md)."
         ) from exc
 
-    sqlite_conn = sqlite3.connect(sqlite_path)
+    sqlite_path = sqlite_path.resolve(strict=True)
+    sqlite_conn = sqlite3.connect(sqlite_path.as_uri() + "?mode=ro", uri=True)
     sqlite_conn.row_factory = sqlite3.Row
     try:
+        sqlite_conn.execute("BEGIN")
         tables = _topo_sorted_tables(sqlite_conn)
+        if not tables:
+            raise ValueError("Migration verification failed: source has no tables")
         summary: dict[str, int] = {}
 
         with psycopg.connect(pg_dsn) as pg_conn:
             with pg_conn.transaction():
+                pg_conn.execute("SET LOCAL lock_timeout='10s'")
+                pg_conn.execute(sql.SQL("LOCK TABLE {} IN ACCESS EXCLUSIVE MODE").format(
+                    sql.SQL(", ").join(sql.Identifier(t) for t in sorted(tables))))
                 for table in tables:
-                    columns_info = sqlite_conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+                    columns_info = sqlite_conn.execute(f"PRAGMA table_info({_sqlite_identifier(table)})").fetchall()
                     col_names = [c["name"] for c in columns_info]
                     pk_cols = [c["name"] for c in sorted((c for c in columns_info if c["pk"] > 0), key=lambda c: c["pk"])]
 
-                    rows = sqlite_conn.execute(f'SELECT * FROM "{table}"').fetchall()
+                    rows = sqlite_conn.execute(f'SELECT * FROM {_sqlite_identifier(table)}').fetchall()
                     summary[table] = len(rows)
-                    if not rows:
-                        continue
+                    select_stmt = sql.SQL("SELECT {cols} FROM {table}").format(
+                        cols=sql.SQL(", ").join(sql.Identifier(c) for c in col_names),
+                        table=sql.Identifier(table))
+                    if not pk_cols:
+                        existing = pg_conn.execute(select_stmt).fetchall()
+                        if existing:
+                            if not _rows_equal(rows, existing):
+                                raise ValueError(f"Migration verification failed for table {table!r}")
+                            continue
 
-                    insert_stmt = sql.SQL("INSERT INTO {table} ({cols}) VALUES ({placeholders}){conflict}").format(
+                    insert_stmt = sql.SQL("INSERT INTO {table} ({cols}) OVERRIDING SYSTEM VALUE VALUES ({placeholders}){conflict}").format(
                         table=sql.Identifier(table),
                         cols=sql.SQL(", ").join(sql.Identifier(c) for c in col_names),
                         placeholders=sql.SQL(", ").join(sql.Placeholder() * len(col_names)),
@@ -127,10 +178,28 @@ def migrate(sqlite_path: Path, pg_dsn: str) -> None:
                     )
                     with pg_conn.cursor() as cur:
                         cur.executemany(insert_stmt, [tuple(row) for row in rows])
+                    if not _rows_equal(rows, pg_conn.execute(select_stmt).fetchall()):
+                        raise ValueError(f"Migration verification failed for table {table!r}")
+                for table in tables:
+                    columns = [c["name"] for c in sqlite_conn.execute(
+                        f"PRAGMA table_info({_sqlite_identifier(table)})").fetchall()]
+                    _advance_sequences(pg_conn, table, columns)
+                # Later table / sequence DDL triggers can change earlier rows.
+                # Flush deferred triggers, then verify after ALL mutations.
+                pg_conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+                for table in tables:
+                    columns = [c["name"] for c in sqlite_conn.execute(
+                        f"PRAGMA table_info({_sqlite_identifier(table)})").fetchall()]
+                    rows = sqlite_conn.execute(f"SELECT * FROM {_sqlite_identifier(table)}").fetchall()
+                    actual = pg_conn.execute(sql.SQL("SELECT {} FROM {}").format(
+                        sql.SQL(", ").join(sql.Identifier(c) for c in columns),
+                        sql.Identifier(table))).fetchall()
+                    if not _rows_equal(rows, actual):
+                        raise ValueError(f"Migration verification failed for table {table!r}")
     finally:
         sqlite_conn.close()
 
-    print("\nMigration complete:")
+    print("\nMigration complete: destination row counts and contents verified.")
     for table, count in summary.items():
         print(f"  {table:<28} {count} row(s)")
 
@@ -155,7 +224,12 @@ def main() -> None:
     if not args.pg_dsn:
         raise SystemExit("No Postgres DSN given (pass --pg-dsn or set WB_SAAS_DATABASE_URL)")
 
-    migrate(args.sqlite_path, args.pg_dsn)
+    try:
+        migrate(args.sqlite_path, args.pg_dsn)
+    except Exception as exc:
+        # Driver errors can contain row values, connection credentials or
+        # provider tokens. Operators get a safe failure, never a partial success.
+        raise SystemExit(f"Migration failed ({type(exc).__name__}); transaction rolled back, no verified cutover.") from None
 
 
 if __name__ == "__main__":

@@ -627,14 +627,36 @@ SQLite внутри собственного контейнера) работа�
    в `.env` на сервере (без дефолта, в отличие от user/db — секрет).
 2. Драйвер `psycopg[binary]` уже в `gateway/requirements.txt` — отдельно
    ставить не нужно, попадает в образ при обычной пересборке.
-3. Задать `WB_SAAS_DB_BACKEND=postgres` и `WB_SAAS_DATABASE_URL=postgresql://wbsaas:<пароль>@postgres:5432/wbsaas`,
-   пересоздать гейтвей (`docker compose up -d --build gateway`) — это создаст
-   пустую схему на Postgres через `db.init_db()`.
-4. Перенести накопленные данные: `docker compose exec -e PYTHONPATH=/app gateway
-   python3 /app/scripts/migrate_sqlite_to_postgres.py` — переливает все 6
-   таблиц из старого SQLite-файла построчно (интроспекция схемы, без
-   хардкода списка таблиц/колонок), безопасно перезапускать (`ON CONFLICT
-   DO NOTHING` по первичному ключу).
+3. Выделить окно обслуживания и остановить записи source/destination,
+   включая фоновые billing-задачи. Сделать и независимо восстановить
+   зашифрованную копию SQLite. **Не переключать публичный gateway на пустую
+   PostgreSQL:** прежний порядок временно скрывал действующие аккаунты.
+   Схему создать через `db.init_db()` в отдельном одноразовом контейнере
+   из закоммиченного образа, без HTTP/background jobs. Настройки PostgreSQL
+   передать через защищённый env-файл, не через командную строку или логи.
+4. В том же операторском offline-контуре запустить
+   `PYTHONPATH=/app python3 /app/scripts/migrate_sqlite_to_postgres.py
+   --sqlite-path /точный/путь/к/gateway.sqlite3` с `WB_SAAS_DATABASE_URL`
+   целевой БД в защищённом окружении. Список таблиц/колонок определяется
+   из схемы. Скрипт держит read-only snapshot источника и блокирует таблицы
+   назначения; сверяет количество **и содержимое** всех строк до commit.
+   Расхождение, пропуск или лишняя строка откатывают перенос. Для таблиц
+   без PK повтор разрешён только при полном совпадении, включая дубликаты;
+   существующие несовпадающие данные автоматически не удаляются.
+   ID сохраняются, sequence обновляются транзакционно для новых записей.
+5. Только после успешной сверки переключить `WB_SAAS_DB_BACKEND=postgres`
+   и `WB_SAAS_DATABASE_URL` в защищённой конфигурации и выполнить обычную
+   проверенную выкладку gateway. Проверить прежний вход, членство, оплату,
+   записи новых ID и health. Исходный SQLite сохранить. Snapshot не
+   переносит записи, сделанные позже: возобновлять writers только после
+   cutover. После новых записей в PostgreSQL простой возврат к старому
+   SQLite потеряет их; такой откат требует отдельной сверки данных.
+
+Регрессии миграции: `python -m pytest scripts/tests/test_migrate_sqlite_to_postgres.py -q`
+с gateway locked dependencies и локальным Docker/PostgreSQL. Identity import
+использует [OVERRIDING SYSTEM VALUE](https://www.postgresql.org/docs/16/sql-insert.html),
+а sequence — транзакционный [ALTER SEQUENCE RESTART](https://www.postgresql.org/docs/16/sql-altersequence.html).
+Эта инструкция не означает, что production уже переведён на PostgreSQL.
 
 Весь остальной код (`logic/accounts.py`, `logic/billing.py`,
 `logic/password_reset.py`) написан на переносимом SQL (`?`-плейсхолдеры,
