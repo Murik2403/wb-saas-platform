@@ -6,7 +6,7 @@
 - `app.json` — единственное место для appId, appName, URL входа, User-Agent суффикса и списка разрешённых доменов (читается `capacitor.config.ts`).
 - `capacitor.config.ts` — `server.url`, `allowNavigation`, `cleartext: false`, `errorPath: index.html`, splash/status bar/keyboard.
 - `www/index.html` — офлайн-экран «Нет соединения» (кнопка «Повторить», тёмная/светлая тема). Показывается при ошибке загрузки `server.url`.
-- `src/shell.ts` -> `www/shell.js` — хуки: внешние ссылки в системном браузере, Android back, deep links (`/verify-email*`, `/reset-password*`, `/team/accept*`), status bar по теме, splash.
+- `src/remote-shell.js` -> `www/remote-shell.js` — хуки: внешние ссылки в системном браузере, Android back, deep links (`/verify-email*`, `/reset-password*`, `/team/accept*`), status bar по теме, splash.
 - `assets/` — исходники иконок и заставки; `scripts/make-assets.mjs` строит их из `mh-redesign-lab/public/icons/marketshelper.svg`.
 - `android/`, `ios/` — сгенерированные нативные проекты (иконки и заставки уже сгенерированы).
 - `store/` — материалы для сторов и скриншоты, `store/checklist.md` — путь до публикации.
@@ -16,7 +16,7 @@
 cd mobile
 npm install
 npm run typecheck      # tsc --noEmit
-npm run build          # src/shell.ts -> www/shell.js
+npm run build          # src/remote-shell.js -> www/remote-shell.js
 npx cap doctor
 ```
 
@@ -37,6 +37,20 @@ cd android && ./gradlew assembleDebug
 - `mh-redesign-lab/public/app-shell.js`: подключён в `mh-redesign-lab/index.html`; тесты в `src/app-shell-remote.test.ts`.
 
 После правки `src/remote-shell.js` скопируйте файл в оба места.
+
+## Настройка ссылок приложения в gateway
+
+В серверном `.env` задаются три необязательных значения, передаваемых в gateway через `docker-compose.yml`:
+
+- `WB_SAAS_ANDROID_PACKAGE` — фактический applicationId Android.
+- `WB_SAAS_ANDROID_SHA256` — SHA-256 сертификатов подписи, несколько отпечатков через запятую. Для приложения из Google Play нужен сертификат App Signing из Play Console; upload-сертификат сам по себе не подтверждает установленную Play-сборку.
+- `WB_SAAS_IOS_APP_ID` — фактический `<ApplicationIdentifierPrefix>.<BundleIdentifier>` из подписанного приложения Apple Developer/Xcode; для обычной новой настройки префикс — Team ID.
+
+Пока сертификаты/Team ID не предоставлены, оставьте значения пустыми. Gateway отдаёт пустые association-файлы; это не подтверждение работающих App Links/Universal Links. После заполнения нужна штатная проверенная пересборка конфигурации и пересоздание gateway: простое изменение `.env` не меняет environment уже работающего контейнера. Сам tenant и Traefik из-за этих значений пересоздавать не требуется.
+
+Проверка: `/.well-known/assetlinks.json` и `/.well-known/apple-app-site-association`, затем переход по ссылке на реальном подписанном приложении. Debug APK и production Play-сборка могут иметь разные сертификаты. Ключи подписи и пароли в Git не добавляются.
+
+AASA использует совместимый формат `appID` + `paths`, без смешивания с современным `appIDs` + `components`. Источники: [Apple TN3155](https://developer.apple.com/documentation/technotes/tn3155-debugging-universal-links/), [Google Play App Signing](https://support.google.com/googleplay/android-developer/answer/9842756).
 
 ## Смена appId
 1. Поменять `appId` в `app.json`.

@@ -319,7 +319,7 @@ def assetlinks_json() -> JSONResponse:
 def apple_app_site_association() -> JSONResponse:
     details = []
     if config.IOS_APP_ID:
-        details = [{"appIDs": [config.IOS_APP_ID], "paths": ["/verify-email*", "/reset-password*", "/team/accept*"]}]
+        details = [{"appID": config.IOS_APP_ID, "paths": ["/verify-email*", "/reset-password*", "/team/accept*"]}]
     return JSONResponse({"applinks": {"apps": [], "details": details}})
 
 

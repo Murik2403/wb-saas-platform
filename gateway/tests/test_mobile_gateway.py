@@ -96,7 +96,8 @@ class AppLinkFileTests(GatewayDbTestCase):
             self.assertEqual(target["package_name"], "ru.marketshelper.app")
             self.assertEqual(target["sha256_cert_fingerprints"], ["AA:BB", "CC:DD"])
             detail = self.client.get("/.well-known/apple-app-site-association").json()["applinks"]["details"][0]
-            self.assertEqual(detail["appIDs"], ["TEAM123.ru.marketshelper.app"])
+            self.assertEqual(detail["appID"], "TEAM123.ru.marketshelper.app")
+            self.assertNotIn("appIDs", detail)
             self.assertIn("/team/accept*", detail["paths"])
 
 

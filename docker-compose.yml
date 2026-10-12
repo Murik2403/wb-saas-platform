@@ -240,6 +240,10 @@ services:
       - WB_SAAS_YANDEX_METRIKA_ID=${WB_SAAS_YANDEX_METRIKA_ID:-}
       - WB_SAAS_YANDEX_VERIFICATION=${WB_SAAS_YANDEX_VERIFICATION:-}
       - WB_SAAS_GOOGLE_VERIFICATION=${WB_SAAS_GOOGLE_VERIFICATION:-}
+      # Public app association identifiers; keep empty until real signing data exists.
+      - WB_SAAS_ANDROID_PACKAGE=${WB_SAAS_ANDROID_PACKAGE:-}
+      - WB_SAAS_ANDROID_SHA256=${WB_SAAS_ANDROID_SHA256:-}
+      - WB_SAAS_IOS_APP_ID=${WB_SAAS_IOS_APP_ID:-}
       - WB_SAAS_FORWARD_AUTH_MIDDLEWARE=wb-saas-auth@file
       - WB_SAAS_TLS_CERT_RESOLVER=letsencrypt
       # Billing (logic/billing.py, yookassa_client.py) -- previously missing
