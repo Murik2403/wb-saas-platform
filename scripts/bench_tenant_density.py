@@ -79,7 +79,7 @@ import json, sys, time, urllib.request, urllib.error, threading
 targets, paths, rounds = json.loads(sys.argv[1]), json.loads(sys.argv[2]), int(sys.argv[3])
 results = {}
 def hit(host):
-    stats = {"ok": 0, "err": 0, "absent": 0, "ms": []}
+    stats = {"ok": 0, "err": 0, "absent": 0, "ms": [], "codes": {}}
     for _ in range(rounds):
         for path in paths:
             started = time.perf_counter()
@@ -89,7 +89,8 @@ def hit(host):
                     response.read()
                 stats["ok"] += 1
             except urllib.error.HTTPError as exc:
-                stats["absent" if exc.code == 404 else "err"] += 1  # 404 = optional source not in the demo data, not a failure
+                stats["absent" if exc.code < 500 else "err"] += 1  # 4xx = a business answer of the demo data (not connected, missing parameter); only 5xx/no answer is a failure
+                stats["codes"][f"{exc.code} {path}"] = stats["codes"].get(f"{exc.code} {path}", 0) + 1
             except Exception:
                 stats["err"] += 1
             stats["ms"].append((time.perf_counter() - started) * 1000)
@@ -226,7 +227,7 @@ class Bench:
                 stop = threading.Event()
                 watcher = threading.Thread(target=self.watch_vm, args=(stop, floor, box), daemon=True)
                 watcher.start()
-                latencies, errors, total, absent = [], 0, 0, 0
+                latencies, errors, total, absent, codes = [], 0, 0, 0, {}
                 for offset in range(0, len(self.names), self.args.wave):
                     wave = self.names[offset: offset + self.args.wave]
                     if box.get("breached"):
@@ -238,12 +239,14 @@ class Bench:
                         errors += stats["err"]
                         total += stats["ok"] + stats["err"]
                         absent += stats["absent"]
+                        for code, count in stats["codes"].items():
+                            codes[code] = codes.get(code, 0) + count
                 stop.set()
                 watcher.join(timeout=5)
                 loaded = self.snapshot(f"{target} after load")
                 if latencies:
                     latencies.sort()
-                    loaded.update(requests=total, errors=errors, absent_optional=absent, p50_ms=round(latencies[len(latencies) // 2]),
+                    loaded.update(requests=total, errors=errors, refused_4xx=absent, http_errors=codes, p50_ms=round(latencies[len(latencies) // 2]),
                                   p95_ms=round(latencies[int(len(latencies) * 0.95) - 1]), max_ms=round(latencies[-1]))
                 loaded["vm_min_available_during_load_mib"] = box.get("min")
                 step["after_load"] = loaded
