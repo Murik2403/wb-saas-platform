@@ -33,3 +33,17 @@
 - Production signing / association fingerprints / store release, iOS/macOS/Xcode, Firebase/APNs и серверная регистрация push.
 
 Тест закрывает механизм CSV/XLSX export/share/cancel/resume в проверенной Android-конфигурации, не перечисленные внешние этапы.
+
+## Финальная проверка из коммита и runtime
+
+После исходной проверки сборка повторена из Git archive
+`2ec24942f39bcf526c98a4b607d191537346af73`: светлая тема **3 теста / 42,872 с**,
+тёмная **3 теста / 19,224 с**, все прошли. Проверены 155 неизменённых source files.
+Debug APK: 6 555 267 байт, SHA-256
+`ccf059da079ed07d4dacfda96df88795f97fbe161f02467710ffefe1592eedc5`.
+Акт: `deliveries/android-extended-20261013/final-2ec2494/final-proof.json`.
+
+Tenant frontend этого коммита выложен во все пять кабинетов и проверен по файлам,
+health и бизнес-GET: `deliveries/audit-gates-20261013/final-acceptance-proof.json`.
+Gateway/provisioner retained code `b13fa97`; сменился только будущий tenant pin.
+Production keystore, сторовая публикация и физическое устройство не заявляются.

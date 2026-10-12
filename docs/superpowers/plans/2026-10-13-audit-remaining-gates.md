@@ -21,37 +21,51 @@
 
 **Files:** `scripts/migrate_sqlite_to_postgres.py`, `scripts/tests/test_migrate_sqlite_to_postgres.py`, `DEPLOY.md`.
 
-- [ ] Reproduce false success on conflicting content, duplication without a primary key and identity-column import failure using a disposable local PostgreSQL.
-- [ ] Hold a read-only source snapshot; lock destination tables and verify full row multisets before committing. Reject divergent destinations atomically; permit exact repeat without duplication.
-- [ ] Preserve explicit identity values and advance their sequences for the first new row.
-- [ ] Run regressions and full scripts checks. Do not migrate production.
+- [x] Reproduce false success on conflicting content, duplication without a primary key and identity-column import failure using a disposable local PostgreSQL.
+- [x] Hold a read-only source snapshot; lock destination tables and verify full row multisets before committing. Reject divergent destinations atomically; permit exact repeat without duplication.
+- [x] Preserve explicit identity values and advance their sequences for the first new row.
+- [x] Run regressions and full scripts checks. Do not migrate production.
 
 ### Task 2: Restored application rehearsal (DR agent)
 
 **Files:** isolated rehearsal tooling and `docs/AUDIT_DR_APPLICATION_REHEARSAL_2026-10-13.md`.
 
-- [ ] Authenticate current S3 copies using owner-local keys; start independent gateway and tenant application candidates with no external network/jobs.
-- [ ] Verify restored DB integrity/content and application reads; prove source identities unchanged and clean owned plaintext candidates.
-- [ ] Record application recovery boundaries and remaining new-host/key-loss acceptance.
+- [x] Authenticate current S3 copies using owner-local keys; start independent gateway and tenant application candidates with no external network/jobs.
+- [x] Verify restored DB integrity/content and application reads; prove source identities unchanged and clean owned plaintext candidates of the successful run. Earlier debug folder cleanup was policy-rejected and is explicitly documented separately.
+- [x] Record application recovery boundaries and remaining new-host/key-loss acceptance.
 
 ### Task 3: Android extended acceptance (Android agent)
 
 **Files:** opt-in native instrumentation and `docs/AUDIT_ANDROID_EXTENDED_2026-10-13.md`.
 
-- [ ] Verify synthetic download bytes, native share cancellation and lifecycle on installed emulator in both themes.
-- [ ] Inspect physical-device availability read-only; retain owner signing/device/iOS boundaries.
+- [x] Verify synthetic download bytes, native share cancellation and lifecycle on installed emulator in both themes.
+- [x] Inspect physical-device availability read-only; retain owner signing/device/iOS boundaries.
 
 ### Task 4: Restart policy inspection (release agent)
 
 **Files:** `docs/AUDIT_RESTART_RECOVERY_2026-10-13.md` and isolated probe tooling if needed.
 
-- [ ] Inspect live policies/systemd without restarting production.
-- [ ] Demonstrate isolated local crash/restart behavior and explicitly leave host reboot untested.
+- [x] Inspect live policies/systemd without restarting production.
+- [x] Demonstrate isolated local crash/restart behavior and explicitly leave host reboot untested.
 
 ### Task 5: Consolidation (parent)
 
 **Files:** current audit status and Claude handoff.
 
-- [ ] Refresh live read-only health/revisions and existing completed release status.
-- [ ] Review agent diffs/results independently, update Graphify after code edits, commit scoped verified changes.
-- [ ] Deliver exact completed/open matrix and separate Claude load-benchmark work order.
+- [x] Refresh live read-only health/revisions and existing completed release status.
+- [x] Review agent diffs/results independently, update Graphify after code edits, commit scoped verified changes.
+- [x] Deliver exact completed/open matrix and separate Claude work order. Measured load handoff arrived during work; the next disjoint task is media recovery.
+
+### Scope amendment after measured density handoff
+
+Claude's `76472e3` was merged. Capacity acceptance 20–30 remains failed/unproven.
+The confirmed concurrent FIFO GET defect was fixed and regression-tested.
+Real restored-copy acceptance then found full data-quality timeout beyond 35 s;
+its request budget and overview coalescing were added in `09e414a`.
+
+Authorized runtime replacements supersede the inspection-only identity constraint
+for the explicit releases: same data mounts/keys/roles/networks/limits/restart
+policies, immutable committed source, encrypted backups and independent
+candidate/rollback restores. No host reboot, live stress or customer marketplace
+write is permitted. Claude's next disjoint task is 16-lesson media recovery,
+as recorded in `CLAUDE_AUDIT_HANDOFF_2026-10-13.md`.
