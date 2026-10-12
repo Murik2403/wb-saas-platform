@@ -1156,7 +1156,11 @@ def provisioning_status(request: Request):
         return RedirectResponse(f"{config.tenant_url(tenant['slug'])}?mh_goal=trial_started", status_code=303)
     status = tenant["status"] if tenant is not None else "provisioning"
     goals = ["trial_started"] if status == "trialing" else []
-    return templates.TemplateResponse(request, "provisioning.html", {"status": status, "analytics_goals": goals})
+    note = tenant["note"] if tenant is not None else ""
+    return templates.TemplateResponse(request, "provisioning.html", {
+        "status": status, "analytics_goals": goals,
+        "waiting_capacity": status == "provisioning" and note == accounts.TENANT_NOTE_WAITING_CAPACITY,
+        "no_capacity": status == "failed" and note == accounts.TENANT_NOTE_NO_CAPACITY})
 
 
 def _redirect_for_account(account) -> RedirectResponse:

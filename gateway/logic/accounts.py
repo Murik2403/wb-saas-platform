@@ -50,6 +50,9 @@ ACCOUNT_STATUSES = {"pending", "trialing", "active", "past_due", "canceled"}
 ACCESS_ALLOWED_STATUSES = {"trialing", "active", "past_due"}
 
 TENANT_STATUSES = {"provisioning", "running", "stopped", "failed"}
+# Machine markers kept in tenant_instances.note (not shown as text): why a cabinet is not up yet / did not come up.
+TENANT_NOTE_WAITING_CAPACITY = "waiting_capacity"
+TENANT_NOTE_NO_CAPACITY = "no_capacity"
 TENANT_ROLES = {"owner", "manager", "viewer", "technologist", "cutter", "seamstress", "warehouse"}
 TENANT_INVITATION_TTL_DAYS = 7
 
