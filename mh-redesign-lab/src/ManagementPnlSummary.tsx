@@ -23,9 +23,11 @@ export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setData(null);
     setPrevious(undefined);
     getManagementPnl(period, controller.signal)
       .then((result) => {
+        if (controller.signal.aborted) return;
         setData(result);
         setLoading(false);
         return getManagementPnl(period, controller.signal, true)
@@ -33,7 +35,10 @@ export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
           .catch(() => undefined); // deltas are optional: stay silent if they fail
       })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Не удалось загрузить управленческий результат");
+        if (!controller.signal.aborted) {
+          setData(null);
+          setError(reason instanceof Error ? reason.message : "Не удалось загрузить управленческий результат");
+        }
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -45,11 +50,11 @@ export function ManagementPnlSummary({ period }: { period: DashboardPeriod }) {
   return <section className="panel management-pnl-summary" aria-label="Управленческий результат всего магазина">
     <div className="section-header">
       <div><div className="eyebrow">P&amp;L · весь магазин</div><h2>Управленческий результат</h2></div>
-      {data?.data_status === "ok" ? <span className="status-pill good">расчёт готов</span> : null}
+      {data?.data_status === "ok" && !loading && !error ? <span className="status-pill good">расчёт готов</span> : null}
     </div>
     {loading ? <p className="form-hint">Считаем результат по выбранному периоду…</p> : null}
     {error ? <p className="operation-error" role="alert">{error}</p> : null}
-    {data && !loading ? <>
+    {data && !loading && !error ? <>
       {data.data_status === "no_financial_data" ? <p className="form-hint">Нет финансовых данных WB за выбранный период; ручные расходы не применены.</p> : data.data_status === "missing_store_profit" ? <p className="operation-error" role="alert">Не удалось рассчитать прибыль магазина по финансовому снимку. Управленческий результат не показан; проверьте данные периода и обновите отчёт.</p> : <>
         {previous !== undefined ? <p className="form-hint pnl-compare-note">{prev ? `Сравнение с предыдущим периодом той же длины: ${prev.period.start} — ${prev.period.end}.` : "За предыдущий период той же длины нет финансовых данных WB: сравнение не показано."}</p> : null}
         <div className="cash-grid management-pnl-metrics">

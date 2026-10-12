@@ -80,22 +80,32 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
             **_totals(pd.DataFrame(columns=_DETAIL_COLUMNS), include_nm_id=False),
         }
 
-    source = reconciliation.copy().reset_index(drop=True)
+    # These inputs are read-only. A Series per row (iterrows) costs more than
+    # the financial calculation itself for production-sized reporting windows.
+    # Resolve optional columns once and iterate their scalar values directly.
+    source = reconciliation
     ids = pd.to_numeric(source.get("rrd_id", pd.Series(index=source.index, dtype=float)), errors="coerce")
-    id_counts = ids.value_counts(dropna=False)
+    id_counts = ids.value_counts(dropna=False).to_dict()
+    column_positions = {name: index for index, name in enumerate(source.columns)}
+    positions = [column_positions.get(name) for name in (
+        "event_type", "nm_id", "units", "status", "reason",
+        "eligible_fifo_cogs_rub", "baseline_cogs_rub",
+    )]
     details: list[dict[str, Any]] = []
-    for index, row in source.iterrows():
-        event_type = str(row.get("event_type") or "").strip().casefold()
+    for source_id, row in zip(ids.to_numpy(), source.itertuples(index=False, name=None)):
+        kind, raw_nm, raw_quantity, raw_status, raw_reason, raw_exact, raw_baseline = (
+            row[position] if position is not None else None for position in positions
+        )
+        event_type = str(kind or "").strip().casefold()
         try:
-            nm_id = int(float(row.get("nm_id") or 0))
+            nm_id = int(float(raw_nm or 0))
         except (TypeError, ValueError, OverflowError):
             nm_id = 0
-        raw_units = _number(row.get("units"))
+        raw_units = _number(raw_quantity)
         units = max(0, int(abs(raw_units or 0))) if event_type in ("sale", "return") else 0
-        source_id = ids.iloc[index]
         valid_id = pd.notna(source_id) and int(source_id) > 0 and int(id_counts.get(source_id, 0)) == 1
-        status = str(row.get("status") or "").strip().casefold()
-        reason = str(row.get("reason") or "")
+        status = str(raw_status or "").strip().casefold()
+        reason = str(raw_reason or "")
         cogs = 0.0
         if event_type not in ("sale", "return") or status == "excluded":
             cogs_source = "excluded"
@@ -106,7 +116,7 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
             cogs_source = "insufficient"
             reason = reason or "financial_quantity_zero"
         elif status in {"exact","manual_source"}:
-            exact_value = _number(row.get("eligible_fifo_cogs_rub"))
+            exact_value = _number(raw_exact)
             expected_sign = 1 if event_type == "sale" else -1
             sign_is_valid = exact_value is not None and (exact_value >= 0 if event_type == "sale" else exact_value <= 0)
             if sign_is_valid:
@@ -115,7 +125,7 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
                 cogs_source = "insufficient"
                 reason = "exact_fifo_cost_missing_or_wrong_sign"
         else:
-            baseline = _number(row.get("baseline_cogs_rub"))
+            baseline = _number(raw_baseline)
             expected_sign = 1 if event_type == "sale" else -1
             if baseline is not None and baseline * expected_sign > 0:
                 cogs, cogs_source = baseline, "current_cost_estimate"

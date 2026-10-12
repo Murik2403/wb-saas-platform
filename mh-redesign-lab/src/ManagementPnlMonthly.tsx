@@ -116,16 +116,20 @@ export function ManagementPnlMonthly({ period, onOpenTaxSettings }: { period: Da
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setData(null);
     getManagementPnlMonthly(period, controller.signal)
-      .then((result) => setData(result))
+      .then((result) => { if (!controller.signal.aborted) setData(result); })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Не удалось загрузить ОПиУ по месяцам");
+        if (!controller.signal.aborted) {
+          setData(null);
+          setError(reason instanceof Error ? reason.message : "Не удалось загрузить ОПиУ по месяцам");
+        }
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [period.id, period.start, period.end]);
 
-  const ready = data && !loading && data.data_status === "ok" ? data : null;
+  const ready = data && !loading && !error && data.data_status === "ok" ? data : null;
   const showTotal = (ready?.months.length ?? 0) > 1;
   const flagged = ready?.months.some((m) => m.partial || m.data_incomplete) ?? false;
   return <section className="panel pnl-monthly" aria-label="ОПиУ по месяцам">
@@ -135,7 +139,7 @@ export function ManagementPnlMonthly({ period, onOpenTaxSettings }: { period: Da
     </div>
     {loading ? <p className="form-hint">Считаем ОПиУ по месяцам…</p> : null}
     {error ? <p className="operation-error" role="alert">{error}</p> : null}
-    {data && !loading && !ready ? <p className="form-hint">Нет финансовых данных WB за выбранный период.</p> : null}
+    {data && !loading && !error && !ready ? <p className="form-hint">Нет финансовых данных WB за выбранный период.</p> : null}
     {ready ? <>
       <div className="pnl-monthly-scroll">
         <table className="pnl-monthly-table">

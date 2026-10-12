@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -18,6 +19,56 @@ def row(rrd_id: int, nm_id: int, kind: str, units: int, status: str,
 
 
 class HistoricalCogsProjectionTests(unittest.TestCase):
+    def test_large_projection_does_not_construct_a_series_per_operation(self) -> None:
+        source = pd.DataFrame([
+            row(index + 1, 10, "sale", 1, "unmatched", None, 100.0)
+            for index in range(15000)
+        ])
+        original = source.copy(deep=True)
+        # Creating a Series for each operation dominated real report latency.
+        # Guard the hot path without a machine-dependent elapsed-time assertion.
+        with patch.object(pd.DataFrame, "iterrows", side_effect=AssertionError("per-operation Series allocation")):
+            detail, by_sku, store = project_historical_cogs(source)
+        self.assertEqual(len(detail), 15000)
+        self.assertEqual(store["cogs_rub"], 1500000.0)
+        self.assertEqual(store["estimated_units"], 15000)
+        self.assertEqual(by_sku.loc[0, "cogs_rub"], store["cogs_rub"])
+        pd.testing.assert_frame_equal(source, original)
+
+    def test_mixed_projection_preserves_signed_cost_and_manual_quality(self) -> None:
+        source = pd.DataFrame([
+            row("101", 10, " sale ", 2, "exact", 200.0, 900.0),
+            row("102", 10, "return", 1, "exact", -15.0, -900.0),
+            row("103", 10, "sale", 1, "manual_source", 40.0, 900.0),
+            row("104", 10, "sale", 1, "unmatched", None, 30.0),
+            row("105", 11, "return", 1, "exact", 12.0, -900.0),
+            row("106", 11, "sale", 1, "exact", 22.0, 30.0),
+            row("106", 11, "sale", 1, "exact", 22.0, 30.0),
+            row(None, 11, "sale", 1, "unmatched", None, 30.0),
+            row("108", 11, "", 9, "excluded", None, 0.0),
+        ], index=[91, 3, 77, 2, 8, 8, 20, 39, 5])
+        detail, by_sku, store = project_historical_cogs(source)
+        self.assertEqual(list(detail["cogs_rub"]), [200.0, -15.0, 40.0, 30.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.assertEqual(list(detail["cogs_source"]), [
+            "exact_fifo", "exact_fifo", "manual_source_fifo", "current_cost_estimate",
+            "insufficient", "insufficient", "insufficient", "insufficient", "excluded",
+        ])
+        self.assertEqual(store["cogs_rub"], 255.0)
+        self.assertEqual(store["exact_fifo_cogs_rub"], 185.0)
+        self.assertEqual(store["manual_source_cogs_rub"], 40.0)
+        self.assertEqual(store["current_cost_estimate_rub"], 30.0)
+        self.assertEqual((store["exact_units"], store["estimated_units"], store["insufficient_units"]), (3, 2, 4))
+        self.assertFalse(store["cogs_complete"])
+        self.assertEqual(list(by_sku["cogs_rub"]), [255.0, 0.0])
+
+    def test_missing_source_ids_and_optional_columns_stay_insufficient(self) -> None:
+        source = pd.DataFrame([{"nm_id": 10, "event_type": "sale", "units": 1, "baseline_cogs_rub": 50.0}])
+        detail, _, store = project_historical_cogs(source)
+        self.assertTrue(pd.isna(detail.loc[0, "rrd_id"]))
+        self.assertEqual(detail.loc[0, "reason"], "financial_rrd_id_missing_or_duplicate")
+        self.assertEqual(store["insufficient_units"], 1)
+        self.assertEqual(store["cogs_rub"], 0.0)
+
     def test_exact_multilayer_sale_uses_signed_fifo_cost_without_repricing(self) -> None:
         detail, by_sku, store = project_historical_cogs(pd.DataFrame([
             row(1, 10, "sale", 2, "exact", 100.0, 500.0),

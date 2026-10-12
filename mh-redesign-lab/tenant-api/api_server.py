@@ -1835,9 +1835,13 @@ def get_dashboard_finance(
         data = _build_dashboard_cached(window_start, window_end)
         f = data.financial or {}
         fifo_cogs = read_sales_fifo_cogs(window_start.isoformat(), window_end.isoformat())
-        fifo_reconciliation = summarize_financial_fifo_reconciliation(
-            read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat())
-        )
+        fifo_reconciliation = getattr(data, "financial_fifo_summary", None)
+        if fifo_reconciliation is None:
+            # Compatibility with injected/legacy snapshots; current snapshots
+            # already contain this compact diagnostic from the same FIFO read.
+            fifo_reconciliation = summarize_financial_fifo_reconciliation(
+                read_financial_fifo_reconciliation(window_start.isoformat(), window_end.isoformat())
+            )
         articles = [
             ("Разница: выкупы − к перечислению (справочно)", -f.get("sales_to_pay_gap", 0)),
             ("Эквайринг (уже учтён WB, справочно)", -f.get("acquiring", 0)),
@@ -3767,7 +3771,13 @@ def get_management_pnl_monthly(
     if window_end < window_start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
     try:
-        result = monthly_pnl(window_start, window_end)
+        # Cache only the compact WB result. Taxes are evaluated on a fresh
+        # copy below, so a settings edit cannot contaminate the stored base.
+        import copy
+        result = copy.deepcopy(_dashboard_response(
+            f"management-pnl-monthly:{id(monthly_pnl)}:{window_start}:{window_end}",
+            lambda: monthly_pnl(window_start, window_end),
+        ))
     except ValueError:
         raise HTTPException(status_code=422, detail="period_too_long")
     result["tax_estimates_enabled"] = _tax_estimates_enabled()

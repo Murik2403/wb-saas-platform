@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from db import read_table, read_financial
-from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation
+from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation, summarize_financial_fifo_reconciliation
 from db.historical_cogs import project_historical_cogs
 from financial_operations import financial_event_type, is_return_document, is_promotion_settlement
 
@@ -24,6 +24,7 @@ class DashboardData:
     financial_products: pd.DataFrame
     financial_unallocated: pd.DataFrame
     hourly: pd.DataFrame
+    financial_fifo_summary: dict | None = None
 
 
 def _money_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
@@ -406,6 +407,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         "allocation_basis": "выручке",
     }
     financial_products = pd.DataFrame()
+    financial_fifo_summary = summarize_financial_fifo_reconciliation(pd.DataFrame())
     financial_unallocated = pd.DataFrame()
     if not financial_df.empty:
         f = financial_df.copy()
@@ -528,6 +530,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # the former positive-net-units x current-cost formula, which lost FIFO
         # history and did not reverse COGS in the return's operation period.
         reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())
+        financial_fifo_summary = summarize_financial_fifo_reconciliation(reconciliation)
         financial['shared_fifo_manual_source_rows'] = int((reconciliation['reason']=='shared_fifo_manual_source').sum()) if not reconciliation.empty else 0
         financial['migration_manual_source_rows'] = int(reconciliation['reason'].str.startswith('migration_',na=False).sum()) if not reconciliation.empty else 0
         if financial['shared_fifo_manual_source_rows'] or financial['migration_manual_source_rows']:
@@ -905,4 +908,4 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             hourly = hourly.drop(columns=["revenue"]).merge(g, on="hour", how="left")
         hourly = hourly.fillna(0)
 
-    return DashboardData(kpi=kpi, daily=daily, products=products, ads=ads_summary, stocks=stock_summary, alerts=alerts, financial=financial, financial_products=financial_products, financial_unallocated=financial_unallocated, hourly=hourly)
+    return DashboardData(kpi=kpi, daily=daily, products=products, ads=ads_summary, stocks=stock_summary, alerts=alerts, financial=financial, financial_products=financial_products, financial_unallocated=financial_unallocated, hourly=hourly, financial_fifo_summary=financial_fifo_summary)
