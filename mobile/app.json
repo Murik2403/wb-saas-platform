@@ -3,5 +3,5 @@
   "appName": "MARKETSHELPER",
   "loginUrl": "https://marketshelper.ru/login",
   "userAgentSuffix": "MarketsHelperApp/1.0",
-  "allowNavigation": ["marketshelper.ru", "*.marketshelper.ru", "*.app.marketshelper.ru"]
+  "allowNavigation": ["marketshelper.ru", "*.app.marketshelper.ru"]
 }

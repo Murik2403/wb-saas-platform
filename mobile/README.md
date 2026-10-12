@@ -82,3 +82,21 @@ cd ../mobile && node scripts/store-shots.mjs
 ## Нативные доработки, не сделанные автоматически
 - iOS: Associated Domains, Push capability, `ITSAppUsesNonExemptEncryption` — в Xcode (см. `store/checklist.md`).
 - Подпись релиза Android — своим keystore (`store/checklist.md`), секреты только через переменные и локальные файлы.
+
+## Приёмка Android на эмуляторе
+
+Нужны JDK 21, Android SDK API 36 и запущенное Android-устройство/AVD. После `npm run build` и `npx cap sync android`:
+
+```bash
+cd android
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w -r -e auditRemote true -e class ru.marketshelper.app.RuntimeAuditTest ru.marketshelper.app.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+На Windows используйте `gradlew.bat`. Инструментальный тест включается только аргументом `auditRemote true`: он читает публичные страницы сайта/демо, проверяет нативный bridge после перехода на домен кабинета, системный Back, запись/чтение синтетического файла в cache, Browser, локальный экран ошибки и восстановление сети. Учётные данные и отправка файлов получателю не используются.
+
+`MainActivity` дополнительно регистрирует bridge на `https://*.app.marketshelper.ru` и локальном `https://localhost`: Capacitor 8.5.3 регистрирует DOCUMENT_START_SCRIPT только для начального домена входа. На произвольные сайты bridge не устанавливается; отрицательная проверка входит в тест. Новый APK после этой правки обязателен: обновление сайта не меняет нативную оболочку.
+
+`server.url` должен содержать только origin. Путь входа задаётся через `server.appStartPath`; иначе AndroidX отклоняет origin rules, а Capacitor переходит на небезопасный глобальный JavaScript interface. Тест проверяет отсутствие на недоверенном origin как JS facade, так и raw `androidBridge`.
