@@ -807,9 +807,32 @@ def finished_goods_fifo_guard_status(
     small_limit_units: int = 50,
 ) -> dict[str, Any]:
     """Classify FIFO drift and protect WB layers from unsafe automatic write-offs."""
+    # Historical valuation starts a DEFERRED read snapshot. Never promote that
+    # snapshot to a writer: concurrent readers otherwise fail immediately with
+    # SQLITE_BUSY_SNAPSHOT, regardless of the connection busy timeout.
+    for _ in range(32):
+        state = _finished_goods_fifo_guard_attempt(
+            sync_finished_at, persistent_minutes=persistent_minutes,
+            persistent_cycles=persistent_cycles, small_limit_units=small_limit_units,
+        )
+        if state is not None:
+            return state
+    # Continuous basis changes must not turn into a fabricated successful or
+    # permissive guard result. The caller can retry after the writer settles.
+    raise sqlite3.OperationalError("FIFO guard observation changed during concurrent writes")
+
+
+def _finished_goods_fifo_guard_attempt(
+    sync_finished_at: str,
+    *,
+    persistent_minutes: int,
+    persistent_cycles: int,
+    small_limit_units: int,
+) -> dict[str, Any] | None:
     from .core import connect
     now = datetime.now()
     with connect() as conn:
+        data_version = int(conn.execute("PRAGMA data_version").fetchone()[0])
         preview = _fifo_reconciliation_preview_with_conn(conn)
         ctx = _wb_fifo_reconciliation_context_with_conn(conn)
         total_units = int(pd.to_numeric(preview.get("difference_units", 0), errors="coerce").fillna(0).abs().sum()) if not preview.empty else 0
@@ -840,6 +863,16 @@ def finished_goods_fifo_guard_status(
         pipeline_units = int(pipeline_row["units"] or 0) if pipeline_row else 0
         physical_units = int(ctx.get("wb_contour_units", 0) or 0) + pipeline_units
         large_threshold = max(100, int(round(max(1, physical_units) * 0.05)))
+
+        # Release the potentially expensive valuation/read transaction before
+        # reserving the writer. PRAGMA data_version is meaningful only on the
+        # SAME connection. With the writer reserved no other connection can
+        # commit; retry the read basis if anything changed while it was read.
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        if int(conn.execute("PRAGMA data_version").fetchone()[0]) != data_version:
+            conn.rollback()
+            return None
 
         state_row = conn.execute("SELECT value FROM app_meta WHERE key=?", (FIFO_SYNC_GUARD_META_KEY,)).fetchone()
         try:
