@@ -160,7 +160,7 @@ class YooKassaWebhookTests(GatewayDbTestCase):
         self.assertEqual(row["status"], "pending")
 
     def test_refund_succeeded_revokes_access(self) -> None:
-        refund = {"id": "rf-1", "status": "succeeded", "payment_id": "yk-1", "amount": {"value": "2990.00"}}
+        refund = {"id": "rf-1", "status": "succeeded", "payment_id": "yk-1", "amount": {"value": "2990.00", "currency": "RUB"}}
         with mock.patch.object(yookassa_client, "get_refund", return_value=refund):
             response = self._call(_post_request({"event": "refund.succeeded", "object": {"id": "rf-1"}}))
         self.assertEqual(response.status_code, 200)

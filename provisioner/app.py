@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backup_crypto import DEFAULT_KEY_ID, decrypt_file, encrypt_file, parse_keyring, validate_key_id
 from demo_refresh import DailyDemoRefresh
 from demo_recovery import DemoRecoveryJournal
+from tenant_budget import CapacityExhausted, TenantBudget, parse_size
 from docker.errors import NotFound as DockerNotFound
 
 @asynccontextmanager
@@ -59,6 +60,14 @@ TENANT_SUBDOMAIN_PREFIX = os.environ.get("WB_SAAS_TENANT_SUBDOMAIN_PREFIX", "app
 TENANT_INTERNAL_PORT = int(os.environ.get("WB_SAAS_TENANT_INTERNAL_PORT", "8501"))
 TENANT_MEM_LIMIT = os.environ.get("WB_SAAS_TENANT_MEM_LIMIT", "768m")
 TENANT_CPU_QUOTA = float(os.environ.get("WB_SAAS_TENANT_CPU_QUOTA", "1.0"))
+# Shared start budget (see tenant_budget.py). Reservation = what a cabinet normally needs and what admission counts;
+# TENANT_MEM_LIMIT stays the hard ceiling. Budget "" = TENANT_MEMORY_FRACTION of host RAM, "0"/"off" = no cap.
+TENANT_MEM_RESERVATION = os.environ.get("WB_SAAS_TENANT_MEM_RESERVATION", "384m")
+TENANT_MEMORY_BUDGET = os.environ.get("WB_SAAS_TENANT_MEMORY_BUDGET", "")
+TENANT_MEMORY_FRACTION = float(os.environ.get("WB_SAAS_TENANT_MEMORY_FRACTION", "0.7"))
+TENANT_MIN_AVAILABLE = os.environ.get("WB_SAAS_TENANT_MIN_AVAILABLE", "1g")
+TENANT_ADMISSION_WAIT = float(os.environ.get("WB_SAAS_TENANT_ADMISSION_WAIT", "0"))  # seconds, capped below the gateway's 20 s timeout
+_BUDGET = TenantBudget()
 FORWARD_AUTH_MIDDLEWARE = os.environ.get("WB_SAAS_FORWARD_AUTH_MIDDLEWARE", "wb-saas-auth@file")
 TRAEFIK_CONTAINER_NAME = os.environ.get("WB_SAAS_TRAEFIK_CONTAINER_NAME", "wb-saas-traefik-1")
 TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "http-resolver")
@@ -268,6 +277,76 @@ def _labels(slug: str, require_auth: bool) -> dict[str, str]:
     return labels
 
 
+def _tenant_reservation() -> int:
+    """Per-cabinet reservation in bytes, never above the hard limit (Docker rejects that)."""
+    return min(parse_size(TENANT_MEM_RESERVATION), parse_size(TENANT_MEM_LIMIT))
+
+
+def _budget_arguments() -> dict[str, Any]:
+    return {"need": _tenant_reservation(), "configured": TENANT_MEMORY_BUDGET, "fraction": TENANT_MEMORY_FRACTION,
+            "min_available": parse_size(TENANT_MIN_AVAILABLE)}
+
+
+def _capacity_client():
+    try:
+        return _client()
+    except Exception:
+        raise HTTPException(status_code=503, headers={"Retry-After": "30"}, detail={
+            "code": "capacity_exhausted", "reason": "measurement_unavailable",
+            "message": "Проверка ресурсов сервера временно недоступна; кабинет ожидает повторной проверки."}) from None
+
+
+def _container_running(client: Any, slug: str) -> bool:
+    try:
+        container = client.containers.get(_container_name(slug))
+        container.reload()
+        return container.attrs.get("State", {}).get("Status") in {"running", "restarting", "paused"}
+    except Exception:  # noqa: BLE001 -- absent or unreadable means it is not a running cabinet
+        return False
+
+
+def _admitted(function):
+    """Claim memory from the shared budget before a start; refuse or wait when it does not fit.
+
+    Sits outside the lifecycle lock so a waiting start never blocks the stop that would free its room. A tenant that
+    already runs (upgrade) is replaced in place: it claims without a check, so an upgrade is never refused half way.
+    """
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        slug = kwargs["slug"] if "slug" in kwargs else args[0]
+        _validate_slug(slug)
+        client = _capacity_client()
+        wait = min(max(TENANT_ADMISSION_WAIT, 0.0), 15.0)
+        try:
+            _BUDGET.acquire(client, slug, wait_seconds=wait, force=_container_running(client, slug), **_budget_arguments())
+        except CapacityExhausted as exc:
+            raise HTTPException(status_code=503, detail=exc.info, headers={"Retry-After": "30"}) from exc
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _BUDGET.release(slug)
+    return wrapped
+
+
+def _container_exists(client: Any, name: str) -> bool:
+    try:
+        client.containers.get(name)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _discard_failed_container(client: Any, name: str) -> None:
+    """A start that failed leaves a created-but-dead container that would make the retry fail on the name."""
+    try:
+        container = client.containers.get(name)
+        container.reload()
+        if container.attrs.get("State", {}).get("Status") not in {"running", "restarting", "paused"}:
+            container.remove(force=True)
+    except Exception:  # noqa: BLE001 -- best effort; the gateway's cleanup DELETE is the second line
+        pass
+
+
 def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = False) -> dict[str, Any]:
     """Return the complete allowlisted Docker SDK argument set for one tenant.
 
@@ -308,6 +387,7 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
         "labels": _labels(slug, request.require_auth),
         "restart_policy": {"Name": "unless-stopped"},
         "mem_limit": TENANT_MEM_LIMIT,
+        "mem_reservation": f"{_tenant_reservation() // (1024 * 1024)}m",
         "nano_cpus": int(TENANT_CPU_QUOTA * 1_000_000_000),
         "user": "10001:10001",
         "security_opt": ["no-new-privileges:true"],
@@ -583,7 +663,19 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/v1/capacity")
+def tenant_capacity() -> dict[str, Any]:
+    """Read-only view of the start budget for operators and load checks."""
+    info = _BUDGET.snapshot(_capacity_client(), "", **_budget_arguments())
+    if info.get("reason") == "measurement_unavailable":
+        raise HTTPException(status_code=503, detail=info, headers={"Retry-After": "30"})
+    info["would_admit"] = info.get("code") != "capacity_exhausted"
+    info["pending_starts"] = len(_BUDGET.pending())
+    return info
+
+
 @app.post("/v1/tenants/{slug}")
+@_admitted
 @_serialized_lifecycle
 def create_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)
@@ -593,9 +685,12 @@ def create_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _prepare_tenant_volume(client, slug)
     network = _network(client, slug)
     _attach_traefik(client, network)
+    existed = _container_exists(client, _container_name(slug))
     try:
         client.containers.run(**tenant_container_spec(slug, request))
     except Exception as exc:
+        if not existed:
+            _discard_failed_container(client, _container_name(slug))
         raise HTTPException(status_code=502, detail=f"Docker create failed: {exc}") from exc
     return {"container": _container_name(slug)}
 
@@ -622,6 +717,7 @@ def stop_tenant(slug: str) -> dict[str, str]:
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Tenant not found: {exc}") from exc
     _remove_network(client, slug)
+    _BUDGET.notify()  # its memory is free again: wake starts that are waiting for room
     return {"status": "stopped"}
 
 
@@ -743,6 +839,7 @@ def remove_tenant(slug: str, purge_volume: bool = False) -> dict[str, str]:
     client = _client()
     if purge_volume:
         _purge_tenant_data(client, slug)
+        _BUDGET.notify()
         return {"status": "purged"}
     try:
         container = client.containers.get(_container_name(slug))
@@ -751,6 +848,7 @@ def remove_tenant(slug: str, purge_volume: bool = False) -> dict[str, str]:
     except Exception:
         pass
     _remove_network(client, slug)
+    _BUDGET.notify()
     return {"status": "removed"}
 
 
@@ -987,6 +1085,7 @@ def _recover_demo_reseed(client=None):
 
 
 @app.post("/v1/tenants/{slug}/upgrade")
+@_admitted
 @_serialized_lifecycle
 def upgrade_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _validate_slug(slug)

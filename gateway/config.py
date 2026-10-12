@@ -52,6 +52,10 @@ TRAEFIK_CONTAINER_NAME = os.environ.get("WB_SAAS_TRAEFIK_CONTAINER_NAME", "wb-sa
 TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "letsencrypt")
 
 PROVISION_HEALTH_TIMEOUT_SECONDS = int(os.environ.get("WB_SAAS_PROVISION_TIMEOUT", "180"))
+# The provisioner answers 503 capacity_exhausted when the shared tenant memory budget is full: a new cabinet then waits
+# for room (status stays "provisioning") instead of failing at once.
+PROVISION_CAPACITY_WAIT_SECONDS = int(os.environ.get("WB_SAAS_PROVISION_CAPACITY_WAIT", "900"))
+PROVISION_CAPACITY_RETRY_SECONDS = int(os.environ.get("WB_SAAS_PROVISION_CAPACITY_RETRY", "20"))
 
 # Set to "1" in production behind HTTPS; cookies are only sent over TLS then.
 COOKIE_SECURE = os.environ.get("WB_SAAS_COOKIE_SECURE", "0") == "1"

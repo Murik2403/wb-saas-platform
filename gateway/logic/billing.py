@@ -21,6 +21,7 @@ State machine:
 from __future__ import annotations
 
 import sqlite3
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -112,22 +113,100 @@ def list_payments(conn: sqlite3.Connection, account_id: int, limit: int = 50) ->
     ).fetchall()
 
 
+def _refund_cents(value: Any) -> int:
+    try:
+        amount = Decimal(str(value))
+        scaled = amount * 100
+        if not amount.is_finite() or amount <= 0 or scaled != scaled.to_integral_value():
+            raise ValueError("Недопустимая сумма возврата")
+        return int(scaled)
+    except (InvalidOperation, TypeError, OverflowError):
+        raise ValueError("Недопустимая сумма возврата") from None
+
+
 def apply_refund(conn: sqlite3.Connection, account_id: int, yookassa_payment_id: str, amount_rub: float, refund_id: str, status: str = "succeeded") -> None:
-    """Record an idempotent YooKassa refund and revoke access for a full refund."""
+    """Deduct paid time proportionally, once per verified successful refund."""
+    if status not in {"pending", "succeeded", "canceled"} or not isinstance(refund_id, str) or not refund_id.strip():
+        raise ValueError("Недопустимый возврат")
+    cents = _refund_cents(amount_rub)
     account = account_lifecycle.lock_account(conn, account_id)
-    payment = conn.execute("SELECT id FROM payments WHERE account_id=? AND yookassa_payment_id=?", (int(account_id), yookassa_payment_id)).fetchone()
+    payment = conn.execute("SELECT * FROM payments WHERE account_id=? AND yookassa_payment_id=?", (int(account_id), yookassa_payment_id)).fetchone()
     if payment is None:
         raise ValueError("Платёж не найден")
-    now = _now_iso()
+    price = _refund_cents(payment["amount_rub"])
+    previous = conn.execute("SELECT * FROM refunds WHERE yookassa_refund_id=?", (refund_id,)).fetchone()
+    if previous is not None:
+        if previous["account_id"] != int(account_id) or previous["payment_id"] != payment["id"]:
+            raise ValueError("Возврат уже связан с другим платежом")
+        if previous["amount_rub"] and _refund_cents(previous["amount_rub"]) != cents:
+            raise ValueError("Сумма зарегистрированного возврата отличается")
+        if previous["status"] in {"succeeded", "canceled"}:
+            return
+    amounts = conn.execute("SELECT amount_rub FROM refunds WHERE payment_id=? AND status='succeeded'", (payment["id"],)).fetchall()
+    before_total = sum(_refund_cents(row["amount_rub"]) for row in amounts)
+    after_total = before_total + (cents if status == "succeeded" else 0)
+    if cents > price or after_total > price:
+        raise ValueError("Возврат превышает сумму платежа")
+    now_dt = _now()
+    now = now_dt.isoformat(timespec="seconds")
     conn.execute(
         "INSERT INTO refunds(account_id, payment_id, yookassa_refund_id, amount_rub, status, created_at, updated_at) VALUES(?,?,?,?,?,?,?) "
-        "ON CONFLICT(yookassa_refund_id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
+        "ON CONFLICT(yookassa_refund_id) DO UPDATE SET status=excluded.status, amount_rub=excluded.amount_rub, updated_at=excluded.updated_at",
         (int(account_id), int(payment["id"]), refund_id, float(amount_rub), status, now, now),
     )
-    if status == "succeeded":
+    if status != "succeeded":
+        return
+    if after_total == price:
         conn.execute("UPDATE payments SET status='canceled', updated_at=? WHERE id=?", (now, int(payment["id"])))
-        if not account_lifecycle.closed(account):
-            conn.execute("UPDATE accounts SET status='past_due', current_period_end=?, past_due_since=?, updated_at=? WHERE id=?", (now, now, now, int(account_id)))
+    if account_lifecycle.closed(account):
+        return
+    try:
+        start = _parse_iso(payment["period_start"])
+        end = _parse_iso(payment["period_end"])
+    except (ValueError, TypeError):
+        start = end = None
+    # Attempts can complete in reverse order: compare the granted intervals,
+    # not their insertion IDs. Protect newer unknown legacy rows conservatively.
+    other_payments = conn.execute("SELECT id,period_end FROM payments WHERE account_id=? AND id<>? AND status='succeeded'", (int(account_id),payment["id"])).fetchall()
+    has_later_period = False
+    for other in other_payments:
+        try:
+            other_end = _parse_iso(other["period_end"])
+        except (ValueError, TypeError):
+            other_end = None
+        if end is not None and other_end is not None and other_end > end:
+            has_later_period = True
+        elif (end is None or other_end is None) and other["id"] > payment["id"]:
+            conn.execute("UPDATE payments SET error_message='refund_access_interval_unknown', updated_at=? WHERE id=?", (now, payment["id"]))
+            return
+    current_end = _parse_iso(account["current_period_end"])
+    if start is None or end is None or end <= start:
+        if after_total < price:
+            conn.execute("UPDATE payments SET error_message='refund_access_interval_unknown', updated_at=? WHERE id=?", (now, payment["id"]))
+            return
+        # Preserve legacy full-refund behavior; no estimated partial duration.
+        new_end = now_dt
+    else:
+        duration = int((end - start).total_seconds())
+        # Round the cumulative target, not each notification independently.
+        before_seconds = (duration * before_total + price // 2) // price
+        after_seconds = (duration * after_total + price // 2) // price
+        deduction = after_seconds - before_seconds
+        if has_later_period:
+            # An early renewal does not exempt an unconsumed old period from
+            # refunds. Cap its deduction so already-consumed time cannot erase
+            # the separately purchased duration of the later renewal.
+            remaining = max(0, int((end - timedelta(seconds=before_seconds) - now_dt).total_seconds()))
+            deduction = min(deduction, remaining)
+            if deduction == 0:
+                return
+        new_end = max(now_dt, (current_end or now_dt) - timedelta(seconds=deduction))
+    new_status = account["status"]
+    if new_end <= now_dt and new_status in {"active", "trialing"}:
+        new_status = "past_due"
+    grace_start = account["past_due_since"] or now if new_end <= now_dt else account["past_due_since"]
+    conn.execute("UPDATE accounts SET status=?, current_period_end=?, past_due_since=?, updated_at=? WHERE id=?",
+                 (new_status, new_end.isoformat(timespec="seconds"), grace_start, now, int(account_id)))
 
 
 def apply_successful_payment(
@@ -195,6 +274,8 @@ def apply_successful_payment(
     current_end = _parse_iso(account["current_period_end"]) or _now()
     base = max(current_end, _now())
     new_period_end = (base + timedelta(days=period_days)).isoformat(timespec="seconds")
+    conn.execute("UPDATE payments SET period_start=?, period_end=? WHERE yookassa_payment_id=? AND account_id=?",
+                 (base.isoformat(timespec="seconds"), new_period_end, yookassa_payment_id, int(account_id)))
 
     conn.execute(
         """

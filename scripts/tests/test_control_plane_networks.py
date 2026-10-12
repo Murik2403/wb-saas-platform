@@ -12,6 +12,8 @@ def test_edge_gateway_and_tenants_cannot_reach_writable_docker_proxy():
     assert networks('traefik')=={'wbsaas_net','docker_discovery_net'}
     assert 'POST=0' in services['docker-discovery-proxy']['environment']
     assert 'POST=1' in services['docker-socket-proxy']['environment']
+    assert 'INFO=1' in services['docker-socket-proxy']['environment']
+    assert 'INFO=1' not in services['docker-discovery-proxy']['environment']
     assert services['provisioner']['networks']['control_api_net']['aliases']==['provisioner']
     assert 'docker-discovery-proxy' in (root/'traefik/traefik.yml').read_text()
     assert 'WB_SAAS_PROVISIONER_BEARER_KEY' not in str(services.get('tenant',{}))

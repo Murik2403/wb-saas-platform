@@ -2,6 +2,12 @@ from unittest.mock import Mock
 import pytest
 import app
 
+@pytest.fixture(autouse=True)
+def available_start_budget(monkeypatch):
+    # These tests exercise initialization ordering; provide readable capacity explicitly.
+    monkeypatch.setattr(app, 'TENANT_MEMORY_BUDGET', '2g')
+    monkeypatch.setattr(app, 'TENANT_MIN_AVAILABLE', '0')
+
 def request():
     return app.TenantRequest(internal_api_secret='scoped-secret',billing_url='https://example.test/billing',logout_url='https://example.test/logout',internal_api_url='https://example.test')
 
@@ -21,6 +27,7 @@ def test_volume_initializer_is_scoped_and_hardened():
 
 def test_initialization_failure_aborts_before_tenant_launch(monkeypatch):
     client=Mock()
+    client.containers.list.return_value=[]
     client.containers.run.return_value.wait.return_value={'StatusCode':1}
     monkeypatch.setattr(app,'_client',lambda:client)
     monkeypatch.setattr(app,'_prepare_backup_directory',lambda *a:None)
@@ -33,6 +40,7 @@ def test_initialization_failure_aborts_before_tenant_launch(monkeypatch):
 def test_volume_initialized_before_start(monkeypatch):
     events=[]
     client=Mock()
+    client.containers.list.return_value=[]
     monkeypatch.setattr(app,'_client',lambda:client)
     monkeypatch.setattr(app,'_prepare_backup_directory',lambda *a:None)
     monkeypatch.setattr(app,'_volume',lambda *a:events.append('volume'))

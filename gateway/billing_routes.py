@@ -263,13 +263,30 @@ async def yookassa_webhook(request: Request):
         except yookassa_client.YooKassaError:
             logger.exception("Failed to verify YooKassa refund %s via API", payment_id)
             return JSONResponse({"error": "verification failed"}, status_code=502)
-        if str(refund.get("status") or "") == "succeeded":
-            original_payment_id = str(refund.get("payment_id") or "")
-            amount = float(((refund.get("amount") or {}).get("value") or 0))
+        # Body/event status is unsigned. Only the authenticated provider GET
+        # can reserve, settle or release a pending refund's local amount.
+        try:
+            if not isinstance(refund, dict) or refund.get("id") != payment_id:
+                raise ValueError("Verified refund ID mismatch")
+            original_payment_id = refund.get("payment_id")
+            refund_status = refund.get("status")
+            refund_amount = refund.get("amount")
+            if (not isinstance(original_payment_id, str) or not original_payment_id.strip()
+                    or refund_status not in {"pending", "succeeded", "canceled"}
+                    or not isinstance(refund_amount, dict) or refund_amount.get("currency") != "RUB"):
+                raise ValueError("Verified refund metadata mismatch")
+            cents = billing._refund_cents(refund_amount.get("value"))
             with control_db.connect() as conn:
-                original = conn.execute("SELECT account_id FROM payments WHERE yookassa_payment_id=?", (original_payment_id,)).fetchone()
+                original = conn.execute("SELECT id,account_id FROM payments WHERE yookassa_payment_id=?", (original_payment_id,)).fetchone()
+                previous = conn.execute("SELECT payment_id FROM refunds WHERE yookassa_refund_id=?", (payment_id,)).fetchone()
+                if previous is not None and (original is None or previous["payment_id"] != original["id"]):
+                    raise ValueError("Verified refund payment binding mismatch")
                 if original is not None:
-                    billing.apply_refund(conn, int(original["account_id"]), original_payment_id, amount, payment_id, status="succeeded")
+                    billing.apply_refund(conn, int(original["account_id"]), original_payment_id,
+                                         cents / 100, payment_id, status=refund_status)
+        except (ValueError, TypeError):
+            logger.warning("Rejected mismatched verified YooKassa refund %s", payment_id)
+            return JSONResponse({"error": "verified refund mismatch"}, status_code=502)
         return JSONResponse({"status": "ok"})
 
     try:

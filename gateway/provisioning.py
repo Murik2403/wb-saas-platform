@@ -7,6 +7,7 @@ holding the socket rebuilds and validates every Docker argument itself.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 
 import requests
@@ -101,11 +102,74 @@ def _wait_until_healthy(slug: str, timeout_seconds: int) -> bool:
     return False
 
 
+_IN_FLIGHT: set[str] = set()
+_IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _is_capacity_refusal(exc: Exception) -> bool:
+    """The provisioner's 503 with detail.code == capacity_exhausted (shared memory budget is full)."""
+    response = getattr(exc, "response", None)
+    if not isinstance(exc, requests.HTTPError) or response is None or response.status_code != 503:
+        return False
+    try:
+        detail = response.json().get("detail")
+    except ValueError:
+        return False
+    return isinstance(detail, dict) and detail.get("code") == "capacity_exhausted"
+
+
+def _set_note(tenant_id: int, note: str) -> None:
+    with control_db.connect() as conn:
+        accounts.set_tenant_status(conn, tenant_id, "provisioning", note=note)
+
+
+def _run_when_there_is_room(tenant_id: int, slug: str) -> None:
+    """Start the container; while the server is full keep waiting (bounded) instead of failing the signup."""
+    deadline = time.monotonic() + config.PROVISION_CAPACITY_WAIT_SECONDS
+    announced = False
+    while True:
+        try:
+            _run_tenant_container(slug)
+            return
+        except Exception as exc:  # noqa: BLE001
+            if not _is_capacity_refusal(exc):
+                raise
+            if time.monotonic() >= deadline:
+                raise CapacityTimeout() from exc
+            if not announced:
+                logger.warning("No room for tenant %s yet; waiting for capacity", slug)
+                _set_note(tenant_id, accounts.TENANT_NOTE_WAITING_CAPACITY)
+                announced = True
+            time.sleep(config.PROVISION_CAPACITY_RETRY_SECONDS)
+
+
+class CapacityTimeout(Exception):
+    """The server stayed full for the whole wait; the cabinet was not started."""
+
+
 def provision_tenant_background(account_id: int, tenant_id: int, slug: str) -> None:
     """Provision after registration without allowing Docker access in gateway."""
+    with _IN_FLIGHT_LOCK:
+        if slug in _IN_FLIGHT:  # a repeated login must not start (and then clean up) the same cabinet twice
+            logger.info("Provisioning of %s is already running", slug)
+            return
+        _IN_FLIGHT.add(slug)
     try:
-        _run_tenant_container(slug)
+        _provision(account_id, tenant_id, slug)
+    finally:
+        with _IN_FLIGHT_LOCK:
+            _IN_FLIGHT.discard(slug)
+
+
+def _provision(account_id: int, tenant_id: int, slug: str) -> None:
+    try:
+        _run_when_there_is_room(tenant_id, slug)
         healthy = _wait_until_healthy(slug, config.PROVISION_HEALTH_TIMEOUT_SECONDS)
+    except CapacityTimeout:
+        logger.error("Tenant %s not started: no capacity for %ss", slug, config.PROVISION_CAPACITY_WAIT_SECONDS)
+        _cleanup_failed_tenant(slug)
+        _mark_failed(tenant_id, accounts.TENANT_NOTE_NO_CAPACITY)
+        return
     except Exception as exc:  # noqa: BLE001 -- status must be persisted for every infrastructure failure
         logger.exception("Provisioning failed for account %s (slug=%s)", account_id, slug)
         _cleanup_failed_tenant(slug)
