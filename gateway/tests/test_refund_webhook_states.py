@@ -44,7 +44,7 @@ class RefundWebhookStateTests(GatewayDbTestCase):
         account,row=self.state();self.assertEqual(account,self.before);self.assertEqual(row['status'],'canceled')
         with mock.patch.object(admin_routes,'_require_admin',return_value={'id':self.owner}),mock.patch.object(admin_routes.csrf,'verify',return_value=True),mock.patch.object(yookassa_client,'create_refund',return_value={'id':'r2','payment_id':'paid','status':'pending','amount':{'value':'3000.00','currency':'RUB'}}) as create:
             admin_routes.admin_payment_refund(None,'paid',None,'csrf')
-        create.assert_called_once_with('paid',amount_rub=3000.0)
+        create.assert_called_once_with('paid',amount_rub=3000.0,idempotence_key=mock.ANY)
 
     def test_mismatched_provider_metadata_never_releases_reservation(self):
         with db.connect(self.db_path) as c:billing.apply_refund(c,self.owner,'paid',3000,'r1',status='pending')

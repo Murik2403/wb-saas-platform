@@ -144,52 +144,111 @@ def admin_account_extend(request: Request, account_id: int, days: int = Form(30)
 
 
 @router.post("/admin/payment/{payment_id}/refund")
-def admin_payment_refund(request: Request, payment_id: str, amount: float | None = Form(None), csrf_token: str = Form("")):
+def admin_payment_refund(request: Request, payment_id: str, amount: float | None = Form(None), csrf_token: str = Form(""), request_id: str = Form("")):
     """Issue and record a YooKassa refund; only admins with CSRF may invoke it."""
     account = _require_admin(request)
     if account is None:
         return RedirectResponse("/login", status_code=303)
     if not csrf.verify(request, csrf_token):
         return RedirectResponse("/admin", status_code=303)
+    intent_id = ""
     try:
         import yookassa_client
-        # Validate the local payment before any external financial action.
-        # Pending refunds reserve money too: do not request it a second time.
+        from logic import account_lifecycle, refund_intents
+        # Validate the local payment and write the refund *intent* (committed) before any external financial action:
+        # its id is the provider's Idempotence-Key, and open intents reserve money like pending refunds do.
         with control_db.connect() as conn:
             payment = conn.execute("SELECT * FROM payments WHERE yookassa_payment_id=?", (payment_id,)).fetchone()
             if payment is None or payment["status"] != "succeeded":
                 raise ValueError("Платёж не найден")
             if accounts.get_account_by_id(conn, payment["account_id"], include_deleted=True) is None:
                 raise ValueError("Аккаунт платежа не найден")
-            price = billing._refund_cents(payment["amount_rub"])
-            reserved = sum(billing._refund_cents(row["amount_rub"]) for row in conn.execute(
-                "SELECT amount_rub FROM refunds WHERE payment_id=? AND status IN ('pending','succeeded')",
-                (payment["id"],)).fetchall())
-            remaining = price - reserved
-            requested = remaining if amount is None else billing._refund_cents(amount)
-            if requested <= 0 or requested > remaining:
-                raise ValueError("Возврат превышает доступный остаток платежа")
+            account_lifecycle.lock_account(conn, int(payment["account_id"]))
+            requested = None if amount is None else billing._refund_cents(amount)
+            intent_id, requested, mode = refund_intents.claim(
+                conn, int(payment["account_id"]), payment, requested, billing._refund_cents, requested_by=int(account["id"]),
+                request_ref=request_id if isinstance(request_id, str) else "")
             payment_account_id = int(payment["account_id"])
-        refund = yookassa_client.create_refund(payment_id, amount_rub=requested / 100)
-        if not isinstance(refund, dict):
-            raise ValueError("Недопустимый ответ YooKassa")
-        refund_id = refund.get("id")
-        refund_status = refund.get("status")
-        refund_amount = refund.get("amount")
-        if (not isinstance(refund_id, str) or not refund_id.strip()
-                or refund.get("payment_id") != payment_id
-                or refund_status not in {"pending", "succeeded", "canceled"}
-                or not isinstance(refund_amount, dict) or refund_amount.get("currency") != "RUB"):
-            raise ValueError("Ответ YooKassa не соответствует возврату")
-        verified_cents = billing._refund_cents(refund_amount.get("value"))
-        if verified_cents != requested:
-            raise ValueError("Сумма ответа YooKassa не соответствует запросу")
-        with control_db.connect() as conn:
-            billing.apply_refund(conn, payment_account_id, payment_id, verified_cents / 100,
-                                 refund_id, status=refund_status)
+        if mode == "done":
+            logger.warning("admin: refund request already completed as attempt %s; nothing sent", intent_id)
+            return RedirectResponse("/admin", status_code=303)
+        if mode == "resumed":
+            logger.warning("admin: resuming refund attempt %s with its original idempotence key", intent_id)
+        try:
+            refund = yookassa_client.create_refund(payment_id, amount_rub=requested / 100, idempotence_key=intent_id)
+        except yookassa_client.YooKassaError as exc:
+            _settle_failed_refund(intent_id, definitive=exc.definitive, error=str(exc))
+            raise
+        except Exception as exc:
+            _settle_failed_refund(intent_id, definitive=False, error=type(exc).__name__)
+            raise
+        try:
+            if not isinstance(refund, dict):
+                raise ValueError("Недопустимый ответ YooKassa")
+            refund_id = refund.get("id")
+            refund_status = refund.get("status")
+            refund_amount = refund.get("amount")
+            if (not isinstance(refund_id, str) or not refund_id.strip()
+                    or refund.get("payment_id") != payment_id
+                    or refund_status not in {"pending", "succeeded", "canceled"}
+                    or not isinstance(refund_amount, dict) or refund_amount.get("currency") != "RUB"):
+                raise ValueError("Ответ YooKassa не соответствует возврату")
+            verified_cents = billing._refund_cents(refund_amount.get("value"))
+            if verified_cents != requested:
+                raise ValueError("Сумма ответа YooKassa не соответствует запросу")
+            with control_db.connect() as conn:
+                billing.apply_refund(conn, payment_account_id, payment_id, verified_cents / 100,
+                                     refund_id, status=refund_status)
+                if refund_status == "canceled":
+                    refund_intents.mark_rejected(conn, intent_id, "provider canceled the refund")
+                else:
+                    refund_intents.mark_bound(conn, intent_id, refund_id)
+        except Exception:
+            # The provider may have made the refund: keep the amount reserved and the key, so a retry is safe.
+            _settle_failed_refund(intent_id, definitive=False, error="reply_not_recorded")
+            raise
     except Exception:
         logger.exception("admin: failed to refund payment")
     return RedirectResponse("/admin", status_code=303)
+
+
+def _settle_failed_refund(intent_id: str, *, definitive: bool, error: str) -> None:
+    """Release a refused attempt; keep an uncertain one reserved so it can only be resumed, never duplicated."""
+    from logic import refund_intents
+    try:
+        with control_db.connect() as conn:
+            (refund_intents.mark_rejected if definitive else refund_intents.mark_unknown)(conn, intent_id, error)
+    except Exception:
+        logger.exception("admin: could not record the outcome of refund attempt %s", intent_id)
+
+
+@router.post("/admin/refund-intent/{intent_id}/reconcile")
+def admin_reconcile_refund_intent(request: Request, intent_id: str, csrf_token: str = Form("")):
+    """Settle an old uncertain refund attempt against YooKassa's own list; never resends the refund."""
+    if _require_admin(request) is None:
+        return RedirectResponse("/login", status_code=303)
+    if not csrf.verify(request, csrf_token):
+        return RedirectResponse("/admin", status_code=303)
+    from fastapi.responses import PlainTextResponse
+    import yookassa_client
+    from logic import refund_intents
+    with control_db.connect() as conn:
+        intent = refund_intents.get(conn, intent_id)
+    if intent is None or intent["state"] not in refund_intents.OPEN_STATES:
+        return PlainTextResponse("Попытка возврата не найдена или уже закрыта", status_code=404)
+    try:
+        provider_refunds = yookassa_client.list_refunds(intent["provider_payment_id"])
+    except Exception:
+        return PlainTextResponse("Не удалось сверить возврат; попытка остаётся зарезервированной", status_code=502)
+    try:
+        with control_db.connect() as conn:
+            state, found = refund_intents.reconcile(conn, intent_id, provider_refunds, billing._refund_cents)
+            if found is not None:  # the provider made it but we never booked it: book it with the intent closing
+                billing.apply_refund(conn, int(intent["account_id"]), intent["provider_payment_id"],
+                                     billing._refund_cents(found["amount"]["value"]) / 100, found["id"], status=found["status"])
+    except ValueError as exc:
+        return PlainTextResponse(str(exc), status_code=409)
+    return PlainTextResponse(f"Попытка возврата: {state}")
 
 
 @router.post("/admin/billing-operation/{operation_id}/reconcile")

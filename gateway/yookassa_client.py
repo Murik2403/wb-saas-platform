@@ -24,7 +24,19 @@ import config
 
 
 class YooKassaError(RuntimeError):
-    pass
+    """``status_code`` is the HTTP status when the provider answered; None when it never did (timeout, network)."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+    @property
+    def definitive(self) -> bool:
+        """True when the provider clearly refused and did not act (a client error), so the attempt may be released.
+
+        A timeout, 5xx, 408/409/425/429 or no answer at all leaves the outcome unknown: the request may have been applied.
+        """
+        return self.status_code is not None and 400 <= self.status_code < 500 and self.status_code not in {408, 409, 425, 429}
 
 
 def _auth() -> tuple[str, str]:
@@ -135,10 +147,27 @@ def create_refund(payment_id: str, amount_rub: float | None = None, idempotence_
     body: dict[str, Any] = {"payment_id": payment_id}
     if amount_rub is not None:
         body["amount"] = {"value": f"{amount_rub:.2f}", "currency": "RUB"}
-    response = requests.post(f"{_base_url()}/refunds", json=body, auth=_auth(), headers={"Idempotence-Key": idempotence_key or str(uuid.uuid4())}, timeout=30)
+    try:
+        response = requests.post(f"{_base_url()}/refunds", json=body, auth=_auth(), headers={"Idempotence-Key": idempotence_key or str(uuid.uuid4())}, timeout=30)
+    except requests.RequestException:
+        raise YooKassaError("YooKassa refund request got no answer") from None
     if response.status_code >= 400:
-        raise YooKassaError(f"YooKassa refund failed ({response.status_code}): {response.text}")
+        raise YooKassaError(f"YooKassa refund failed ({response.status_code}): {response.text}", response.status_code)
     return response.json()
+
+
+def list_refunds(payment_id: str) -> list[dict[str, Any]]:
+    """Refunds YooKassa holds for one payment (first page of up to 100): the source of truth for a stale refund attempt."""
+    import requests
+
+    try:
+        response = requests.get(f"{_base_url()}/refunds", params={"payment_id": payment_id, "limit": 100}, auth=_auth(), timeout=30)
+    except requests.RequestException:
+        raise YooKassaError("YooKassa refund list unavailable") from None
+    if response.status_code >= 400:
+        raise YooKassaError(f"YooKassa refund list failed ({response.status_code})", response.status_code)
+    items = response.json().get("items")
+    return items if isinstance(items, list) else []
 
 
 def extract_payment_method_id(payment: dict[str, Any]) -> str:

@@ -41,6 +41,8 @@ def initialize(conn, *, postgres=False):
     elif "expected_amount_rub" not in {row[1] for row in conn.execute("PRAGMA table_info(billing_operation_claims)")}:
         conn.execute("ALTER TABLE billing_operation_claims ADD COLUMN expected_amount_rub TEXT NOT NULL DEFAULT ''")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_billing_claim_account_state ON billing_operation_claims(account_id,state)")
+    from . import refund_intents
+    refund_intents.initialize(conn)
 
 
 def lock_account(conn, account_id):
