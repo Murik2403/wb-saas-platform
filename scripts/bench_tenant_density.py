@@ -467,6 +467,11 @@ class Bench:
                     continue
                 self.report["steps"].append(self.one_step(target, str(target)))
                 if self.report["steps"][-1].get("stopped_after"):
+                    _, gate = self.can_start(0)
+                    for later in (t for t in self.args.steps if t > target):
+                        self.report["steps"].append({"target": later, "result": "REFUSED_NOT_RUN",
+                                                     "reason": f"the {target}-tenant step already breached the VM floor or killed a container: this stand's limit is reached",
+                                                     **gate})
                     break
             if self.args.probe_max and self.names:
                 self.probe_maximum()
