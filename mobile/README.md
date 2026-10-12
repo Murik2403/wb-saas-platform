@@ -100,3 +100,5 @@ adb shell am instrument -w -r -e auditRemote true -e class ru.marketshelper.app.
 `MainActivity` дополнительно регистрирует bridge на `https://*.app.marketshelper.ru` и локальном `https://localhost`: Capacitor 8.5.3 регистрирует DOCUMENT_START_SCRIPT только для начального домена входа. На произвольные сайты bridge не устанавливается; отрицательная проверка входит в тест. Новый APK после этой правки обязателен: обновление сайта не меняет нативную оболочку.
 
 `server.url` должен содержать только origin. Путь входа задаётся через `server.appStartPath`; иначе AndroidX отклоняет origin rules, а Capacitor переходит на небезопасный глобальный JavaScript interface. Тест проверяет отсутствие на недоверенном origin как JS facade, так и raw `androidBridge`.
+
+WebView без безопасных document-start/message-listener APIs не открывает remote сайт: вместо него появляется нативное сообщение об обновлении Android System WebView. Legacy bridge отключён. Отдельный инструментальный тест отказа работает без доступа к сети и не требует `auditRemote`; его тестовая activity присутствует только в debug и не экспортируется.

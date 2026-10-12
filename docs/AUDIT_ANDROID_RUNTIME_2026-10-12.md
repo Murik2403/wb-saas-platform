@@ -19,6 +19,8 @@
 
 Вторая ошибка подтверждена отдельным red/green: полный `/login` в `server.url` попадал в AndroidX origin rules. Недопустимый путь приводил `MessageHandler` к fallback `addJavascriptInterface` без origin-фильтра, и на контролируемой недоверенной странице оставался `window.androidBridge`. Конфигурация теперь разделяет `server.url = login.origin` и `server.appStartPath = /login`. Усиленное отрицательное утверждение проверяет отсутствие и `Capacitor`, и raw `androidBridge`; до правки оно упало, после прошло.
 
+Для старых WebView без `WEB_MESSAGE_LISTENER`/`DOCUMENT_START_SCRIPT` (или с включённым legacy bridge) добавлен отказ до создания `Bridge`: показывается нативный экран «Обновите Android System WebView», remote URL не загружается и JS interface не создаётся. Lifecycle `BridgeActivity` проверен: он корректно обрабатывает null bridge. При неожиданном fallback уже на поддерживаемом WebView глобальный `JavascriptInterface` удаляется; scoped WebMessageListener остаётся. Debug-only неэкспортируемая activity принудительно проверяет ветку отказа без изменений глобальных features; в release этого entry point нет.
+
 ## Пройденные проверки
 
 После исправления навигации: `OK (1 test)`, 24.937 секунды. После дополнительного исправления origin-фильтра: `OK (1 test)`, 10.7 секунды (тёмный режим AVD). Один последовательный инструментальный сценарий проверил:
@@ -31,6 +33,8 @@
 6. Контролируемый недоверенный origin: отсутствуют и `window.Capacitor`, и raw `window.androidBridge`.
 7. Запрет сети только внутри тестового WebView: локальный экран «Нет соединения» и CSS темы согласно `prefers-color-scheme`.
 8. Восстановление сети: повторная загрузка формы входа.
+
+После добавления fail-closed guard: `OK (2 tests)`, 31.597 секунды. Дополнительный независимый тест подтвердил нативное сообщение об обновлении, отсутствие созданного Bridge и корректную обработку configuration change/закрытия activity; предыдущий полный удалённый сценарий также прошёл.
 
 Логи, официальный repository XML, контрольная сумма и harness: `deliveries/android-runtime-20261012`. В репозитории сохранён opt-in `RuntimeAuditTest`; команда в `mobile/README.md`. Без `auditRemote true` сетевой сценарий пропускается.
 

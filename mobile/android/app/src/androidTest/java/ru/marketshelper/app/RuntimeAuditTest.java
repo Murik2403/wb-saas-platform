@@ -36,6 +36,22 @@ public class RuntimeAuditTest {
   private void load(String url) {
     inst.runOnMainSync(() -> app.getBridge().getWebView().loadUrl(url));
   }
+  @Test public void unsupportedWebViewNeverCreatesBridge() throws Exception {
+    inst = InstrumentationRegistry.getInstrumentation();
+    Intent intent = new Intent().setClassName(inst.getTargetContext(), "ru.marketshelper.app.UnsupportedWebViewActivity")
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    app = (MainActivity) inst.startActivitySync(intent);
+    assertNull("Legacy WebView must not construct a remote/native bridge", app.getBridge());
+    inst.runOnMainSync(() -> {
+      android.widget.TextView notice = app.getWindow().getDecorView().findViewWithTag("webview-update-required");
+      assertNotNull(notice);
+      assertTrue(notice.getText().toString().contains("Обновите Android System WebView"));
+      app.onConfigurationChanged(new android.content.res.Configuration(app.getResources().getConfiguration()));
+      app.finish();
+    });
+    inst.waitForIdleSync();
+    System.out.println("AUDIT_LEGACY_WEBVIEW_FAIL_CLOSED_OK");
+  }
   @Test public void publicRemoteWebviewAndNativeFilesystem() throws Exception {
     org.junit.Assume.assumeTrue("Public remote acceptance is opt-in (-e auditRemote true)",
       "true".equals(InstrumentationRegistry.getArguments().getString("auditRemote")));
