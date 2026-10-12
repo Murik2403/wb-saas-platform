@@ -99,3 +99,7 @@ app/src/main/assets/public
 app/src/main/assets/capacitor.config.json
 app/src/main/assets/capacitor.plugins.json
 app/src/main/res/xml/config.xml
+
+# Generated only for opt-in instrumented file/share acceptance
+app/src/androidTest/assets/runtime-download-fixture.js
+app/src/androidTest/assets/runtime-download-source.txt

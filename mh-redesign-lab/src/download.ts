@@ -34,7 +34,13 @@ export async function saveBlob(blob: Blob, filename: string): Promise<void> {
       const plugins = capacitor()?.Plugins;
       if (plugins?.Filesystem && plugins?.Share) {
         const written = await plugins.Filesystem.writeFile({ path: filename, data: await toBase64(blob), directory: "CACHE" });
-        await plugins.Share.share({ title: filename, url: written.uri });
+        try {
+          await plugins.Share.share({ title: filename, url: written.uri });
+        } catch (error) {
+          // Capacitor Share 8 reports dismissal as an Error, not DOM AbortError.
+          if ((error as { message?: string })?.message === "Share canceled") return;
+          throw error;
+        }
         return;
       }
     } catch (error) {

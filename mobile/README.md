@@ -102,3 +102,17 @@ adb shell am instrument -w -r -e auditRemote true -e class ru.marketshelper.app.
 `server.url` должен содержать только origin. Путь входа задаётся через `server.appStartPath`; иначе AndroidX отклоняет origin rules, а Capacitor переходит на небезопасный глобальный JavaScript interface. Тест проверяет отсутствие на недоверенном origin как JS facade, так и raw `androidBridge`.
 
 WebView без безопасных document-start/message-listener APIs не открывает remote сайт: вместо него появляется нативное сообщение об обновлении Android System WebView. Legacy bridge отключён. Отдельный инструментальный тест отказа работает без доступа к сети и не требует `auditRemote`; его тестовая activity присутствует только в debug и не экспортируется.
+
+Дополнительная проверка экспорта CSV/XLSX и отмены системного Share:
+
+```bash
+# Из mobile; сначала npm ci в соседнем mh-redesign-lab.
+node scripts/build-runtime-audit-fixture.mjs
+cd android
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w -r -e auditRemote true -e auditDownload true -e class ru.marketshelper.app.RuntimeAuditTest ru.marketshelper.app.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Fixture собирает настоящий `mh-redesign-lab/src/download.ts`, а не копию реализации, только в test APK. Activity «MARKETSHELPER Audit receiver» в отдельном пакете test APK принимает синтетические файлы локально, проверяются байты и доступ по content URI. Она отсутствует в обычном debug app и release; ни один файл не отправляется настоящему получателю. Проверяются отмена Share без повторного скачивания, CSV с кириллицей, минимальный XLSX, возврат в прежний WebView и удаление тестовых cache-файлов. Это проверка механизма экспорта; реальные пользовательские данные, физическое устройство и store-подпись этим не подтверждаются.

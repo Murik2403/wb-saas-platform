@@ -43,4 +43,23 @@ describe("saveBlob", () => {
     await saveBlob(blob, "r.csv");
     expect(click).toHaveBeenCalled();
   });
+  it("does not start an anchor download when Android native sharing is cancelled", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("MarketsHelperApp/1");
+    const Filesystem = { writeFile: vi.fn().mockResolvedValue({ uri: "file:///r.csv" }) };
+    const Share = { share: vi.fn().mockRejectedValue(new Error("Share canceled")) };
+    (window as any).Capacitor = { Plugins: { Filesystem, Share } };
+    const click = stubUrl();
+    await saveBlob(blob, "r.csv");
+    expect(Share.share).toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+  });
+  it("still falls back on an actual native sharing failure", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("MarketsHelperApp/1");
+    const Filesystem = { writeFile: vi.fn().mockResolvedValue({ uri: "file:///r.csv" }) };
+    const Share = { share: vi.fn().mockRejectedValue(new Error("Unsupported url")) };
+    (window as any).Capacitor = { Plugins: { Filesystem, Share } };
+    const click = stubUrl();
+    await saveBlob(blob, "r.csv");
+    expect(click).toHaveBeenCalled();
+  });
 });
