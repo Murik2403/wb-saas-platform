@@ -22,7 +22,7 @@
 
 1. Образ провизионера собрать из этой ветки: в `COPY` добавлен `backup_snapshot.py`.
 2. Образ кабинета `WB_SAAS_TENANT_IMAGE` должен быть на хосте и содержать `python` (сейчас `python:3.12-slim`). Иной образ для снимков можно задать `WB_SAAS_BACKUP_SNAPSHOT_IMAGE` (нужны Python и sqlite3).
-3. Пересоздание провизионера через compose, как в выкладке бюджета (алиас `provisioner` сохраняется). Работающие кабинеты не затрагиваются.
+3. Перед пересозданием provisioner через Compose проверить dry-run: на текущем проде обычный `up --force-recreate` удалял бы сохранённые rollback-контейнеры. Применён `run --use-aliases` с явным сохранением исходной restart policy; процедура и доказательства — [BACKUP_REFUND_RELEASE_2026-10-12.md](BACKUP_REFUND_RELEASE_2026-10-12.md). Алиас `provisioner` и работающие кабинеты сохранены.
 4. Первую проверку сделать вручную, до ночного cron: снять копию одного кабинета (например `demo`) и убедиться, что `/v1/tenants/demo/backup` вернул `archive`, а в `/opt/wb-saas/backups/demo` появился свежий `.tar.gz.enc` без `.partial` и `.stage`.
 5. Восстановительный прогон на изолированной копии: расшифровать `decrypt_backup.py`, распаковать, открыть `wb_dashboard.sqlite3` и выполнить `PRAGMA integrity_check`.
 6. Откат: прежний образ провизионера. Новые архивы читаются старым кодом.

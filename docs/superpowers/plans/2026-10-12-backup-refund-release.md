@@ -20,11 +20,13 @@
 
 ## Tasks
 
-- [ ] Review snapshot and refund code independently; verify provider contracts against official documentation when uncertain.
-- [ ] Fast-forward the requested branch, resolve only evidence-backed issues and run full gateway, provisioner and scripts tests plus the finance regression subset.
-- [ ] Build gateway/provisioner images from committed HEAD; verify exact file hashes, snapshot helper inclusion and unchanged tenant image.
-- [ ] Exercise the snapshot helper on real Docker with synthetic WAL writes and verify archive consistency, UID/mode, encryption and isolated restore.
-- [ ] Verify encrypted control-plane backups and isolated candidate/rollback startup; inspect additive migration without contacting YooKassa.
-- [ ] Deploy gateway, then provisioner through Compose while preserving alias and all runtime settings. Retain rollback containers and images.
-- [ ] Manually snapshot demo through the deployed API, independently decrypt/restore, run integrity_check and check no fresh stage/partial files remain.
-- [ ] Check all tenant health/build IDs, protected refund endpoints, schema/index migration, admission budget and lesson assets. Document actual deployment and remaining external payment-provider acceptance.
+- [x] Review snapshot and refund code independently; verify provider contracts against official documentation when uncertain.
+- [x] Fast-forward the requested branch, resolve only evidence-backed issues and run full gateway, provisioner and scripts tests plus the finance regression subset.
+- [x] Build gateway/provisioner images from committed HEAD; verify exact file hashes, snapshot helper inclusion and unchanged tenant image.
+- [x] Exercise the snapshot helper on real Docker with synthetic WAL writes and verify archive consistency, UID/mode, encryption and isolated restore.
+- [x] Verify encrypted control-plane backups and isolated candidate/rollback startup; inspect additive migration without contacting YooKassa.
+- [x] Deploy gateway, then provisioner through Compose while preserving alias and all runtime settings. Retain rollback containers and images.
+- [x] Manually snapshot demo through the deployed API, independently decrypt/restore, run integrity_check and check no fresh stage/partial files remain.
+- [x] Check all tenant health/build IDs, protected refund endpoints, schema/index migration, admission budget and lesson assets. Document actual deployment and remaining external payment-provider acceptance.
+
+Acceptance: docs/BACKUP_REFUND_RELEASE_2026-10-12.md. Runtime b13fa97; tenants e7b1582. External test-shop refunds and production density beyond the measured local benchmark are explicitly outside completed acceptance.
