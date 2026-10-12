@@ -141,10 +141,13 @@ def get_refund(refund_id: str) -> dict[str, Any]:
     return response.json()
 
 
-def create_refund(payment_id: str, amount_rub: float | None = None, idempotence_key: str | None = None) -> dict[str, Any]:
+def create_refund(payment_id: str, amount_rub: float | None = None, idempotence_key: str | None = None,
+                  description: str = "") -> dict[str, Any]:
     """Request a full or partial refund in YooKassa."""
     import requests
     body: dict[str, Any] = {"payment_id": payment_id}
+    if description:
+        body["description"] = description
     if amount_rub is not None:
         body["amount"] = {"value": f"{amount_rub:.2f}", "currency": "RUB"}
     try:
@@ -157,17 +160,40 @@ def create_refund(payment_id: str, amount_rub: float | None = None, idempotence_
 
 
 def list_refunds(payment_id: str) -> list[dict[str, Any]]:
-    """Refunds YooKassa holds for one payment (first page of up to 100): the source of truth for a stale refund attempt."""
+    """A complete validated provider list, or an error. Partial lists can never release reserved money."""
     import requests
+    from time import monotonic
 
-    try:
-        response = requests.get(f"{_base_url()}/refunds", params={"payment_id": payment_id, "limit": 100}, auth=_auth(), timeout=30)
-    except requests.RequestException:
-        raise YooKassaError("YooKassa refund list unavailable") from None
-    if response.status_code >= 400:
-        raise YooKassaError(f"YooKassa refund list failed ({response.status_code})", response.status_code)
-    items = response.json().get("items")
-    return items if isinstance(items, list) else []
+    deadline, cursor, seen, result = monotonic() + 60, "", set(), []
+    for _ in range(100):  # At most 10,000 records; exceeding the bound requires manual reconciliation.
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise YooKassaError("YooKassa refund list deadline exceeded; incomplete list")
+        params = {"payment_id": payment_id, "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        try:
+            response = requests.get(f"{_base_url()}/refunds", params=params, auth=_auth(), timeout=min(30, remaining))
+        except requests.RequestException:
+            raise YooKassaError("YooKassa refund list unavailable") from None
+        if response.status_code >= 400:
+            raise YooKassaError(f"YooKassa refund list failed ({response.status_code})", response.status_code)
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            raise YooKassaError("YooKassa refund list invalid JSON") from None
+        if (not isinstance(payload, dict) or payload.get("type") != "list" or not isinstance(payload.get("items"), list)
+                or any(not isinstance(item, dict) for item in payload["items"])):
+            raise YooKassaError("YooKassa refund list malformed")
+        items, next_cursor = payload["items"], payload.get("next_cursor")
+        if next_cursor is not None and (not isinstance(next_cursor, str) or not next_cursor or not items or next_cursor in seen):
+            raise YooKassaError("YooKassa refund list invalid pagination")
+        result.extend(items)
+        if next_cursor is None:
+            return result
+        seen.add(next_cursor)
+        cursor = next_cursor
+    raise YooKassaError("YooKassa refund list exceeds safe pagination limit")
 
 
 def extract_payment_method_id(payment: dict[str, Any]) -> str:

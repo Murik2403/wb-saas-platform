@@ -286,7 +286,7 @@ async def yookassa_webhook(request: Request):
                                          cents / 100, payment_id, status=refund_status)
                     if refund_status in {"pending", "succeeded"}:
                         from logic import refund_intents
-                        refund_intents.bind_from_webhook(conn, int(original["id"]), cents, payment_id)
+                        refund_intents.bind_from_webhook(conn, int(original["id"]), cents, payment_id, refund)
         except (ValueError, TypeError):
             logger.warning("Rejected mismatched verified YooKassa refund %s", payment_id)
             return JSONResponse({"error": "verified refund mismatch"}, status_code=502)

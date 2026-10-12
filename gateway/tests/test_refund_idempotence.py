@@ -25,7 +25,7 @@ class FakeYooKassa:
         self.slow = None
         self.lock = threading.Lock()
 
-    def create_refund(self, payment_id, amount_rub=None, idempotence_key=None):
+    def create_refund(self, payment_id, amount_rub=None, idempotence_key=None, description=""):
         self.calls.append((payment_id, amount_rub, idempotence_key))
         if self.fail_with is not None:
             raise self.fail_with
@@ -39,17 +39,17 @@ class FakeYooKassa:
             else:
                 if sum(r["cents"] for r in self.refunds) + cents > self.price:
                     raise yookassa_client.YooKassaError("refund exceeds payment", 400)
-                created = {"id": f"refund-{len(self.refunds) + 1}", "cents": cents}
+                created = {"id": f"refund-{len(self.refunds) + 1}", "cents": cents, "description": description, "created_at": datetime.now(timezone.utc).isoformat()}
                 self.refunds.append(created)
                 self.by_key[idempotence_key] = created
         if self.lose_reply_once:
             self.lose_reply_once = False
             raise yookassa_client.YooKassaError("YooKassa refund request got no answer")  # it did happen at the provider
-        return {"id": created["id"], "payment_id": payment_id, "status": "pending",
+        return {"id": created["id"], "payment_id": payment_id, "status": "pending", "description": created["description"], "created_at": created["created_at"],
                 "amount": {"value": f"{created['cents'] / 100:.2f}", "currency": "RUB"}}
 
     def list_refunds(self, payment_id):
-        return [{"id": r["id"], "payment_id": payment_id, "status": "pending",
+        return [{"id": r["id"], "payment_id": payment_id, "status": "pending", "description": r["description"], "created_at": r["created_at"],
                  "amount": {"value": f"{r['cents'] / 100:.2f}", "currency": "RUB"}} for r in self.refunds]
 
 
@@ -95,9 +95,9 @@ class RefundIntentTests(GatewayDbTestCase):
     def test_the_intent_is_committed_before_the_provider_is_called_and_is_its_key(self):
         seen = []
 
-        def spy(payment_id, amount_rub=None, idempotence_key=None):
+        def spy(payment_id, amount_rub=None, idempotence_key=None, description=""):
             seen.append([i for i in self.intents()])  # read through another connection: it must already be committed
-            return self.provider.create_refund(payment_id, amount_rub, idempotence_key)
+            return self.provider.create_refund(payment_id, amount_rub, idempotence_key, description)
         with mock.patch.object(yookassa_client, "create_refund", side_effect=spy):
             self.refund()
         (rows,) = seen
@@ -131,10 +131,10 @@ class RefundIntentTests(GatewayDbTestCase):
         arrivals, release = [], threading.Event()
         inner = self.provider.create_refund
 
-        def gated(payment_id, amount_rub=None, idempotence_key=None):
+        def gated(payment_id, amount_rub=None, idempotence_key=None, description=""):
             arrivals.append(idempotence_key)
             release.wait(timeout=10)
-            return inner(payment_id, amount_rub, idempotence_key)
+            return inner(payment_id, amount_rub, idempotence_key, description)
         with mock.patch.object(yookassa_client, "create_refund", side_effect=gated):
             first = threading.Thread(target=self.refund, args=(1000,))
             first.start()
@@ -248,7 +248,7 @@ class RefundIntentTests(GatewayDbTestCase):
         self.provider.lose_reply_once = True
         self.refund(1000)  # the provider refunded, the reply was lost, the operator never retried
         assert self.intents()[0]["state"] == "unknown" and self.rows() == []
-        verified = {"id": "refund-1", "payment_id": "paid", "status": "succeeded", "amount": {"value": "1000.00", "currency": "RUB"}}
+        verified = dict(self.provider.list_refunds("paid")[0], status="succeeded")
         billing_routes.webhook_global_limiter.clear()
         billing_routes.webhook_source_limiter.clear()
         with mock.patch.object(billing_routes.config, "YOOKASSA_WEBHOOK_CIDRS", ("198.51.100.0/24",)),              mock.patch.object(yookassa_client, "get_refund", return_value=verified):
@@ -286,8 +286,9 @@ class RefundIntentTests(GatewayDbTestCase):
         assert self.intents()[0]["state"] == "unknown" and self.rows() == []
 
     def test_a_refund_canceled_by_the_provider_releases_the_reservation(self):
-        with mock.patch.object(yookassa_client, "create_refund", return_value={"id": "r1", "payment_id": "paid", "status": "canceled",
-                                                                                "amount": {"value": "1000.00", "currency": "RUB"}}):
+        with mock.patch.object(yookassa_client, "create_refund", side_effect=lambda *args, **kwargs: {
+            "id": "r1", "payment_id": "paid", "status": "canceled", "description": kwargs.get("description", ""),
+            "amount": {"value": "1000.00", "currency": "RUB"}}):
             self.refund(1000)
         assert self.intents()[0]["state"] == "rejected"
         self.refund(3000)

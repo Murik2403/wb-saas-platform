@@ -19,6 +19,9 @@ class AdminRefundBoundaryTests(GatewayDbTestCase):
         self.enterContext(mock.patch.object(admin_routes.csrf,'verify',return_value=True))
         self.enterContext(mock.patch.object(admin_routes.logger,'exception'))
         self.provider=self.enterContext(mock.patch.object(yookassa_client,'create_refund'))
+        # The provider echoes the description received in this exact request.
+        self.provider.side_effect=lambda *args, **kwargs: (dict(self.provider.return_value, description=kwargs.get('description',''))
+                                                         if isinstance(self.provider.return_value,dict) else self.provider.return_value)
 
     def rows(self):
         with db.connect(self.db_path) as c:return [dict(x) for x in c.execute('SELECT * FROM refunds')]
@@ -29,14 +32,14 @@ class AdminRefundBoundaryTests(GatewayDbTestCase):
 
     def test_full_refund_sends_explicit_remaining_and_records_provider_amount(self):
         self.invoke()
-        self.provider.assert_called_once_with('paid',amount_rub=3000.0,idempotence_key=mock.ANY)
+        self.provider.assert_called_once_with('paid',amount_rub=3000.0,idempotence_key=mock.ANY,description=mock.ANY)
         row=self.rows()[0];self.assertEqual(row['amount_rub'],3000.0);self.assertEqual(row['status'],'pending')
 
     def test_full_refund_uses_remaining_after_succeeded_partial(self):
         with db.connect(self.db_path) as c:billing.apply_refund(c,self.owner,'paid',1000,'previous')
         self.provider.return_value={'id':'refund-1','payment_id':'paid','status':'pending','amount':{'value':'2000.00','currency':'RUB'}}
         admin_routes.admin_payment_refund(None,'paid',None,'csrf')
-        self.provider.assert_called_once_with('paid',amount_rub=2000.0,idempotence_key=mock.ANY)
+        self.provider.assert_called_once_with('paid',amount_rub=2000.0,idempotence_key=mock.ANY,description=mock.ANY)
         self.assertEqual(self.rows()[1]['amount_rub'],2000.0)
 
     def test_unknown_payment_or_invalid_amount_never_calls_provider(self):

@@ -250,6 +250,58 @@ def test_failed_helper_removes_everything_and_reports_502(tmp_path, monkeypatch)
     assert not list((tmp_path / "shop").iterdir())  # no partial, no stage, no archive
 
 
+def test_backup_volume_cleanup_preserves_unknown_partial_files(tmp_path, monkeypatch):
+    data = tmp_path / "volume"
+    data.mkdir()
+    client = fake_docker(monkeypatch, tmp_path, data, [])
+    group = tmp_path / "shop"
+    group.mkdir()
+    owned = group / ".shop-20261015_010203_123456-0123456789ab.tar.gz.partial"
+    foreign = [group / ".manual-import.partial", group / ".manual.tar.gz.partial",
+               group / ".other-20261015_010203_123456-0123456789ab.tar.gz.partial"]
+    for path in [owned, *foreign]:
+        path.write_bytes(b"synthetic abandoned file")
+        os.utime(path, (time.time() - 7200,) * 2)
+
+    result = app._backup_volume("wb-tenant-data-shop", "shop", 14, client)
+
+    assert not owned.exists()
+    assert (group / result["archive"]).exists()
+    assert all(path.read_bytes() == b"synthetic abandoned file" for path in foreign)
+
+
+@pytest.mark.parametrize("helper_times_out", [False, True])
+def test_snapshot_helper_cleanup_removes_its_anonymous_volumes_only(tmp_path, monkeypatch, helper_times_out):
+    monkeypatch.setattr(app, "BACKUP_MOUNT", tmp_path)
+    monkeypatch.setattr(app, "BACKUP_DIR", "/host/backups")
+    monkeypatch.setattr(app, "BACKUP_ENCRYPTION_KEY", KEY)
+    monkeypatch.setattr(app, "encrypt_file", lambda source, destination, key: destination.write_bytes(b"encrypted"))
+    preparation, snapshot, live_tenant = Mock(), Mock(), Mock()
+    preparation.wait.return_value = {"StatusCode": 0}
+    if helper_times_out:
+        snapshot.wait.side_effect = TimeoutError("synthetic timeout")
+    else:
+        snapshot.wait.return_value = {"StatusCode": 0}
+    client = Mock()
+    client.containers.run.side_effect = [preparation, snapshot]
+    client.containers.get.return_value = live_tenant
+
+    if helper_times_out:
+        with pytest.raises(HTTPException):
+            app._backup_volume("wb-tenant-data-shop", "shop", 14, client)
+    else:
+        app._backup_volume("wb-tenant-data-shop", "shop", 14, client)
+
+    # Tenant images can declare VOLUME paths unrelated to /data. Docker must collect those helper-owned volumes.
+    snapshot.remove.assert_called_once_with(force=True, v=True)
+    preparation.remove.assert_called_once_with(force=True)
+    live_tenant.remove.assert_not_called()
+    client.volumes.get.assert_not_called()  # named data volumes must never be deleted explicitly
+    assert client.containers.run.call_args_list[-1].kwargs["volumes"]["wb-tenant-data-shop"] == {
+        "bind": "/data", "mode": "rw",
+    }
+
+
 def test_stage_directory_left_by_a_killed_helper_is_removed_by_the_provisioner(tmp_path, monkeypatch):
     data = tmp_path / "volume"
     data.mkdir()
@@ -358,14 +410,15 @@ def test_stage_cleanup_touches_only_our_own_stale_directories(tmp_path):
     ours = group / ".shop-20261015_010203_123456-0123456789ab.stage"
     fresh = group / ".shop-20261015_010203_123456-ffffffffffff.stage"
     foreign = group / ".manual.stage"
-    for directory in (ours, fresh, foreign):
+    foreign_group = group / ".other-20261015_010203_123456-0123456789ab.stage"
+    for directory in (ours, fresh, foreign, foreign_group):
         directory.mkdir()
         (directory / "f").write_bytes(b"x")
     old = time.time() - 7200
-    for directory in (ours, foreign):
+    for directory in (ours, foreign, foreign_group):
         os.utime(directory, (old, old))
     app._remove_stale_stage_dirs(group)
-    assert not ours.exists() and fresh.exists() and foreign.exists()
+    assert not ours.exists() and fresh.exists() and foreign.exists() and foreign_group.exists()
 
 
 def test_snapshot_helper_is_a_standalone_script_with_a_json_summary(tmp_path, capsys):
@@ -376,6 +429,30 @@ def test_snapshot_helper_is_a_standalone_script_with_a_json_summary(tmp_path, ca
     summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert summary["databases"] == 1
     assert snap.main(["only-one"]) == 2
+
+
+@pytest.mark.parametrize("location", ["root", "nested"])
+def test_unreadable_directory_fails_without_creating_partial_archive(tmp_path, monkeypatch, location):
+    data = tmp_path / "data"
+    nested = data / "nested"
+    nested.mkdir(parents=True)
+    (nested / "ledger.txt").write_text("synthetic ledger")
+    denied = data if location == "root" else nested
+    output, stage = tmp_path / "out.tar.gz", tmp_path / "stage"
+    original = os.scandir
+
+    def unreadable(path):
+        if Path(path) == denied:
+            raise PermissionError("synthetic directory permission denied")
+        return original(path)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(snap.os, "scandir", unreadable)
+        with pytest.raises(snap.SnapshotError, match="Cannot enumerate backup source") as failure:
+            snap.build(str(data), str(output), str(stage))
+    assert isinstance(failure.value.__cause__, PermissionError)
+    assert not output.exists() and not stage.exists()
+    assert (nested / "ledger.txt").read_text() == "synthetic ledger"
 
 
 def test_snapshot_passes_the_demo_restore_verifier_taken_during_writes(tmp_path, monkeypatch):

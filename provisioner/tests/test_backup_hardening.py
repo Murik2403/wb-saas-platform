@@ -25,7 +25,7 @@ def test_timed_out_archive_removes_helper_and_partials(tmp_path,monkeypatch):
     client=Mock();client.containers.run.side_effect=[prepare,archive]
     with pytest.raises(HTTPException) as failure:app._backup_volume('volume','new-shop',14,client)
     assert 'private' not in failure.value.detail
-    archive.remove.assert_called_once_with(force=True)
+    archive.remove.assert_called_once_with(force=True,v=True)
     assert not list((tmp_path/'new-shop').iterdir())
 
 def test_crypto_temporary_is_private_from_creation_and_collision_not_deleted(tmp_path,monkeypatch):
@@ -64,11 +64,17 @@ def test_startup_cleanup_only_abandoned_temporary_outputs(tmp_path,monkeypatch):
     import time
     monkeypatch.setattr(app,'BACKUP_MOUNT',tmp_path)
     directory=tmp_path/'fixture';directory.mkdir()
-    old=directory/'.old.tar.gz.partial';old.write_bytes(b'plaintext');os.utime(old,(time.time()-7200,)*2)
-    active=directory/'.active.tar.gz.partial';active.write_bytes(b'active')
+    old=directory/'.fixture-20261015_010203_123456-0123456789ab.tar.gz.partial'
+    encrypted_temp=directory/'.fixture-20261015_010203_123456-0123456789ab.tar.gz.enc.tmp'
+    foreign=[directory/'.manual.tar.gz.partial',directory/'.manual.tar.gz.enc.tmp',
+             directory/'.other-20261015_010203_123456-0123456789ab.tar.gz.partial']
+    for path in [old,encrypted_temp,*foreign]:
+        path.write_bytes(b'plaintext');os.utime(path,(time.time()-7200,)*2)
+    active=directory/'.fixture-20261015_010203_123456-ffffffffffff.tar.gz.partial';active.write_bytes(b'active')
     legacy=directory/'historical.tar.gz';legacy.write_bytes(b'legacy')
-    assert app._cleanup_stale_backup_partials()==1 and not old.exists()
+    assert app._cleanup_stale_backup_partials()==2 and not old.exists() and not encrypted_temp.exists()
     assert active.exists() and legacy.exists()
+    assert all(path.exists() for path in foreign)
 
 def test_crypto_deadline_removes_private_partial(tmp_path,monkeypatch):
     source=tmp_path/'source';source.write_bytes(b'fixture')

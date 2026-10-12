@@ -42,7 +42,7 @@ def initialize(conn, *, postgres=False):
         conn.execute("ALTER TABLE billing_operation_claims ADD COLUMN expected_amount_rub TEXT NOT NULL DEFAULT ''")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_billing_claim_account_state ON billing_operation_claims(account_id,state)")
     from . import refund_intents
-    refund_intents.initialize(conn)
+    refund_intents.initialize(conn, postgres=postgres)
 
 
 def lock_account(conn, account_id):

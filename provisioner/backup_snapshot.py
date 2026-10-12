@@ -96,7 +96,12 @@ def build(data_dir: str, output: str, stage_dir: str) -> dict[str, int]:
     root, stage = Path(data_dir), Path(stage_dir)
     files: list[Path] = []
     directories: list[Path] = []
-    for current, names, entries in os.walk(root, followlinks=False):
+
+    def fail_enumeration(exc: OSError) -> None:
+        # os.walk otherwise skips unreadable directories and produces a successful but incomplete backup.
+        raise SnapshotError("Cannot enumerate backup source") from exc
+
+    for current, names, entries in os.walk(root, followlinks=False, onerror=fail_enumeration):
         names.sort()
         directories.extend(Path(current, name) for name in names)
         files.extend(Path(current, name) for name in sorted(entries))

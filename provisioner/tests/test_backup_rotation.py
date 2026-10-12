@@ -16,7 +16,7 @@ def test_prune_removes_old_legacy_tar_only_when_fresh_enc_exists(tmp_path, monke
     d = tmp_path / "shop"
     d.mkdir()
     _old(d / "a.tar.gz", 30)
-    _old(d / ".b.tar.gz.partial", 1)
+    _old(d / ".shop-20261015_010203_123456-0123456789ab.tar.gz.partial", 1)
     assert app._prune_old_backups("shop", 14) == 1  # only the stale partial; no fresh .enc yet
     assert (d / "a.tar.gz").exists()
     (d / "new.tar.gz.enc").write_bytes(b"x")

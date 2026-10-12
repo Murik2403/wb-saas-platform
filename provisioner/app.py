@@ -533,6 +533,8 @@ def _prune_old_backups(slug: str, keep_days: int) -> int:
     for pattern in patterns:
         for path in tenant_dir.glob(pattern):
             try:
+                if pattern == ".*.partial" and not _is_owned_backup_temporary(path, ".tar.gz.partial"):
+                    continue
                 limit = cutoff if pattern == "*.tar.gz" else time.time() - 3600
                 if path.is_file() and not path.is_symlink() and path.stat().st_mtime < limit:
                     path.unlink()
@@ -576,6 +578,19 @@ def migrate_legacy_backups(backup_group,keep_days,remove_expired=False):
     return result
 
 
+_BACKUP_TEMP_NAME = re.compile(
+    r"^\.(?P<group>[a-z0-9][a-z0-9-]{0,31})-\d{8}_\d{6}_\d{6}-[0-9a-f]{12}"
+    r"(?P<suffix>\.tar\.gz\.partial|\.tar\.gz\.enc\.tmp|\.stage)$"
+)
+
+
+def _is_owned_backup_temporary(path: Path, suffix: str | None = None) -> bool:
+    """Recognize generated temporary names only within their own backup namespace."""
+    match = _BACKUP_TEMP_NAME.fullmatch(path.name)
+    return bool(match and match.group("group") == path.parent.name
+                and (suffix is None or match.group("suffix") == suffix))
+
+
 def _cleanup_stale_backup_partials():
     """Clean only abandoned temporary outputs, never plaintext historical archives."""
     removed=0
@@ -585,7 +600,8 @@ def _cleanup_stale_backup_partials():
         try:
             for pattern in ('.*.tar.gz.partial','.*.tar.gz.enc.tmp'):
                 for path in directory.glob(pattern):
-                    if not path.is_symlink() and path.is_file() and path.stat().st_mtime<time.time()-3600:
+                    if (_is_owned_backup_temporary(path) and not path.is_symlink() and path.is_file()
+                            and path.stat().st_mtime<time.time()-3600):
                         path.unlink();removed+=1
             _remove_stale_stage_dirs(directory)
         except OSError:continue  # Independent freshness watchdog reports inaccessible/missing groups.
@@ -609,14 +625,11 @@ def _prepare_backup_directory(client, backup_group):
             except Exception:pass
 
 
-_STAGE_NAME = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,31}-\d{8}_\d{6}_\d{6}-[0-9a-f]{12}\.stage$")
-
-
 def _remove_stale_stage_dirs(directory: Path) -> None:
     """Remove only this module's own abandoned staging directories (``.<stem>.stage``), never anything else."""
     for stage in directory.glob(".*.stage"):
         try:
-            if not _STAGE_NAME.fullmatch(stage.name):
+            if not _is_owned_backup_temporary(stage, ".stage"):
                 continue
             if stage.is_dir() and not stage.is_symlink() and stage.stat().st_mtime < time.time() - 3600:
                 shutil.rmtree(stage, ignore_errors=True)
@@ -650,7 +663,8 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
     # A killed archive helper cannot survive its 240s wait; remove only stale
     # incomplete files, never legacy plaintext or a valid encrypted backup.
     for partial in backup_dir.glob('.*.partial'):
-        if partial.is_file() and not partial.is_symlink() and partial.stat().st_mtime<time.time()-3600:
+        if (_is_owned_backup_temporary(partial, ".tar.gz.partial") and partial.is_file()
+                and not partial.is_symlink() and partial.stat().st_mtime<time.time()-3600):
             partial.unlink()
     _remove_stale_stage_dirs(backup_dir)
     import uuid
@@ -694,7 +708,9 @@ def _backup_volume(volume_name: str, backup_group: str, keep_days: int, client: 
         raise HTTPException(status_code=502, detail="Docker backup failed; partial files removed") from exc
     finally:
         if helper is not None:
-            try:helper.remove(force=True)
+            # The tenant image can declare extra VOLUME paths. Only this helper's anonymous volumes are removed;
+            # Docker preserves the explicitly named tenant data volume and the host backup bind mount.
+            try:helper.remove(force=True,v=True)
             except Exception:pass
     plain_path.unlink(missing_ok=True)
     shutil.rmtree(backup_dir / stage_name, ignore_errors=True)
