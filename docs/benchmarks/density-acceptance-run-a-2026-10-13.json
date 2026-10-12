@@ -1,0 +1,171 @@
+{
+  "image": "bench-tenant:overlay",
+  "run": "6aa09812",
+  "started": "2026-10-13 00:36:02",
+  "limits": {
+    "mem": "1536m",
+    "reservation": "384m",
+    "cpus": 1.0
+  },
+  "floor_mib": 1500,
+  "steps": [
+    {
+      "target": 20,
+      "label": "20",
+      "admission_before_start": {
+        "decision": "admitted",
+        "budget_mib": 5558,
+        "reserved_mib": 0,
+        "free_mib": 5558,
+        "running_tenants": 0,
+        "host_available_mib": 5837
+      },
+      "tenants": 20,
+      "idle": {
+        "memory": {
+          "tenants": 20,
+          "cur_mib_avg": 176.8,
+          "cur_mib_max": 177.8,
+          "cur_mib_total": 3535.0,
+          "peak_mib_avg": 186.7,
+          "peak_mib_max": 187.2,
+          "peak_mib_sum": 3734.8,
+          "anon_mib_avg": 168.4,
+          "pids_max": 48,
+          "memory_events_high": 0,
+          "memory_events_max": 0,
+          "memory_events_oom": 0,
+          "memory_events_oom_kill": 0,
+          "cpu_seconds": 77.0,
+          "cpu_throttled_periods": 424,
+          "cpu_periods": 4307,
+          "cpu_throttled_pct": 9.8,
+          "cpu_throttled_seconds": 62.7
+        },
+        "vm_available_mib": 2400,
+        "vm_load1": 1.47
+      },
+      "background_pass_peak_delta_mib_measured_on_one_tenant": 97.7,
+      "endpoints": 20,
+      "stopped_after": "calc_parallel",
+      "phases": [
+        {
+          "phase": "calc_serial",
+          "seconds": 19.2,
+          "parallel_per_tenant": 1,
+          "memory": {
+            "tenants": 20,
+            "cur_mib_avg": 213.5,
+            "cur_mib_max": 326.0,
+            "cur_mib_total": 4270.9,
+            "peak_mib_avg": 219.9,
+            "peak_mib_max": 356.1,
+            "peak_mib_sum": 4398.9,
+            "anon_mib_avg": 198.9,
+            "pids_max": 62,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 110.9,
+            "cpu_throttled_periods": 101,
+            "cpu_periods": 2247,
+            "cpu_throttled_pct": 4.5,
+            "cpu_throttled_seconds": 12.6
+          },
+          "vm_min_available_mib": 1800,
+          "vm_load1_max": 5.41,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": false,
+          "calc": {
+            "n": 800,
+            "p50_ms": 16,
+            "p95_ms": 1015,
+            "max_ms": 1692,
+            "requests": 800,
+            "ok": 679,
+            "refused_4xx": 120,
+            "failures_5xx_or_no_answer": 1,
+            "http_4xx_by_endpoint": {
+              "409 /api/v1/dashboard/customer-quality": 80,
+              "422 /api/v1/dashboard/management-economics": 40,
+              "500 /api/v1/control/data-quality": 1
+            }
+          },
+          "healthz": {
+            "n": 338,
+            "p50_ms": 25,
+            "p95_ms": 123,
+            "max_ms": 346,
+            "failures": 0
+          }
+        },
+        {
+          "phase": "calc_parallel",
+          "seconds": 23.8,
+          "parallel_per_tenant": 4,
+          "memory": {
+            "tenants": 20,
+            "cur_mib_avg": 253.8,
+            "cur_mib_max": 471.9,
+            "cur_mib_total": 5076.1,
+            "peak_mib_avg": 259.6,
+            "peak_mib_max": 489.9,
+            "peak_mib_sum": 5192.5,
+            "anon_mib_avg": 230.5,
+            "pids_max": 65,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 175.6,
+            "cpu_throttled_periods": 212,
+            "cpu_periods": 3441,
+            "cpu_throttled_pct": 6.2,
+            "cpu_throttled_seconds": 15.0
+          },
+          "vm_min_available_mib": 1149,
+          "vm_load1_max": 13.34,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": true,
+          "calc": {
+            "n": 3200,
+            "p50_ms": 41,
+            "p95_ms": 1696,
+            "max_ms": 4633,
+            "requests": 3200,
+            "ok": 2645,
+            "refused_4xx": 480,
+            "failures_5xx_or_no_answer": 75,
+            "http_4xx_by_endpoint": {
+              "500 /api/v1/control/data-quality": 75,
+              "409 /api/v1/dashboard/customer-quality": 320,
+              "422 /api/v1/dashboard/management-economics": 160
+            }
+          },
+          "healthz": {
+            "n": 469,
+            "p50_ms": 57,
+            "p95_ms": 386,
+            "max_ms": 832,
+            "failures": 0
+          }
+        }
+      ]
+    }
+  ],
+  "notes": [],
+  "limit": {
+    "max_tenants_started_above_floor": 20,
+    "refused_at": 21,
+    "vm_available_mib": 1183,
+    "per_tenant_mib": 176.8,
+    "per_tenant_source": "measured",
+    "extra_tenants": 1,
+    "needed_mib": 177,
+    "floor_mib": 1500
+  },
+  "finished": "2026-10-13 00:37:58"
+}

@@ -459,6 +459,14 @@ class Bench:
         assert_local_engine()
         docker("network", "create", "--internal", *self.label(), self.network)
         try:
+            if self.args.admission_only:
+                for target in self.args.steps:
+                    self.wait_healthy(self.grow_to(target))
+                    time.sleep(10)
+                    self.report["steps"].append({"target": target, "admission_for_next_tenant": self.admission(f"{self.prefix}-t{target + 1:02d}-{self.run_id}"),
+                                                 "vm_available_mib": vm_available_mib(self.names[0])})
+                    print(json.dumps(self.report["steps"][-1]), flush=True)
+                return self.report
             for target in self.args.steps:
                 ok, gate = self.can_start(max(0, target - len(self.names)))
                 if not ok:
@@ -514,6 +522,7 @@ def main() -> int:
     parser.add_argument("--image", required=True)
     parser.add_argument("--steps", default="20,25,30", type=lambda s: [int(x) for x in s.split(",")])
     parser.add_argument("--probe-max", action="store_true", help="after the steps, add tenants one by one up to the floor and run the phases at that maximum")
+    parser.add_argument("--admission-only", action="store_true", help="only grow to each step and record the real admission decision for the next tenant (no load)")
     parser.add_argument("--limit-mem", default="1536m")
     parser.add_argument("--reservation", default="384m")
     parser.add_argument("--min-vm-available-mib", type=int, default=1500)

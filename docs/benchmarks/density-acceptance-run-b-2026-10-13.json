@@ -1,0 +1,459 @@
+{
+  "image": "bench-tenant:overlay",
+  "run": "71d4ebc8",
+  "started": "2026-10-13 00:38:35",
+  "limits": {
+    "mem": "1536m",
+    "reservation": "384m",
+    "cpus": 1.0
+  },
+  "floor_mib": 1500,
+  "steps": [
+    {
+      "target": 10,
+      "label": "10",
+      "admission_before_start": {
+        "decision": "admitted",
+        "budget_mib": 5558,
+        "reserved_mib": 0,
+        "free_mib": 5558,
+        "running_tenants": 0,
+        "host_available_mib": 5995
+      },
+      "tenants": 10,
+      "idle": {
+        "memory": {
+          "tenants": 10,
+          "cur_mib_avg": 177.9,
+          "cur_mib_max": 188.3,
+          "cur_mib_total": 1778.8,
+          "peak_mib_avg": 188.1,
+          "peak_mib_max": 198.3,
+          "peak_mib_sum": 1881.3,
+          "anon_mib_avg": 168.2,
+          "pids_max": 48,
+          "memory_events_high": 0,
+          "memory_events_max": 0,
+          "memory_events_oom": 0,
+          "memory_events_oom_kill": 0,
+          "cpu_seconds": 35.2,
+          "cpu_throttled_periods": 203,
+          "cpu_periods": 2002,
+          "cpu_throttled_pct": 10.1,
+          "cpu_throttled_seconds": 31.5
+        },
+        "vm_available_mib": 4152,
+        "vm_load1": 4.14
+      },
+      "background_pass_peak_delta_mib_measured_on_one_tenant": 195.9,
+      "endpoints": 20,
+      "refused_full_background_concurrency": [
+        {
+          "phase": "background",
+          "requested": 10,
+          "fits_above_floor": 9,
+          "vm_available_mib": 3592,
+          "per_pass_peak_delta_mib": 195.9,
+          "floor_mib": 1500
+        },
+        {
+          "phase": "combined",
+          "requested": 10,
+          "fits_above_floor": 8,
+          "vm_available_mib": 3333,
+          "per_pass_peak_delta_mib": 195.9,
+          "floor_mib": 1500
+        }
+      ],
+      "phases": [
+        {
+          "phase": "calc_serial",
+          "seconds": 7.4,
+          "parallel_per_tenant": 1,
+          "memory": {
+            "tenants": 10,
+            "cur_mib_avg": 208.1,
+            "cur_mib_max": 222.0,
+            "cur_mib_total": 2081.0,
+            "peak_mib_avg": 227.9,
+            "peak_mib_max": 384.1,
+            "peak_mib_sum": 2278.6,
+            "anon_mib_avg": 195.7,
+            "pids_max": 49,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 69.6,
+            "cpu_throttled_periods": 166,
+            "cpu_periods": 1506,
+            "cpu_throttled_pct": 11.0,
+            "cpu_throttled_seconds": 32.3
+          },
+          "vm_min_available_mib": 3855,
+          "vm_load1_max": 3.55,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": false,
+          "calc": {
+            "n": 400,
+            "p50_ms": 10,
+            "p95_ms": 356,
+            "max_ms": 648,
+            "requests": 400,
+            "ok": 340,
+            "refused_4xx": 60,
+            "failures_5xx_or_no_answer": 0,
+            "http_4xx_by_endpoint": {
+              "409 /api/v1/dashboard/customer-quality": 40,
+              "422 /api/v1/dashboard/management-economics": 20
+            }
+          },
+          "healthz": {
+            "n": 76,
+            "p50_ms": 16,
+            "p95_ms": 63,
+            "max_ms": 149,
+            "failures": 0
+          }
+        },
+        {
+          "phase": "calc_parallel",
+          "seconds": 8.3,
+          "parallel_per_tenant": 4,
+          "memory": {
+            "tenants": 10,
+            "cur_mib_avg": 236.3,
+            "cur_mib_max": 248.9,
+            "cur_mib_total": 2363.3,
+            "peak_mib_avg": 251.6,
+            "peak_mib_max": 384.1,
+            "peak_mib_sum": 2516.1,
+            "anon_mib_avg": 220.9,
+            "pids_max": 52,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 45.0,
+            "cpu_throttled_periods": 186,
+            "cpu_periods": 611,
+            "cpu_throttled_pct": 30.4,
+            "cpu_throttled_seconds": 2.9
+          },
+          "vm_min_available_mib": 3532,
+          "vm_load1_max": 5.09,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": false,
+          "calc": {
+            "n": 1600,
+            "p50_ms": 23,
+            "p95_ms": 878,
+            "max_ms": 1299,
+            "requests": 1600,
+            "ok": 1322,
+            "refused_4xx": 240,
+            "failures_5xx_or_no_answer": 38,
+            "http_4xx_by_endpoint": {
+              "500 /api/v1/control/data-quality": 38,
+              "409 /api/v1/dashboard/customer-quality": 160,
+              "422 /api/v1/dashboard/management-economics": 80
+            }
+          },
+          "healthz": {
+            "n": 87,
+            "p50_ms": 44,
+            "p95_ms": 158,
+            "max_ms": 293,
+            "failures": 0
+          }
+        },
+        {
+          "phase": "background",
+          "seconds": 36.4,
+          "parallel_per_tenant": 0,
+          "memory": {
+            "tenants": 10,
+            "cur_mib_avg": 254.1,
+            "cur_mib_max": 275.8,
+            "cur_mib_total": 2541.0,
+            "peak_mib_avg": 392.3,
+            "peak_mib_max": 454.0,
+            "peak_mib_sum": 3923.1,
+            "anon_mib_avg": 237.1,
+            "pids_max": 50,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 296.3,
+            "cpu_throttled_periods": 825,
+            "cpu_periods": 3221,
+            "cpu_throttled_pct": 25.6,
+            "cpu_throttled_seconds": 136.1
+          },
+          "vm_min_available_mib": 2284,
+          "vm_load1_max": 6.86,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": false,
+          "background": {
+            "concurrency": "9 of 10 tenants at the same time",
+            "tenants": 9,
+            "tenants_all_jobs_ok": 9,
+            "tenants_with_failed_job": 0,
+            "reports_generated": 5,
+            "report_s_p50": 32.95,
+            "report_s_max": 33.38,
+            "sync_and_agents": "needs_token (no-op in demo data)",
+            "error_types": []
+          }
+        },
+        {
+          "phase": "combined",
+          "seconds": 44.5,
+          "parallel_per_tenant": 4,
+          "memory": {
+            "tenants": 10,
+            "cur_mib_avg": 274.6,
+            "cur_mib_max": 291.6,
+            "cur_mib_total": 2745.5,
+            "peak_mib_avg": 442.6,
+            "peak_mib_max": 496.0,
+            "peak_mib_sum": 4425.6,
+            "anon_mib_avg": 253.2,
+            "pids_max": 48,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 348.0,
+            "cpu_throttled_periods": 1850,
+            "cpu_periods": 3811,
+            "cpu_throttled_pct": 48.5,
+            "cpu_throttled_seconds": 247.9
+          },
+          "vm_min_available_mib": 1941,
+          "vm_load1_max": 9.19,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": false,
+          "calc": {
+            "n": 1600,
+            "p50_ms": 64,
+            "p95_ms": 1877,
+            "max_ms": 2799,
+            "requests": 1600,
+            "ok": 1297,
+            "refused_4xx": 240,
+            "failures_5xx_or_no_answer": 63,
+            "http_4xx_by_endpoint": {
+              "500 /api/v1/control/data-quality": 63,
+              "409 /api/v1/dashboard/customer-quality": 160,
+              "422 /api/v1/dashboard/management-economics": 80
+            }
+          },
+          "healthz": {
+            "n": 250,
+            "p50_ms": 48,
+            "p95_ms": 289,
+            "max_ms": 509,
+            "failures": 0
+          },
+          "background": {
+            "concurrency": "8 of 10 tenants at the same time",
+            "tenants": 8,
+            "tenants_all_jobs_ok": 8,
+            "tenants_with_failed_job": 0,
+            "reports_generated": 5,
+            "report_s_p50": 41.01,
+            "report_s_max": 41.61,
+            "sync_and_agents": "needs_token (no-op in demo data)",
+            "error_types": []
+          }
+        }
+      ]
+    },
+    {
+      "target": 15,
+      "label": "15",
+      "admission_before_start": {
+        "decision": "admitted",
+        "budget_mib": 5558,
+        "reserved_mib": 3840,
+        "free_mib": 1718,
+        "running_tenants": 10,
+        "host_available_mib": 3174
+      },
+      "tenants": 15,
+      "idle": {
+        "memory": {
+          "tenants": 15,
+          "cur_mib_avg": 228.9,
+          "cur_mib_max": 274.7,
+          "cur_mib_total": 3433.0,
+          "peak_mib_avg": 357.4,
+          "peak_mib_max": 496.0,
+          "peak_mib_sum": 5360.3,
+          "anon_mib_avg": 220.9,
+          "pids_max": 48,
+          "memory_events_high": 0,
+          "memory_events_max": 0,
+          "memory_events_oom": 0,
+          "memory_events_oom_kill": 0,
+          "cpu_seconds": 820.9,
+          "cpu_throttled_periods": 3328,
+          "cpu_periods": 13925,
+          "cpu_throttled_pct": 23.9,
+          "cpu_throttled_seconds": 467.2
+        },
+        "vm_available_mib": 1565,
+        "vm_load1": 4.16
+      },
+      "background_pass_peak_delta_mib_measured_on_one_tenant": 195.9,
+      "endpoints": 20,
+      "stopped_after": "calc_parallel",
+      "phases": [
+        {
+          "phase": "calc_serial",
+          "seconds": 14.4,
+          "parallel_per_tenant": 1,
+          "memory": {
+            "tenants": 15,
+            "cur_mib_avg": 218.6,
+            "cur_mib_max": 259.2,
+            "cur_mib_total": 3278.4,
+            "peak_mib_avg": 360.9,
+            "peak_mib_max": 496.0,
+            "peak_mib_sum": 5413.3,
+            "anon_mib_avg": 200.8,
+            "pids_max": 50,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 85.2,
+            "cpu_throttled_periods": 23,
+            "cpu_periods": 1451,
+            "cpu_throttled_pct": 1.6,
+            "cpu_throttled_seconds": 0.3
+          },
+          "vm_min_available_mib": 1568,
+          "vm_load1_max": 7.65,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": false,
+          "calc": {
+            "n": 600,
+            "p50_ms": 19,
+            "p95_ms": 916,
+            "max_ms": 1795,
+            "requests": 600,
+            "ok": 510,
+            "refused_4xx": 90,
+            "failures_5xx_or_no_answer": 0,
+            "http_4xx_by_endpoint": {
+              "409 /api/v1/dashboard/customer-quality": 60,
+              "422 /api/v1/dashboard/management-economics": 30
+            }
+          },
+          "healthz": {
+            "n": 234,
+            "p50_ms": 27,
+            "p95_ms": 127,
+            "max_ms": 871,
+            "failures": 0
+          }
+        },
+        {
+          "phase": "calc_parallel",
+          "seconds": 22.5,
+          "parallel_per_tenant": 4,
+          "memory": {
+            "tenants": 15,
+            "cur_mib_avg": 186.1,
+            "cur_mib_max": 224.8,
+            "cur_mib_total": 2790.9,
+            "peak_mib_avg": 363.9,
+            "peak_mib_max": 496.0,
+            "peak_mib_sum": 5458.0,
+            "anon_mib_avg": 169.7,
+            "pids_max": 52,
+            "memory_events_high": 0,
+            "memory_events_max": 0,
+            "memory_events_oom": 0,
+            "memory_events_oom_kill": 0,
+            "cpu_seconds": 137.8,
+            "cpu_throttled_periods": 214,
+            "cpu_periods": 2333,
+            "cpu_throttled_pct": 9.2,
+            "cpu_throttled_seconds": 4.9
+          },
+          "vm_min_available_mib": 1197,
+          "vm_load1_max": 14.62,
+          "oom_killed_containers": 0,
+          "restarts": 0,
+          "floor_breached": true,
+          "calc": {
+            "n": 2400,
+            "p50_ms": 51,
+            "p95_ms": 1618,
+            "max_ms": 3380,
+            "requests": 2400,
+            "ok": 1972,
+            "refused_4xx": 360,
+            "failures_5xx_or_no_answer": 68,
+            "http_4xx_by_endpoint": {
+              "500 /api/v1/control/data-quality": 68,
+              "409 /api/v1/dashboard/customer-quality": 240,
+              "422 /api/v1/dashboard/management-economics": 120
+            }
+          },
+          "healthz": {
+            "n": 287,
+            "p50_ms": 69,
+            "p95_ms": 503,
+            "max_ms": 824,
+            "failures": 0
+          }
+        }
+      ]
+    },
+    {
+      "target": 20,
+      "result": "REFUSED_NOT_RUN",
+      "reason": "the 15-tenant step already breached the VM floor or killed a container: this stand's limit is reached",
+      "vm_available_mib": 2901,
+      "per_tenant_mib": 228.9,
+      "per_tenant_source": "measured",
+      "extra_tenants": 0,
+      "needed_mib": 0,
+      "floor_mib": 1500
+    },
+    {
+      "target": 25,
+      "result": "REFUSED_NOT_RUN",
+      "reason": "the 15-tenant step already breached the VM floor or killed a container: this stand's limit is reached",
+      "vm_available_mib": 2901,
+      "per_tenant_mib": 228.9,
+      "per_tenant_source": "measured",
+      "extra_tenants": 0,
+      "needed_mib": 0,
+      "floor_mib": 1500
+    },
+    {
+      "target": 30,
+      "result": "REFUSED_NOT_RUN",
+      "reason": "the 15-tenant step already breached the VM floor or killed a container: this stand's limit is reached",
+      "vm_available_mib": 2901,
+      "per_tenant_mib": 228.9,
+      "per_tenant_source": "measured",
+      "extra_tenants": 0,
+      "needed_mib": 0,
+      "floor_mib": 1500
+    }
+  ],
+  "notes": [],
+  "finished": "2026-10-13 00:43:30"
+}

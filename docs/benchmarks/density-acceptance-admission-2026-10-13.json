@@ -1,0 +1,65 @@
+{
+  "image": "bench-tenant:overlay",
+  "run": "41489afa",
+  "started": "2026-10-13 00:44:19",
+  "limits": {
+    "mem": "1536m",
+    "reservation": "384m",
+    "cpus": 1.0
+  },
+  "floor_mib": 1500,
+  "steps": [
+    {
+      "target": 12,
+      "admission_for_next_tenant": {
+        "decision": "admitted",
+        "budget_mib": 5558,
+        "reserved_mib": 4608,
+        "free_mib": 950,
+        "running_tenants": 12,
+        "host_available_mib": 4324
+      },
+      "vm_available_mib": 4331
+    },
+    {
+      "target": 13,
+      "admission_for_next_tenant": {
+        "decision": "admitted",
+        "budget_mib": 5558,
+        "reserved_mib": 4992,
+        "free_mib": 566,
+        "running_tenants": 13,
+        "host_available_mib": 4143
+      },
+      "vm_available_mib": 4142
+    },
+    {
+      "target": 14,
+      "admission_for_next_tenant": {
+        "decision": "refused",
+        "reason": "budget",
+        "budget_mib": 5558,
+        "reserved_mib": 5376,
+        "free_mib": 182,
+        "running_tenants": 14,
+        "host_available_mib": 3949
+      },
+      "vm_available_mib": 3949
+    },
+    {
+      "target": 15,
+      "admission_for_next_tenant": {
+        "decision": "refused",
+        "reason": "budget",
+        "budget_mib": 5558,
+        "reserved_mib": 5760,
+        "free_mib": 0,
+        "running_tenants": 15,
+        "host_available_mib": 3787
+      },
+      "vm_available_mib": 3787
+    }
+  ],
+  "notes": [],
+  "finished": "2026-10-13 00:45:58"
+}
