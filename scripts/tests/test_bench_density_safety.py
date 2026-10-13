@@ -99,7 +99,7 @@ class CleanupOwnershipSafetyTests(unittest.TestCase):
         with patch.object(bench, "docker", side_effect=fake) as docker:
             instance.cleanup()
         removes = [call.args for call in docker.call_args_list if "rm" in call.args]
-        self.assertIn(("rm", "-f", "owned-id"), removes)
+        self.assertIn(("rm", "-f", "-v", "owned-id"), removes)
         self.assertIn(("volume", "rm", "-f", "bench-data-owned123"), removes)
         self.assertEqual(len(removes), 2)
 
