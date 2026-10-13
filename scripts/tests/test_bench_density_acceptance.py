@@ -513,22 +513,37 @@ class PhaseAcceptanceTests(unittest.TestCase):
         self.assertFalse(bench.combined_overlap({'start':100,'end':105}, None)['proven'])
 
     def test_combined_requires_actual_report_overlap_for_every_tenant(self):
-        for delayed in (False, True):
+        for delayed, disjoint in ((False, False), (True, False), (False, True)):
             instance = self.instance()
             instance.names.append('bench-t02-owned')
             metrics = {name:complete_metrics() for name in instance.names}
             driver = {name:{'bucket':{'ok':1,'refused':0,'fail':0,'health_fail':0,'codes':{}},'calc':[10],'health':[10],'calc_window':{'start':100,'end':105}} for name in instance.names}
+            if disjoint:
+                driver[instance.names[1]]['calc_window'] = {'start':110,'end':115}
             def report(name):
                 late = delayed and name == instance.names[1]
+                if disjoint and name == instance.names[1]:
+                    return {'reports':{'ok':True,'out':1,'s':1,'executor':'resident_worker','work_window':{'start':111,'end':114,'resolution_s':1}}}
                 return {'reports':{'ok':True,'out':1,'s':1,'executor':'resident_worker','work_window':{'start':106 if late else 101,'end':110 if late else 104,'resolution_s':1}}}
             with patch.object(bench,'vm_available_mib',return_value=5000), patch.object(bench,'vm_loadavg',return_value=0), \
                  patch.object(instance,'probe_all',return_value=metrics), patch.object(instance,'flags',return_value=(0,0)), \
                  patch.object(instance,'drive',return_value=driver), patch.object(instance,'run_background',side_effect=report):
                 phase=instance.run_phase('combined',True,True,1,['/api/v1/dashboard/finance'],metrics)
-            self.assertEqual(phase['failed'],delayed)
+            self.assertEqual(phase['failed'],delayed or disjoint)
             self.assertEqual(phase['combined_overlap']['proven_tenants'],1 if delayed else 2)
             if delayed:
                 self.assertIn('combined_overlap_unproven',phase['failure_reasons'])
+            if disjoint:
+                self.assertIn('combined_all_tenants_overlap_unproven',phase['failure_reasons'])
+
+    def test_individual_overlaps_do_not_prove_simultaneous_cohort_peak(self):
+        first = bench.combined_overlap({'start':100,'end':105}, {'start':101,'end':104,'resolution_s':1})
+        later = bench.combined_overlap({'start':110,'end':115}, {'start':111,'end':114,'resolution_s':1})
+        self.assertTrue(first['proven'] and later['proven'])
+        self.assertFalse(bench.combined_cohort_overlap({'first':first,'later':later})['proven'])
+        self.assertTrue(bench.combined_cohort_overlap({'first':first,'same':first})['proven'])
+        self.assertEqual(bench.combined_cohort_overlap({'first':first})['guaranteed_overlap_s'],2)
+        self.assertFalse(bench.combined_cohort_overlap({})['proven'])
 
 
 if __name__ == "__main__":

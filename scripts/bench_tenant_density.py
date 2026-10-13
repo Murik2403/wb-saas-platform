@@ -410,6 +410,19 @@ def combined_overlap(calc_window: dict | None, work_window: dict | None) -> dict
     return evidence
 
 
+def combined_cohort_overlap(per_tenant: dict) -> dict:
+    """All N calculation/report windows must share a guaranteed interior."""
+    result = {'proven': False, 'guaranteed_overlap_s': 0.0}
+    if not per_tenant or not all(value.get('proven') for value in per_tenant.values()):
+        return result
+    starts = [max(value['calc_window']['start'], value['report_window']['start']
+                  + value['report_window']['resolution_s']) for value in per_tenant.values()]
+    ends = [min(value['calc_window']['end'], value['report_window']['end']) for value in per_tenant.values()]
+    result['guaranteed_overlap_s'] = round(max(0.0, min(ends) - max(starts)), 6)
+    result['proven'] = result['guaranteed_overlap_s'] > 0
+    return result
+
+
 class Bench:
     def __init__(self, args):
         self.args, self.run_id = args, uuid.uuid4().hex[:8]
@@ -783,6 +796,9 @@ class Bench:
             phase['combined_overlap'] = {'per_tenant': overlap, 'proven_tenants': sum(v['proven'] for v in overlap.values()), 'required_tenants': len(self.names)}
             if not all(v['proven'] for v in overlap.values()):
                 failure_reasons.append('combined_overlap_unproven')
+            phase['combined_overlap']['all_tenants'] = combined_cohort_overlap(overlap)
+            if not phase['combined_overlap']['all_tenants']['proven']:
+                failure_reasons.append('combined_all_tenants_overlap_unproven')
         phase["failure_reasons"] = sorted(set(failure_reasons))
         phase["failed"] = bool(failure_reasons)
         phase["_after"] = after

@@ -50,12 +50,14 @@ Synthetic mechanical gate completed separately: 27 boolean gates, real email-con
 
 - [x] Reproduce false-success risks on worker exceptions/empty responses and unsafe fixture seeding.
 - [x] Support immutable restored fixtures and strict phase/watchdog refusal semantics.
-- [ ] Cover latest expensive local analytics and actual selected admission budget, memory/CPU/health/queue measurements.
+- [x] Cover latest expensive local analytics and actual selected admission budget, memory/CPU/health/queue measurements.
 - [ ] Execute serial, concurrent, background and combined phases at 20/25/30 on the independent stand; preserve genuine refusals.
 - [ ] Repeat recovery/health checks after load and report measured limits without extrapolating synthetic data to real sync.
 
 ### Task 4: Independent review and final evidence (parent / reviewer)
 
 - [x] Verify hashes, labels, resource limits, endpoints and no production/unrelated-object changes (synthetic mechanical run).
-- [ ] Run focused regressions and relevant full checks; update Graphify after source changes.
-- [ ] Commit a truthful closed/open matrix. No production deployment is requested for this task.
+- [x] Run focused regressions and relevant full checks; update Graphify after source changes.
+- [x] Commit a truthful closed/open matrix. No production deployment is requested for this task.
+
+Additional actual gates: synthetic frozen copy helper passes root/drop-caps → UID10001 read/write and original hashes; one deployed cabinet from committed6204510 completes all four phases, actual resident PDF and10.574672s measured calculation/PDF overlap. Added all-cohort interval proof and verified it against the saved one-cabinet timestamps. Geometry preflight for20/25/30 refuses the current8GiB/12CPU before creating their resources. These do not close either pending large-stand/real-recovery task. Separate host/rental budget question remains unanswered; independent deployment/key/TLS/host-job inputs still needed.
