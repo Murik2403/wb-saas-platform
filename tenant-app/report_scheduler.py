@@ -8,16 +8,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import threading
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from config import DB_PATH
 from reports import delivery
-from reports.store import ReportStore
+from reports.pdf_budget import PdfBusy, try_pdf_slot
+from reports.store import LEASE_SECONDS, ReportStore
 
 CHECK_INTERVAL_SECONDS = 5
+LEASE_OWNER = f"worker-{os.getpid()}"
 REPORTS_DIR = DB_PATH.parent / "reports"
 
 
@@ -63,6 +68,25 @@ def _is_due(definition: dict, now: datetime) -> bool:
 _SCHEDULE_PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
 
+@contextmanager
+def _lease_heartbeat(store: ReportStore, run_id: int):
+    """Keep the run's lease alive while its PDF is built; if this process dies the lease expires and the run is requeued."""
+    stop = threading.Event()
+
+    def beat():
+        while not stop.wait(LEASE_SECONDS / 3):
+            try:
+                store.heartbeat(run_id)
+            except Exception:  # noqa: BLE001 -- a missed beat only shortens the lease; the next one repairs it
+                pass
+    thread = threading.Thread(target=beat, name=f"report-lease-{run_id}", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+
+
 def generate_and_save(
     store: ReportStore,
     definition: dict,
@@ -89,7 +113,8 @@ def generate_and_save(
         run_id = store.start_run(definition["id"])
     try:
         metric_codes = json.loads(definition["metrics"])
-        pdf_bytes = build_report_pdf(definition["name"], metric_codes, start, end)
+        with _lease_heartbeat(store, run_id):
+            pdf_bytes = build_report_pdf(definition["name"], metric_codes, start, end)
 
         out_dir = REPORTS_DIR / str(definition["id"])
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -99,6 +124,10 @@ def generate_and_save(
         store.finish_run(run_id, status="ok", file_path=str(file_path))
         store.set_last_run(definition["id"], datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds"))
         return pdf_bytes, file_path
+    except PdfBusy as exc:
+        # No slot in time: nothing was built. Do not burn today's schedule slot (set_last_run) for a report that never ran.
+        store.finish_run(run_id, status="error", error=str(exc))
+        raise
     except Exception as exc:
         store.finish_run(run_id, status="error", error=str(exc))
         store.set_last_run(definition["id"], _now_msk().isoformat(timespec="seconds"))
@@ -130,36 +159,55 @@ def deliver_report(
     return results
 
 
-def run_definition(store: ReportStore, definition: dict, *, period_days: int | None = None) -> None:
+def run_definition(store: ReportStore, definition: dict, *, period_days: int | None = None) -> bool:
     """Synchronous generate + deliver -- used by the background scheduler
     loop (check_once/loop), where blocking on a slow delivery is harmless
-    since it's already off the UI thread."""
-    run_id = store.start_run(definition["id"], delivery_requested=bool(definition.get("email_enabled") or definition.get("telegram_enabled")))
-    pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days, run_id=run_id)
+    since it's already off the UI thread.
+
+    The PDF slot is taken before the run is started and released before delivery: a busy host leaves the definition due
+    (returns False, retried on the next tick) instead of recording a failed run, and a slow delivery never holds a slot."""
+    slot = try_pdf_slot()
+    if slot is None:
+        return False
+    with slot:
+        run_id = store.start_run(definition["id"], delivery_requested=bool(definition.get("email_enabled") or definition.get("telegram_enabled")))
+        pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days, run_id=run_id)
     deliver_report(definition, pdf_bytes, file_path.name, store=store, run_id=run_id)
+    return True
 
 
 def process_queued(store: ReportStore, *, limit: int = 1) -> int:
     """Generate manual requests outside the web process."""
     processed = 0
+    store.requeue_expired_leases()  # a worker that died mid-build left its lease to expire: give the run back
     for _ in range(limit):
-        job = store.claim_next_queued()
-        if job is None:
+        if not store.has_queued():
             break
-        run_id = int(job.pop("run_id"))
-        period_days = job.pop("period_days", None)
-        delivery_requested = bool(job.pop("delivery_requested", 0))
-        try:
-            pdf_bytes, file_path = generate_and_save(
-                store,
-                job,
-                period_days=int(period_days) if period_days else None,
-                run_id=run_id,
-            )
-            if delivery_requested:
-                deliver_report(job, pdf_bytes, file_path.name, store=store, run_id=run_id)
-        except Exception as exc:
-            print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Ошибка ручного отчёта '{job['name']}': {exc}", flush=True)
+        slot = try_pdf_slot()
+        if slot is None:
+            break  # every PDF slot is busy: the run stays queued (durable) and the next tick tries again
+        delivery = None
+        with slot:
+            job = store.claim_next_queued(owner=LEASE_OWNER)
+            if job is None:
+                break
+            run_id = int(job.pop("run_id"))
+            period_days = job.pop("period_days", None)
+            delivery_requested = bool(job.pop("delivery_requested", 0))
+            try:
+                pdf_bytes, file_path = generate_and_save(
+                    store,
+                    job,
+                    period_days=int(period_days) if period_days else None,
+                    run_id=run_id,
+                )
+                if delivery_requested:
+                    delivery = (job, pdf_bytes, file_path.name, run_id)
+            except Exception as exc:
+                print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Ошибка ручного отчёта '{job['name']}': {exc}", flush=True)
+        if delivery is not None:  # delivery is slow and needs no memory budget: outside the slot
+            job, pdf_bytes, filename, run_id = delivery
+            deliver_report(job, pdf_bytes, filename, store=store, run_id=run_id)
         processed += 1
     return processed
 
@@ -175,10 +223,13 @@ def check_once(*, deliver: bool = True) -> int:
         if _is_due(definition, now):
             try:
                 if deliver:
-                    run_definition(store, definition)
+                    generated += 1 if run_definition(store, definition) else 0
                 else:
-                    generate_and_save(store, definition)
-                generated += 1
+                    slot = try_pdf_slot()
+                    if slot is not None:
+                        with slot:
+                            generate_and_save(store, definition)
+                        generated += 1
             except Exception as exc:
                 print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Ошибка отчёта '{definition['name']}': {exc}", flush=True)
     return generated

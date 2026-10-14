@@ -138,6 +138,21 @@ def _create_summary_box(text: str, style: ParagraphStyle) -> Table:
 
 
 def build_report_pdf(name: str, metric_codes: list[str], start: date, end: date) -> bytes:
+    """Render one PDF inside the shared memory budget (see reports/pdf_budget.py).
+
+    Callers that already hold a slot (the report worker) pass straight through; any other caller waits up to
+    WB_SAAS_PDF_WAIT_SECONDS for a free slot and gets PdfBusy instead of rendering over the budget.
+    """
+    from reports.pdf_budget import pdf_slot
+    try:
+        wait = float(os.environ.get("WB_SAAS_PDF_WAIT_SECONDS", "120"))
+    except ValueError:
+        wait = 120.0
+    with pdf_slot(wait=wait):
+        return _render_report_pdf(name, metric_codes, start, end)
+
+
+def _render_report_pdf(name: str, metric_codes: list[str], start: date, end: date) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
