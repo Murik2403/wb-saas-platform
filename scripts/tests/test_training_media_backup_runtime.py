@@ -10,7 +10,8 @@ from scripts import training_media_backup_runtime as runtime
 
 KEY = "synthetic-purpose-key-" + "k" * 40
 CID = "c" * 64
-IMAGE = "sha256:" + "a" * 64
+GATEWAY_IMAGE = "sha256:" + "a" * 64
+PROVISIONER_IMAGE = "sha256:" + "b" * 64
 
 
 class FakeDocker:
@@ -23,7 +24,7 @@ class FakeDocker:
     def own(self):
         mounts = [{"Type": "bind", "Source": row["Source"], "Destination": row["Target"], "RW": not row["ReadOnly"]}
                   for row in self.config["HostConfig"]["Mounts"]]
-        value = {"Id": CID, "Name": "/" + self.name, "Image": IMAGE, "Config": copy.deepcopy(self.config),
+        value = {"Id": CID, "Name": "/" + self.name, "Image": PROVISIONER_IMAGE, "Config": copy.deepcopy(self.config),
                  "HostConfig": copy.deepcopy(self.config["HostConfig"]), "Mounts": mounts,
                  "State": {"Running": self.started, "ExitCode": self.exit_code, "OOMKilled": False}}
         if self.damage == "extra_db_mount":
@@ -36,15 +37,17 @@ class FakeDocker:
             value["HostConfig"]["NetworkMode"] = "host"
         elif self.damage == "key_in_config":
             value["Config"]["Env"].append('WB_SAAS_BACKUP_ENCRYPTION_KEY='+KEY)
+        elif self.damage == "gateway_image":
+            value["Image"] = GATEWAY_IMAGE
         return value
 
     def __call__(self, method, path, body=None):
         self.calls.append((method, path, copy.deepcopy(body)))
         if path == "/containers/wb-saas-gateway-1/json":
-            return {"Image": IMAGE, "State": {"Running": True}, "Mounts": [
+            return {"Image": GATEWAY_IMAGE, "State": {"Running": True}, "Mounts": [
                 {"Type": "bind", "Source": str(self.media), "Destination": "/app/training-media", "RW": False}]}
         if path == "/containers/wb-saas-provisioner-1/json":
-            return {"State": {"Running": True}, "Config": {"Env": ["WB_SAAS_BACKUP_ENCRYPTION_KEY=" + KEY,
+            return {"Image": PROVISIONER_IMAGE, "State": {"Running": True}, "Config": {"Env": ["WB_SAAS_BACKUP_ENCRYPTION_KEY=" + KEY,
                 "WB_SAAS_BACKUP_ENCRYPTION_KEY_ID=test-id", "WB_SAAS_SMTP_PASSWORD=never-forward-this"]}}
         if method == "POST" and path.startswith("/containers/create?name="):
             self.name = path.split("=", 1)[1]; self.config = body
@@ -86,6 +89,7 @@ def test_purpose_key_goes_only_to_stdin_not_daemon_config_args_logs_or_files(tmp
     result = runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source, 14)
     assert result["ok"] and result["files"] == 32
     config = fake.config
+    assert config['Image'] == PROVISIONER_IMAGE and config['Image'] != GATEWAY_IMAGE
     assert not any(v.partition('=')[0] in runtime.PURPOSE_KEYS for v in config["Env"])
     assert not any("SMTP_PASSWORD" in value for value in config["Env"])
     assert KEY not in config["Cmd"][0] and KEY not in str(config["Entrypoint"])
@@ -103,7 +107,7 @@ def test_purpose_key_goes_only_to_stdin_not_daemon_config_args_logs_or_files(tmp
     assert not list(directory.glob(".training-daily-*.json"))
 
 
-@pytest.mark.parametrize("damage", ["extra_db_mount", "socket_bind", "network","key_in_config"])
+@pytest.mark.parametrize("damage", ["extra_db_mount", "socket_bind", "network","key_in_config", "gateway_image"])
 def test_isolation_failure_blocks_start_but_cleans_exact_owned_container(tmp_path, monkeypatch, damage):
     source, directory, fake = setup(tmp_path, monkeypatch, damage=damage)
     with pytest.raises(RuntimeError, match="training_media_backup_failed"):
@@ -140,7 +144,7 @@ def test_missing_purpose_key_rejects_before_creating_any_container(tmp_path, mon
     source, directory, fake = setup(tmp_path, monkeypatch)
     original = fake.__call__
     def api(method, path, body=None):
-        if "provisioner-1/json" in path:return {"State": {"Running": True}, "Config": {"Env": ["SMTP_PASSWORD=not-a-backup-key"]}}
+        if "provisioner-1/json" in path:return {"Image": PROVISIONER_IMAGE, "State": {"Running": True}, "Config": {"Env": ["SMTP_PASSWORD=not-a-backup-key"]}}
         return original(method, path, body)
     monkeypatch.setattr(runtime, "api", api)
     with pytest.raises(RuntimeError):runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source)
@@ -150,3 +154,18 @@ def test_missing_purpose_key_rejects_before_creating_any_container(tmp_path, mon
 def test_key_transport_size_is_bounded_before_exec(tmp_path,monkeypatch):
     monkeypatch.setattr(runtime.subprocess,'run',lambda *a,**kw:pytest.fail('oversized stdin must not run'))
     with pytest.raises(RuntimeError):runtime.execute_job(CID,{'WB_SAAS_BACKUP_ENCRYPTION_KEY':'x'*(runtime.MAX_KEY_TRANSPORT+1)})
+
+
+@pytest.mark.parametrize('image', ['mh-provisioner:latest', '', 'sha256:' + 'g' * 64])
+def test_unpinned_provisioner_image_rejected_before_container_and_key_handoff(tmp_path, monkeypatch, image):
+    source, directory, fake = setup(tmp_path, monkeypatch)
+    original = fake.__call__
+    def api(method, path, body=None):
+        result = original(method, path, body)
+        if path == '/containers/wb-saas-provisioner-1/json':
+            result['Image'] = image
+        return result
+    monkeypatch.setattr(runtime, 'api', api)
+    with pytest.raises(RuntimeError, match='training_media_backup_failed'):
+        runtime.run({'WB_SAAS_BACKUP_DIR': str(directory.parent)}, source)
+    assert fake.config is None and not fake.exec_calls

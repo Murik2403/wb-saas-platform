@@ -104,7 +104,7 @@ raise SystemExit(status)
 """
 
 
-def configuration(gateway, source_root, media_source, directory, name, keep_days):
+def configuration(provisioner, source_root, media_source, directory, name, keep_days):
     mounts = []
     for relative in PUBLIC_FILES:
         source = source_root / relative
@@ -114,7 +114,10 @@ def configuration(gateway, source_root, media_source, directory, name, keep_days
         mounts.append({"Type": "bind", "Source": str(source), "Target": "/release/" + relative, "ReadOnly": True})
     mounts.extend([{"Type": "bind", "Source": str(media_source), "Target": "/media", "ReadOnly": True},
                    {"Type": "bind", "Source": str(directory), "Target": "/backups/training-media", "ReadOnly": False}])
-    return {"Image": gateway["Image"], "User": "10001:10001", "WorkingDir": "/release",
+    # The running provisioner has the pinned cryptography dependency used by
+    # backup_crypto. Gateway supplies only the read-only media mount; its image
+    # intentionally has no cryptography and cannot execute the encrypted pack.
+    return {"Image": provisioner["Image"], "User": "10001:10001", "WorkingDir": "/release",
             "Entrypoint": ["python", "-c"], "Cmd": ["import time;time.sleep(300)"], "Labels": {"mh.training.backup.owner": name},
             "Env": ["PYTHONDONTWRITEBYTECODE=1", "PYTHONUNBUFFERED=1", "WB_SAAS_TRAINING_MEDIA_SOURCE_DIR=/media",
                     "WB_SAAS_BACKUP_DIR=/backups", "WB_SAAS_BACKUP_KEEP_DAYS=" + str(keep_days)],
@@ -189,7 +192,9 @@ def run(env, source_root, keep_days=14):
     _no_links(source_root)
     gateway = api("GET", "/containers/wb-saas-gateway-1/json")
     provisioner = api("GET", "/containers/wb-saas-provisioner-1/json")
-    if not gateway["State"]["Running"] or not provisioner["State"]["Running"] or not re.fullmatch(r"sha256:[0-9a-f]{64}", gateway["Image"]):
+    if not gateway["State"]["Running"] or not provisioner["State"]["Running"] or any(
+        not re.fullmatch(r"sha256:[0-9a-f]{64}", obj.get("Image", "")) for obj in (gateway, provisioner)
+    ):
         raise RuntimeError("training_media_backup_failed")
     media_mounts = [m for m in gateway["Mounts"] if m["Destination"] == "/app/training-media"]
     if len(media_mounts) != 1 or media_mounts[0]["Type"] != "bind" or media_mounts[0]["RW"] is not False:
@@ -202,7 +207,7 @@ def run(env, source_root, keep_days=14):
     keys = purpose_keys(provisioner)
     token = uuid.uuid4().hex
     name = "mh-training-daily-" + token
-    config = configuration(gateway, source_root, media_source, directory, name, keep_days)
+    config = configuration(provisioner, source_root, media_source, directory, name, keep_days)
     identifier = None
     try:
         response = api("POST", "/containers/create?name=" + name, config)
