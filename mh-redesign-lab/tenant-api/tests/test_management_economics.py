@@ -103,6 +103,7 @@ def test_management_economics_periodizes_rates_to_operation_overlap(monkeypatch)
         }]))
 
     monkeypatch.setattr(api, "build_dashboard", dashboard)
+    monkeypatch.setattr(api, "read_product_operation_totals", lambda nm, start, end: (snapshots[(start, end)][1], snapshots[(start, end)][0]) if nm == 123 else (0.0, 0.0))
     monkeypatch.setattr(api, "read_manual_expenses", lambda **_: [
         {"id": 1, "nm_id": 123, "article": "packaging_labor", "amount_rub": 10,
          "allocation_basis": "per_unit", "source": "manual", "period_start": "2026-09-01",
@@ -375,10 +376,16 @@ def test_tax_gate_defaults_off_without_complete_review_configuration(monkeypatch
 
 def test_expense_windows_memoized_without_building_period_totals(monkeypatch):
     calls=[]
+    scalar_calls=[]
     def snapshot(start,end):
         calls.append((start,end))
         return SimpleNamespace(financial_products=pd.DataFrame([{'Артикул WB':123,'Выкупы по цене покупателя':200,'Продано нетто':2,'Чистая прибыль':100}]))
     monkeypatch.setattr(api,'_build_dashboard_cached',snapshot)
+    def scalar(nm,start,end):
+        assert nm==123
+        scalar_calls.append((start,end))
+        return 200.0,2.0
+    monkeypatch.setattr(api,'read_product_operation_totals',scalar)
     base={'nm_id':123,'article':'packaging_labor','source':'manual','note':'','include_in_management_result':True,'created_at':'','updated_at':''}
     expenses=[{**base,'id':1,'allocation_basis':'per_unit','amount_rub':1,'period_start':'2026-09-01','period_end':'2026-09-01'},
               {**base,'id':2,'allocation_basis':'revenue_pct','amount_rub':5,'period_start':'2026-09-02','period_end':'2026-09-02'},
@@ -386,5 +393,82 @@ def test_expense_windows_memoized_without_building_period_totals(monkeypatch):
               {**base,'id':4,'allocation_basis':'period_total','amount_rub':9,'period_start':'2026-09-10','period_end':'2026-09-12'}]
     monkeypatch.setattr(api,'read_manual_expenses',lambda **_:expenses)
     result=api.get_management_economics(123,date(2026,9,1),date(2026,9,30))
-    assert calls==[(date(2026,9,1),date(2026,9,30)),(date(2026,9,1),date(2026,9,1)),(date(2026,9,2),date(2026,9,2))]
+    assert calls==[(date(2026,9,1),date(2026,9,30))]
+    assert scalar_calls==[(date(2026,9,1),date(2026,9,1)),(date(2026,9,2),date(2026,9,2))]
     assert [row['allocated_rub'] for row in result['items']]==[2,10,6,9]
+
+
+def test_real_management_payload_exact_parity_with_legacy_overlap_projection(monkeypatch):
+    """Compare the whole real API response, including global profit and coverage."""
+    from db.manual_expenses import save_manual_expense
+    _seed_two_months()
+    from db.ingest import upsert_financial
+    upsert_financial([
+        {'rrd_id':91,'rr_dt':'2026-09-05','nm_id':200,'doc_type_name':'Продажа','quantity':2,
+         'retail_price_withdisc_rub':250,'retail_amount':500,'ppvz_for_pay':400},
+        {'rrd_id':92,'rr_dt':'2026-09-05','nm_id':0,'quantity':0,'delivery_rub':70,'deduction':13},
+    ])
+    for article, amount, basis, lo, hi, included in (
+        ('packaging_labor',10,'per_unit','2026-08-10','2026-08-10',True),
+        ('advertising',5,'revenue_pct','2026-09-05','2026-09-05',True),
+        ('packaging_labor',7,'per_unit','2026-09-05','2026-09-05',True),
+        ('taxes',100,'total','2026-08-15','2026-09-15',False),
+        ('wb_commission',9,'per_unit','2026-09-05','2026-09-05',False),
+    ):
+        save_manual_expense(nm_id=100,article=article,amount_rub=amount,allocation_basis=basis,
+                            source='manual',period_start=lo,period_end=hi,note='fixed parity fixture',include_in_management_result=included)
+    # Old imported rows may still have commission inclusion set. The API must
+    # exclude those without changing financial totals or coverage evidence.
+    from db.core import connect
+    with connect() as conn:
+        conn.execute("UPDATE manual_expenses SET include_in_management_result=1 WHERE article='wb_commission'")
+    actual_reader=api.read_product_operation_totals
+    actual_build=api._build_dashboard_cached
+    calls=[]
+    def tracked_build(start,end):
+        calls.append((start,end))
+        return actual_build(start,end)
+    def legacy_totals(nm,start,end):
+        frame=api._build_dashboard_cached(start,end).financial_products
+        if frame.empty:return 0.0,0.0
+        selected=frame[pd.to_numeric(frame['Артикул WB'],errors='coerce')==nm]
+        if selected.empty:return 0.0,0.0
+        row=selected.iloc[0]
+        return float(row['Выкупы по цене покупателя']),float(row['Продано нетто'])
+    window=(date(2026,8,1),date(2026,9,30))
+    monkeypatch.setattr(api,'_build_dashboard_cached',tracked_build)
+    monkeypatch.setattr(api,'read_product_operation_totals',legacy_totals)
+    api._clear_dashboard_caches()
+    original=api.get_management_economics(100,*window)
+    assert len(calls)>=3  # full window plus at least two unique rate-expense windows
+    calls.clear()
+    monkeypatch.setattr(api,'read_product_operation_totals',actual_reader)
+    api._clear_dashboard_caches()
+    candidate=api.get_management_economics(100,*window)
+    assert calls==[window]  # rate overlaps never build a full store dashboard
+    assert candidate==original
+    assert candidate['excluded_wb_commission_rub']>0
+    assert candidate['excluded_manual_expenses_rub']>0
+    assert candidate['manual_expenses_rub']>0
+    assert candidate['coverage_source_context']['source_row']==original['coverage_source_context']['source_row']
+
+
+@pytest.mark.parametrize('basis',['total','period_total'])
+def test_total_expense_partial_overlap_uses_calendar_share_without_operation_reads(monkeypatch,basis):
+    window=(date(2026,9,1),date(2026,9,5))
+    calls=[]
+    def full(start,end):
+        calls.append((start,end))
+        assert (start,end)==window
+        return SimpleNamespace(financial_products=pd.DataFrame([{
+            'Артикул WB':123,'Выкупы по цене покупателя':400,'Продано нетто':4,'Чистая прибыль':120}]))
+    monkeypatch.setattr(api,'_build_dashboard_cached',full)
+    monkeypatch.setattr(api,'read_product_operation_totals',lambda *_:(_ for _ in ()).throw(AssertionError('Calendar expense must not read operation evidence')))
+    monkeypatch.setattr(api,'read_manual_expenses',lambda **_:[{
+        'id':1,'nm_id':123,'article':'taxes','amount_rub':96,'allocation_basis':basis,
+        'source':'manual','period_start':'2026-08-15','period_end':'2026-09-15',
+        'note':'','include_in_management_result':True,'created_at':'','updated_at':''}])
+    result=api.get_management_economics(123,*window)
+    assert calls==[window]
+    assert result['manual_expenses_rub']==15
+    assert result['management_profit_rub']==105

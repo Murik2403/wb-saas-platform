@@ -397,16 +397,24 @@ def _cost_coverage_diagnostics(
     for frame in (catalog, orders, sales):
         if frame.empty or "nm_id" not in frame.columns:
             continue
-        for _, row in frame.iterrows():
+        # iterrows builds a Series for every historical operation, even though
+        # only three identity fields are used. The underlying row array keeps
+        # the SAME common dtype/coercion as iterrows (including numeric-only
+        # frames); narrowing columns or itertuples would change those values.
+        nm_pos = frame.columns.get_loc("nm_id")
+        article_pos = frame.columns.get_loc("supplier_article") if "supplier_article" in frame.columns else None
+        product_column = "product_name" if "product_name" in frame.columns else "subject"
+        product_pos = frame.columns.get_loc(product_column) if product_column in frame.columns else None
+        for row in frame.values:
             try:
-                nm_id = int(float(row.get("nm_id", 0) or 0))
+                nm_id = int(float(row[nm_pos] or 0))
             except (TypeError, ValueError):
                 continue
             if nm_id <= 0:
                 continue
             item = identity.setdefault(nm_id, {"supplier_article": "", "product_name": ""})
-            article = str(row.get("supplier_article", "") or "").strip()
-            product = str(row.get("product_name", row.get("subject", "")) or "").strip()
+            article = str((row[article_pos] if article_pos is not None else "") or "").strip()
+            product = str((row[product_pos] if product_pos is not None else "") or "").strip()
             if article and not item["supplier_article"]:
                 item["supplier_article"] = article
             if product and not item["product_name"]:

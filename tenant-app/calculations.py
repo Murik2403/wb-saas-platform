@@ -128,6 +128,82 @@ def _recommended_action(row: pd.Series) -> str:
         return "Масштабировать рекламу и поддерживать целевой запас"
     return "Поддерживать продажи и контролировать запас"
 
+def _signed_financial_units(quantity_abs, is_return, is_sale):
+    return np.where(is_return, -quantity_abs, np.where(is_sale, quantity_abs, 0))
+
+
+def read_product_operation_totals(nm_id: int, start: date, end: date) -> tuple[float, float]:
+    """Exact expense-rate overlap evidence, without unrelated dashboards or COGS.
+
+    These two values are operation-row sums, before expense allocation. The
+    initial management row still uses full-store allocation/FIFO. Preserve the
+    full dashboard's active-catalog/technical-name membership; never turn an
+    excluded article into expense-rate evidence. No cross-request cache.
+    """
+    if nm_id <= 0:
+        return 0.0, 0.0
+    f = read_financial(omit_raw=True).copy()
+    if f.empty:
+        return 0.0, 0.0
+    # Parse dates across the same full history before filtering, as the original
+    # builder does. Do not change pandas' mixed/malformed date interpretation.
+    f['operation_date'] = pd.to_datetime(f['operation_date'], errors='coerce')
+    f = f.dropna(subset=['operation_date'])
+    f = f[(f['operation_date'].dt.date >= start) & (f['operation_date'].dt.date <= end)]
+    for col in ('nm_id', 'quantity', 'retail_price_withdisc_rub'):
+        if col not in f:
+            f[col] = 0.0
+        f[col] = pd.to_numeric(f[col], errors='coerce').fillna(0)
+    # Non-integral imported identities can merge after the legacy integer cast.
+    # Preserve that exceptional legacy selection instead of inventing a sum.
+    if not f['nm_id'].eq(f['nm_id'].astype(int)).all():
+        frame = build_dashboard(start, end).financial_products
+        if frame.empty:
+            return 0.0, 0.0
+        selected = frame[pd.to_numeric(frame['Артикул WB'], errors='coerce') == nm_id]
+        if selected.empty:
+            return 0.0, 0.0
+        row = selected.iloc[0]
+        return float(row['Выкупы по цене покупателя']), float(row['Продано нетто'])
+    f = f[f['nm_id'] == nm_id].copy()
+    if f.empty:
+        return 0.0, 0.0
+    if 'supplier_article' not in f:
+        f['supplier_article'] = ''
+    supplier_article = next((str(value) for value in f['supplier_article'] if str(value)), '')
+    product_name = ''
+    catalog = read_table('products_catalog', omit_raw=True)
+    if not catalog.empty and 'nm_id' in catalog:
+        active_ids = set(pd.to_numeric(catalog['nm_id'], errors='coerce').dropna().astype(int).tolist())
+        if active_ids and nm_id not in active_ids:
+            return 0.0, 0.0
+        selected = catalog.drop_duplicates('nm_id')
+        selected = selected[selected['nm_id'] == nm_id]
+        if not selected.empty:
+            row = selected.iloc[0]
+            article = row.get('supplier_article', '')
+            if pd.notna(article) and len(str(article)):
+                supplier_article = str(article)
+            name = row.get('product_name', '')
+            product_name = str(name) if pd.notna(name) else ''
+    if _contains_any_text(pd.Series([supplier_article + ' ' + product_name]),
+                          ('неопознан', 'unknown', 'техническ', 'служебн')).iloc[0]:
+        return 0.0, 0.0
+    for col in ('doc_type_name', 'operation_name'):
+        if col not in f:
+            f[col] = ''
+        f[col] = f[col].fillna('').astype(str)
+    kinds = pd.Series([financial_event_type(row) for row in
+                       f[['doc_type_name', 'operation_name']].to_dict(orient='records')], index=f.index)
+    f['units'] = _signed_financial_units(f['quantity'].abs(), kinds.eq('return'), kinds.eq('sale'))
+    f['buyer_revenue'] = f['retail_price_withdisc_rub'] * f['units']
+    # Use the same groupby reducer/order as financial_products, not a different
+    # floating summation (Series.sum) that can alter exact financial values.
+    totals = f.groupby('nm_id', as_index=False).agg(buyer_revenue=('buyer_revenue', 'sum'), units=('units', 'sum'))
+    row = totals.iloc[0]
+    return float(row['buyer_revenue']), float(row['units'])
+
+
 def build_dashboard(start: date, end: date) -> DashboardData:
     orders = _prepare_dates(read_table("orders", omit_raw=True), "order_date")
     sales = _prepare_dates(read_table("sales", omit_raw=True), "sale_date")
@@ -493,11 +569,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # Quantity is meaningful only on sale/return rows. Logistics, storage,
         # penalties and other service rows can also contain quantity-like values;
         # counting them caused heavily inflated unit totals in v2.1.
-        f["signed_units"] = np.where(
-            is_return,
-            -quantity_abs,
-            np.where(is_sale, quantity_abs, 0),
-        )
+        f["signed_units"] = _signed_financial_units(quantity_abs, is_return, is_sale)
 
         # retail_amount is the report field "Сумма продаж (возвратов)" and
         # already carries the operation sign. It is safer than summing a unit price.

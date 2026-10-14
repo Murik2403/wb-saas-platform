@@ -35,7 +35,7 @@ from pydantic import BaseModel, FiniteFloat, Field
 
 from ads_service import compute_ads
 from backup_tools import create_backup, latest_backup, list_backups
-from calculations import build_dashboard
+from calculations import build_dashboard, read_product_operation_totals
 from monthly_pnl import monthly_pnl
 from tax_estimate import REGIMES as TAX_REGIMES, add_tax_block, read_tax_settings, save_tax_settings
 from tax_reconciliation import read_month as read_tax_month, save_month as save_tax_month
@@ -3541,7 +3541,7 @@ def get_management_economics(
         overlap_days = max((overlap_end - overlap_start).days + 1, 0)
         if not overlap_days:
             return 0.0, 0.0, 0
-        if expense['allocation_basis']=='period_total':
+        if expense['allocation_basis'] in {'period_total', 'total'}:
             return 0.0,0.0,overlap_days
         # Per-unit and revenue-percentage expenses are rates applied only to
         # operations inside the date intersection, so a partial overlap must
@@ -3550,7 +3550,7 @@ def get_management_economics(
             return revenue, units, overlap_days
         key=(overlap_start,overlap_end)
         if key not in overlap_memo:
-            _, overlap_revenue, overlap_units = product_numbers(_build_dashboard_cached(overlap_start,overlap_end))
+            overlap_revenue, overlap_units = read_product_operation_totals(nm_id, overlap_start, overlap_end)
             overlap_memo[key]=(overlap_revenue,overlap_units,overlap_days)
         return overlap_memo[key]
 
