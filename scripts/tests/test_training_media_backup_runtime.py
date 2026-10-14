@@ -3,6 +3,7 @@ import copy
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from scripts import training_media_backup_runtime as runtime
@@ -24,7 +25,7 @@ class FakeDocker:
                   for row in self.config["HostConfig"]["Mounts"]]
         value = {"Id": CID, "Name": "/" + self.name, "Image": IMAGE, "Config": copy.deepcopy(self.config),
                  "HostConfig": copy.deepcopy(self.config["HostConfig"]), "Mounts": mounts,
-                 "State": {"Running": self.started and self.waiting, "ExitCode": self.exit_code, "OOMKilled": False}}
+                 "State": {"Running": self.started, "ExitCode": self.exit_code, "OOMKilled": False}}
         if self.damage == "extra_db_mount":
             value["Mounts"].append({"Type": "bind", "Source": "/live-database", "Destination": "/app/db", "RW": False})
         elif self.damage == "socket_bind":
@@ -33,6 +34,8 @@ class FakeDocker:
             value["Config"]["Labels"]["mh.training.backup.owner"] = "foreign-owner"
         elif self.damage == "network":
             value["HostConfig"]["NetworkMode"] = "host"
+        elif self.damage == "key_in_config":
+            value["Config"]["Env"].append('WB_SAAS_BACKUP_ENCRYPTION_KEY='+KEY)
         return value
 
     def __call__(self, method, path, body=None):
@@ -50,9 +53,6 @@ class FakeDocker:
             return self.own()
         if method == "POST" and path == "/containers/" + CID + "/start":
             self.started = True
-            metadata_name = re.search(r"\.training-daily-[0-9a-f]{32}\.json", body or self.config["Cmd"][0])[0]
-            (self.directory / metadata_name).write_text(json.dumps({"ok": self.exit_code == 0, "verified_after_write": True,
-                "lessons": 16, "files": 32, "archive": "training-media-aaaaaaaaaaaa-20261015T021500Z-abcdef.tar.gz.enc"}))
             return None
         if method == "DELETE" and path == "/containers/" + CID + "?force=true&v=true":
             return None
@@ -66,22 +66,36 @@ def setup(tmp_path, monkeypatch, **options):
     media = tmp_path / "media"; media.mkdir()
     directory = tmp_path / "backups" / "training-media"; directory.mkdir(parents=True)
     fake = FakeDocker(media, directory, **options)
+    fake.exec_calls=[]
     monkeypatch.setattr(runtime, "api", fake)
     monkeypatch.setattr(runtime, "prepare_directory", lambda root: directory)
+    def execute(command,**kwargs):
+        fake.exec_calls.append((command,kwargs))
+        if fake.waiting:raise runtime.subprocess.TimeoutExpired(command,240,stderr=KEY.encode())
+        return SimpleNamespace(returncode=fake.exit_code,stderr=KEY.encode(),stdout=json.dumps({
+            "ok":True,"verified_after_write":True,"lessons":16,"files":32,
+            "archive":"training-media-aaaaaaaaaaaa-20261015T021500Z-abcdef.tar.gz.enc","must_not_relay":KEY}).encode())
+    monkeypatch.setattr(runtime.subprocess,'run',execute)
     return source, directory, fake
 
 
-def test_purpose_key_goes_only_to_owned_api_env_and_no_source_database_is_mounted(tmp_path, monkeypatch, capsys):
+def test_purpose_key_goes_only_to_stdin_not_daemon_config_args_logs_or_files(tmp_path, monkeypatch, capsys):
     source, directory, fake = setup(tmp_path, monkeypatch)
     (source / ".env").write_text("must not be mounted")
     (source / "gateway" / "data").mkdir(); (source / "gateway" / "data" / "live.sqlite3").write_bytes(b"must not be mounted")
     result = runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source, 14)
     assert result["ok"] and result["files"] == 32
     config = fake.config
-    assert "WB_SAAS_BACKUP_ENCRYPTION_KEY=" + KEY in config["Env"]
+    assert not any(v.partition('=')[0] in runtime.PURPOSE_KEYS for v in config["Env"])
     assert not any("SMTP_PASSWORD" in value for value in config["Env"])
     assert KEY not in config["Cmd"][0] and KEY not in str(config["Entrypoint"])
     assert KEY not in str(result) and KEY not in capsys.readouterr().out
+    command,kwargs=fake.exec_calls[0]
+    assert command[:6]==['docker','--host','unix:///var/run/docker.sock','exec','-i',CID]
+    assert KEY not in str(command) and kwargs['timeout']==240
+    assert json.loads(kwargs['input'])['WB_SAAS_BACKUP_ENCRYPTION_KEY']==KEY
+    assert not set(kwargs['env']) & {'DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH'}
+    assert config['Cmd']==['import time;time.sleep(300)']
     mounts = config["HostConfig"]["Mounts"]
     assert len(mounts) == 7 and sum(not row["ReadOnly"] for row in mounts) == 1
     assert all(".env" not in row["Source"] and "live.sqlite3" not in row["Source"] for row in mounts)
@@ -89,12 +103,13 @@ def test_purpose_key_goes_only_to_owned_api_env_and_no_source_database_is_mounte
     assert not list(directory.glob(".training-daily-*.json"))
 
 
-@pytest.mark.parametrize("damage", ["extra_db_mount", "socket_bind", "network"])
+@pytest.mark.parametrize("damage", ["extra_db_mount", "socket_bind", "network","key_in_config"])
 def test_isolation_failure_blocks_start_but_cleans_exact_owned_container(tmp_path, monkeypatch, damage):
     source, directory, fake = setup(tmp_path, monkeypatch, damage=damage)
     with pytest.raises(RuntimeError, match="training_media_backup_failed"):
         runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source)
     assert not fake.started
+    assert not fake.exec_calls
     assert any(method == "DELETE" and CID in path for method, path, _ in fake.calls)
 
 
@@ -104,19 +119,18 @@ def test_foreign_owner_is_never_started_or_deleted(tmp_path, monkeypatch):
     assert not fake.started and not any(method == "DELETE" for method, _, _ in fake.calls)
 
 
-def test_failed_job_removes_own_metadata_and_container_without_relaying_output(tmp_path, monkeypatch):
+def test_failed_job_removes_own_container_without_relaying_private_stdout_stderr(tmp_path, monkeypatch,capsys):
     source, directory, fake = setup(tmp_path, monkeypatch, exit_code=1)
     with pytest.raises(RuntimeError, match="training_media_backup_failed"):
         runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source)
     assert fake.started and any(method == "DELETE" for method, _, _ in fake.calls)
     assert not list(directory.glob(".training-daily-*.json"))
+    assert KEY not in capsys.readouterr().out
 
 
 def test_runtime_timeout_stops_exact_own_container_and_preserves_archives(tmp_path, monkeypatch):
     source, directory, fake = setup(tmp_path, monkeypatch, waiting=True)
     archive = directory / "unknown.tar.gz.enc"; archive.write_bytes(b"preserve")
-    clock = iter([0, 1, 241]); monkeypatch.setattr(runtime.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(runtime.time, "sleep", lambda unused: None)
     with pytest.raises(RuntimeError):runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source)
     assert fake.calls[-1][:2] == ("DELETE", "/containers/" + CID + "?force=true&v=true")
     assert archive.read_bytes() == b"preserve" and not list(directory.glob(".training-daily-*.json"))
@@ -131,3 +145,8 @@ def test_missing_purpose_key_rejects_before_creating_any_container(tmp_path, mon
     monkeypatch.setattr(runtime, "api", api)
     with pytest.raises(RuntimeError):runtime.run({"WB_SAAS_BACKUP_DIR": str(directory.parent)}, source)
     assert fake.config is None
+
+
+def test_key_transport_size_is_bounded_before_exec(tmp_path,monkeypatch):
+    monkeypatch.setattr(runtime.subprocess,'run',lambda *a,**kw:pytest.fail('oversized stdin must not run'))
+    with pytest.raises(RuntimeError):runtime.execute_job(CID,{'WB_SAAS_BACKUP_ENCRYPTION_KEY':'x'*(runtime.MAX_KEY_TRANSPORT+1)})
