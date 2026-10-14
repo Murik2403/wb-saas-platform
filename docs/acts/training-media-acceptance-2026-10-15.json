@@ -1,0 +1,233 @@
+{
+  "started": "2026-10-14T22:10:38+00:00",
+  "source": "deliveries/training-narrated-20261006/public-media (local copy of the release)",
+  "ephemeral_key_used": true,
+  "steps": {
+    "1_verify_source": {
+      "lessons": 16,
+      "files": 32,
+      "bytes": 99603467,
+      "manifest_sha256": "e677185580e23431db0cf1f080851c43eab4f6578e06110723ed8d7591dcb74d",
+      "unlisted_files_in_source": []
+    },
+    "2_pack": {
+      "result": "created",
+      "archive": "training-media-e677185580e2-20261014T221039Z-506121.tar.gz.enc",
+      "archive_bytes": 97144585,
+      "manifest_sha256": "e677185580e23431db0cf1f080851c43eab4f6578e06110723ed8d7591dcb74d",
+      "files": 32,
+      "lessons": 16,
+      "verified_after_write": true,
+      "encryption_magic": "WBSAASBK2"
+    },
+    "2b_pack_again_same_manifest": {
+      "result": "already_backed_up"
+    },
+    "3_verify_archive": {
+      "files": 32,
+      "manifest_sha256": "e677185580e23431db0cf1f080851c43eab4f6578e06110723ed8d7591dcb74d"
+    },
+    "4_negative_checks": {
+      "modified_archive": "rejected",
+      "wrong_key": "rejected",
+      "restore_into_non_empty_directory": "refused"
+    },
+    "5_restore": {
+      "result": "restored",
+      "dest": "<work>/restored-media",
+      "files": 32,
+      "lessons": 16,
+      "bytes": 99603467,
+      "manifest_sha256": "e677185580e23431db0cf1f080851c43eab4f6578e06110723ed8d7591dcb74d",
+      "byte_identical_to_source": true
+    },
+    "6_isolated_gateway": {
+      "port_used": 62885,
+      "training_page": {
+        "videos": 16,
+        "sources": 16,
+        "subtitle_tracks": 16
+      },
+      "files_full_get": 32,
+      "range_first_byte": 32,
+      "range_middle": 32,
+      "range_suffix": 32,
+      "range_unsatisfiable_416": 32,
+      "vtt_webvtt": 16
+    },
+    "7_source_and_old_archives_untouched": {
+      "source_unchanged": true,
+      "preexisting_files_unchanged": true,
+      "archives_in_backup_dir": [
+        "training-media-000000000000-20200101T000000Z-old.tar.gz.enc",
+        "training-media-e677185580e2-20261014T221039Z-506121.tar.gz.enc",
+        "unrelated.txt"
+      ]
+    }
+  },
+  "verdict": "PASS",
+  "failed_checks": [],
+  "seconds": 27.9,
+  "files": [
+    {
+      "name": "lesson-01-today.2fa655fe063b825767777359ee8b440e14ecb3b0e8f4115d3ad8540ce12f0841.vtt",
+      "bytes": 2413,
+      "sha256": "2fa655fe063b825767777359ee8b440e14ecb3b0e8f4115d3ad8540ce12f0841"
+    },
+    {
+      "name": "lesson-01-today.351aaf3522698c64c3634d5248c356377b116eab6a6997b543831520b1e1d2ee.mp4",
+      "bytes": 6464068,
+      "sha256": "351aaf3522698c64c3634d5248c356377b116eab6a6997b543831520b1e1d2ee"
+    },
+    {
+      "name": "lesson-02-stock.a658efc982818d6c08e650422f54636cab50777bdbf7d1bdc2202e2886b5308a.mp4",
+      "bytes": 5773010,
+      "sha256": "a658efc982818d6c08e650422f54636cab50777bdbf7d1bdc2202e2886b5308a"
+    },
+    {
+      "name": "lesson-02-stock.ab7f708aa8275e2f1c5a03614e255a6e8b15990b1ef471c93419492f2700fe88.vtt",
+      "bytes": 2469,
+      "sha256": "ab7f708aa8275e2f1c5a03614e255a6e8b15990b1ef471c93419492f2700fe88"
+    },
+    {
+      "name": "lesson-03-ads.5713568a2d33131d9508ddbe3337dc0aab2421a4acc82da302757af0d24b015c.mp4",
+      "bytes": 6050703,
+      "sha256": "5713568a2d33131d9508ddbe3337dc0aab2421a4acc82da302757af0d24b015c"
+    },
+    {
+      "name": "lesson-03-ads.bafa44e403adc500c8e7247cd76ad44076bf50a8323fab98dd8b1efe36371604.vtt",
+      "bytes": 2460,
+      "sha256": "bafa44e403adc500c8e7247cd76ad44076bf50a8323fab98dd8b1efe36371604"
+    },
+    {
+      "name": "lesson-04-finance.2962a566faa44c968424c6e1b85eeda11c9c3917edc0987af89e317fd0f3d417.vtt",
+      "bytes": 2519,
+      "sha256": "2962a566faa44c968424c6e1b85eeda11c9c3917edc0987af89e317fd0f3d417"
+    },
+    {
+      "name": "lesson-04-finance.c474026035216c04389f5ae9ae6267ca689ce3197234579ac22f719e0247f41d.mp4",
+      "bytes": 6880163,
+      "sha256": "c474026035216c04389f5ae9ae6267ca689ce3197234579ac22f719e0247f41d"
+    },
+    {
+      "name": "lesson-05-production.021f6e51ddfa61a19751e9db46c8693cad5b5c88ea18dd396de2d1f4c61f443b.mp4",
+      "bytes": 5695471,
+      "sha256": "021f6e51ddfa61a19751e9db46c8693cad5b5c88ea18dd396de2d1f4c61f443b"
+    },
+    {
+      "name": "lesson-05-production.e4b64752d1b7132b86be9b082616ec8c483fa792309dadcb160e71b093dba1c0.vtt",
+      "bytes": 2492,
+      "sha256": "e4b64752d1b7132b86be9b082616ec8c483fa792309dadcb160e71b093dba1c0"
+    },
+    {
+      "name": "lesson-06-supply.36177f41c557608d9f0c5a1e48b107b15927b1358db4f040398218b27e4a367e.vtt",
+      "bytes": 2719,
+      "sha256": "36177f41c557608d9f0c5a1e48b107b15927b1358db4f040398218b27e4a367e"
+    },
+    {
+      "name": "lesson-06-supply.b8883763147c88093f439fb3b84971ad5ac6d6e175ad3b2eb16aea39a9398328.mp4",
+      "bytes": 6290682,
+      "sha256": "b8883763147c88093f439fb3b84971ad5ac6d6e175ad3b2eb16aea39a9398328"
+    },
+    {
+      "name": "lesson-07-assistant.da6faa2995239abca12da6e493e93627dbe20e24774639fc4eb7645250ddc133.vtt",
+      "bytes": 2438,
+      "sha256": "da6faa2995239abca12da6e493e93627dbe20e24774639fc4eb7645250ddc133"
+    },
+    {
+      "name": "lesson-07-assistant.db3eed479eb3ffb2124100a2627182c25b2d2d63895241debbdeda9118b7a670.mp4",
+      "bytes": 5658852,
+      "sha256": "db3eed479eb3ffb2124100a2627182c25b2d2d63895241debbdeda9118b7a670"
+    },
+    {
+      "name": "lesson-08-reports.240727a55c7894d90265447db4f772d842920667628e5ac6c2e602eb3a484242.mp4",
+      "bytes": 5556045,
+      "sha256": "240727a55c7894d90265447db4f772d842920667628e5ac6c2e602eb3a484242"
+    },
+    {
+      "name": "lesson-08-reports.efb2ea282fc1cf1e87129c9af5532389c48b20eb06446d03f5b1b57da89742b4.vtt",
+      "bytes": 2415,
+      "sha256": "efb2ea282fc1cf1e87129c9af5532389c48b20eb06446d03f5b1b57da89742b4"
+    },
+    {
+      "name": "lesson-09-products.326f913d2d0b4599a4c2bf63fb89090a653a4695b5684995a13dd22843451983.mp4",
+      "bytes": 6592668,
+      "sha256": "326f913d2d0b4599a4c2bf63fb89090a653a4695b5684995a13dd22843451983"
+    },
+    {
+      "name": "lesson-09-products.dd70315d74f906928692714b95ec2d5620f2d7fe26312d9329508191ca275240.vtt",
+      "bytes": 2523,
+      "sha256": "dd70315d74f906928692714b95ec2d5620f2d7fe26312d9329508191ca275240"
+    },
+    {
+      "name": "lesson-10-control.3fdbeace7a32418de07aa9b92b93494c154fbeb10abf2b53b4ec0228c9542014.mp4",
+      "bytes": 6815429,
+      "sha256": "3fdbeace7a32418de07aa9b92b93494c154fbeb10abf2b53b4ec0228c9542014"
+    },
+    {
+      "name": "lesson-10-control.e0f2d3ebe471b87cdab9ddf48ef0b699d00d82f455e49f0dd9ce1e80243a4111.vtt",
+      "bytes": 2428,
+      "sha256": "e0f2d3ebe471b87cdab9ddf48ef0b699d00d82f455e49f0dd9ce1e80243a4111"
+    },
+    {
+      "name": "lesson-11-settings.1cd7fb354c89f53df7e043b308a574c7e80ec3f07892db461407d69eac3a3d3b.vtt",
+      "bytes": 2544,
+      "sha256": "1cd7fb354c89f53df7e043b308a574c7e80ec3f07892db461407d69eac3a3d3b"
+    },
+    {
+      "name": "lesson-11-settings.fce02cc46098a6bf5bbe3f367840539666959244f86414e47f12716d82c92e45.mp4",
+      "bytes": 6068387,
+      "sha256": "fce02cc46098a6bf5bbe3f367840539666959244f86414e47f12716d82c92e45"
+    },
+    {
+      "name": "lesson-12-tax.057de009af30e4a81037e9df2f6d2c220edb214e48c1604d6a1ef95a2406a56e.mp4",
+      "bytes": 7412548,
+      "sha256": "057de009af30e4a81037e9df2f6d2c220edb214e48c1604d6a1ef95a2406a56e"
+    },
+    {
+      "name": "lesson-12-tax.1f691f15698098958ba3404260dbf108bb652a2559f788f8709c4e771abfc2f7.vtt",
+      "bytes": 2538,
+      "sha256": "1f691f15698098958ba3404260dbf108bb652a2559f788f8709c4e771abfc2f7"
+    },
+    {
+      "name": "lesson-13-product-analysis.bb0f8ac14ee8a16396d564852d0d0f93234999f606f0e280557232d76f0bde6f.vtt",
+      "bytes": 2429,
+      "sha256": "bb0f8ac14ee8a16396d564852d0d0f93234999f606f0e280557232d76f0bde6f"
+    },
+    {
+      "name": "lesson-13-product-analysis.e671e8ca120434aa88fc5993471d4013311e09993d5e17a3c53bbe2e916ea41f.mp4",
+      "bytes": 5836254,
+      "sha256": "e671e8ca120434aa88fc5993471d4013311e09993d5e17a3c53bbe2e916ea41f"
+    },
+    {
+      "name": "lesson-14-ads-analytics.32419451941922b0e22a24db716c17d3cf229e993f4fe0715a89f6f09f45b992.vtt",
+      "bytes": 2389,
+      "sha256": "32419451941922b0e22a24db716c17d3cf229e993f4fe0715a89f6f09f45b992"
+    },
+    {
+      "name": "lesson-14-ads-analytics.d15878808372942d28958e021901f3feecb9c679ed51f6dae5f602ca9430fe7c.mp4",
+      "bytes": 6610496,
+      "sha256": "d15878808372942d28958e021901f3feecb9c679ed51f6dae5f602ca9430fe7c"
+    },
+    {
+      "name": "lesson-15-fbs.65e1d92bead6b8c2a97677d268e62b180ddfd56a0a7c9f5bcee9a493176ec0e1.mp4",
+      "bytes": 5750757,
+      "sha256": "65e1d92bead6b8c2a97677d268e62b180ddfd56a0a7c9f5bcee9a493176ec0e1"
+    },
+    {
+      "name": "lesson-15-fbs.c7a59c56e6a0bd08ebbf07ec6c01098232f4c00724c77e021cecabd65f6ee1b9.vtt",
+      "bytes": 2539,
+      "sha256": "c7a59c56e6a0bd08ebbf07ec6c01098232f4c00724c77e021cecabd65f6ee1b9"
+    },
+    {
+      "name": "lesson-16-self-buyouts.7619b5ad55557bea7a25e89a6ed7b9e3a66d1cc16202cf971b46cba5625e1f57.mp4",
+      "bytes": 6108146,
+      "sha256": "7619b5ad55557bea7a25e89a6ed7b9e3a66d1cc16202cf971b46cba5625e1f57"
+    },
+    {
+      "name": "lesson-16-self-buyouts.d6a82dfc21863bd07f128c9f39ca532006998500d15f6d75b7c205c7c5bbb7b9.vtt",
+      "bytes": 2473,
+      "sha256": "d6a82dfc21863bd07f128c9f39ca532006998500d15f6d75b7c205c7c5bbb7b9"
+    }
+  ]
+}
