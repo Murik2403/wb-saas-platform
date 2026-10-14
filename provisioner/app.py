@@ -70,6 +70,12 @@ TENANT_MEMORY_FRACTION = float(os.environ.get("WB_SAAS_TENANT_MEMORY_FRACTION", 
 TENANT_MIN_AVAILABLE = os.environ.get("WB_SAAS_TENANT_MIN_AVAILABLE", "1g")
 TENANT_ADMISSION_WAIT = float(os.environ.get("WB_SAAS_TENANT_ADMISSION_WAIT", "0"))  # seconds, capped below the gateway's 20 s timeout
 _BUDGET = TenantBudget()
+# Shared PDF memory budget (tenant-app/reports/pdf_budget.py): every tenant mounts this one host directory (or named
+# volume) at /pdf-slots and holds one of WB_SAAS_PDF_SLOTS OS-locked slot files while it renders a report PDF, so at most
+# that many PDFs render on the host at once. Empty = not configured: tenants only limit themselves to one PDF at a time.
+PDF_SLOT_HOST_DIR = os.environ.get("WB_SAAS_PDF_SLOT_HOST_DIR", "").strip()
+PDF_SLOTS = int(os.environ.get("WB_SAAS_PDF_SLOTS", "2"))
+_PDF_SLOT_SOURCE = re.compile(r"^(?:/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*|[A-Za-z0-9][A-Za-z0-9_.-]*)$")
 FORWARD_AUTH_MIDDLEWARE = os.environ.get("WB_SAAS_FORWARD_AUTH_MIDDLEWARE", "wb-saas-auth@file")
 TRAEFIK_CONTAINER_NAME = os.environ.get("WB_SAAS_TRAEFIK_CONTAINER_NAME", "wb-saas-traefik-1")
 TLS_CERT_RESOLVER = os.environ.get("WB_SAAS_TLS_CERT_RESOLVER", "http-resolver")
@@ -353,6 +359,37 @@ def _discard_failed_container(client: Any, name: str) -> None:
         pass
 
 
+def _pdf_slot_source() -> str:
+    """The validated host directory / volume name for the PDF slots, or '' when the budget is not configured."""
+    if not PDF_SLOT_HOST_DIR:
+        return ""
+    if ".." in PDF_SLOT_HOST_DIR.split("/") or not _PDF_SLOT_SOURCE.fullmatch(PDF_SLOT_HOST_DIR) or not 1 <= PDF_SLOTS <= 32:
+        raise HTTPException(status_code=503, detail="PDF slot configuration is invalid")
+    return PDF_SLOT_HOST_DIR
+
+
+def _prepare_pdf_slots(client: Any) -> None:
+    """Narrow root helper makes the shared slot directory writable by tenants (uid 10001) and nothing else."""
+    source = _pdf_slot_source()
+    if not source:
+        return
+    helper = None
+    try:
+        helper = client.containers.run(BACKUP_HELPER_IMAGE, user="0:0",
+            command=["sh", "-c", 'umask 007; chown 10001:10001 /slots && chmod 770 /slots', "prepare-pdf-slots"],
+            volumes={source: {"bind": "/slots", "mode": "rw"}}, detach=True, remove=False,
+            network_disabled=True, security_opt=["no-new-privileges:true"], cap_drop=["ALL"], cap_add=["CHOWN", "FOWNER"], read_only=True)
+        outcome = helper.wait(timeout=15)
+        if not isinstance(outcome, dict) or outcome.get("StatusCode") != 0:
+            raise RuntimeError("PDF slot directory initialization failed")
+    finally:
+        if helper is not None:
+            try:
+                helper.remove(force=True)
+            except Exception:
+                pass
+
+
 def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = False) -> dict[str, Any]:
     """Return the complete allowlisted Docker SDK argument set for one tenant.
 
@@ -384,12 +421,16 @@ def tenant_container_spec(slug: str, request: TenantRequest, *, demo: bool = Fal
         environment["WB_SAAS_IS_DEMO"] = "1"
     environment["MPLCONFIGDIR"] = "/tmp/matplotlib"
     environment["HOME"] = "/app"
+    slot_source = _pdf_slot_source()
+    if slot_source:
+        environment["WB_SAAS_PDF_SLOT_DIR"] = "/pdf-slots"
+        environment["WB_SAAS_PDF_SLOTS"] = str(PDF_SLOTS)
     return {
         "image": TENANT_IMAGE,
         "name": _container_name(slug),
         "detach": True,
         "network": network_name,
-        "volumes": {volume_name: {"bind": "/app/data", "mode": "rw"}},
+        "volumes": {volume_name: {"bind": "/app/data", "mode": "rw"}, **({slot_source: {"bind": "/pdf-slots", "mode": "rw"}} if slot_source else {})},
         "labels": _labels(slug, request.require_auth),
         "restart_policy": {"Name": "unless-stopped"},
         "mem_limit": TENANT_MEM_LIMIT,
@@ -742,6 +783,7 @@ def create_tenant(slug: str, request: TenantRequest) -> dict[str, str]:
     _prepare_backup_directory(client,slug)
     _volume(client, slug)
     _prepare_tenant_volume(client, slug)
+    _prepare_pdf_slots(client)
     network = _network(client, slug)
     _attach_traefik(client, network)
     existed = _container_exists(client, _container_name(slug))

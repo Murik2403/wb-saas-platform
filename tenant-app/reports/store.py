@@ -9,10 +9,20 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 from zoneinfo import ZoneInfo
+
+
+LEASE_SECONDS = 300
+MAX_ATTEMPTS = 3
+_ABANDONED = "Сборка была прервана и повторена автоматически"
+_POISON = "Сборка прервана {n} раза подряд (возможно, нехватка памяти). Запустите отчёт вручную или уменьшите период."
+
+
+def _lease_until(seconds: int) -> str:
+    return (datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
 
 
 def _now_msk_naive_iso() -> str:
@@ -111,6 +121,9 @@ class ReportStore:
                 "delivery_error",
                 "ALTER TABLE report_runs ADD COLUMN delivery_error TEXT",
             )
+            # Durable lease: who is building this run and until when. attempts caps a run that keeps killing its worker.
+            for column, ddl in (("attempts", "INTEGER NOT NULL DEFAULT 0"), ("lease_owner", "TEXT"), ("lease_expires_at", "TEXT")):
+                _ensure_column(conn, "report_runs", column, f"ALTER TABLE report_runs ADD COLUMN {column} {ddl}")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -174,11 +187,13 @@ class ReportStore:
             if cur.rowcount == 0:
                 raise KeyError(definition_id)
 
-    def start_run(self, definition_id: int, *, delivery_requested: bool = False) -> int:
+    def start_run(self, definition_id: int, *, delivery_requested: bool = False, owner: str = "direct") -> int:
         with self._conn() as conn:
             cur = conn.execute(
-                "INSERT INTO report_runs (definition_id, started_at, status, delivery_requested, delivery_status) VALUES (?, ?, 'running', ?, ?)",
-                (definition_id, _now_msk_naive_iso(), int(delivery_requested), "queued" if delivery_requested else "not_requested"),
+                "INSERT INTO report_runs (definition_id, started_at, status, delivery_requested, delivery_status, attempts, lease_owner, lease_expires_at) "
+                "VALUES (?, ?, 'running', ?, ?, 1, ?, ?)",
+                (definition_id, _now_msk_naive_iso(), int(delivery_requested), "queued" if delivery_requested else "not_requested",
+                 owner, _lease_until(LEASE_SECONDS)),
             )
             return cur.lastrowid
 
@@ -210,8 +225,12 @@ class ReportStore:
             )
             return cur.lastrowid
 
-    def claim_next_queued(self) -> dict | None:
-        """Atomically claim the oldest queued report for one worker."""
+    def claim_next_queued(self, owner: str = "worker", lease_seconds: int = LEASE_SECONDS) -> dict | None:
+        """Atomically claim the oldest queued report for one worker and lease it.
+
+        The lease is renewed by ``heartbeat`` while the report is built; if the worker dies it expires and
+        ``requeue_expired_leases`` puts the run back, so a crash never strands a run in "running".
+        """
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
@@ -228,29 +247,56 @@ class ReportStore:
                 return None
             conn.execute(
                 """UPDATE report_runs
-                   SET status = 'running', started_at = ?, finished_at = NULL, error = NULL
+                   SET status = 'running', started_at = ?, finished_at = NULL, error = NULL,
+                       attempts = attempts + 1, lease_owner = ?, lease_expires_at = ?
                    WHERE id = ? AND status = 'queued'""",
-                (_now_msk_naive_iso(), int(row["run_id"])),
+                (_now_msk_naive_iso(), owner, _lease_until(lease_seconds), int(row["run_id"])),
             )
             return dict(row)
+
+    def has_queued(self) -> bool:
+        with self._conn() as conn:
+            return conn.execute("SELECT 1 FROM report_runs WHERE status = 'queued' LIMIT 1").fetchone() is not None
+
+    def heartbeat(self, run_id: int, owner: str | None = None, lease_seconds: int = LEASE_SECONDS) -> bool:
+        """Extend the lease of a running run (of this owner when given); False when the run is no longer running."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE report_runs SET lease_expires_at = ? WHERE id = ? AND status = 'running' AND (? IS NULL OR lease_owner = ?)",
+                (_lease_until(lease_seconds), run_id, owner, owner),
+            )
+            return cur.rowcount == 1
+
+    def _recover(self, conn: sqlite3.Connection, where: str, params: tuple = ()) -> int:
+        """Requeue interrupted runs; a run that already used up its attempts is closed with an error instead."""
+        poisoned = conn.execute(
+            f"UPDATE report_runs SET status='error', finished_at=?, lease_owner=NULL, lease_expires_at=NULL, error=? "
+            f"WHERE status='running' AND attempts >= ? AND ({where})",
+            (_now_msk_naive_iso(), _POISON.format(n=MAX_ATTEMPTS), MAX_ATTEMPTS, *params),
+        ).rowcount
+        requeued = conn.execute(
+            f"UPDATE report_runs SET status='queued', finished_at=NULL, lease_owner=NULL, lease_expires_at=NULL, error=? "
+            f"WHERE status='running' AND ({where})",
+            (_ABANDONED, *params),
+        ).rowcount
+        return int(requeued)
+
+    def requeue_expired_leases(self, now: str | None = None) -> int:
+        """Recover runs whose owner stopped renewing the lease (worker or container died) without waiting for a restart."""
+        with self._conn() as conn:
+            return self._recover(conn, "lease_expires_at IS NOT NULL AND lease_expires_at < ?", (now or _now_msk_naive_iso(),))
 
     def requeue_interrupted_runs(self) -> int:
         """Recover jobs abandoned when the container or worker restarted."""
         with self._conn() as conn:
             # A provider may have accepted the previous request. Do not resend blindly.
             conn.execute("UPDATE report_runs SET delivery_status='error', delivery_error='Доставка прервана. Проверьте получение перед повторной отправкой.' WHERE status='ok' AND delivery_status='queued'")
-            cur = conn.execute(
-                """UPDATE report_runs
-                   SET status = 'queued', finished_at = NULL,
-                       error = 'Предыдущая сборка была прервана; запуск повторён автоматически'
-                   WHERE status = 'running'"""
-            )
-            return int(cur.rowcount)
+            return self._recover(conn, "1=1")
 
     def finish_run(self, run_id: int, *, status: str, file_path: str | None = None, error: str | None = None) -> None:
         with self._conn() as conn:
             conn.execute(
-                "UPDATE report_runs SET finished_at = ?, status = ?, file_path = ?, error = ? WHERE id = ?",
+                "UPDATE report_runs SET finished_at = ?, status = ?, file_path = ?, error = ?, lease_owner = NULL, lease_expires_at = NULL WHERE id = ?",
                 (_now_msk_naive_iso(), status, file_path, error, run_id),
             )
 

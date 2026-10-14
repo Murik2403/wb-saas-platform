@@ -2465,8 +2465,11 @@ def download_report_pdf(
     """Build a real PDF from the tenant report pipeline."""
     end = date.today()
     start = end - timedelta(days=days - 1)
+    from reports.pdf_budget import PdfBusy
     try:
         pdf = build_report_pdf(name, ["sales_orders", "ads", "stocks"], start, end)
+    except PdfBusy as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={"Retry-After": "30"}) from exc
     except (TypeError, ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Response(
