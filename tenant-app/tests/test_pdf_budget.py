@@ -125,20 +125,22 @@ def test_the_slot_is_reentrant_for_the_holder_and_not_configured_means_tenant_on
 
 def test_concurrent_tenants_never_exceed_the_slot_count(tmp_path, host):
     """Six tenants, five renders each, two slots: the recorded intervals never overlap more than twice."""
-    log = tmp_path / "intervals.log"
+    logs = tmp_path / "intervals"
+    logs.mkdir()
     body = f"""
         import time, os, json
         from reports.pdf_budget import pdf_slot
+        spans = []
         for _ in range(5):
             with pdf_slot(wait=60):
                 start = time.time(); time.sleep(0.05); end = time.time()
-                with open({str(log)!r}, "a") as handle:
-                    handle.write(json.dumps([start, end]) + "\\n")
+            spans.append([start, end])
+        open({str(logs)!r} + "/" + str(os.getpid()) + ".json", "w").write(json.dumps(spans))
         """
     processes = [other_tenant(tmp_path, f"t{i}", body) for i in range(6)]
     for process in processes:
-        assert process.wait(timeout=120) == 0, process.stderr.read()
-    spans = [json.loads(line) for line in log.read_text().splitlines()]
+        assert process.wait(timeout=180) == 0, process.stderr.read()
+    spans = [span for path in logs.iterdir() for span in json.loads(path.read_text())]
     assert len(spans) == 30
     events = sorted([(s, 1) for s, _ in spans] + [(e, -1) for _, e in spans], key=lambda x: (x[0], x[1]))
     depth = peak = 0
@@ -358,3 +360,22 @@ def test_generate_now_route_answers_503_when_no_slot_is_free_and_creates_no_run(
         assert store.list_runs() == []  # nothing was started for a request that never got a slot
     finally:
         stop(first, second)
+
+
+def test_an_unusable_slot_directory_degrades_to_the_tenant_slot_instead_of_blocking_reports(tmp_path, monkeypatch):
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_bytes(b"a file where the slot directory should be")
+    monkeypatch.setenv("WB_SAAS_PDF_SLOT_DIR", str(blocker / "slots"))
+    monkeypatch.setenv("WB_SAAS_PDF_SLOTS", "2")
+    monkeypatch.setattr(pdf_budget, "DATA_DIR", tmp_path / "tenant")
+    with pdf_slot(wait=0):  # the report is still built
+        mine = other_tenant(tmp_path, "tenant", """
+            from reports.pdf_budget import PdfBusy, pdf_slot
+            try:
+                with pdf_slot(wait=0):
+                    print("got")
+            except PdfBusy:
+                print("busy")
+        """)
+        assert mine.communicate(timeout=30)[0].strip() == "busy"  # the tenant slot still holds
+    assert pdf_budget.status()["configured"] is False

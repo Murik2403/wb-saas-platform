@@ -1,0 +1,194 @@
+{
+  "started": "2026-10-15 01:30:49",
+  "image": "bench-tenant:pdfbudget",
+  "arms": [
+    {
+      "arm": "unbudgeted",
+      "slots": null,
+      "tenants": 8,
+      "idle_vm_available_mib": 4759,
+      "wall_seconds": 39.3,
+      "runs_ok": 8,
+      "runs_error": 0,
+      "attempts_max": 1,
+      "peak_concurrent_pdfs_from_run_intervals": 8,
+      "peak_busy_host_slots_sampled": null,
+      "vm_min_available_mib": 3823,
+      "vm_drop_mib": 936,
+      "per_run_seconds_p50": 31.0,
+      "container_peak_mib_max": 340.5,
+      "container_peak_mib_sum": 2596.3,
+      "memory_events": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0
+      },
+      "cpu_throttled_pct": 28.0,
+      "oom_killed_containers": 0,
+      "run_intervals": [
+        [
+          "bench-unbudgeted-t01-83ad4786",
+          "2026-10-15T01:31:44",
+          "2026-10-15T01:32:15",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t02-83ad4786",
+          "2026-10-15T01:31:44",
+          "2026-10-15T01:32:14",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t03-83ad4786",
+          "2026-10-15T01:31:39",
+          "2026-10-15T01:32:11",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t04-83ad4786",
+          "2026-10-15T01:31:41",
+          "2026-10-15T01:32:12",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t05-83ad4786",
+          "2026-10-15T01:31:41",
+          "2026-10-15T01:32:12",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t06-83ad4786",
+          "2026-10-15T01:31:41",
+          "2026-10-15T01:32:12",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t07-83ad4786",
+          "2026-10-15T01:31:44",
+          "2026-10-15T01:32:14",
+          "ok",
+          1
+        ],
+        [
+          "bench-unbudgeted-t08-83ad4786",
+          "2026-10-15T01:31:44",
+          "2026-10-15T01:32:15",
+          "ok",
+          1
+        ]
+      ]
+    },
+    {
+      "arm": "budgeted",
+      "slots": 2,
+      "tenants": 8,
+      "idle_vm_available_mib": 4625,
+      "wall_seconds": 117.0,
+      "runs_ok": 8,
+      "runs_error": 0,
+      "attempts_max": 1,
+      "peak_concurrent_pdfs_from_run_intervals": 2,
+      "peak_busy_host_slots_sampled": 2,
+      "vm_min_available_mib": 4051,
+      "vm_drop_mib": 574,
+      "per_run_seconds_p50": 27.5,
+      "container_peak_mib_max": 334.2,
+      "container_peak_mib_sum": 2545.8,
+      "memory_events": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0
+      },
+      "cpu_throttled_pct": 23.8,
+      "oom_killed_containers": 0,
+      "run_intervals": [
+        [
+          "bench-budgeted-t01-f077eb50",
+          "2026-10-15T01:33:13",
+          "2026-10-15T01:33:43",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t02-f077eb50",
+          "2026-10-15T01:33:43",
+          "2026-10-15T01:34:10",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t03-f077eb50",
+          "2026-10-15T01:34:08",
+          "2026-10-15T01:34:35",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t04-f077eb50",
+          "2026-10-15T01:33:40",
+          "2026-10-15T01:34:07",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t05-f077eb50",
+          "2026-10-15T01:34:40",
+          "2026-10-15T01:35:08",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t06-f077eb50",
+          "2026-10-15T01:34:40",
+          "2026-10-15T01:35:08",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t07-f077eb50",
+          "2026-10-15T01:34:12",
+          "2026-10-15T01:34:40",
+          "ok",
+          1
+        ],
+        [
+          "bench-budgeted-t08-f077eb50",
+          "2026-10-15T01:33:12",
+          "2026-10-15T01:33:39",
+          "ok",
+          1
+        ]
+      ],
+      "crash_recovery": {
+        "victim": "t07",
+        "victim_run_attempts_before_kill": 1,
+        "host_busy_before_kill": 2,
+        "slot_freed_seconds_after_kill": 0.2,
+        "victim_run_after_restart": {
+          "status": "ok",
+          "attempts": 2,
+          "error": null
+        },
+        "other_tenants_last_run_status": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "every_run_finished_ok": true
+      }
+    }
+  ],
+  "finished": "2026-10-15 01:37:19"
+}

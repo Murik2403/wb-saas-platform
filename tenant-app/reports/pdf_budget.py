@@ -79,6 +79,17 @@ def _open(path: Path):
     return handle
 
 
+_warned = False
+
+
+def _warn_once() -> None:
+    global _warned
+    if not _warned:
+        _warned = True
+        import logging
+        logging.getLogger("marketshelper.pdf_budget").warning("PDF slot directory is unusable: only the per-tenant PDF limit applies")
+
+
 def _host_slots() -> tuple[Path | None, int]:
     directory = os.environ.get("WB_SAAS_PDF_SLOT_DIR", "").strip()
     try:
@@ -115,15 +126,22 @@ def _try_once():
     directory, count = _host_slots()
     host = None
     if directory is not None:
-        order = list(range(count))
-        random.shuffle(order)  # spread over the slot files so one file is not the single point of contention
-        for index in order:
-            candidate = _open(directory / f"pdf-slot-{index:02d}.lock")
-            if _lock(candidate):
-                host = candidate
-                break
-            candidate.close()
-        if host is None:
+        try:
+            order = list(range(count))
+            random.shuffle(order)  # spread over the slot files so one file is not the single point of contention
+            for index in order:
+                candidate = _open(directory / f"pdf-slot-{index:02d}.lock")
+                if _lock(candidate):
+                    host = candidate
+                    break
+                candidate.close()
+            slots_usable = True
+        except OSError:
+            # The shared directory is missing or not writable (mount gone, misconfiguration): a report must still be
+            # built, only the host-wide limit cannot be enforced. The tenant slot still holds.
+            slots_usable = False
+            _warn_once()
+        if slots_usable and host is None:
             _unlock(tenant)
             tenant.close()
             return None
