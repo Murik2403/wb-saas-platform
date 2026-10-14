@@ -113,6 +113,38 @@ def test_account_identity_rotation_stable():
     assert shops.account_identity(token('a',1))!=shops.account_identity(token('b',1))
     with pytest.raises(ValueError):shops.account_identity('not-jwt')
 
+
+def test_private_child_receives_only_pdf_budget_config_and_actual_cabinet_lock_dir(database, monkeypatch):
+    import subprocess
+    from pathlib import Path
+    import shop_workspace_service as service
+    shop = shops.create('Budget', 'unused-token', 'budget-identity')
+    monkeypatch.setenv('WB_SAAS_PDF_SLOT_DIR', str(database / 'shared-slots'))
+    monkeypatch.setenv('WB_SAAS_PDF_SLOTS', '2')
+    monkeypatch.setenv('WB_SAAS_PDF_WAIT_SECONDS', '15')
+    monkeypatch.setenv('MH_INTERNAL_PDF_TENANT_DIR', str(database / 'foreign-env'))
+    monkeypatch.setenv('WB_SAAS_PROVISIONER_BEARER_KEY', 'dummy-secret-not-forwarded')
+    def fake_child(command, *, input, env, **kwargs):
+        assert env['WB_SAAS_PDF_SLOT_DIR'] == str(database / 'shared-slots')
+        assert env['WB_SAAS_PDF_SLOTS'] == '2' and env['WB_SAAS_PDF_WAIT_SECONDS'] == '15'
+        assert env['MH_INTERNAL_PDF_TENANT_DIR'] == str(database.resolve())
+        assert Path(env['WB_SAAS_DATA_DIR']).parent == database
+        assert 'WB_SAAS_PROVISIONER_BEARER_KEY' not in env
+        Path(env['SHOP_RESULT_PATH']).write_text(json.dumps({'ok': True}), encoding='utf-8')
+        return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
+    monkeypatch.setattr(service.subprocess, 'run', fake_child)
+    assert service._execute(shop, 'report', '2026-09-01', '2026-09-02')['ok']
+
+
+def test_nested_parent_pdf_refuses_child_render_before_launch_instead_of_deadlocking(database, monkeypatch):
+    import shop_workspace_service as service
+    from reports import pdf_budget
+    from reports.pdf_budget import PdfBusy
+    monkeypatch.setattr(pdf_budget, 'holds_slot', lambda: True)
+    monkeypatch.setattr(service.subprocess, 'run', lambda *args, **kwargs: pytest.fail('Nested PDF child must never launch'))
+    with pytest.raises(PdfBusy):
+        service._execute(1, 'scheduled_pdf', '2026-09-01', '2026-09-02')
+
 def test_two_real_shop_snapshots_keep_same_wb_article_cost_isolated(database,monkeypatch):
     main_path=core.DB_PATH
     ids=[shops.create('First','unused','first'),shops.create('Second','unused','second')]

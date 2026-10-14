@@ -72,6 +72,9 @@ async def bounded_body(request,limit=1024*1024):
 def response_of(result,shop_id,record):
     headers=shop_context.response_headers(shop_id,record,'shop_local')
     disposition=result.get('content_disposition')
+    retry=result.get('retry_after')
+    if result['status']==503 and isinstance(retry,str) and re.fullmatch(r'[0-9]{1,3}',retry) and 1<=int(retry)<=300:
+        headers['Retry-After']=retry
     if isinstance(disposition,str) and len(disposition)<=500 and '\r' not in disposition and '\n' not in disposition:
         headers['Content-Disposition']=disposition
     return Response(content=base64.b64decode(result['body']),status_code=result['status'],

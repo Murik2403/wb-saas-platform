@@ -5,6 +5,7 @@ from db import shop_schedules as schedules,shop_request_bridge as bridge
 from db.core import connect
 from shop_membership import current_role
 from shop_workspace_service import prepare
+from reports.pdf_budget import PdfBusy
 
 def membership(job):
     role=current_role(job['actor'])
@@ -31,6 +32,8 @@ def run_one(*,now=None):
                  'kind':job['kind'],'start':start.isoformat(),'end':end.isoformat(),'arguments':arguments}
         prepared=prepare(job['shop_id'],action,start.isoformat(),end.isoformat(),_timeout=600 if action=='sync' else 90,
                          actor=job['actor'],role='manager',**arguments)
+        if action=='scheduled_pdf' and prepared['response'].get('pdf_busy') is True:
+            raise PdfBusy('Shared PDF budget unavailable')
         if (prepared['identity'],prepared['base_revision'])!=(job['identity'],revision):raise ValueError('snapshot_conflict')
         if action=='sync' and not prepared['synced']:raise ValueError('sync_incomplete')
         verified_at=membership(job)
@@ -45,6 +48,13 @@ def run_one(*,now=None):
                     source_errors=prepared['source_errors'],_conn=conn)
             artifact=prepared['response'].get('artifact')
             schedules.finish(conn,job,status='ok',artifact=artifact,revision=result['bridge']['applied_revision'],now=now)
+    except PdfBusy:
+        try:
+            with connect() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                schedules.defer_pdf_busy(conn,job,now=now)
+        except Exception:
+            pass  # obsolete lease/configuration must not affect its replacement
     except Exception as exc:
         # Only bounded machine codes; child/network/token errors never leak.
         code='membership_denied' if isinstance(exc,PermissionError) else (

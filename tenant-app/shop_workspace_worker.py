@@ -45,32 +45,39 @@ def main():
         sync_errors.append('shared_fifo_pending')
         settings=config.load_settings();settings['shop_source_errors']=sync_errors;config.save_settings(settings)
     elif action=='scheduled_pdf':
-        from reports.store import ReportStore
-        from reports.pdf_builder import build_report_pdf
-        import hashlib
-        store=ReportStore(config.DB_PATH)
-        metrics=payload['metrics']
-        from db.shop_schedules import parameters
-        parameters('pdf',True,60,30,metrics)
-        name=f"Магазин: отчёт {int(payload['schedule_id'])}/{int(payload['generation'])}"
-        # A private definition is deliberately disabled and has no delivery.
-        with connect() as conn:
-            found=conn.execute('SELECT id FROM report_definitions WHERE name=? AND enabled=0 AND email_enabled=0 AND telegram_enabled=0',(name,)).fetchone()
-        if found:definition_id=int(found['id'])
-        else:
-            definition_id=store.add_definition(name=name,metrics=metrics,schedule_type='daily',schedule_time='00:00')
-            with connect() as conn:conn.execute('UPDATE report_definitions SET enabled=0 WHERE id=?',(definition_id,))
-        run_id=store.start_run(definition_id,delivery_requested=False)
-        pdf=build_report_pdf(name,metrics,date.fromisoformat(payload['start']),date.fromisoformat(payload['end']))
-        root=config.DATA_DIR/'reports'/'shop-archive';root.mkdir(parents=True,exist_ok=True)
-        path=root/f'report-{run_id}.pdf';path.write_bytes(pdf)
-        store.finish_run(run_id,status='ok',file_path=str(path))
-        shop_report_assets.persist()
-        persist_settings()
-        result={'artifact':{'run_id':run_id,'sha256':hashlib.sha256(pdf).hexdigest(),
-                 'start':payload['start'],'end':payload['end']},'sync_errors':sync_errors,'synced':False}
-        Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps(result,allow_nan=False),encoding='utf-8')
-        return
+        from reports.pdf_budget import PdfBusy, pdf_slot
+        try:
+            with pdf_slot(wait=0):
+                from reports.store import ReportStore
+                from reports.pdf_builder import build_report_pdf
+                import hashlib
+                store=ReportStore(config.DB_PATH)
+                metrics=payload['metrics']
+                from db.shop_schedules import parameters
+                parameters('pdf',True,60,30,metrics)
+                name=f"Магазин: отчёт {int(payload['schedule_id'])}/{int(payload['generation'])}"
+                # A private definition is deliberately disabled and has no delivery.
+                with connect() as conn:
+                    found=conn.execute('SELECT id FROM report_definitions WHERE name=? AND enabled=0 AND email_enabled=0 AND telegram_enabled=0',(name,)).fetchone()
+                if found:definition_id=int(found['id'])
+                else:
+                    definition_id=store.add_definition(name=name,metrics=metrics,schedule_type='daily',schedule_time='00:00')
+                    with connect() as conn:conn.execute('UPDATE report_definitions SET enabled=0 WHERE id=?',(definition_id,))
+                run_id=store.start_run(definition_id,delivery_requested=False)
+                pdf=build_report_pdf(name,metrics,date.fromisoformat(payload['start']),date.fromisoformat(payload['end']))
+                root=config.DATA_DIR/'reports'/'shop-archive';root.mkdir(parents=True,exist_ok=True)
+                path=root/f'report-{run_id}.pdf';path.write_bytes(pdf)
+                store.finish_run(run_id,status='ok',file_path=str(path))
+                shop_report_assets.persist()
+                persist_settings()
+                result={'artifact':{'run_id':run_id,'sha256':hashlib.sha256(pdf).hexdigest(),
+                         'start':payload['start'],'end':payload['end']},'sync_errors':sync_errors,'synced':False}
+                Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps(result,allow_nan=False),encoding='utf-8')
+                return
+        except PdfBusy:
+            Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps({'pdf_busy':True,'status':503,'retry_after':'5',
+                'synced':False,'sync_errors':[]}),encoding='utf-8')
+            return
     elif action=='cost':
         import pandas as pd
         from db import save_costs
@@ -116,7 +123,11 @@ def main():
         response=asyncio.run(dispatch())
         if envelope['method']=='POST' and response.status_code<400 and (
             envelope['path']=='/api/v1/operations/reports/quick' or envelope['path'].endswith('/generate')):
-            shop_report_assets.generate_one(response.json()['run_id'])
+            from reports.pdf_budget import PdfBusy
+            try:
+                shop_report_assets.generate_one(response.json()['run_id'])
+            except PdfBusy as exc:
+                response=httpx.Response(503,json={'detail':str(exc)},headers={'Retry-After':'30'})
         if envelope['method']=='POST' and envelope['path'].startswith('/api/v1/sync') and response.status_code<400:
             if envelope['path']=='/api/v1/sync':sync_errors=[]
             for outcome in captured_outcomes:
@@ -145,6 +156,7 @@ def main():
         result={'status':response.status_code,'body':base64.b64encode(content).decode(),
                 'content_type':response.headers.get('content-type','application/json'),
                 'content_disposition':response.headers.get('content-disposition'),
+                'retry_after':response.headers.get('retry-after'),
                 'sync_errors':sync_errors,'synced':synced}
         persist_settings()
         Path(os.environ['SHOP_RESULT_PATH']).write_text(json.dumps(result,allow_nan=False),encoding='utf-8')

@@ -40,8 +40,14 @@ def generate_one(run_id):
     # Manual generation only. Private workers never send emails or Telegram.
     from reports.store import ReportStore
     import report_scheduler
+    from reports.pdf_budget import pdf_slot
     store=ReportStore(DB_PATH)
     if type(run_id)!=int or run_id<1:raise ValueError('Invalid selected report run')
+    with pdf_slot(wait=0):
+        return _generate_one_admitted(store, report_scheduler, run_id)
+
+
+def _generate_one_admitted(store, report_scheduler, run_id):
     with connect() as conn:
         conn.execute('BEGIN IMMEDIATE')
         row=conn.execute("SELECT r.id AS run_id,r.period_days,r.delivery_requested,d.* FROM report_runs r JOIN report_definitions d ON d.id=r.definition_id WHERE r.id=? AND r.status='queued'",(run_id,)).fetchone()

@@ -2,6 +2,16 @@
 
 Ветка `claude/lessons-backup-20261018` от `fdcc301`. Инструмент: `scripts/training_media_backup.py`, тесты `scripts/tests/test_training_media_backup.py`, машинный акт `docs/acts/training-media-acceptance-2026-10-15.json`. Production не менялся, уроки и озвучка не пересобирались, старые архивы не удалялись.
 
+## Изменения после независимой проверки Codex
+
+Перед первым боевым запуском усилена проверка архива: уникальные tar/JSON-имена, ограничения размера/числа членов, независимая проверка approved manifest на все 16 уроков и точное соответствие inventory/metadata/файлов. Проверки поймали дубликаты и неодобренный manifest, принимавшиеся исходным вариантом. Публикация нового cipher исключает перезапись уже существующего файла даже при гонке.
+
+Изолированный gateway запускается с чистым allowlisted окружением и новой SQLite-копией; настройки production Postgres, Sentry, SMTP, Telegram, proxy и erasure не наследуются. Репетиция с боевым ключом не должна подключать production DB или том gateway.
+
+Добавлен `scripts/training_media_backup_job.py`: одна новая проверенная копия в сутки через `pack --force`, затем повторная полная проверка до retention. Источник задаёт `WB_SAAS_TRAINING_MEDIA_SOURCE_DIR`; ключ/KEY_ID/KEYRING существующие, архивы — `<WB_SAAS_BACKUP_DIR>/training-media`. Ошибка даёт стандартный `local_backup_failed` alert без деталей и ключей. Retention удаляет только просроченные аутентифицированные архивы собственного формата с проверенными marker/name/manifest/inode; неизвестные, повреждённые и неподтверждённые чужие копии остаются. Значение keep days по умолчанию 14.
+
+Для cron сначала этот job, затем существующий offsite job. Группа `training-media` должна входить в `WB_SAAS_BACKUP_REQUIRED_GROUPS`. Повторный pack без force пропускает неизменный manifest и не обновляет возраст архива: нельзя использовать это как ежедневную свежую копию или менять mtime для имитации свежести. Факт включения cron/offsite фиксируется отдельно операторским актом, а не этой инструкцией.
+
 ## Что проверено на источнике
 
 Источник — локальная копия текущего релиза `deliveries/training-narrated-20261006/public-media` (озвученный курс): `manifest.json` (SHA-256 `e677185580e23431db0cf1f080851c43eab4f6578e06110723ed8d7591dcb74d`), 16 уроков, 32 файла, 99 603 467 байт (MP4 99 563 679, VTT 39 788).

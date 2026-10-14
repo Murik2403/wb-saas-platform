@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS report_runs (
 
 class ReportStore:
     def __init__(self, db_path: str | Path):
+        self._owned_leases: dict[int, tuple[str, int]] = {}
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as conn:
@@ -195,7 +196,9 @@ class ReportStore:
                 (definition_id, _now_msk_naive_iso(), int(delivery_requested), "queued" if delivery_requested else "not_requested",
                  owner, _lease_until(LEASE_SECONDS)),
             )
-            return cur.lastrowid
+            run_id = cur.lastrowid
+            self._owned_leases[run_id] = (owner, 1)
+            return run_id
 
     def enqueue_run(self, definition_id: int, *, period_days: int | None = None, delivery_requested: bool = False) -> int:
         """Persist a manual generation request for the report worker.
@@ -235,7 +238,7 @@ class ReportStore:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                """SELECT r.id AS run_id, r.period_days, r.delivery_requested,
+                """SELECT r.id AS run_id, r.period_days, r.delivery_requested, r.attempts AS previous_attempts,
                           d.*
                    FROM report_runs r
                    JOIN report_definitions d ON d.id = r.definition_id
@@ -252,23 +255,64 @@ class ReportStore:
                    WHERE id = ? AND status = 'queued'""",
                 (_now_msk_naive_iso(), owner, _lease_until(lease_seconds), int(row["run_id"])),
             )
-            return dict(row)
+            job = dict(row)
+            self._owned_leases[int(row["run_id"])] = (owner, int(job.pop("previous_attempts")) + 1)
+            return job
 
     def has_queued(self) -> bool:
         with self._conn() as conn:
             return conn.execute("SELECT 1 FROM report_runs WHERE status = 'queued' LIMIT 1").fetchone() is not None
 
-    def heartbeat(self, run_id: int, owner: str | None = None, lease_seconds: int = LEASE_SECONDS) -> bool:
+    def has_pending_generation(self, definition_id: int) -> bool:
+        with self._conn() as conn:
+            return conn.execute("SELECT 1 FROM report_runs WHERE definition_id=? AND status IN ('queued','running') LIMIT 1",
+                                (definition_id,)).fetchone() is not None
+
+    def lease_token(self, run_id: int) -> tuple[str, int]:
+        """Use the captured claim token; adopt only a genuinely pre-lease running row."""
+        if run_id in self._owned_leases:
+            return self._owned_leases[run_id]
+        with self._conn() as conn:
+            owner = "legacy-direct"
+            cur = conn.execute(
+                "UPDATE report_runs SET lease_owner=?, attempts=1, lease_expires_at=? "
+                "WHERE id=? AND status='running' AND attempts=0 AND lease_owner IS NULL AND lease_expires_at IS NULL",
+                (owner, _lease_until(LEASE_SECONDS), run_id),
+            )
+            if cur.rowcount != 1:
+                raise RuntimeError("Report lease is not owned by this builder")
+        self._owned_leases[run_id] = (owner, 1)
+        return self._owned_leases[run_id]
+
+    def heartbeat(self, run_id: int, owner: str | None = None, lease_seconds: int = LEASE_SECONDS,
+                  *, attempt: int | None = None) -> bool:
         """Extend the lease of a running run (of this owner when given); False when the run is no longer running."""
+        captured = self._owned_leases.get(run_id)
+        if owner is None:
+            if captured is None:
+                return False
+            owner = captured[0]
+        if attempt is None:
+            if captured is None:
+                return False
+            attempt = captured[1]
         with self._conn() as conn:
             cur = conn.execute(
-                "UPDATE report_runs SET lease_expires_at = ? WHERE id = ? AND status = 'running' AND (? IS NULL OR lease_owner = ?)",
-                (_lease_until(lease_seconds), run_id, owner, owner),
+                "UPDATE report_runs SET lease_expires_at = ? WHERE id = ? AND status = 'running' AND lease_owner = ? AND attempts = ?",
+                (_lease_until(lease_seconds), run_id, owner, attempt),
             )
             return cur.rowcount == 1
 
     def _recover(self, conn: sqlite3.Connection, where: str, params: tuple = ()) -> int:
         """Requeue interrupted runs; a run that already used up its attempts is closed with an error instead."""
+        # Match ordinary generation-error policy: after three worker crashes,
+        # an automatic due schedule must not create a new run and restart the
+        # same poison cycle. Explicit manual requests remain available.
+        conn.execute(
+            f"UPDATE report_definitions SET last_run_at=? WHERE id IN "
+            f"(SELECT definition_id FROM report_runs WHERE status='running' AND attempts>=? AND ({where}))",
+            (_now_msk_naive_iso(), MAX_ATTEMPTS, *params),
+        )
         poisoned = conn.execute(
             f"UPDATE report_runs SET status='error', finished_at=?, lease_owner=NULL, lease_expires_at=NULL, error=? "
             f"WHERE status='running' AND attempts >= ? AND ({where})",
@@ -291,14 +335,26 @@ class ReportStore:
         with self._conn() as conn:
             # A provider may have accepted the previous request. Do not resend blindly.
             conn.execute("UPDATE report_runs SET delivery_status='error', delivery_error='Доставка прервана. Проверьте получение перед повторной отправкой.' WHERE status='ok' AND delivery_status='queued'")
-            return self._recover(conn, "1=1")
+            return self._recover(conn, "lease_expires_at IS NULL OR lease_expires_at < ?", (_now_msk_naive_iso(),))
 
-    def finish_run(self, run_id: int, *, status: str, file_path: str | None = None, error: str | None = None) -> None:
+    def finish_run(self, run_id: int, *, status: str, file_path: str | None = None, error: str | None = None,
+                   owner: str | None = None, attempt: int | None = None) -> bool:
+        captured = self._owned_leases.get(run_id)
+        if owner is None:
+            if captured is None:
+                return False
+            owner = captured[0]
+        if attempt is None:
+            if captured is None:
+                return False
+            attempt = captured[1]
         with self._conn() as conn:
-            conn.execute(
-                "UPDATE report_runs SET finished_at = ?, status = ?, file_path = ?, error = ?, lease_owner = NULL, lease_expires_at = NULL WHERE id = ?",
-                (_now_msk_naive_iso(), status, file_path, error, run_id),
+            cur = conn.execute(
+                "UPDATE report_runs SET finished_at = ?, status = ?, file_path = ?, error = ?, lease_owner = NULL, lease_expires_at = NULL "
+                "WHERE id = ? AND status='running' AND lease_owner = ? AND attempts = ?",
+                (_now_msk_naive_iso(), status, file_path, error, run_id, owner, attempt),
             )
+            return cur.rowcount == 1
 
     def finish_delivery(self, run_id: int, *, status: str, error: str | None = None) -> None:
         with self._conn() as conn:

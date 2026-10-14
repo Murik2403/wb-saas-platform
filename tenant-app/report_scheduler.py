@@ -18,12 +18,16 @@ from zoneinfo import ZoneInfo
 
 from config import DB_PATH
 from reports import delivery
-from reports.pdf_budget import PdfBusy, try_pdf_slot
+from reports.pdf_budget import PdfBusy, pdf_slot, try_pdf_slot
 from reports.store import LEASE_SECONDS, ReportStore
 
 CHECK_INTERVAL_SECONDS = 5
 LEASE_OWNER = f"worker-{os.getpid()}"
 REPORTS_DIR = DB_PATH.parent / "reports"
+
+
+class ReportLeaseLost(RuntimeError):
+    """This builder may neither publish completion nor deliver another attempt's run."""
 
 
 def build_report_pdf(name, metric_codes, start, end):
@@ -69,14 +73,15 @@ _SCHEDULE_PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
 
 @contextmanager
-def _lease_heartbeat(store: ReportStore, run_id: int):
+def _lease_heartbeat(store: ReportStore, run_id: int, owner: str, attempt: int):
     """Keep the run's lease alive while its PDF is built; if this process dies the lease expires and the run is requeued."""
     stop = threading.Event()
 
     def beat():
         while not stop.wait(LEASE_SECONDS / 3):
             try:
-                store.heartbeat(run_id)
+                if not store.heartbeat(run_id, owner, attempt=attempt):
+                    break
             except Exception:  # noqa: BLE001 -- a missed beat only shortens the lease; the next one repairs it
                 pass
     thread = threading.Thread(target=beat, name=f"report-lease-{run_id}", daemon=True)
@@ -85,9 +90,26 @@ def _lease_heartbeat(store: ReportStore, run_id: int):
         yield
     finally:
         stop.set()
+        thread.join(timeout=1)
 
 
 def generate_and_save(
+    store: ReportStore,
+    definition: dict,
+    *,
+    period_days: int | None = None,
+    run_id: int | None = None,
+) -> tuple[bytes, Path]:
+    """Hold admission through claim, rendering, file save and fenced completion."""
+    try:
+        wait = float(os.environ.get("WB_SAAS_PDF_WAIT_SECONDS", "120"))
+    except ValueError:
+        wait = 120.0
+    with pdf_slot(wait=wait):
+        return _generate_and_save_held(store, definition, period_days=period_days, run_id=run_id)
+
+
+def _generate_and_save_held(
     store: ReportStore,
     definition: dict,
     *,
@@ -111,9 +133,12 @@ def generate_and_save(
     start = end - timedelta(days=period_days - 1)
     if run_id is None:
         run_id = store.start_run(definition["id"])
+    owner, attempt = store.lease_token(run_id)
+    if not store.heartbeat(run_id, owner, attempt=attempt):
+        raise ReportLeaseLost("Report lease is no longer owned by this builder")
     try:
         metric_codes = json.loads(definition["metrics"])
-        with _lease_heartbeat(store, run_id):
+        with _lease_heartbeat(store, run_id, owner, attempt):
             pdf_bytes = build_report_pdf(definition["name"], metric_codes, start, end)
 
         out_dir = REPORTS_DIR / str(definition["id"])
@@ -121,16 +146,19 @@ def generate_and_save(
         file_path = out_dir / f"{end.isoformat()}-{run_id}.pdf"
         file_path.write_bytes(pdf_bytes)
 
-        store.finish_run(run_id, status="ok", file_path=str(file_path))
+        if not store.finish_run(run_id, status="ok", file_path=str(file_path), owner=owner, attempt=attempt):
+            raise ReportLeaseLost("Report completion lease was replaced")
         store.set_last_run(definition["id"], datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None).isoformat(timespec="seconds"))
         return pdf_bytes, file_path
+    except ReportLeaseLost:
+        raise  # never overwrite or advance the schedule of a replacement attempt
     except PdfBusy as exc:
         # No slot in time: nothing was built. Do not burn today's schedule slot (set_last_run) for a report that never ran.
-        store.finish_run(run_id, status="error", error=str(exc))
+        store.finish_run(run_id, status="error", error=str(exc), owner=owner, attempt=attempt)
         raise
     except Exception as exc:
-        store.finish_run(run_id, status="error", error=str(exc))
-        store.set_last_run(definition["id"], _now_msk().isoformat(timespec="seconds"))
+        if store.finish_run(run_id, status="error", error=str(exc), owner=owner, attempt=attempt):
+            store.set_last_run(definition["id"], _now_msk().isoformat(timespec="seconds"))
         raise
 
 
@@ -166,6 +194,8 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int | N
 
     The PDF slot is taken before the run is started and released before delivery: a busy host leaves the definition due
     (returns False, retried on the next tick) instead of recording a failed run, and a slow delivery never holds a slot."""
+    if store.has_pending_generation(definition["id"]):
+        return False  # a fresh crash lease must expire/recover, never spawn a second scheduled delivery
     slot = try_pdf_slot()
     if slot is None:
         return False
@@ -220,7 +250,7 @@ def check_once(*, deliver: bool = True) -> int:
     now = _now_msk()
     generated = queued
     for definition in store.list_definitions(enabled_only=True):
-        if _is_due(definition, now):
+        if _is_due(definition, now) and not store.has_pending_generation(definition["id"]):
             try:
                 if deliver:
                     generated += 1 if run_definition(store, definition) else 0

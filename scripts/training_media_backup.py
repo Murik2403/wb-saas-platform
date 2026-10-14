@@ -46,6 +46,10 @@ MANIFEST_NAME = "manifest.json"
 ARCHIVE_SUFFIX = ".tar.gz.enc"  # the suffix the existing retention and offsite tools already recognise
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 CHUNK = 1024 * 1024
+MAX_ARCHIVE_BYTES = 1024 ** 3
+MAX_MEDIA_BYTES = 1024 ** 3
+MAX_METADATA_BYTES = 1024 ** 2
+MAX_MEMBERS = 36  # manifest, inventory, 16 lessons and optional overview, MP4/VTT
 
 
 class MediaError(Exception):
@@ -66,6 +70,49 @@ def sha256_of(path: Path) -> str:
 
 def catalog_slugs() -> list[str]:
     return [item["slug"] for item in json.loads((ROOT / "gateway" / "training_catalog.json").read_text(encoding="utf-8"))]
+
+
+def _bounded_json(raw: bytes, label: str) -> dict:
+    def unique(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise ValueError("duplicate JSON field")
+            result[name] = value
+        return result
+    try:
+        if len(raw) > MAX_METADATA_BYTES:
+            raise ValueError("metadata size")
+        value = json.loads(raw, object_pairs_hook=unique)
+        if not isinstance(value, dict):
+            raise ValueError("metadata object")
+        return value
+    except (ValueError, TypeError, RecursionError):
+        raise MediaError([f"{label}: invalid or excessive metadata"]) from None
+
+
+def _manifest_files(manifest: dict) -> list[dict]:
+    """Independent catalog/approved-name rules, before trusting an inventory."""
+    videos = manifest.get("videos")
+    lessons = set(catalog_slugs())
+    if manifest.get("version") != 1 or manifest.get("approved") is not True or not isinstance(videos, dict):
+        raise MediaError(["manifest is not an approved version 1 release"])
+    if not lessons <= set(videos) or not set(videos) <= lessons | {"overview"}:
+        raise MediaError(["manifest must contain the approved sixteen lesson catalog"])
+    files = []
+    for slug, video in videos.items():
+        if not isinstance(video, dict) or not isinstance(video.get("captions"), dict):
+            raise MediaError(["manifest lesson or subtitles metadata invalid"])
+        for kind, entry in (("mp4", video), ("vtt", video["captions"])):
+            digest, size = entry.get("sha256"), entry.get("bytes")
+            if (not isinstance(digest, str) or not _DIGEST.fullmatch(digest)
+                    or entry.get("filename") != f"{slug}.{digest}.{kind}"
+                    or type(size) is not int or not 0 < size <= MAX_MEDIA_BYTES):
+                raise MediaError(["manifest asset identity or size invalid"])
+            files.append({"name": entry["filename"], "bytes": size, "sha256": digest, "slug": slug, "kind": kind})
+    if sum(item["bytes"] for item in files) > MAX_MEDIA_BYTES:
+        raise MediaError(["approved media exceed the bounded total size"])
+    return sorted(files, key=lambda item: item["name"])
 
 
 def _entry_problems(slug: str, entry: dict, extension: str, root: Path) -> tuple[list[str], dict | None]:
@@ -136,41 +183,74 @@ def _safe_member(member: tarfile.TarInfo) -> None:
         raise MediaError([f"unsafe archive member: {member.name!r}"])
 
 
-def read_archive(archive: Path, key: str, workdir: Path, *, key_id: str | None = None) -> tuple[dict, Path]:
+def read_archive(archive: Path, key: str, workdir: Path, *, key_id: str | None = None, keyring: dict | None = None) -> tuple[dict, Path]:
     """Decrypt into ``workdir``, verify every member, return (inventory, plain tar path)."""
     plain = workdir / f"verify-{secrets.token_hex(4)}.tar.gz"
     try:
-        decrypt_file(Path(archive), plain, key, **_options(key_id))
+        archive = Path(archive)
+        if archive.is_symlink() or not archive.is_file() or not 0 < archive.stat().st_size <= MAX_ARCHIVE_BYTES:
+            raise MediaError(["archive is not a bounded regular encrypted file"])
+        options = _options(key_id)
+        if keyring is not None:
+            options["keyring"] = keyring
+        decrypt_file(archive, plain, key, **options)
     except Exception:
         raise MediaError(["archive does not decrypt or authenticate (wrong key or modified file)"]) from None
-    problems: list[str] = []
-    with tarfile.open(plain, "r:gz") as tar:
-        members = {m.name: m for m in tar.getmembers()}
-        for member in members.values():
-            _safe_member(member)
-        if INVENTORY_NAME not in members or MANIFEST_NAME not in members:
-            raise MediaError(["archive carries no inventory or manifest"])
-        inventory = json.loads(tar.extractfile(members[INVENTORY_NAME]).read())
-        declared = {item["name"]: item for item in inventory["files"]}
-        if set(members) != set(declared) | {INVENTORY_NAME, MANIFEST_NAME}:
-            problems.append("archive members differ from its inventory")
-        for name, item in declared.items():
-            if name not in members:
-                continue
-            digest, size = hashlib.sha256(), 0
-            handle = tar.extractfile(members[name])
-            while chunk := handle.read(CHUNK):
-                digest.update(chunk)
-                size += len(chunk)
-            if digest.hexdigest() != item["sha256"] or size != item["bytes"]:
-                problems.append(f"{name}: content differs from the inventory")
-        manifest_bytes = tar.extractfile(members[MANIFEST_NAME]).read()
-        if hashlib.sha256(manifest_bytes).hexdigest() != inventory["manifest_sha256"]:
-            problems.append("manifest.json differs from the inventory")
-    if problems:
+    try:
+        problems: list[str] = []
+        with tarfile.open(plain, "r:gz") as tar:
+            members, total = {}, 0
+            for member in tar:
+                _safe_member(member)
+                if member.name in members or len(members) >= MAX_MEMBERS:
+                    raise MediaError(["duplicate or excessive archive members"])
+                limit = MAX_METADATA_BYTES if member.name in {INVENTORY_NAME, MANIFEST_NAME} else MAX_MEDIA_BYTES
+                if not 0 < member.size <= limit:
+                    raise MediaError(["archive member size outside reviewed bounds"])
+                total += member.size
+                if total > MAX_MEDIA_BYTES + 2 * MAX_METADATA_BYTES:
+                    raise MediaError(["archive expanded size exceeds reviewed bounds"])
+                members[member.name] = member
+            if INVENTORY_NAME not in members or MANIFEST_NAME not in members:
+                raise MediaError(["archive carries no inventory or manifest"])
+            inventory = _bounded_json(tar.extractfile(members[INVENTORY_NAME]).read(MAX_METADATA_BYTES + 1), INVENTORY_NAME)
+            manifest_bytes = tar.extractfile(members[MANIFEST_NAME]).read(MAX_METADATA_BYTES + 1)
+            manifest = _bounded_json(manifest_bytes, MANIFEST_NAME)
+            approved = _manifest_files(manifest)
+            rows = inventory.get("files")
+            if not isinstance(rows, list) or not rows or len(rows) > MAX_MEMBERS - 2:
+                raise MediaError(["archive inventory file count invalid"])
+            if any(not isinstance(item, dict) or set(item) != {"name", "bytes", "sha256", "slug", "kind"} for item in rows):
+                raise MediaError(["archive inventory asset metadata invalid"])
+            if any(not isinstance(item["name"], str) or type(item["bytes"]) is not int for item in rows):
+                raise MediaError(["archive inventory asset types invalid"])
+            declared = {item["name"]: item for item in rows}
+            if len(declared) != len(rows) or sorted(rows, key=lambda item: item["name"]) != approved:
+                raise MediaError(["archive inventory differs from approved manifest assets"])
+            if type(inventory.get("lessons")) is not int or inventory["lessons"] != len(catalog_slugs()) or type(inventory.get("bytes")) is not int or inventory["bytes"] != sum(item["bytes"] for item in approved):
+                raise MediaError(["archive inventory totals differ from approved manifest"])
+            if set(members) != set(declared) | {INVENTORY_NAME, MANIFEST_NAME}:
+                problems.append("archive members differ from its inventory")
+            for name, item in declared.items():
+                if name not in members:
+                    continue
+                digest, size = hashlib.sha256(), 0
+                handle = tar.extractfile(members[name])
+                while chunk := handle.read(CHUNK):
+                    digest.update(chunk)
+                    size += len(chunk)
+                if digest.hexdigest() != item["sha256"] or size != item["bytes"]:
+                    problems.append(f"{name}: content differs from the inventory")
+            if hashlib.sha256(manifest_bytes).hexdigest() != inventory.get("manifest_sha256"):
+                problems.append("manifest.json differs from the inventory")
+        if problems:
+            raise MediaError(problems)
+        return inventory, plain
+    except BaseException as error:
         plain.unlink(missing_ok=True)
-        raise MediaError(problems)
-    return inventory, plain
+        if isinstance(error, MediaError) or not isinstance(error, Exception):
+            raise
+        raise MediaError(["archive structure is invalid"]) from None
 
 
 def pack(source: Path, backup_dir: Path, key: str, *, key_id: str = DEFAULT_KEY_ID, force: bool = False) -> dict:
@@ -204,7 +284,17 @@ def pack(source: Path, backup_dir: Path, key: str, *, key_id: str = DEFAULT_KEY_
             tar.addfile(info, io.BytesIO(payload))
             for member in (MANIFEST_NAME, *[item["name"] for item in inventory["files"]]):
                 tar.add(source / member, arcname=member, filter=lambda i: (setattr(i, "uid", 0), setattr(i, "gid", 0), setattr(i, "uname", ""), setattr(i, "gname", ""), i)[-1])
-        encrypt_file(partial, destination, key, key_id=key_id)
+        # backup_crypto atomically replaces its destination; keep that write
+        # inside our own private staging directory, then publish with an
+        # exclusive hard link so even a concurrent final-name collision cannot
+        # overwrite a preexisting archive.
+        with tempfile.TemporaryDirectory(dir=backup_dir) as staging:
+            encrypted = Path(staging) / "archive.enc"
+            encrypt_file(partial, encrypted, key, key_id=key_id)
+            try:
+                os.link(encrypted, destination)
+            except FileExistsError:
+                raise MediaError(["new archive name collided; existing file preserved"]) from None
     finally:
         partial.unlink(missing_ok=True)  # our own plaintext partial only
     try:
@@ -263,18 +353,32 @@ def _free_port() -> int:
 def _get(url: str, headers: dict | None = None) -> tuple[int, dict, bytes]:
     request = urllib.request.Request(url, headers=headers or {})
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        # Local rehearsal must not use the operator's corporate/public proxy.
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=60) as response:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as error:
         return error.code, dict(error.headers), error.read()
 
 
+def _isolated_gateway_environment(media_root: Path) -> dict[str, str]:
+    # Rehearsal never inherits DB/erasure/provider/Sentry/proxy/PYTHONPATH settings
+    # from the operator or the real provisioner. SQLite's default path is inside
+    # the new gateway copy, whose original `data` directory was excluded.
+    safe = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "TZ"}
+    result = {name: value for name, value in os.environ.items() if name.upper() in safe}
+    result.update(WB_SAAS_TRAINING_MEDIA_DIR=str(media_root.resolve()), WB_SAAS_DB_BACKEND="sqlite",
+                  WB_SAAS_TELEGRAM_ENABLED="0", WB_SAAS_PARENT_DOMAIN="localhost", PYTHONNOUSERSITE="1")
+    return result
+
+
 def check_isolated_gateway(media_root: Path, inventory: dict, work: Path) -> dict:
     """Run a COPY of the real gateway app on localhost against ``media_root``; verify page, files, subtitles, Range."""
     gateway_copy = work / "gateway"
-    shutil.copytree(ROOT / "gateway", gateway_copy, ignore=shutil.ignore_patterns("data", "tests", "__pycache__", ".venv"))
+    shutil.copytree(ROOT / "gateway", gateway_copy, ignore=shutil.ignore_patterns("data", "tests", "__pycache__", ".venv", ".env", ".env.*", "*.pem", "*.key"))
+    if (gateway_copy / "data").exists():
+        raise MediaError(["isolated gateway database directory is not fresh"])
     port = _free_port()
-    env = {**os.environ, "WB_SAAS_TRAINING_MEDIA_DIR": str(media_root)}
+    env = _isolated_gateway_environment(media_root)
     log = (work / "gateway.log").open("wb")
     server = subprocess.Popen([sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(port)], cwd=gateway_copy,
                               env=env, stdout=log, stderr=subprocess.STDOUT)
@@ -337,6 +441,7 @@ def check_isolated_gateway(media_root: Path, inventory: dict, work: Path) -> dic
             server.wait(timeout=15)
         except subprocess.TimeoutExpired:
             server.kill()
+            server.wait(timeout=15)
         log.close()
     if problems:
         raise MediaError(problems)

@@ -82,6 +82,16 @@ def prepare(shop_id:int,action:str,start:str,end:str,*,_timeout:int|None=None,**
 def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|None=None,_prepare:bool=False,_lock_handle=None,**kwargs) -> dict:
     if date.fromisoformat(end)<date.fromisoformat(start):raise ValueError('Конец периода раньше начала')
     if (date.fromisoformat(end)-date.fromisoformat(start)).days>366:raise ValueError('Период не больше года')
+    from reports import pdf_budget
+    request = kwargs.get('request') or {}
+    request_path = request.get('path', '')
+    renders_pdf = action == 'scheduled_pdf' or (action == 'request' and (
+        request_path == '/api/v1/operations/reports/pdf' or (request.get('method') == 'POST' and (
+            request_path == '/api/v1/operations/reports/quick' or request_path.endswith('/generate')))))
+    if renders_pdf and pdf_budget.holds_slot():
+        # Current dispatch/schedules acquire in the child. Refuse a nested PDF
+        # caller rather than have its child wait on a cabinet lock held by its parent.
+        raise pdf_budget.PdfBusy('Нельзя запускать второй PDF внутри текущей сборки')
     state=shops.worker_input(shop_id)
     with tempfile.TemporaryDirectory(dir=config.DATA_DIR,prefix='.shop-workspace-') as private:
         root=Path(private);os.chmod(root,0o700)
@@ -90,6 +100,12 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
             database.write_bytes(state['snapshot'])
         env={key:value for key,value in os.environ.items() if key.upper() in {
           'PATH','SYSTEMROOT','WINDIR','TEMP','TMP','LANG','LC_ALL','LD_LIBRARY_PATH','SSL_CERT_FILE','SSL_CERT_DIR'}}
+        for key in ('WB_SAAS_PDF_SLOT_DIR', 'WB_SAAS_PDF_SLOTS', 'WB_SAAS_PDF_WAIT_SECONDS'):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        # This is computed from the actual cabinet data directory, never the
+        # request body or an inherited arbitrary internal environment value.
+        env['MH_INTERNAL_PDF_TENANT_DIR'] = str(Path(config.DATA_DIR).resolve())
         env.update(WB_SAAS_DATA_DIR=str(root),SHOP_RESULT_PATH=str(root/'result.json'),WB_SAAS_TENANT_SLUG='shop-worker')
         payload={**kwargs,'token':state['token'],'action':action,'start':start,'end':end,'source_errors':state['source_errors']}
         # On Linux the child inherits the same flock open-file description.
@@ -105,6 +121,10 @@ def _execute(shop_id: int, action: str, start: str, end: str, *,_timeout:int|Non
         report=json.loads((root/'result.json').read_text(encoding='utf-8'))
         prepared_snapshot=None
         snapshot_required=action!='report' and not (action=='request' and kwargs['request']['method'] in {'GET','HEAD','OPTIONS'})
+        if action=='request' and report.get('status',500)>=400:
+            snapshot_required=False
+        if action=='scheduled_pdf' and report.get('pdf_busy') is True:
+            snapshot_required=False
         if snapshot_required:
             snapshot=root/'snapshot.sqlite3'
             with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(snapshot)) as target:

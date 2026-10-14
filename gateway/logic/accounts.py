@@ -62,6 +62,8 @@ PDN_POLICY_VERSION = "2026-10-08"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _SLUG_CHARS_RE = re.compile(r"[^a-z0-9-]+")
+# Public signups must not occupy service subdomains or reserved backup groups.
+RESERVED_TENANT_SLUGS = frozenset({"control-plane", "demo", "training-media"})
 COMMON_WEAK_PASSWORDS = {
     "password",
     "12345678",
@@ -157,7 +159,7 @@ def slugify_base(email: str) -> str:
 
 def generate_unique_slug(conn: sqlite3.Connection, email: str, max_attempts: int = 20) -> str:
     base = slugify_base(email)
-    candidate = base
+    candidate = f"{base}-{secrets.token_hex(2)}" if base in RESERVED_TENANT_SLUGS else base
     for attempt in range(max_attempts):
         existing = conn.execute(
             "SELECT 1 FROM tenant_instances WHERE slug=?", (candidate,)

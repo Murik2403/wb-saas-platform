@@ -41,3 +41,21 @@ def test_selected_generation_does_not_claim_older_queued_run(tmp_path,monkeypatc
     assert rows[old]['status']=='queued' and rows[new]['status']=='ok'
     with core.connect() as conn:
         assert [r['run_id'] for r in conn.execute('SELECT run_id FROM shop_report_assets')]==[new]
+
+
+def test_busy_shared_budget_does_not_claim_selected_private_run(tmp_path,monkeypatch):
+    from reports import pdf_budget
+    from reports.pdf_budget import PdfBusy
+    database=tmp_path/'db.sqlite'
+    monkeypatch.setattr(core,'DB_PATH',database)
+    monkeypatch.setattr(assets,'DB_PATH',database)
+    monkeypatch.setattr(pdf_budget,'DATA_DIR',tmp_path/'tenant')
+    blocker=tmp_path/'bad-mount';blocker.write_bytes(b'dummy')
+    monkeypatch.setenv('WB_SAAS_PDF_SLOT_DIR',str(blocker/'slots'))
+    core.init_db();store=ReportStore(database)
+    definition=store.add_definition(name='queued',metrics=['stocks'],schedule_type='daily',schedule_time='00:00')
+    run=store.enqueue_run(definition)
+    before=store.list_runs()[0]
+    with pytest.raises(PdfBusy):assets.generate_one(run)
+    assert store.list_runs()[0]==before
+    assert before['status']=='queued' and before['attempts']==0

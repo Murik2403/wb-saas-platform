@@ -26,6 +26,7 @@ TENANT_APP = Path(__file__).resolve().parents[1]
 def host(tmp_path, monkeypatch):
     """This process is tenant A; WB_SAAS_PDF_SLOT_DIR is shared with the helper processes."""
     slots = tmp_path / "slots"
+    slots.mkdir()
     monkeypatch.setenv("WB_SAAS_PDF_SLOT_DIR", str(slots))
     monkeypatch.setenv("WB_SAAS_PDF_SLOTS", "2")
     monkeypatch.setattr(pdf_budget, "DATA_DIR", tmp_path / "tenant-a")
@@ -68,7 +69,7 @@ def test_host_slots_limit_how_many_tenants_render_at_once(tmp_path, host):
             with pdf_slot(wait=0):
                 pass
         assert try_pdf_slot() is None
-        assert pdf_budget.status() == {"host_slots": 2, "host_busy": 2, "configured": True}
+        assert pdf_budget.status() == {"host_slots": 2, "host_busy": 2, "configured": True, "healthy": True}
     finally:
         stop(first, second)
 
@@ -114,7 +115,7 @@ def test_one_pdf_at_a_time_per_tenant_even_with_free_host_slots(tmp_path, host):
 def test_the_slot_is_reentrant_for_the_holder_and_not_configured_means_tenant_only(tmp_path, monkeypatch):
     monkeypatch.delenv("WB_SAAS_PDF_SLOT_DIR", raising=False)
     monkeypatch.setattr(pdf_budget, "DATA_DIR", tmp_path / "solo")
-    assert pdf_budget.status() == {"host_slots": 0, "host_busy": None, "configured": False}
+    assert pdf_budget.status() == {"host_slots": 0, "host_busy": None, "configured": False, "healthy": None}
     with pdf_slot(wait=0):
         with pdf_slot(wait=0), try_pdf_slot():  # nested asks do not deadlock on the held slot
             assert pdf_budget.holds_slot()
@@ -210,17 +211,76 @@ def test_a_run_that_keeps_killing_its_worker_is_closed_instead_of_looping_foreve
         store.requeue_expired_leases()
     final = row(store, run)
     assert final["status"] == "error" and "прервана" in final["error"] and not store.has_queued()
+    assert store.list_definitions()[0]['last_run_at'] is not None
 
 
-def test_startup_recovery_requeues_every_running_run_but_respects_the_attempt_cap(store):
+def test_three_crashes_do_not_restart_a_new_automatic_poison_cycle(tmp_path,host,store,monkeypatch):
+    definition_id=store.add_definition(name='poison schedule',metrics=['stocks'],schedule_type='daily',schedule_time='00:00')
+    run=store.start_run(definition_id,delivery_requested=True)
+    for attempt in range(MAX_ATTEMPTS):
+        if attempt:store.claim_next_queued(owner='retry-worker')
+        raw_expire(store,run)
+        store.requeue_expired_leases()
+    monkeypatch.setattr(scheduler,'ReportStore',lambda *args:store)
+    monkeypatch.setattr(scheduler,'DB_PATH',store.db_path)
+    monkeypatch.setattr(scheduler,'build_report_pdf',lambda *args:pytest.fail('A poisoned daily run must not restart automatically'))
+    assert scheduler.check_once()==0
+    assert [item['id'] for item in store.list_runs()]==[run]
+    assert row(store,run)['status']=='error'
+    assert store.enqueue_run(definition_id)!=run  # explicit manual retry still works
+
+
+def test_startup_recovery_requeues_expired_runs_but_respects_the_attempt_cap(store):
     first, second = store.enqueue_run(definition(store, "a")), store.enqueue_run(definition(store, "b"))
     store.claim_next_queued(owner="w")
     store.claim_next_queued(owner="w")
     import sqlite3
     with sqlite3.connect(store.db_path) as conn:
         conn.execute("UPDATE report_runs SET attempts=? WHERE id=?", (MAX_ATTEMPTS, second))
+    raw_expire(store, first)
+    raw_expire(store, second)
     assert store.requeue_interrupted_runs() == 1
     assert row(store, first)["status"] == "queued" and row(store, second)["status"] == "error"
+
+
+def test_worker_restart_preserves_active_direct_api_lease_and_recovers_legacy_rows(store):
+    current = store.start_run(definition(store, "active API"))
+    legacy = store.start_run(definition(store, "pre-lease"))
+    import sqlite3
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute("UPDATE report_runs SET attempts=0,lease_owner=NULL,lease_expires_at=NULL WHERE id=?", (legacy,))
+    fresh_worker = ReportStore(store.db_path)
+    assert fresh_worker.requeue_interrupted_runs() == 1
+    assert row(store, current)["status"] == "running"
+    assert row(store, legacy)["status"] == "queued"
+
+
+def test_fresh_crash_lease_does_not_spawn_duplicate_scheduled_generation(store, monkeypatch):
+    definition_id = definition(store, "crashed schedule")
+    run = store.start_run(definition_id, delivery_requested=True, owner="dead-worker")
+    fresh_worker = ReportStore(store.db_path)
+    assert fresh_worker.requeue_interrupted_runs() == 0
+    monkeypatch.setattr(scheduler, "try_pdf_slot", lambda: pytest.fail("Pending schedule must not start a second run"))
+    assert scheduler.run_definition(fresh_worker, fresh_worker.list_definitions()[0]) is False
+    assert [item["id"] for item in fresh_worker.list_runs()] == [run]
+    raw_expire(fresh_worker, run)
+    assert fresh_worker.requeue_expired_leases() == 1
+    assert fresh_worker.has_pending_generation(definition_id)
+
+
+def test_stale_attempt_cannot_heartbeat_or_finish_a_replacement_lease(store):
+    run = store.enqueue_run(definition(store))
+    store.claim_next_queued(owner="same-worker")
+    old_owner, old_attempt = store.lease_token(run)
+    raw_expire(store, run)
+    assert store.requeue_expired_leases() == 1
+    newer = ReportStore(store.db_path)
+    newer.claim_next_queued(owner="same-worker")  # owner name can repeat; attempt is the fencing token
+    before = row(newer, run)
+    assert not store.heartbeat(run, old_owner, attempt=old_attempt)
+    assert store.finish_run(run, status="ok", file_path="stale.pdf", owner=old_owner, attempt=old_attempt) is False
+    assert row(newer, run) == before
+    assert newer.finish_run(run, status="ok", file_path="new.pdf") is True
 
 
 def test_heartbeat_extends_only_a_running_lease_and_expired_ones_stay_recoverable(store):
@@ -362,20 +422,101 @@ def test_generate_now_route_answers_503_when_no_slot_is_free_and_creates_no_run(
         stop(first, second)
 
 
-def test_an_unusable_slot_directory_degrades_to_the_tenant_slot_instead_of_blocking_reports(tmp_path, monkeypatch):
+def test_configured_unusable_shared_directory_refuses_render_and_releases_tenant_slot(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-directory"
     blocker.write_bytes(b"a file where the slot directory should be")
     monkeypatch.setenv("WB_SAAS_PDF_SLOT_DIR", str(blocker / "slots"))
     monkeypatch.setenv("WB_SAAS_PDF_SLOTS", "2")
     monkeypatch.setattr(pdf_budget, "DATA_DIR", tmp_path / "tenant")
-    with pdf_slot(wait=0):  # the report is still built
-        mine = other_tenant(tmp_path, "tenant", """
+    assert try_pdf_slot() is None
+    with pytest.raises(PdfBusy):
+        with pdf_slot(wait=0):
+            pytest.fail("Configured shared budget must not be bypassed")
+    assert pdf_budget.status() == {"host_slots": 2, "host_busy": None, "configured": True, "healthy": False}
+    monkeypatch.delenv("WB_SAAS_PDF_SLOT_DIR")
+    with pdf_slot(wait=0):
+        assert pdf_budget.holds_slot()  # refused host admission did not leak the tenant lock
+
+
+def test_configured_missing_directory_is_not_created_or_bypassed(tmp_path, monkeypatch):
+    slots = tmp_path / "missing-shared-mount"
+    monkeypatch.setenv("WB_SAAS_PDF_SLOT_DIR", str(slots))
+    monkeypatch.setattr(pdf_budget, "DATA_DIR", tmp_path / "tenant")
+    assert try_pdf_slot() is None
+    assert not slots.exists()
+    assert pdf_budget.status()["configured"] is True
+    assert pdf_budget.status()["healthy"] is False
+
+
+def test_status_observes_existing_shared_slots_without_creating_files(tmp_path, host):
+    assert list(host.iterdir()) == []
+    assert pdf_budget.status() == {"host_slots": 2, "host_busy": 0, "configured": True, "healthy": True}
+    assert list(host.iterdir()) == []
+    with pdf_slot(wait=0):
+        assert pdf_budget.status()["host_busy"] == 1
+
+
+def test_direct_generation_holds_admission_until_file_save_and_completion(tmp_path, host, store, monkeypatch):
+    definition(store)
+    monkeypatch.setattr(scheduler, "REPORTS_DIR", tmp_path / "output")
+    monkeypatch.setattr(scheduler, "build_report_pdf", lambda *args: b"%PDF dummy")
+    writing, release = threading.Event(), threading.Event()
+    real_write = Path.write_bytes
+    errors = []
+    def paused_write(path, value):
+        if path.suffix == ".pdf":
+            assert pdf_budget.holds_slot()
+            writing.set()
+            assert release.wait(10)
+        return real_write(path, value)
+    monkeypatch.setattr(Path, "write_bytes", paused_write)
+    def generate():
+        try:
+            scheduler.generate_and_save(store, store.list_definitions()[0])
+        except BaseException as error:
+            errors.append(error)
+    worker = threading.Thread(target=generate)
+    worker.start()
+    try:
+        assert writing.wait(10)
+        assert ReportStore(store.db_path).requeue_interrupted_runs() == 0
+        assert try_pdf_slot() is None  # the same tenant cannot begin a new PDF in the file-save window
+        assert row(store, store.list_runs()[0]["id"])["status"] == "running"
+    finally:
+        release.set()
+        worker.join(timeout=10)
+    assert not worker.is_alive() and errors == []
+    assert store.list_runs()[0]["status"] == "ok"
+
+
+def test_direct_generator_takes_admission_before_creating_a_run(tmp_path, host, store, monkeypatch):
+    definition(store)
+    first, second = hold(tmp_path, "blocking1"), hold(tmp_path, "blocking2")
+    monkeypatch.setattr(scheduler, "pdf_slot", lambda wait=0: pdf_slot(wait=0))
+    try:
+        with pytest.raises(PdfBusy):
+            scheduler.generate_and_save(store, store.list_definitions()[0])
+        assert store.list_runs() == []
+    finally:
+        stop(first, second)
+
+
+def test_private_shop_child_contends_for_the_same_cabinet_slot(tmp_path, host):
+    with pdf_slot(wait=0):
+        child = other_tenant(tmp_path, "tenant-a/.shop-workspace-private", """
             from reports.pdf_budget import PdfBusy, pdf_slot
             try:
                 with pdf_slot(wait=0):
-                    print("got")
+                    print('unexpected-acquisition')
             except PdfBusy:
-                print("busy")
-        """)
-        assert mine.communicate(timeout=30)[0].strip() == "busy"  # the tenant slot still holds
-    assert pdf_budget.status()["configured"] is False
+                print('busy')
+        """, env={"MH_INTERNAL_PDF_TENANT_DIR": str(tmp_path / "tenant-a")})
+        output, error = child.communicate(timeout=15)
+        assert child.returncode == 0 and output.strip() == "busy", error
+
+
+def test_internal_cabinet_slot_path_requires_the_actual_private_child_parent(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_budget, "DATA_DIR", tmp_path / ".shop-workspace-child")
+    monkeypatch.setenv("MH_INTERNAL_PDF_TENANT_DIR", str(tmp_path / "foreign"))
+    with pytest.raises(ValueError, match="internal cabinet"):
+        try_pdf_slot()

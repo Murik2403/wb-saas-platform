@@ -147,6 +147,9 @@ def test_interrupted_run_is_requeued_after_restart(tmp_path):
     def_id = store.add_definition(name="Прерванный", metrics=["ads"], schedule_type="daily", schedule_time="09:00")
     run_id = store.start_run(def_id)
 
+    assert store.requeue_interrupted_runs() == 0  # restarting one worker must not steal an active API lease
+    with store._conn() as conn:
+        conn.execute("UPDATE report_runs SET lease_expires_at='2000-01-01T00:00:00' WHERE id=?", (run_id,))
     assert store.requeue_interrupted_runs() == 1
     run = store.list_runs()[0]
     assert run["id"] == run_id

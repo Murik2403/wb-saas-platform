@@ -6,10 +6,11 @@ never serializes secrets. All input code comes from this committed scripts dir.
 import argparse,fcntl,json,os,re,subprocess,sys
 from pathlib import Path
 import backup_offsite
+import training_media_backup_runtime
 
 SCRIPTS=Path(__file__).resolve().parent
 # The public demo exists outside the customer tenant registry on production.
-BUILTIN_REQUIRED_GROUPS=('control-plane','demo')
+BUILTIN_REQUIRED_GROUPS=('control-plane','demo','training-media')
 
 
 def validated_groups(groups):
@@ -110,6 +111,12 @@ def main():
         if result:
             print(json.dumps({'local_backup_failed':True,'alert':backup_offsite.alert({'kind':'backup_failure','code':'local_backup_failed'},env)}))
             return result
+        try:
+            training=training_media_backup_runtime.run(env,SCRIPTS.parent,args.keep_days)
+            print(json.dumps(training))
+        except Exception:
+            print(json.dumps({'training_backup_failed':True,'alert':backup_offsite.alert({'kind':'backup_failure','code':'local_backup_failed'},env)}))
+            return 1
         return backup_offsite.run(env)
 
 if __name__=='__main__':raise SystemExit(main())

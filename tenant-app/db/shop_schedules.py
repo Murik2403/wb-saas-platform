@@ -150,6 +150,16 @@ def check(conn,job,now=None):
     if record['account_identity']!=job['identity']:raise warehouse.WarehouseScopeError('Продавец расписания изменился')
     return record
 
+
+def defer_pdf_busy(conn,job,now=None):
+    """Release only this current PDF lease; preserve due, attempts and immutable event history."""
+    row=check_lease(conn,job,now)
+    if row['kind']!='pdf':raise ValueError('PDF budget deferral requires PDF schedule')
+    retry=utc(timevalue(utc(now))+timedelta(seconds=5))
+    updated=conn.execute('UPDATE shop_schedules SET retry_at_utc=?,lease_key=NULL,lease_until_utc=NULL '
+      'WHERE id=? AND generation=? AND lease_key=?',(retry,job['id'],job['generation'],job['lease_key']))
+    if updated.rowcount!=1:raise warehouse.WarehouseConflict('Расписание или аренда запуска изменились')
+
 def finish(conn,job,*,status,error_code=None,artifact=None,revision=None,now=None):
     (check if status=='ok' else check_lease)(conn,job,now);stamp=utc(now)
     conn.execute('INSERT INTO shop_schedule_events(run_key,schedule_id,generation,shop_id,identity,kind,due_utc,status,error_code,created_at,artifact_json,applied_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(job['run_key'],job['id'],job['generation'],job['shop_id'],job['identity'],job['kind'],job['next_due_utc'],status,error_code,stamp,json.dumps(artifact,allow_nan=False) if artifact else None,revision))

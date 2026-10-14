@@ -225,3 +225,121 @@ def test_pack_refuses_a_damaged_source_and_writes_nothing(tmp_path):
     with pytest.raises(tool.MediaError):
         tool.pack(source, backups, KEY)
     assert not backups.exists() or list(backups.iterdir()) == []
+
+
+def approved_archive_members(source):
+    inventory = tool.verify_source(source)
+    return inventory, [(tool.INVENTORY_NAME, json.dumps(inventory).encode()),
+                       (tool.MANIFEST_NAME, (source / tool.MANIFEST_NAME).read_bytes()),
+                       *[(item["name"], (source / item["name"]).read_bytes()) for item in inventory["files"]]]
+
+
+@pytest.mark.parametrize("change", ["unapproved", "missing_lesson", "invented_filename", "inventory_kind", "duplicate_inventory"])
+def test_authenticated_archive_must_match_independent_approved_catalog(tmp_path, change):
+    source = build_pack(tmp_path / "source")
+    inventory, members = approved_archive_members(source)
+    manifest = json.loads((source / tool.MANIFEST_NAME).read_bytes())
+    if change == "unapproved":
+        manifest["approved"] = False
+    elif change == "missing_lesson":
+        manifest["videos"].pop(lesson_slugs()[0])
+    elif change == "invented_filename":
+        manifest["videos"][lesson_slugs()[0]]["filename"] = "surprise.mp4"
+    elif change == "inventory_kind":
+        inventory["files"][0]["kind"] = "invented-kind"
+    else:
+        inventory["files"].append(dict(inventory["files"][0]))
+    manifest_bytes = json.dumps(manifest).encode()
+    inventory["manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+    members[0] = (tool.INVENTORY_NAME, json.dumps(inventory).encode())
+    members[1] = (tool.MANIFEST_NAME, manifest_bytes)
+    archive = encrypted_tar(tmp_path, members)
+    with pytest.raises(tool.MediaError):
+        tool.read_archive(archive, KEY, tmp_path)
+    assert not list(tmp_path.glob("verify-*.tar.gz"))
+
+
+def test_duplicate_tar_members_are_refused_even_when_last_member_matches_inventory(tmp_path):
+    source = build_pack(tmp_path / "source")
+    _, members = approved_archive_members(source)
+    duplicated = members[2]
+    archive = encrypted_tar(tmp_path, [*members[:2], (duplicated[0], b"hidden-invalid-first-copy"), *members[2:]])
+    with pytest.raises(tool.MediaError, match="duplicate"):
+        tool.read_archive(archive, KEY, tmp_path)
+    assert not list(tmp_path.glob("verify-*.tar.gz"))
+
+
+@pytest.mark.parametrize("bound", ["encrypted", "member_count", "metadata", "expanded"])
+def test_archive_size_and_count_bounds_fail_closed_without_plain_residue(tmp_path, monkeypatch, bound):
+    source = build_pack(tmp_path / "source")
+    _, members = approved_archive_members(source)
+    archive = encrypted_tar(tmp_path, members)
+    if bound == "encrypted":
+        monkeypatch.setattr(tool, "MAX_ARCHIVE_BYTES", archive.stat().st_size - 1)
+    elif bound == "member_count":
+        monkeypatch.setattr(tool, "MAX_MEMBERS", len(members) - 1)
+    elif bound == "metadata":
+        monkeypatch.setattr(tool, "MAX_METADATA_BYTES", 16)
+    else:
+        monkeypatch.setattr(tool, "MAX_MEDIA_BYTES", 100)
+    with pytest.raises(tool.MediaError):
+        tool.read_archive(archive, KEY, tmp_path)
+    assert not list(tmp_path.glob("verify-*.tar.gz"))
+
+
+def test_gateway_rehearsal_does_not_inherit_real_database_or_external_provider_environment(tmp_path, monkeypatch):
+    poisons = {
+        "WB_SAAS_DB_BACKEND": "postgres", "WB_SAAS_DATABASE_URL": "postgresql://invalid.invalid/never-connect",
+        "WB_SAAS_SENTRY_DSN": "not-a-valid-live-dsn", "WB_SAAS_SMTP_HOST": "never-contact.invalid",
+        "WB_SAAS_SMTP_PASSWORD": "synthetic-secret-marker", "WB_SAAS_TELEGRAM_BOT_TOKEN": "synthetic-bot-marker",
+        "WB_SAAS_YOOKASSA_SECRET_KEY": "synthetic-payment-marker", "WB_SAAS_ERASURE_LEDGER_PATH": "never-open-original",
+        "HTTP_PROXY": "http://never-contact.invalid:8765", "PYTHONPATH": "never-import-parent-code",
+    }
+    for name, value in poisons.items():
+        monkeypatch.setenv(name, value)
+    source = build_pack(tmp_path / "source")
+    inventory = tool.verify_source(source)
+    work = tmp_path / "work"
+    work.mkdir()
+    result = tool.check_isolated_gateway(source, inventory, work)
+    assert result["files_full_get"] == 32 and result["range_first_byte"] == 32
+    # SQLite is actually created in the fresh copied gateway, not merely claimed
+    # by inspecting the environment builder's dictionary.
+    import sqlite3
+    with sqlite3.connect(work / "gateway" / "data" / "gateway.sqlite3") as db:
+        assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+    log = (work / "gateway.log").read_text(encoding="utf8")
+    assert "synthetic-secret-marker" not in log and "synthetic-bot-marker" not in log
+
+
+def test_reused_manifest_archive_and_unknown_old_files_are_preserved(tmp_path):
+    source, backups = build_pack(tmp_path / "source"), tmp_path / "backups"
+    first = tool.pack(source, backups, KEY)
+    original = backups / first["archive"]
+    os.utime(original, (1000, 1000))
+    old_hash = tool.sha256_of(original)
+    unknown = backups / "unknown-from-another-tool.tar.gz.enc"
+    unknown.write_bytes(b"preserve unknown old archive")
+    result = tool.pack(source, backups, KEY)
+    assert result["result"] == "already_backed_up"
+    assert original.stat().st_mtime == 1000 and tool.sha256_of(original) == old_hash
+    assert unknown.read_bytes() == b"preserve unknown old archive"
+    # Nightly freshness needs explicit force; deduplication must not touch an
+    # old archive timestamp just to make monitoring appear fresh.
+    forced = tool.pack(source, backups, KEY, force=True)
+    assert forced["result"] == "created" and original.stat().st_mtime == 1000
+
+
+def test_final_name_race_never_overwrites_existing_archive(tmp_path, monkeypatch):
+    source, backups = build_pack(tmp_path / "source"), tmp_path / "backups"
+    original_link = tool.os.link
+    created = []
+    def raced_link(staged, final):
+        final.write_bytes(b"another writer must stay")
+        created.append(final)
+        original_link(staged, final)  # FileExistsError instead of replacement
+    monkeypatch.setattr(tool.os, "link", raced_link)
+    with pytest.raises(tool.MediaError, match="collided"):
+        tool.pack(source, backups, KEY)
+    assert len(created) == 1 and created[0].read_bytes() == b"another writer must stay"
+    assert list(backups.iterdir()) == created

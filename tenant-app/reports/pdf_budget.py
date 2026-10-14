@@ -70,12 +70,17 @@ def _locker():
 _lock, _unlock = _locker()
 
 
-def _open(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _open(path: Path, *, create_parent: bool = True):
+    if create_parent:
+        path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")  # kept forever: the OS lock on the open file, not the file's existence, is the state
-    if os.name == "nt" and path.stat().st_size == 0:
-        handle.write(b"0")
-        handle.flush()
+    try:
+        if os.name == "nt" and path.stat().st_size == 0:
+            handle.write(b"0")
+            handle.flush()
+    except BaseException:
+        handle.close()
+        raise
     return handle
 
 
@@ -87,7 +92,7 @@ def _warn_once() -> None:
     if not _warned:
         _warned = True
         import logging
-        logging.getLogger("marketshelper.pdf_budget").warning("PDF slot directory is unusable: only the per-tenant PDF limit applies")
+        logging.getLogger("marketshelper.pdf_budget").warning("PDF slot directory is unusable: report generation is paused")
 
 
 def _host_slots() -> tuple[Path | None, int]:
@@ -99,27 +104,49 @@ def _host_slots() -> tuple[Path | None, int]:
     return (Path(directory) if directory else None), count
 
 
+def tenant_slot_directory() -> Path:
+    """A private shop child shares the cabinet lock, never a caller-supplied path."""
+    parent = os.environ.get("MH_INTERNAL_PDF_TENANT_DIR", "")
+    if not parent:
+        return DATA_DIR
+    directory = Path(parent)
+    child = DATA_DIR.resolve()
+    if (not directory.is_absolute() or not child.name.startswith(".shop-workspace-")
+            or directory.resolve() != child.parent):
+        raise ValueError("Invalid internal cabinet PDF lock directory")
+    return directory
+
+
 def status() -> dict:
-    """Read-only occupancy of the host slots (best effort, for diagnostics)."""
+    """Observe occupancy without creating the shared directory or lock files."""
     directory, count = _host_slots()
-    if directory is None or not directory.is_dir():
-        return {"host_slots": 0, "host_busy": None, "configured": False}
+    if directory is None:
+        return {"host_slots": 0, "host_busy": None, "configured": False, "healthy": None}
+    unhealthy = {"host_slots": count, "host_busy": None, "configured": True, "healthy": False}
+    if not directory.is_dir() or not os.access(directory, os.W_OK):
+        return unhealthy
     busy = 0
-    for index in range(count):
-        handle = _open(directory / f"pdf-slot-{index:02d}.lock")
-        try:
-            if _lock(handle):
-                _unlock(handle)
-            else:
-                busy += 1
-        finally:
-            handle.close()
-    return {"host_slots": count, "host_busy": busy, "configured": True}
+    try:
+        for index in range(count):
+            try:
+                handle = (directory / f"pdf-slot-{index:02d}.lock").open("r+b")
+            except FileNotFoundError:
+                continue  # no holder; diagnostics must not initialize the slot
+            try:
+                if _lock(handle):
+                    _unlock(handle)
+                else:
+                    busy += 1
+            finally:
+                handle.close()
+    except OSError:
+        return unhealthy
+    return {"host_slots": count, "host_busy": busy, "configured": True, "healthy": True}
 
 
 def _try_once():
     """Take the tenant slot, then one host slot. Returns a release function or None."""
-    tenant = _open(DATA_DIR / ".pdf-tenant.lock")
+    tenant = _open(tenant_slot_directory() / ".pdf-tenant.lock")
     if not _lock(tenant):
         tenant.close()
         return None
@@ -127,21 +154,23 @@ def _try_once():
     host = None
     if directory is not None:
         try:
+            if not directory.is_dir():
+                raise OSError("Configured shared slot directory is unavailable")
             order = list(range(count))
             random.shuffle(order)  # spread over the slot files so one file is not the single point of contention
             for index in order:
-                candidate = _open(directory / f"pdf-slot-{index:02d}.lock")
+                candidate = _open(directory / f"pdf-slot-{index:02d}.lock", create_parent=False)
                 if _lock(candidate):
                     host = candidate
                     break
                 candidate.close()
             slots_usable = True
         except OSError:
-            # The shared directory is missing or not writable (mount gone, misconfiguration): a report must still be
-            # built, only the host-wide limit cannot be enforced. The tenant slot still holds.
+            # A configured shared budget is mandatory. Missing mounts or permission failures must never permit
+            # every tenant to render at once; leave background work queued and let requests return PdfBusy/503.
             slots_usable = False
             _warn_once()
-        if slots_usable and host is None:
+        if not slots_usable or host is None:
             _unlock(tenant)
             tenant.close()
             return None

@@ -822,6 +822,40 @@ def stop_tenant(slug: str) -> dict[str, str]:
     return {"status": "stopped"}
 
 
+def _purge_pdf_mounts(attrs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Recognize only the configured shared coordination mount, never tenant data."""
+    mounts = attrs.get("Mounts", [])
+    shared = [mount for mount in mounts if mount.get("Destination") == "/pdf-slots"]
+    env = attrs.get("Config", {}).get("Env", []) or []
+    directories = [item.split("=", 1)[1] for item in env if item.startswith("WB_SAAS_PDF_SLOT_DIR=")]
+    if not shared and not directories:
+        return []  # A retained container created before the PDF budget was enabled.
+    try:
+        source = _pdf_slot_source()
+    except HTTPException:
+        source = ""
+    counts = [item.split("=", 1)[1] for item in env if item.startswith("WB_SAAS_PDF_SLOTS=")]
+    valid = bool(source) and len(shared) == 1 and directories == ["/pdf-slots"] and len(counts) == 1
+    valid = valid and re.fullmatch(r"(?:[1-9]|[12][0-9]|3[0-2])", counts[0]) is not None
+    if valid:
+        mount = shared[0]
+        valid = mount.get("RW") is True
+        if source.startswith("/"):
+            valid = valid and mount.get("Type") == "bind" and mount.get("Source") == source and not mount.get("Name")
+        else:
+            valid = valid and mount.get("Type") == "volume" and mount.get("Name") == source and bool(mount.get("Source"))
+        # A coordination directory cannot also own this cabinet's primary or
+        # legacy data: excluding it from deletion would otherwise retain data.
+        valid = valid and all(
+            other.get("Source") != mount.get("Source") and
+            (not mount.get("Name") or other.get("Name") != mount.get("Name"))
+            for other in mounts if other.get("Destination") != "/pdf-slots"
+        )
+    if not valid:
+        raise HTTPException(status_code=409, detail="Tenant PDF coordination mount is unverified; no cabinet was removed")
+    return shared
+
+
 def _purge_reference(container: Any, slug: str, sources: dict[str, str] | None = None) -> bool:
     """Return whether this exact data-volume owner is a stopped rollback."""
     container.reload()
@@ -833,11 +867,15 @@ def _purge_reference(container: Any, slug: str, sources: dict[str, str] | None =
     env = attrs.get("Config", {}).get("Env", []) or []
     mounts = attrs.get("Mounts", [])
     state = attrs.get("State", {})
+    pdf_mounts = _purge_pdf_mounts(attrs)
     primary = [mount for mount in mounts if mount.get("Type") == "volume" and mount.get("Name") == _volume_name(slug) and mount.get("Destination") == "/app/data"]
     auxiliary = [mount for mount in mounts if mount.get("Type") == "volume" and re.fullmatch(r"[a-f0-9]{64}", str(mount.get("Name", ""))) and mount.get("Destination") == "/app/tenant-app/data" and "/app/tenant-app/data" in (attrs.get("Config", {}).get("Volumes") or {})]
-    valid_mount = len(primary) == 1 and len(auxiliary) <= 1 and len(mounts) == len(primary) + len(auxiliary)
+    valid_mount = len(primary) == 1 and len(auxiliary) <= 1 and len(mounts) == len(primary) + len(auxiliary) + len(pdf_mounts)
     if sources is not None:
-        valid_mount = valid_mount and all(mount.get("Source") == sources.get(mount.get("Name")) and bool(sources.get(mount.get("Name"))) for mount in mounts)
+        # The bind source was checked against the exact configured host path;
+        # every named volume, including coordination, must match Docker's
+        # current Mountpoint. Shared volumes are checked, never deleted.
+        valid_mount = valid_mount and all(mount.get("Source") == sources.get(mount.get("Name")) and bool(sources.get(mount.get("Name"))) for mount in mounts if mount.get("Type") == "volume")
     if (name != canonical and not rollback) or labels.get("wb-saas.slug") != slug or labels.get("traefik.docker.network") != _network_name(slug) or f"WB_SAAS_TENANT_SLUG={slug}" not in env or not valid_mount:
         raise HTTPException(status_code=409, detail="Tenant data has an unverified container reference; no cabinet was removed")
     if state.get("Paused") or state.get("Restarting") or (rollback and (state.get("Running") or state.get("Status") != "exited")):
@@ -870,7 +908,7 @@ def _purge_inventory(client: Any, slug: str) -> tuple[list[Any], dict[str, Any]]
         raise HTTPException(status_code=409, detail="Canonical cabinet data volume does not match purge scope")
     names = {_volume_name(slug)}
     for reference in references:
-        names.update(mount["Name"] for mount in reference.attrs["Mounts"])
+        names.update(mount["Name"] for mount in reference.attrs["Mounts"] if mount.get("Destination") != "/pdf-slots")
     volumes = {}
     sources = {}
     for name in names:
@@ -889,6 +927,19 @@ def _purge_inventory(client: Any, slug: str) -> tuple[list[Any], dict[str, Any]]
                 raise HTTPException(status_code=409, detail="Legacy data volume has an unverified container reference; no cabinet was removed")
             for reference in auxiliary_refs:
                 _purge_reference(reference, slug)
+    shared_names = {
+        mount["Name"] for reference in references
+        for mount in _purge_pdf_mounts(reference.attrs) if mount.get("Type") == "volume"
+    }
+    for name in shared_names:
+        if name in volumes:
+            raise HTTPException(status_code=409, detail="PDF coordination volume overlaps tenant data; no cabinet was removed")
+        try:
+            shared = client.volumes.get(name)
+        except DockerNotFound:
+            raise HTTPException(status_code=409, detail="PDF coordination volume is missing; no cabinet was removed") from None
+        shared.reload()
+        sources[name] = shared.attrs.get("Mountpoint", "")
     for reference in references:
         _purge_reference(reference, slug, sources)
     return references, volumes

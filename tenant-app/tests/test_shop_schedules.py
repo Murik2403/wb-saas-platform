@@ -150,6 +150,56 @@ def test_failure_bounded_retry_same_uuid_then_skips_overdue_slots(state,monkeypa
     assert not runner.run_one(now=due+timedelta(minutes=15))
     assert all('secret' not in str(row) for row in events())
 
+
+@pytest.mark.parametrize('raised',[False,True])
+def test_pdf_budget_busy_defers_same_due_without_attempt_or_failure_event(state,monkeypatch,raised):
+    from reports.pdf_budget import PdfBusy
+    configure(state,'pdf')
+    before=shops.read(state['shop'])
+    def busy(*args,**kwargs):
+        if raised:raise PdfBusy('busy')
+        return {'response':{'pdf_busy':True,'status':503},'snapshot':None}
+    monkeypatch.setattr(runner,'prepare',busy)
+    due=NOW+timedelta(minutes=60)
+    for seconds in (0,5,10,15):
+        assert runner.run_one(now=due+timedelta(seconds=seconds))
+        with core.connect() as conn:
+            row=conn.execute('SELECT * FROM shop_schedules WHERE kind=?',('pdf',)).fetchone()
+            assert row['next_due_utc']==schedules.utc(due) and row['attempts']==0 and row['lease_key'] is None
+        assert not runner.run_one(now=due+timedelta(seconds=seconds+1))
+    assert events()==[] and shops.read(state['shop'])==before
+
+
+def test_pdf_busy_deferral_rejects_a_replaced_lease(state):
+    configure(state,'pdf')
+    due=NOW+timedelta(minutes=60)
+    original=schedules.claim(due)
+    replacement=schedules.claim(due+timedelta(seconds=schedules.LEASE_SECONDS+1))
+    with core.connect() as conn:
+        before=dict(conn.execute('SELECT * FROM shop_schedules WHERE id=?',(replacement['id'],)).fetchone())
+        with pytest.raises(warehouse.WarehouseConflict):schedules.defer_pdf_busy(conn,original,now=due)
+        after=dict(conn.execute('SELECT * FROM shop_schedules WHERE id=?',(replacement['id'],)).fetchone())
+    assert before==after and events()==[]
+
+
+def test_real_scheduled_child_busy_is_fast_and_keeps_original_snapshot_due_and_attempts(state,monkeypatch):
+    from time import monotonic
+    from shop_workspace_service import prepare
+    monkeypatch.setattr(runner,'prepare',prepare)
+    configure(state,'pdf')
+    bad=config.DATA_DIR/'bad-shared-mount';bad.write_bytes(b'dummy')
+    monkeypatch.setenv('WB_SAAS_PDF_SLOT_DIR',str(bad/'slots'))
+    monkeypatch.setenv('WB_SAAS_PDF_WAIT_SECONDS','120')  # scheduled child must explicitly ask for zero wait
+    before=shops.read(state['shop'])
+    due=NOW+timedelta(minutes=60)
+    started=monotonic()
+    assert runner.run_one(now=due)
+    assert monotonic()-started<15
+    assert shops.read(state['shop'])==before and events()==[]
+    with core.connect() as conn:
+        row=conn.execute('SELECT * FROM shop_schedules WHERE kind=?',('pdf',)).fetchone()
+        assert row['attempts']==0 and row['next_due_utc']==schedules.utc(due) and row['lease_key'] is None
+
 def test_atomic_event_failure_rolls_back_snapshot_receipt_and_timestamp(state,monkeypatch):
     configure(state);original=schedules.finish
     def fail(conn,job,**kwargs):

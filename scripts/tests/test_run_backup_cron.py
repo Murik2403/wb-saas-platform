@@ -47,7 +47,7 @@ def test_new_registered_tenant_without_archives_is_required_and_alerts(tmp_path,
         folder=tmp_path/group;folder.mkdir();(folder/'ok.tar.gz.enc').write_bytes(b'WBSAASBK2fixture')
     (tmp_path/'state.json').write_text(json.dumps({'verified_at':cron.backup_offsite.time.time(),'offsite_verified':True}))
     env=cron.environment('owner@example.com')
-    assert env['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,new-client'
+    assert env['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,training-media,new-client'
     events=[]
     monkeypatch.setattr(cron.backup_offsite,'alert',lambda event,env:events.append(event) or 'accepted')
     assert cron.backup_offsite.check_freshness(env)==1
@@ -59,7 +59,7 @@ def test_explicit_required_groups_are_additive_and_control_plane_cannot_be_remov
     monkeypatch.setenv('WB_SAAS_BACKUP_DIR',str(tmp_path))
     monkeypatch.setenv('WB_SAAS_BACKUP_REQUIRED_GROUPS','escrow,paused')
     monkeypatch.setattr(cron,'inventory_groups',lambda:['demo','paused','new-client'])
-    assert cron.environment('owner@example.com')['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,escrow,paused,new-client'
+    assert cron.environment('owner@example.com')['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,training-media,escrow,paused,new-client'
 
 
 def test_demo_is_required_even_when_absent_from_customer_registry(tmp_path,monkeypatch):
@@ -67,7 +67,7 @@ def test_demo_is_required_even_when_absent_from_customer_registry(tmp_path,monke
     monkeypatch.setenv('WB_SAAS_BACKUP_DIR',str(tmp_path))
     monkeypatch.delenv('WB_SAAS_BACKUP_REQUIRED_GROUPS',raising=False)
     monkeypatch.setattr(cron,'inventory_groups',lambda:['new-client'])
-    assert cron.environment('owner@example.com')['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,new-client'
+    assert cron.environment('owner@example.com')['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,training-media,new-client'
 
 
 @pytest.mark.parametrize('configured',['../private','ok,,missing','BadSlug'])
@@ -133,12 +133,12 @@ def test_registry_keeps_stopped_data_and_drops_finalized_deletion_without_requir
     monkeypatch.setenv('WB_SAAS_BACKUP_DIR',str(tmp_path))
     monkeypatch.delenv('WB_SAAS_BACKUP_REQUIRED_GROUPS',raising=False)
     former=tmp_path/'former';former.mkdir();(former/'ok.tar.gz.enc').write_bytes(b'WBSAASBK2fixture')
-    assert cron.environment('owner@example.com')['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,former,paused'
+    assert cron.environment('owner@example.com')['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,training-media,former,paused'
     # finalize_deletion removes the tenant_instances row; encrypted history
     # remains copy-only rather than requiring a new snapshot of erased data.
     conn.execute("DELETE FROM tenant_instances WHERE slug='former'")
     env=cron.environment('owner@example.com')
-    assert env['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,paused'
+    assert env['WB_SAAS_BACKUP_REQUIRED_GROUPS']=='control-plane,demo,training-media,paused'
     assert env['WB_SAAS_OFFSITE_ARCHIVE_GROUPS']=='former'
     conn.close()
 
@@ -160,3 +160,38 @@ def test_inventory_failure_alerts_and_never_runs_backup_or_freshness(tmp_path,mo
     assert cron.main()==1
     assert events==[{'kind':'backup_inventory_failure','code':'backup_inventory_unavailable'}]
     assert 'backup_inventory_unavailable' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('training_fails',[False,True])
+def test_daily_order_snapshots_then_training_then_copy_failure_stops_upload(tmp_path,monkeypatch,capsys,training_fails):
+    cron=module(monkeypatch);events=[]
+    monkeypatch.setattr(cron.os,'geteuid',lambda:0,raising=False)
+    monkeypatch.setattr(cron,'open',lambda *a,**k:(tmp_path/'lock').open('a'),raising=False)
+    monkeypatch.setattr(cron.fcntl,'flock',lambda *a:None)
+    monkeypatch.setattr(cron,'environment',lambda recipient:{'WB_SAAS_BACKUP_DIR':str(tmp_path)})
+    monkeypatch.setattr(cron,'gateway_exec',lambda *a,**kw:events.append('snapshots') or 0)
+    def training(*args):
+        events.append('training')
+        if training_fails:raise RuntimeError('synthetic-private-do-not-log')
+        return {'ok':True,'kind':'training_media_backup','files':32,'lessons':16}
+    monkeypatch.setattr(cron.training_media_backup_runtime,'run',training)
+    monkeypatch.setattr(cron.backup_offsite,'run',lambda env:events.append('offsite') or 0)
+    monkeypatch.setattr(cron.backup_offsite,'alert',lambda event,env:events.append('alert') or 'accepted')
+    monkeypatch.setattr(sys,'argv',['run_backup_cron.py','daily','--alert-to','owner@example.com'])
+    assert cron.main()==int(training_fails)
+    assert events==(['snapshots','training','alert'] if training_fails else ['snapshots','training','offsite'])
+    assert 'synthetic-private-do-not-log' not in capsys.readouterr().out
+
+
+def test_missing_training_media_group_fails_hourly_freshness_without_running_training(tmp_path,monkeypatch):
+    cron=module(monkeypatch)
+    monkeypatch.setenv('WB_SAAS_BACKUP_DIR',str(tmp_path));monkeypatch.setenv('WB_SAAS_BACKUP_STATUS_FILE',str(tmp_path/'state.json'))
+    monkeypatch.delenv('WB_SAAS_BACKUP_REQUIRED_GROUPS',raising=False)
+    monkeypatch.setattr(cron,'inventory_groups',lambda:[])
+    for group in ('control-plane','demo'):
+        folder=tmp_path/group;folder.mkdir();(folder/'a.tar.gz.enc').write_bytes(b'WBSAASBK2fixture')
+    (tmp_path/'state.json').write_text(json.dumps({'verified_at':cron.backup_offsite.time.time(),'offsite_verified':True}))
+    monkeypatch.setattr(cron.training_media_backup_runtime,'run',lambda *a,**k:pytest.fail('hourly watchdog must not pack'))
+    alerts=[];monkeypatch.setattr(cron.backup_offsite,'alert',lambda event,env:alerts.append(event) or 'accepted')
+    assert cron.backup_offsite.check_freshness(cron.environment('owner@example.com'))==1
+    assert alerts[0]['code']=='local_backup_stale'
