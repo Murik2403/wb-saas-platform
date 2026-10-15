@@ -156,3 +156,9 @@ Parent independent readback `evidence/image-inventory-private-shutdown.json` con
 ## Latest Claude harness review98e3d5f
 
 Read-only review of `claude/pdf-slots-observability-20261022`, HEAD98e3d5f, confirms141 focused tests and useful fixes for prior observation gaps. No merge/deployment/stress performed. Independent fixture counterexamples reproduce existing foreign-volume reuse/chown and falsely clean deletion when rm/probes fail; per-tenant admission still occurs too late. Detailed proof/reproducer/handoff: `deliveries/audit-followup-20261015/claude-obs-review-af0b3e366f6f/`. Required fixes and exact current base25ae99a are in AUDIT_CURRENT_STATUS.20/25/30 remain NOT_RUN for this strict harness. Landing582cdc3 is separate and not merged here.
+
+## Native application/reboot continuation — prepared, actual acceptance NOT RUN
+
+Native owner/parent/guest/UI/OS-resume tooling is independently reviewed; combined **238 pure tests PASS**. The six-group historical data capsule is byte-identical to its original authenticated proof; all nested hashes and the independently authenticated ledger match a fresh read-only current authority query. Original RSA was not read, original keys/data were not imported into the guest, and no production runtime changed.
+
+Actual application boot/reboot acceptance has **not run**: an idle own VM stopped normally, then the next launch refused the unchanged **8GiB free-host-memory** gate (last7507MiB). No QEMU/loopback listeners remain. No other applications were stopped and the guard was not weakened. `deliveries/local-dr-e1000-20261015/ACTUAL_NATIVE_APPLICATION_STATUS.md` contains exact frozen commands, positive/negative receipts and remaining boundaries. Source capsule metadata was narrowly normalized from OWNER_RIGHTS to its unchanged actual owner SID; exact ACL multisets/file identities and old payload SHA verified, RSA/root ACL/checker untouched. This is preparation, not full-server DR.
