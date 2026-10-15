@@ -29,3 +29,13 @@ The 25 and 30 tenant steps remain **open**; no result in the next section replac
 | `pdf-slots-load-obs-{2,3,4}-2026-10-15.json` | **FAILED, kept as recorded.** First run of the strict gates: three harness faults (a wrong source path, an over-strict mount rule, lock-file read bits), not load faults. |
 | `pdf-slots-load-attested-{2,3,4}-2026-10-15.json` | **Current smoke, `PASS`** with the strict gates from 6354bb3 on an image built from the committed sources of d0141b2 (`../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Strict gates"). 2-4 tenants only; not an acceptance of 20/25/30. |
 
+### Fail-closed gates (branch `claude/pdf-slots-failclosed-20261023`, base 430fc6f)
+| Files | Status |
+|---|---|
+| `pdf-slots-load-failclosed-{2,3,4}-2026-10-15.json` (+ `.raw.json`) | **FAILED, kept as recorded.** First run of the fail-closed gates. All three failed on one cleanup rule: a pre-existing restart-looping container (`audittest-traefik-1`) changed state during the run and the 3 s stability window did not see it churn. Not a load fault. |
+| `pdf-slots-load-strict-2-2026-10-15.json` | **FAILED, kept as recorded.** The 2-tenant run finished its last PDF at 120.8 s against the declared 120.0 s: a real deadline miss (the run is CPU-throttled), not a gate fault. The declared deadline was not changed afterwards. |
+| `pdf-slots-load-strict-2b-2026-10-15.json` | Repeat of the same 2-tenant scenario: `PASS`, last PDF at 117.6 s. Both results are evidence of the same variance (90-121 s over the 2-tenant runs); neither replaces the other. |
+| `pdf-slots-load-strict-{3,4}-2026-10-15.json` (+ `.raw.json`) | `PASS` under the fail-closed gates (139.4 s and 150.9 s against 180 s). |
+
+Raw evidence (per-tenant driver buckets, kernel counters before/after, both inspections, process lists, lock identities, hashes) is in the `.raw.json` sidecar named, with its sha256, in each act.
+
