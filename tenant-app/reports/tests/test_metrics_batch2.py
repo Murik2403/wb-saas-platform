@@ -91,7 +91,7 @@ def test_wb_commission_rate_success(monkeypatch):
         "subject_name": ["Одежда"],
     })
 
-    def mock_read_table(table_name):
+    def mock_read_table(table_name, *, omit_raw=False):
         if table_name == "financial_report":
             return fin_df
         if table_name == "products_catalog":
@@ -108,7 +108,7 @@ def test_wb_commission_rate_success(monkeypatch):
 
 
 def test_wb_commission_rate_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, **kwargs: pd.DataFrame())
     res = build_metric("wb_commission_rate", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
     assert "нет" in res.summary.lower()

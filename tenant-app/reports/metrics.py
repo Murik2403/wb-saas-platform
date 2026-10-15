@@ -809,7 +809,10 @@ def _cost_structure(start: date, end: date) -> MetricResult:
 
 
 def _wb_commission_rate(start: date, end: date) -> MetricResult:
-    fin = read_table("financial_report")
+    # Raw marketplace payloads are not used in this chart. Exclude them in
+    # SQLite, before fetch/DataFrame copies, so a metric worker does not hold
+    # the entire realization JSON history alongside its numerical projection.
+    fin = read_table("financial_report", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if fin.empty or "operation_date" not in fin.columns:
@@ -826,7 +829,7 @@ def _wb_commission_rate(start: date, end: date) -> MetricResult:
         ax.axis("off")
         return MetricResult(title=METRIC_LABELS["wb_commission_rate"], figure=fig, summary="Данных отчёта реализации за период нет.")
 
-    catalog = read_table("products_catalog")
+    catalog = read_table("products_catalog", omit_raw=True)
     if not catalog.empty and "nm_id" in catalog.columns and "subject_name" in catalog.columns:
         period_fin = period_fin.merge(catalog[["nm_id", "subject_name"]], on="nm_id", how="left")
 

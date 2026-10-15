@@ -345,7 +345,7 @@ def test_all_ten_metrics_produce_a_valid_pdf(monkeypatch):
     })
     monkeypatch.setattr(metrics, "build_dashboard", lambda s, e: fake_data)
 
-    def fake_read_table(name):
+    def fake_read_table(name, *, omit_raw=False):
         if name == "stocks":
             return pd.DataFrame({"snapshot_at": ["2026-08-05"], "nm_id": [111], "quantity": [10]})
         if name == "orders":
