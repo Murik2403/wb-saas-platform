@@ -182,9 +182,9 @@
       <p>Подключите WB и выберите один товар, по которому у вас есть документы закупки или выпуска. Проверьте себестоимость партии, расходы продажи и остаток, затем расширяйте учёт на весь ассортимент.</p>
     </div>
     <div class="feature-row">
-      <article class="feature"><h3>Себестоимость товара</h3><p>Разделите стоимость производства и расходы продажи. Узнайте, что включено в итог.</p><a href="/sebestoimost-wb">Разобрать состав расчёта →</a></article>
-      <article class="feature"><h3>FIFO по партиям</h3><p>Проследите стоимость двух поступлений через один выпуск и остаток.</p><a href="/fifo-uchet">Посмотреть пример FIFO →</a></article>
-      <article class="feature"><h3>Переход из таблиц</h3><p>Подготовьте справочники, начальные остатки и контрольный SKU.</p><a href="/guides/iz-excel-v-uchet">Открыть план перехода →</a></article>
+      <article class="feature scenario-card"><h3>Себестоимость товара</h3><p>Разделите стоимость производства и расходы продажи. Узнайте, что включено в итог.</p><a href="/sebestoimost-wb">Разобрать состав расчёта →</a></article>
+      <article class="feature scenario-card"><h3>FIFO по партиям</h3><p>Проследите стоимость двух поступлений через один выпуск и остаток.</p><a href="/fifo-uchet">Посмотреть пример FIFO →</a></article>
+      <article class="feature scenario-card"><h3>Переход из таблиц</h3><p>Подготовьте справочники, начальные остатки и контрольный SKU.</p><a href="/guides/iz-excel-v-uchet">Открыть план перехода →</a></article>
     </div>
     <p><a href="/guides">Все практические руководства →</a></p>
   </section>
@@ -404,6 +404,10 @@
 {% block head %}
 
 <style>
+.feature.scenario-card{background:var(--surface);border:1px solid var(--border);color:var(--text)}
+.feature.scenario-card h3{color:var(--text)}
+.feature.scenario-card p{color:var(--text-muted)}
+.feature.scenario-card a{display:inline-block;min-height:44px;padding:10px 0;color:var(--accent-strong)}
 .workspace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 .workspace-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:24px;min-width:0}
 .workspace-card h3{margin:10px 0;font-size:1.12rem;color:var(--text);text-wrap:balance}
