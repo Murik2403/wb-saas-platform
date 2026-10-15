@@ -152,4 +152,4 @@ def test_container_operations_accept_a_name_argument_and_ship_the_whole_argument
         assert job == {"definition_id": 7, "run_id": 9, "second_enqueue_run_id": 9}
         assert faults.op("tenant-1", "define", name="x")["definition_id"] == 7
     shipped = [c for c in calls if c[0] == "exec"]
-    assert shipped[0][2:4] == ("python3", "-c") and shipped[0][5] == '{"name": "faults-s1"}' and shipped[1][5] == '{"definition_id": 7}'
+    assert shipped[0][2:4] == ("python3", "-c") and shipped[0][5:] == ("define", '{"name": "faults-s1"}') and shipped[1][5:] == ("enqueue", '{"definition_id": 7}')
