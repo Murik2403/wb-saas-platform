@@ -1,0 +1,130 @@
+{
+  "scenario": "shared PDF slots under simultaneous API and background load",
+  "git": {
+    "head": "ea83d26d6a045b6d331987a593fda7df3c670f3b",
+    "branch": "claude/pdf-slots-load-20261020",
+    "dirty": false
+  },
+  "tenants": 4,
+  "slots": 2,
+  "declared_before_start": {
+    "deadline_seconds": 180.0,
+    "health_p95_ms": 3000.0,
+    "floor_mib": 1500,
+    "formula": "ceil(tenants/slots)*pdf_seconds+margin",
+    "pdf_seconds": 60.0,
+    "margin_seconds": 60.0,
+    "api_parallel_per_tenant": 3,
+    "api_pdf_request_every_seconds": 20.0
+  },
+  "started": "2026-10-15 16:45:47",
+  "image": "bench-tenant:pdfload",
+  "topology": "nginx + API + resident background_worker per tenant, shared slot volume",
+  "idle_vm_available_mib": 5393,
+  "admission": {
+    "decision": "admitted",
+    "budget_mib": 5558,
+    "reserved_mib": 1536,
+    "free_mib": 4022,
+    "running_tenants": 4,
+    "host_available_mib": 5392
+  },
+  "runs": [
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 851877,
+      "error": null,
+      "started_at": "2026-10-15T16:48:10",
+      "finished_at": "2026-10-15T16:49:12"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 851875,
+      "error": null,
+      "started_at": "2026-10-15T16:47:03",
+      "finished_at": "2026-10-15T16:47:53"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 851875,
+      "error": null,
+      "started_at": "2026-10-15T16:46:59",
+      "finished_at": "2026-10-15T16:47:49"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 851875,
+      "error": null,
+      "started_at": "2026-10-15T16:47:53",
+      "finished_at": "2026-10-15T16:48:49"
+    }
+  ],
+  "seconds_to_last_run": 150.0,
+  "peak_concurrent_pdfs_from_intervals": 2,
+  "peak_busy_slots_sampled": 2,
+  "vm_min_available_mib": 4480,
+  "vm_drop_mib": 913,
+  "api": {
+    "dashboard_requests": 67967,
+    "dashboard_p50_ms": 12,
+    "dashboard_p95_ms": 76,
+    "dashboard_max_ms": 2322,
+    "dashboard_5xx_or_no_answer": 0,
+    "dashboard_status_by_endpoint": {
+      "200 /api/v1/control/data-quality": 6800,
+      "200 /api/v1/dashboard/ads": 6799,
+      "200 /api/v1/dashboard/analytics": 6798,
+      "200 /api/v1/dashboard/assistant": 6798,
+      "409 /api/v1/dashboard/customer-quality": 6796,
+      "200 /api/v1/dashboard/finance": 6796,
+      "422 /api/v1/dashboard/management-economics": 3400,
+      "200 /api/v1/dashboard/management-pnl": 3400,
+      "200 /api/v1/dashboard/management-pnl/monthly": 3398,
+      "200 /api/v1/dashboard/production": 3397,
+      "200 /api/v1/dashboard/reports": 3397,
+      "200 /api/v1/dashboard/stock": 3396,
+      "200 /api/v1/dashboard/supply": 3396,
+      "200 /api/v1/dashboard/today": 3396
+    },
+    "pdf_in_request_total": 20,
+    "pdf_in_request_200": 10,
+    "pdf_in_request_503_retry_after": 10,
+    "pdf_in_request_bad": 0,
+    "pdf_in_request_max_ms": 21612
+  },
+  "healthz": {
+    "n": 1183,
+    "failures": 0,
+    "p50_ms": 7,
+    "p95_ms": 75,
+    "max_ms": 266
+  },
+  "kernel_memory": {
+    "events": {
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0
+    },
+    "oom_killed_containers": 0,
+    "restarts": 0,
+    "container_peak_mib_max": 423.8,
+    "cpu_throttled_pct": 86.0
+  },
+  "cleanup_residual_counts": {
+    "container": 0,
+    "volume": 0,
+    "network": 0
+  },
+  "verdict": "PASS",
+  "failed_checks": [],
+  "finished": "2026-10-15 16:49:22"
+}
