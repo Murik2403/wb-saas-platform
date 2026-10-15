@@ -1,54 +1,110 @@
 {% extends "base.html" %}
-{% block title %}Комплаенс и обработка данных — MARKETSHELPER{% endblock %}
-{% block description %}Как MARKETSHELPER обрабатывает данные продавцов Wildberries: изоляция кабинетов, хранение в РФ, соответствие 152-ФЗ.{% endblock %}
-{% block card_extra_class %} card-wide{% endblock %}
+{% block title %}Обработка и защита данных — MARKETSHELPER{% endblock %}
+{% block description %}Сведения об операторе MARKETSHELPER в реестре Роскомнадзора, размещении данных и порядке обращения по вопросам персональных данных.{% endblock %}
+{% block card_extra_class %} card-wide compliance-page{% endblock %}
+{% block head %}
+<style>
+  .card.compliance-page { max-width: 960px; padding: 36px; min-width: 0; }
+  .compliance-page, .compliance-page * { overflow-wrap: anywhere; }
+  .compliance-page h1 { font-size: clamp(1.6rem, 4vw, 2.1rem); line-height: 1.2; max-width: 24ch; }
+  .compliance-page h2 { margin: 0 0 12px; font-size: 1.16rem; line-height: 1.4; }
+  .compliance-page h3 { font-size: 1rem; line-height: 1.4; margin: 0 0 14px; }
+  .compliance-page p { margin: 0 0 14px; }
+  .compliance-page .subtitle { max-width: 66ch; margin: 14px 0 24px; }
+  .compliance-eyebrow { display: block; margin-bottom: 14px; color: var(--text-faint); font-size: .79rem; }
+  .compliance-nav, .compliance-links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .compliance-nav { padding-bottom: 28px; border-bottom: 1px solid var(--border); }
+  .compliance-nav a, .compliance-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 9px 13px; border: 1px solid var(--border-strong); border-radius: 10px; text-decoration: none; font-size: .86rem; }
+  .compliance-nav a:hover, .compliance-links a:hover { background: var(--accent-soft); }
+  .compliance-section { padding-top: 30px; scroll-margin-top: 20px; }
+  .compliance-register { padding: 22px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface); }
+  .compliance-status { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; line-height: 1.5; }
+  .compliance-register dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 18px; margin: 18px 0; font-size: .9rem; }
+  .compliance-register dt { color: var(--text-faint); }
+  .compliance-register dd { margin: 0; }
+  .compliance-register .registry-link { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
+  .compliance-page .compliance-note { color: var(--text-faint); font-size: .84rem; }
+  .compliance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .compliance-flow { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .compliance-flow dl, .compliance-flow dd { margin: 0; }
+  .compliance-flow dt { color: var(--text-faint); font-size: .75rem; font-weight: 600; margin: 0 0 6px; }
+  .compliance-flow dd { color: var(--text-muted); font-size: .9rem; line-height: 1.65; }
+  .compliance-flow dd + dt { margin-top: 16px; }
+  .compliance-page .compliance-steps { padding-left: 24px; margin: 0; }
+  .compliance-steps li { padding: 0 0 14px 6px; }
+  .compliance-steps li:last-child { padding-bottom: 0; }
+  .compliance-contact { margin: 18px 0; padding: 18px 20px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; }
+  .compliance-contact a { display: inline-flex; align-items: center; min-height: 44px; }
+  .compliance-contact p:last-child { margin: 0; }
+  .compliance-page .back-link { margin-top: 28px; min-height: 44px; display: inline-flex; align-items: center; }
+  @media (max-width: 620px) {
+    .card.compliance-page { padding: 24px 20px; margin: 20px 12px; width: calc(100% - 24px); }
+    .compliance-grid { grid-template-columns: minmax(0, 1fr); }
+    .compliance-flow, .compliance-register { padding: 18px; }
+    .compliance-section { padding-top: 26px; }
+    .compliance-nav a { flex: 1 1 calc(50% - 8px); justify-content: center; text-align: center; }
+  }
+  @media (max-width: 360px) {
+    .card.compliance-page { padding: 22px 16px; }
+    .compliance-register dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .compliance-register dd + dt { margin-top: 8px; }
+  }
+</style>
+{% endblock %}
 {% block content %}
-<h1>Комплаенс и обработка данных</h1>
-<p class="subtitle">Страница для подготовки и периодической проверки требований 152-ФЗ</p>
+<header>
+  <span class="compliance-eyebrow">MARKETSHELPER · Персональные данные{% if compliance_status.reviewed_at %} · Обновлено <time datetime="{{ compliance_status.reviewed_at }}">15 октября 2026</time>{% endif %}</span>
+  <h1>Обработка и защита данных</h1>
+  <p class="subtitle">Сведения об операторе, размещении данных и порядке обращения. Условия обработки описаны в <a href="/privacy">политике персональных данных</a>.</p>
+  <nav class="compliance-nav" aria-label="Разделы страницы">
+    <a href="#registry">Реестр РКН</a><a href="#data">Хранение данных</a><a href="#incidents">Инциденты</a><a href="#requests">Ваши обращения</a>
+  </nav>
+</header>
 
-<h2>1. Уведомление о начале обработки персональных данных в РКН</h2>
-<p>ИНН оператора: <strong>{{ compliance_status.rkn.operator_inn }}</strong>.</p>
-<ul>
-  <li>Статус: <strong>{{ compliance_status.rkn.status }}</strong>.</li>
-  <li>Что нужно проверить: наличие действительной записи в реестре оператора на
-    <a href="{{ compliance_status.rkn.record_url }}">pd.rkn.gov.ru</a>.</li>
-  <li>{{ compliance_status.rkn.status_hint }}</li>
-  <li>Ответственный: владелец сервиса.</li>
-</ul>
+<section id="registry" class="compliance-section" aria-labelledby="registry-title">
+  <h2 id="registry-title">Оператор в реестре Роскомнадзора</h2>
+  <div class="compliance-register">
+    <div class="compliance-status">{{ compliance_status.rkn.status }}</div>
+    <dl>
+      <dt>Оператор</dt><dd>ИП Вороков Мурат Валерьевич</dd>
+      <dt>ИНН</dt><dd>{{ compliance_status.rkn.operator_inn }}</dd>
+      {% if compliance_status.rkn.record_number %}<dt>Номер записи</dt><dd>{{ compliance_status.rkn.record_number }}</dd>{% endif %}
+    </dl>
+    <p>{{ compliance_status.rkn.status_hint }}</p>
+    <a class="registry-link" href="{{ compliance_status.rkn.record_url }}">Открыть запись на сайте РКН ↗</a>
+  </div>
+</section>
 
-<h2>2. Локализация и трансграничная передача</h2>
-<table>
-  <tr>
-    <th>Направление</th>
-    <th>Текущее состояние (по проектной конфигурации)</th>
-    <th>Что нужно актуализировать</th>
-  </tr>
-  {% for row in compliance_status.localization %}
-  <tr>
-    <td>{{ row.direction }}</td>
-    <td>{{ row.current_state }}</td>
-    <td>{{ row.update_action }}</td>
-  </tr>
-  {% endfor %}
-</table>
+<section id="data" class="compliance-section" aria-labelledby="data-title">
+  <h2 id="data-title">Хранение данных и внешние каналы</h2>
+  <p>Основные базы и резервные копии размещаются в России. Для каждого направления отдельно проверяются поставщики и условия обработки.</p>
+  <div class="compliance-grid">
+    {% for row in compliance_status.localization %}
+    <article class="compliance-flow" aria-labelledby="flow-{{ loop.index }}">
+      <h3 id="flow-{{ loop.index }}">{{ row.direction }}</h3>
+      <dl><dt>Как устроено</dt><dd>{{ row.current_state }}</dd><dt>Контроль</dt><dd>{{ row.update_action }}</dd></dl>
+    </article>
+    {% endfor %}
+  </div>
+</section>
 
-<h2>3. Регламент реагирования на инциденты</h2>
-<ol>
-  {% for item in compliance_status.incident_steps %}
-  <li>{{ item }}</li>
-  {% endfor %}
-</ol>
+<section id="incidents" class="compliance-section" aria-labelledby="incidents-title">
+  <h2 id="incidents-title">Реагирование на инциденты</h2>
+  <p>При обнаружении возможной утечки оператор действует в следующем порядке.</p>
+  <ol class="compliance-steps">{% for item in compliance_status.incident_steps %}<li>{{ item }}</li>{% endfor %}</ol>
+  <p class="compliance-note" style="margin-top: 16px">Сроки уведомления установлены <a href="https://mintrud.gov.ru/docs/laws/130">частью 3.1 статьи 21 закона № 152-ФЗ</a>.</p>
+  <div class="compliance-contact">
+    <p><strong>Сообщить о подозрении на утечку</strong><br><a href="mailto:{{ compliance_status.incident_contact_email }}">{{ compliance_status.incident_contact_email }}</a></p>
+    <p>Отправьте сообщение сразу после обнаружения. Не передавайте пароли, API-токены или полные выгрузки данных.</p>
+  </div>
+</section>
 
-<p>Если у вас есть инцидент или подозрение на утечку, точка первого контакта:
-<a href="mailto:{{ compliance_status.incident_contact_email }}">{{ compliance_status.incident_contact_email }}</a>.
-По общему порядку свяжитесь в рабочее время для эскалации на уровне сервиса.</p>
-
-<h2>4. Что делать дальше</h2>
-<ol>
-  {% for item in compliance_status.next_steps %}
-  <li>{{ item }}</li>
-  {% endfor %}
-</ol>
-
+<section id="requests" class="compliance-section" aria-labelledby="requests-title">
+  <h2 id="requests-title">Обращения и актуальность сведений</h2>
+  <ol class="compliance-steps">{% for item in compliance_status.next_steps %}<li>{{ item }}</li>{% endfor %}</ol>
+  <nav class="compliance-links" aria-label="Документы и контакты" style="margin-top: 18px">
+    <a href="/privacy">Политика обработки данных</a><a href="/consent">Согласие</a><a href="/contacts">Контакты оператора</a><a href="/delete-account">Удаление аккаунта</a>
+  </nav>
+</section>
 <a class="back-link" href="/">← На главную</a>
 {% endblock %}
