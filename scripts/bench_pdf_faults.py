@@ -130,8 +130,8 @@ def failed_checks(result: dict) -> list[str]:
 
 # ---- harness -------------------------------------------------------------------------------------------------------------
 
-def op(name: str, operation: str, **arg):
-    out = base.docker("exec", name, "python3", "-c", OPS, operation, json.dumps(arg), timeout=120).splitlines()
+def op(tenant: str, operation: str, **arg):
+    out = base.docker("exec", tenant, "python3", "-c", OPS, operation, json.dumps(arg), timeout=120).splitlines()
     return json.loads(out[-1])
 
 

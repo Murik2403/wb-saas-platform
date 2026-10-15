@@ -138,3 +138,18 @@ def test_a_dirty_tree_is_refused():
     with patch.object(load, "git_state", return_value={"head": "abc", "branch": "x", "dirty": True}):
         with pytest.raises(SystemExit):
             faults.scenario(scenario_args())
+
+
+def test_container_operations_accept_a_name_argument_and_ship_the_whole_argument_object():
+    """Regression: `define` takes a `name` argument, which once collided with the tenant parameter of op()."""
+    calls = []
+
+    def fake_docker(*args, **kwargs):
+        calls.append(args)
+        return '{"definition_id": 7, "run_id": 9, "rows": [], "expired": 1}'
+    with patch.object(faults.base, "docker", fake_docker):
+        job = faults.new_job("tenant-1", "faults-s1")
+        assert job == {"definition_id": 7, "run_id": 9, "second_enqueue_run_id": 9}
+        assert faults.op("tenant-1", "define", name="x")["definition_id"] == 7
+    shipped = [c for c in calls if c[0] == "exec"]
+    assert shipped[0][2:4] == ("python3", "-c") and shipped[0][5] == '{"name": "faults-s1"}' and shipped[1][5] == '{"definition_id": 7}'
