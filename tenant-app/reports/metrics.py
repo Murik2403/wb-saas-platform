@@ -204,7 +204,7 @@ def _ads(start: date, end: date) -> MetricResult:
 
 
 def _stocks(start: date, end: date) -> MetricResult:
-    stocks = read_table("stocks")
+    stocks = read_table("stocks", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 4))
     _apply_chart_style(fig, ax)
 
@@ -216,7 +216,7 @@ def _stocks(start: date, end: date) -> MetricResult:
     latest_snapshot = stocks["snapshot_at"].max()
     stocks = stocks[stocks["snapshot_at"] == latest_snapshot]
 
-    catalog = read_table("products_catalog")
+    catalog = read_table("products_catalog", omit_raw=True)
     grouped = stocks.groupby("nm_id", as_index=False)["quantity"].sum()
     grouped = grouped.sort_values("quantity", ascending=False).head(20)
     if not catalog.empty and "nm_id" in catalog.columns:
@@ -606,8 +606,8 @@ def _unit_economics(start: date, end: date) -> MetricResult:
 
 
 def _returns_cancellations(start: date, end: date) -> MetricResult:
-    orders = read_table("orders")
-    sales = read_table("sales")
+    orders = read_table("orders", omit_raw=True)
+    sales = read_table("sales", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 3.5))
     _apply_chart_style(fig, ax)
 
@@ -692,7 +692,7 @@ def _organic_vs_ads(start: date, end: date) -> MetricResult:
 
 
 def _ad_funnel(start: date, end: date) -> MetricResult:
-    ads_daily = read_table("ads_daily")
+    ads_daily = read_table("ads_daily", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 3.5))
 
     if ads_daily.empty or "day" not in ads_daily.columns:
@@ -738,7 +738,7 @@ def _ad_funnel(start: date, end: date) -> MetricResult:
 
 
 def _cost_structure(start: date, end: date) -> MetricResult:
-    costs = read_table("costs")
+    costs = read_table("costs", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if costs.empty:
@@ -876,7 +876,7 @@ def _wb_commission_rate(start: date, end: date) -> MetricResult:
 
 
 def _stock_in_transit(start: date, end: date) -> MetricResult:
-    stocks = read_table("stocks")
+    stocks = read_table("stocks", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if stocks.empty or "snapshot_at" not in stocks.columns or "warehouse_name" not in stocks.columns:
@@ -938,7 +938,7 @@ def _stock_in_transit(start: date, end: date) -> MetricResult:
 
 
 def _weekday_pattern(start: date, end: date) -> MetricResult:
-    orders = read_table("orders")
+    orders = read_table("orders", omit_raw=True)
     fig, ax = plt.subplots(figsize=(7, 3.5))
 
     if orders.empty or "order_date" not in orders.columns:

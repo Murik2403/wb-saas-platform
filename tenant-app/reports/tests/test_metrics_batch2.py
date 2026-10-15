@@ -14,7 +14,7 @@ def test_ad_funnel_success(monkeypatch):
         "atbs": [20, 30],
         "orders_count": [10, 20],
     })
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: df if table_name == "ads_daily" else pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: df if table_name == "ads_daily" else pd.DataFrame())
 
     res = build_metric("ad_funnel", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
@@ -26,7 +26,7 @@ def test_ad_funnel_success(monkeypatch):
 
 
 def test_ad_funnel_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: pd.DataFrame())
     res = build_metric("ad_funnel", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
     assert "нет" in res.summary.lower()
@@ -41,7 +41,7 @@ def test_cost_structure_success(monkeypatch):
         "labor_cost_rub": [20.0],
         "other_cost_rub": [20.0],
     })
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: df if table_name == "costs" else pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: df if table_name == "costs" else pd.DataFrame())
 
     res = build_metric("cost_structure", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
@@ -50,7 +50,7 @@ def test_cost_structure_success(monkeypatch):
 
 
 def test_cost_structure_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: pd.DataFrame())
     res = build_metric("cost_structure", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
     assert "нет" in res.summary.lower()
@@ -70,7 +70,7 @@ def test_cost_structure_falls_back_to_cost_per_wb_unit_when_breakdown_is_zero(mo
         "labor_cost_rub": [0.0, 0.0],
         "other_cost_rub": [0.0, 0.0],
     })
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: df if table_name == "costs" else pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: df if table_name == "costs" else pd.DataFrame())
 
     res = build_metric("cost_structure", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
@@ -122,7 +122,7 @@ def test_stock_in_transit_success(monkeypatch):
         "in_way_to_client": [15, 5],
         "in_way_from_client": [5, 0],
     })
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: stocks_df if table_name == "stocks" else pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: stocks_df if table_name == "stocks" else pd.DataFrame())
 
     res = build_metric("stock_in_transit", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
@@ -132,7 +132,7 @@ def test_stock_in_transit_success(monkeypatch):
 
 
 def test_stock_in_transit_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: pd.DataFrame())
     res = build_metric("stock_in_transit", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
     assert "нет" in res.summary.lower()
@@ -143,7 +143,7 @@ def test_weekday_pattern_success(monkeypatch):
         "order_date": ["2025-01-06", "2025-01-06", "2025-01-07"],  # Mon, Mon, Tue
         "is_cancel": [0, 0, 1],
     })
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: orders_df if table_name == "orders" else pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: orders_df if table_name == "orders" else pd.DataFrame())
 
     res = build_metric("weekday_pattern", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
@@ -154,7 +154,7 @@ def test_weekday_pattern_success(monkeypatch):
 
 
 def test_weekday_pattern_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: pd.DataFrame())
     res = build_metric("weekday_pattern", date(2025, 1, 1), date(2025, 1, 31))
     assert isinstance(res, MetricResult)
     assert "нет" in res.summary.lower()

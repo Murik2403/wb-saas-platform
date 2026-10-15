@@ -7,7 +7,7 @@ metrics.read_table, so they never exercise the real allowlist in db/core.py --
 the missing entry there raised ValueError("Недопустимая таблица") for every
 report that included that metric, and no test caught it before deploy.
 """
-import re
+import ast
 
 import reports.metrics as metrics
 from db.core import read_table as real_read_table
@@ -15,7 +15,14 @@ from db.core import read_table as real_read_table
 
 def _table_names_used_by_metrics() -> set[str]:
     source = open(metrics.__file__, encoding="utf-8").read()
-    return set(re.findall(r'read_table\("([a-z_]+)"\)', source))
+    return {
+        node.args[0].value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name) and node.func.id == "read_table"
+        and node.args and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
 
 
 def test_every_table_metrics_reads_is_in_the_real_allowlist():

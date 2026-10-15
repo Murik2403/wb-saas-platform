@@ -35,7 +35,7 @@ class DummyDashboard:
 
 def test_build_report_pdf_returns_valid_pdf_bytes(monkeypatch):
     monkeypatch.setattr(metrics, "build_dashboard", lambda start, end: DummyDashboard())
-    monkeypatch.setattr(metrics, "read_table", lambda table_name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda table_name, *, omit_raw=False: pd.DataFrame())
 
     pdf_bytes = pdf_builder.build_report_pdf(
         "Тестовый сводный отчёт",

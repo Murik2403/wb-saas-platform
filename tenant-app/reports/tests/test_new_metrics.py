@@ -272,7 +272,7 @@ def fake_sales_for_returns() -> pd.DataFrame:
 
 
 def test_returns_cancellations_totals(monkeypatch):
-    def fake_read_table(name):
+    def fake_read_table(name, *, omit_raw=False):
         if name == "orders":
             return fake_orders_for_cancellations()
         if name == "sales":
@@ -286,7 +286,7 @@ def test_returns_cancellations_totals(monkeypatch):
 
 
 def test_returns_cancellations_handles_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda name, *, omit_raw=False: pd.DataFrame())
     result = metrics.build_metric("returns_cancellations", date(2026, 8, 1), date(2026, 8, 3))
     assert "нет" in result.summary.lower()
 

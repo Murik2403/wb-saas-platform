@@ -56,13 +56,13 @@ def test_ads_metric_summary(monkeypatch):
 
 
 def test_stocks_metric_handles_empty(monkeypatch):
-    monkeypatch.setattr(metrics, "read_table", lambda name: pd.DataFrame())
+    monkeypatch.setattr(metrics, "read_table", lambda name, *, omit_raw=False: pd.DataFrame())
     result = metrics.build_metric("stocks", date(2026, 8, 1), date(2026, 8, 5))
     assert "нет" in result.summary.lower()
 
 
 def test_stocks_metric_with_data(monkeypatch):
-    def fake_read_table(name):
+    def fake_read_table(name, *, omit_raw=False):
         return fake_stocks() if name == "stocks" else fake_catalog()
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
     result = metrics.build_metric("stocks", date(2026, 8, 1), date(2026, 8, 5))
@@ -79,7 +79,7 @@ def test_stocks_metric_only_uses_latest_snapshot(monkeypatch):
         "quantity": [999, 999, 10, 5, 20],
     })
 
-    def fake_read_table(name):
+    def fake_read_table(name, *, omit_raw=False):
         return stale_and_fresh if name == "stocks" else fake_catalog()
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
     result = metrics.build_metric("stocks", date(2026, 8, 1), date(2026, 8, 5))
@@ -96,7 +96,7 @@ def test_unknown_metric_raises():
 def test_build_report_pdf_produces_valid_pdf_bytes(monkeypatch):
     monkeypatch.setattr(metrics, "build_dashboard", lambda start, end: FakeDashboardData(fake_daily()))
 
-    def fake_read_table(name):
+    def fake_read_table(name, *, omit_raw=False):
         return fake_stocks() if name == "stocks" else fake_catalog()
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
 
@@ -135,7 +135,7 @@ def test_build_report_pdf_handles_ampersand_and_angle_brackets_in_title(monkeypa
     # it to Paragraph().
     monkeypatch.setattr(metrics, "build_dashboard", lambda start, end: FakeDashboardData(fake_daily()))
 
-    def fake_read_table(name):
+    def fake_read_table(name, *, omit_raw=False):
         return fake_stocks() if name == "stocks" else fake_catalog()
     monkeypatch.setattr(metrics, "read_table", fake_read_table)
 
