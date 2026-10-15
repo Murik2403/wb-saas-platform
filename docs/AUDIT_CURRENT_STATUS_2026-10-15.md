@@ -1,5 +1,9 @@
 # Аудит MARKETSHELPER — подтверждённый статус на 15 октября 2026
 
+Текущий production HEAD — **`73c6a34b8ee2940a25fe40ac8c65c2e06672c02d`**: ветки Claude по PDF-бюджету и резервированию уроков объединены с `89ad911` и выложены на все пять tenants, gateway и provisioner. Финальная приёмка: 03:16:59 МСК. [Подробный акт новой выкладки](PDF_LESSONS_PRODUCTION_ACCEPTANCE_2026-10-15.md): два общих PDF-слота, боевой encrypted backup/restore всех 16 уроков, S3 readback, daily/hourly integration и freshness PASS. Строгие 25/30 и независимая новая ОС пока открыты.
+
+Следующие разделы 1–4 и их исходные акты описывают **предыдущую** выкладку оптимизации 3dc30c3. Её образы заменены текущей ревизией выше; исторические результаты и отрицательные акты сохранены.
+
 Оптимизация `89ad911a3a5d5a88d49991f0369b6bb858283bc6` выложена на все пять кабинетов из закоммиченного HEAD `3dc30c3c2594535178918822f29f8235ce126010`. Реальная загрузка исходного зашифрованного архива образов пройдена. Эти два пункта закрыты; весь аудит и восстановление сервера на новой ОС этим актом не закрываются.
 
 Время итоговой проверки production: **15.10.2026 01:42:14 МСК** (`2026-10-14T22:42:14Z`). Ниже отдельно указаны новые результаты и границы исторических актов.
@@ -56,7 +60,8 @@ Gateway и provisioner сохранили код и исходные immutable �
 |---|---|---|
 | Восстановление сервера | Исторически: 21 SQLite / 777 экземпляров таблиц, исходная криптография и 58 API/auth gates до и после перезапуска собственного Docker; 45 host config файлов и офлайн TLS-входы. Теперь также реальный image-load | Независимая новая ОС/VM, boot/reboot, host jobs, новый DNS/TLS handshake, UI и вход. DinD на прежнем хосте это не заменяет |
 | Плотность 20–30 | 20 прошли полный функциональный фон/combined; HTTP-фазы 25/30 прошли | Строгие kernel memory.peak и весь simultaneous background/combined. Для 25 фон отказал (помещалось 19), для 30 — 18. Диагностический обход budget только в собственном namespace не разрешает 30 production tenants |
-| Уроки | Текущие 16 MP4/VTT не изменены этой выкладкой | Итог Claude: encrypted copy-only backup, полный SHA, isolated gateway restore, captions/Range, точный SHA ветки |
+| Уроки | Боевой encrypted backup/restore 16 MP4/VTT, 32 SHA, isolated gateway, Range/VTT, S3 readback и cron/helper/watchdog проверены на 73c6a34 | Пункт закрыт в пределах [акта](PDF_LESSONS_PRODUCTION_ACCEPTANCE_2026-10-15.md); первое будущее срабатывание нового cron отдельно от ручной проверки его функций |
+| PDF-бюджет | На всех пяти tenants healthy slots=2, Linux flock/crash/fail-closed и durable queue/leases проверены | 25/30 всей нагрузкой; real provider/delivery. Свежая crash lease ждёт до 300 с, secondary manual busy требует повтора |
 | Ключи восстановления | Аутентификация текущей owner-копии и offsite ciphertext проверены | Независимая копия ключей вне рабочего ПК и восстановление без первой копии |
 | YooKassa | Автоматические/смоделированные проверки | Test-shop, настоящий тестовый платёж, частичный возврат, webhook/чек/пропорциональный срок |
 | Ozon | Реализация и тесты | Непустые данные после отгрузки; отдельные Performance credentials для рекламы. Владелец отложил этап |
@@ -78,4 +83,4 @@ Unknown старые архивы и Defender не переоткрываютс�
 
 ## Сообщение Claude
 
-Claude, runtime `89ad911` выложен во все пять tenants из `3dc30c3c2594535178918822f29f8235ce126010`; gateway/provisioner код и images остались `b13fa97`, будущий tenant pin закреплён на `mh-tenant:audit-3dc30c3-36451b45456f`. До своей следующей выкладки включи текущую `codex/cabinet-ux-20260930`, чтобы не откатить оптимизацию. Реальный архив образов 8 ID/9 ролей восстановлен и проверен, уроки не менялись. Продолжай свои 16 MP4/VTT copy-only backup/restore с SHA, isolated gateway, captions/Range; передай итоговый commit и акт. Строгие 25–30 и новая ОС/boot/DNS/TLS пока открыты. Возможная следующая отдельная ветка — durable PDF queue/memory leases с crash/cancel/expiry recovery и измерением retained heap; очередь не подменяет критерий одновременной нагрузки. РКН №100456256 внесён в реестр по скриншоту владельца; Telegram остаётся выключенным.
+Claude, обе ветки `claude/lessons-backup-20261018` (69e0fbe) и `claude/pdf-budget-20261019` (eaecdba) включены в `codex/cabinet-ux-20260930`. Production — `73c6a34b8ee2940a25fe40ac8c65c2e06672c02d`, все пять tenants + gateway/provisioner; будущий tenant pin `mh-tenant:pdf-73c6a34-05b11778bc9b`. До следующих правок включи текущую ветку: добавлены fencing lease owner/attempt, защита active lease, poison-cycle limit, secondary busy deferral/config, fail-closed slots, безопасный purge shared mount и nightly helper в образе provisioner (gateway не содержит cryptography). Боевой restore/S3/cron уроков принят, старые tip повторно не выкатывать. Строгие 25–30, новый OS/boot/DNS/TLS и escrow новых images пока не приняты; независимая owner-копия ключей остаётся открытой. РКН №100456256 внесён в реестр по скриншоту владельца; Telegram выключен.
