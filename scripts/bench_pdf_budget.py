@@ -120,21 +120,23 @@ def inventory() -> dict:
     """Everything on the engine right now, by full ID, so that ownership can be proven before and after a run. Any failed
     question raises: an inventory that could not be read must never look like an empty one."""
     containers: dict[str, str] = {}
+    statuses: dict[str, str] = {}
     ids = list_ids("ps", "-aq", "--no-trunc")
     for attempt in range(3):
         if not ids:
             break
-        code, out, err = base.docker_status("inspect", "--format", "{{.Id}} {{.State.Running}} {{.State.StartedAt}}", *ids)
+        code, out, err = base.docker_status("inspect", "--format", "{{.Id}} {{.State.Running}} {{.State.StartedAt}} {{.State.Status}} {{.RestartCount}}", *ids)
         if code == 0:
             for line in out.splitlines():
                 fields = line.split()
-                if len(fields) == 3:
-                    containers[fields[0]] = fields[1] + " " + fields[2]
+                if len(fields) == 5:
+                    containers[fields[0]] = fields[1] + " " + fields[2] + " " + fields[4]  # running, StartedAt, RestartCount
+                    statuses[fields[0]] = fields[3]
             break
         if attempt == 2 or not ABSENT.search(err):
             raise ObservationError(f"docker inspect failed ({code}): {err[:160]}")
         ids = list_ids("ps", "-aq", "--no-trunc")  # a container vanished between the list and the inspect: ask again
-    return {"containers": containers, "volumes": set(list_ids("volume", "ls", "-q")), "networks": set(list_ids("network", "ls", "-q", "--no-trunc"))}
+    return {"containers": containers, "statuses": statuses, "volumes": set(list_ids("volume", "ls", "-q")), "networks": set(list_ids("network", "ls", "-q", "--no-trunc"))}
 
 
 class Arm:
@@ -200,7 +202,9 @@ class Arm:
         time.sleep(getattr(self.args, "stability_seconds", 3))
         second = inventory()
         self.foreign_before = second
-        self.unstable_before = sorted(i for i in set(first["containers"]) | set(second["containers"]) if first["containers"].get(i) != second["containers"].get(i))
+        # a container the engine itself reports as "restarting", or whose state moved between the two readings, is churning on its own
+        self.unstable_before = sorted({i for i in set(first["containers"]) | set(second["containers"]) if first["containers"].get(i) != second["containers"].get(i)}
+                                      | {i for snap in (first, second) for i, status in snap.get("statuses", {}).items() if status == "restarting"})
         reserved = [("network", self.network)] + ([("volume", self.slot_volume)] if self.slots else []) + [("container", n) for n in self.names] + [("volume", f"{n}-data") for n in self.names]
         for kind, name in reserved:  # every name must be free before anything is created
             state, info = inspect_object(kind, name)

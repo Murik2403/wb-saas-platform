@@ -76,7 +76,7 @@ class FakeEngine:
                 ident, obj = self.find("container", ref)
                 if ident is None:
                     return 1, "", f"Error response from daemon: No such container: {ref}"
-                rows.append(f"{ident} {obj['state']}")
+                rows.append(f"{ident} {obj['state']} {obj.get('status', 'running')} {obj.get('restarts', 0)}")
             return 0, "\n".join(rows), ""
         if head in ("container", "volume", "network") and args[1] == "inspect":
             ident, obj = self.find(head, args[2])
@@ -501,3 +501,25 @@ def test_a_name_reserved_when_the_engine_was_down_is_reconciled_at_cleanup_and_r
     engine.unavailable.clear()
     arm.stop()
     assert ("volume", name) not in engine.objects, "the leaked volume is found by its reserved name at cleanup and removed (it carries our label)"
+
+
+def test_a_container_the_engine_reports_as_restarting_is_listed_as_unstable_even_if_its_state_did_not_move_between_the_readings(engine):
+    """A restart loop with a long back-off does not change inside a 3 s window; the engine's own status says it is churning."""
+    looping = engine.put("container", "restart-loop", ident="b" * 64)
+    engine.objects[("container", looping)]["status"] = "restarting"
+    steady = engine.put("container", "steady", ident="a" * 64)
+    arm = started(engine, tenants=1)
+    arm.stop()
+    engine.objects[("container", looping)]["state"] = "true 2026-10-15T20:00:01Z"  # it restarted during our run, as it does
+    engine.objects[("container", steady)]["state"] = "true 2026-01-01T00:00:00Z"   # a stable one is unchanged
+    report = arm.cleanup_report()
+    assert report["foreign_unstable_before_the_run"] == [looping] and report["foreign_changed"] == [] and load.cleanup_failures(report) == []
+
+
+def test_a_stable_container_that_restarts_during_the_run_is_still_a_failure(engine):
+    steady = engine.put("container", "steady", ident="a" * 64)
+    arm = started(engine, tenants=1)
+    arm.stop()
+    engine.objects[("container", steady)]["state"] = "true 2026-10-15T20:00:01Z"
+    report = arm.cleanup_report()
+    assert report["foreign_changed"] == [steady] and load.cleanup_failures(report)
