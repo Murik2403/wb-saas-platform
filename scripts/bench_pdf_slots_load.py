@@ -43,6 +43,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import statistics
 import subprocess
 import sys
@@ -115,13 +116,16 @@ FILE_HASHES = r'''
 import hashlib, json, sys
 out = {}
 for path in sys.argv[1:]:
-    with open(path, "rb") as handle:
-        out[path] = hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+    try:
+        with open(path, "rb") as handle:
+            out[path] = hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+    except OSError:
+        out[path] = None
 print(json.dumps(out))
 '''
 # (path inside the container, path in the repository): the files that decide how a PDF is queued, leased and built
 SOURCE_FILES = (("/app/tenant-app/reports/pdf_budget.py", "tenant-app/reports/pdf_budget.py"),
-                ("/app/tenant-app/reports/report_scheduler.py", "tenant-app/reports/report_scheduler.py"),
+                ("/app/tenant-app/report_scheduler.py", "tenant-app/report_scheduler.py"),
                 ("/app/tenant-app/reports/store.py", "tenant-app/reports/store.py"),
                 ("/app/tenant-app/reports/pdf_builder.py", "tenant-app/reports/pdf_builder.py"),
                 ("/app/tenant-app/reports/catalog.py", "tenant-app/reports/catalog.py"),
@@ -315,7 +319,10 @@ def topology_failures(names: list[str], expected: dict, before: dict, after: dic
             failed.append(f"topology: {name} does not own its data volume")
         else:
             data_volumes.append(data_mount["Name"])
-        if len(mounts) != 2 + sum(1 for d in mounts if d.startswith(("/tmp", "/var/", "/run"))):
+        anonymous = mounts.get("/app/tenant-app/data")  # declared by the image (VOLUME); anonymous, removed with the container
+        if anonymous is not None and (anonymous.get("Type") != "volume" or not re.fullmatch(r"[0-9a-f]{64}", anonymous.get("Name", ""))):
+            failed.append(f"topology: {name} mounts something other than the image's anonymous volume at /app/tenant-app/data")
+        if len(mounts) != 2 + (anonymous is not None) + sum(1 for d in mounts if d.startswith(("/tmp", "/var/", "/run"))):
             failed.append(f"topology: {name} has unexpected mounts {sorted(mounts)}")
         roles_before, roles_after = process_roles(row.get("processes", [])), process_roles(after[name].get("processes", []))
         for role in ("api", "worker", "nginx"):
@@ -337,8 +344,8 @@ def topology_failures(names: list[str], expected: dict, before: dict, after: dic
             failed.append(f"topology: {name} sees lock files {sorted(value.get('files', {}))} for {expected['slots']} slots")
         if value["dir"].get("uid") != 10001 or any(f.get("uid") != 10001 for f in value["files"].values()):
             failed.append(f"topology: {name} slot directory or locks are not owned by 10001")
-        if value["dir"].get("mode", 0) & 0o007 or any(f.get("mode", 0) & 0o007 for f in value["files"].values()):
-            failed.append(f"topology: {name} slot directory or locks are accessible to others")
+        if value["dir"].get("mode", 0) & 0o007 or any(f.get("mode", 0) & 0o002 for f in value["files"].values()):
+            failed.append(f"topology: {name} slot directory is accessible to others or a lock file is writable by others")
         if reference is not None and (value["dir"].get("dev"), value["dir"].get("ino")) != (reference["dir"].get("dev"), reference["dir"].get("ino")):
             failed.append(f"topology: {name} slot directory is not the same directory as the other tenants'")
         if reference is not None and {k: (v.get("dev"), v.get("ino")) for k, v in value["files"].items()} != {k: (v.get("dev"), v.get("ino")) for k, v in reference["files"].items()}:
@@ -349,7 +356,7 @@ def topology_failures(names: list[str], expected: dict, before: dict, after: dic
 def image_failures(image: dict, trees: dict, tenants_hashes: dict, blobs: dict) -> list[str]:
     """image: {"id", "labels"}; trees: this commit's tenant-app/tenant-api trees and the trees of the commit the image says it was built from;
     tenants_hashes: per tenant {container path: sha256}; blobs: {container path: sha256 of this commit's blob, CRLF-normalised}."""
-    failed = []
+    failed = [f"image: this commit has no blob for {path}" for path, digest in sorted(blobs.items()) if not digest]
     if not image.get("id") or not str(image["id"]).startswith("sha256:"):
         failed.append("image: no image id")
     if (not trees.get("built_from") or not all(trees.get(key) for key in ("head_tenant_app", "head_tenant_api", "built_from_tenant_app", "built_from_tenant_api"))

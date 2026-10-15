@@ -87,6 +87,8 @@ def test_a_correct_topology_has_no_failures():
     ("too many lock files", lambda b, a: a[NAMES[1]]["locks"]["files"].update({"pdf-slot-02.lock": {"dev": 66, "ino": 5, "uid": 10001, "mode": 0o660}}), "lock files"),
     ("lock owned by root", lambda b, a: a[NAMES[1]]["locks"]["files"]["pdf-slot-00.lock"].update(uid=0), "not owned by 10001"),
     ("directory world accessible", lambda b, a: a[NAMES[1]]["locks"]["dir"].update(mode=0o777), "accessible to others"),
+    ("lock writable by others", lambda b, a: a[NAMES[1]]["locks"]["files"]["pdf-slot-00.lock"].update(mode=0o666), "accessible to others"),
+    ("image volume replaced by a bind", lambda b, a: b[NAMES[1]]["inspect"]["Mounts"].append({"Destination": "/app/tenant-app/data", "Type": "bind", "Name": "", "RW": True}), "anonymous volume"),
     ("different directory inode", lambda b, a: a[NAMES[2]]["locks"]["dir"].update(ino=101), "not the same directory"),
     ("different device", lambda b, a: a[NAMES[2]]["locks"]["dir"].update(dev=67), "not the same directory"),
     ("different lock file inode", lambda b, a: a[NAMES[2]]["locks"]["files"]["pdf-slot-01.lock"].update(ino=999), "not the same files"),
@@ -96,6 +98,13 @@ def test_each_topology_property_alone_fails(name, mutate, fragment):
     failed = topo_failures(mutate)
     assert failed, name
     assert any(fragment in line for line in failed), (name, failed)
+
+
+def test_the_images_own_anonymous_volume_is_expected():
+    def add(before, after):
+        for table in (before, after):
+            table[NAMES[0]]["inspect"]["Mounts"].append({"Destination": "/app/tenant-app/data", "Type": "volume", "Name": "d" * 64, "RW": True})
+    assert topo_failures(add) == []
 
 
 def test_two_tenants_sharing_a_data_volume_is_a_failure():
@@ -136,6 +145,16 @@ def test_an_image_built_from_the_same_sources_passes():
 ])
 def test_each_image_gap_fails(name, trees, hashes):
     assert image_check(trees, hashes), name
+
+
+def test_a_missing_repository_blob_fails():
+    broken = dict(BLOBS, **{load.SOURCE_FILES[0][0]: None})
+    assert load.image_failures({"id": IMAGE_ID}, TREES, {n: dict(broken) for n in NAMES}, broken)
+
+
+def test_every_attested_source_file_exists_in_this_repository():
+    root = Path(__file__).resolve().parents[2]
+    assert all((root / repo_path).is_file() for _, repo_path in load.SOURCE_FILES)
 
 
 def test_an_image_without_an_id_fails():
