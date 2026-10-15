@@ -1,0 +1,338 @@
+{
+  "scenario": "PDF slot and lease faults on real tenants",
+  "git": {
+    "head": "8d805342ec5eecc0d3615319cde78712ae66c875",
+    "branch": "claude/pdf-faults-20261024",
+    "dirty": false
+  },
+  "tenants": 4,
+  "slots": 2,
+  "image": {
+    "reference": "bench-tenant:fc-b22d871",
+    "id": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+    "source_trees": {
+      "head_tenant_app": "05ee1aa0a18f8e52cecc5242a1a84fd1116f4386",
+      "head_tenant_api": "681642f40ac3bbb5c10f862e0c8a86135cee937e",
+      "built_from": "b22d87179c8b428c6b9141774e9d1ea35ba63ba1",
+      "built_from_tenant_app": "05ee1aa0a18f8e52cecc5242a1a84fd1116f4386",
+      "built_from_tenant_api": "681642f40ac3bbb5c10f862e0c8a86135cee937e"
+    }
+  },
+  "floor_mib": 1500,
+  "started": "2026-10-16 02:01:41",
+  "start_gate": [
+    {
+      "index": 0,
+      "name": "bench-faults-t01-5f58e18e",
+      "at": 1792105307.0283892,
+      "decision": "admitted",
+      "vm_available_mib": 5853,
+      "create_started_at": 1792105307.4993613
+    },
+    {
+      "index": 1,
+      "name": "bench-faults-t02-5f58e18e",
+      "at": 1792105307.5008743,
+      "decision": "admitted",
+      "vm_available_mib": 5862,
+      "create_started_at": 1792105307.8880718
+    },
+    {
+      "index": 2,
+      "name": "bench-faults-t03-5f58e18e",
+      "at": 1792105307.8880718,
+      "decision": "admitted",
+      "vm_available_mib": 5870,
+      "create_started_at": 1792105308.2468884
+    },
+    {
+      "index": 3,
+      "name": "bench-faults-t04-5f58e18e",
+      "at": 1792105308.2473984,
+      "decision": "admitted",
+      "vm_available_mib": 5855,
+      "create_started_at": 1792105310.119196
+    }
+  ],
+  "image_attestation": [],
+  "scenarios": {
+    "S1_sigkill_slot_holder": {
+      "checks": [
+        {
+          "check": "a duplicate enqueue returns the same run in every tenant",
+          "ok": true,
+          "detail": "{'t01-5f58e18e': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}, 't02-5f58e18e': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}, 't03-5f58e18e': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}, 't04-5f58e18e': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}}"
+        },
+        {
+          "check": "the container died by SIGKILL (exit 137)",
+          "ok": true,
+          "detail": "exit code 137"
+        },
+        {
+          "check": "the slot was released (or the queued tenant took it) within 15 s",
+          "ok": true,
+          "detail": "1.1 s"
+        },
+        {
+          "check": "the killed tenant became healthy again",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the dead owner's lease was expired by injection (the real lease lasts 300 s) on exactly its running run",
+          "ok": true,
+          "detail": "{'expired': 1}"
+        },
+        {
+          "check": "every tenant's run finished",
+          "ok": true,
+          "detail": "{'t01-5f58e18e': 'ok', 't02-5f58e18e': 'ok', 't03-5f58e18e': 'ok', 't04-5f58e18e': 'ok'}"
+        },
+        {
+          "check": "every run finished ok with a real PDF",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the killed tenant's run was requeued and finished on attempt 2",
+          "ok": true,
+          "detail": "attempts 2"
+        },
+        {
+          "check": "the other tenants' runs were not repeated (attempt 1)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "at most 2 builds overlapped in time",
+          "ok": true,
+          "detail": "peak 2"
+        }
+      ],
+      "notes": {
+        "victim": "t01-5f58e18e",
+        "busy_before_kill": 2,
+        "seconds_until_slot_free_or_queue_moved": 1.1,
+        "exit_code": "137",
+        "queued_before_kill": [
+          "t03-5f58e18e",
+          "t04-5f58e18e"
+        ],
+        "final": {
+          "t01-5f58e18e": {
+            "status": "ok",
+            "attempts": 2,
+            "started_at": "2026-10-16T02:03:02",
+            "finished_at": "2026-10-16T02:03:33"
+          },
+          "t02-5f58e18e": {
+            "status": "ok",
+            "attempts": 1,
+            "started_at": "2026-10-16T02:02:26",
+            "finished_at": "2026-10-16T02:02:53"
+          },
+          "t03-5f58e18e": {
+            "status": "ok",
+            "attempts": 1,
+            "started_at": "2026-10-16T02:02:31",
+            "finished_at": "2026-10-16T02:02:58"
+          },
+          "t04-5f58e18e": {
+            "status": "ok",
+            "attempts": 1,
+            "started_at": "2026-10-16T02:02:54",
+            "finished_at": "2026-10-16T02:03:21"
+          }
+        }
+      },
+      "seconds": 72.6
+    },
+    "S2_lease_expiry_and_fencing": {
+      "checks": [
+        {
+          "check": "the live worker took the abandoned run over without a restart (attempt 2)",
+          "ok": true,
+          "detail": "{'status': 'running', 'attempts': 2, 'lease_owner': 'worker-7'}"
+        },
+        {
+          "check": "the dead owner's late finish is rejected",
+          "ok": true,
+          "detail": "False"
+        },
+        {
+          "check": "the dead owner's late heartbeat is rejected",
+          "ok": true,
+          "detail": "False"
+        },
+        {
+          "check": "the run is unchanged by the stale owner (still running, not the dead owner's lease, no file)",
+          "ok": true,
+          "detail": "{'id': 2, 'definition_id': 2, 'status': 'running', 'attempts': 2, 'lease_owner': 'worker-7', 'lease_expires_at': '2026-10-16T02:08:38', 'started_at': '2026-10-16T02:03:38', 'finished_at': None, 'error': None, 'file_present': False, 'pdf_header_ok': False, 'file_recorded': False}"
+        },
+        {
+          "check": "the run finished ok on attempt 2 with a real PDF",
+          "ok": true,
+          "detail": "{'status': 'ok', 'attempts': 2, 'pdf_bytes': 856280}"
+        },
+        {
+          "check": "after completion a stale finish/heartbeat still changes nothing",
+          "ok": true,
+          "detail": "{'id': 2, 'definition_id': 2, 'status': 'ok', 'attempts': 2, 'lease_owner': None, 'lease_expires_at': None, 'started_at': '2026-10-16T02:03:38', 'finished_at': '2026-10-16T02:04:15', 'error': None, 'file_present': True, 'pdf_header_ok': True, 'pdf_bytes': 856280, 'file_recorded': True}"
+        }
+      ],
+      "notes": {
+        "stale_owner_while_running": {
+          "finish_accepted": false,
+          "heartbeat_accepted": false
+        }
+      },
+      "seconds": 40.6
+    },
+    "S3_poison_job": {
+      "checks": [
+        {
+          "check": "attempt 1: SIGKILL, restart, the dead lease was expired by injection",
+          "ok": true,
+          "detail": "{'attempt': 1, 'killed': True, 'healthy_again': True, 'lease_expired_by_injection': 1}"
+        },
+        {
+          "check": "attempt 2: SIGKILL, restart, the dead lease was expired by injection",
+          "ok": true,
+          "detail": "{'attempt': 2, 'killed': True, 'healthy_again': True, 'lease_expired_by_injection': 1}"
+        },
+        {
+          "check": "attempt 3: SIGKILL, restart, the dead lease was expired by injection",
+          "ok": true,
+          "detail": "{'attempt': 3, 'killed': True, 'healthy_again': True, 'lease_expired_by_injection': 1}"
+        },
+        {
+          "check": "after the third interruption the run is closed with an error",
+          "ok": true,
+          "detail": "{'status': 'error', 'attempts': 3}"
+        },
+        {
+          "check": "the error says it was interrupted 3 times",
+          "ok": true,
+          "detail": "Сборка прервана 3 раза подряд (возможно, нехватка памяти). Запустите отчёт вручную или уменьшите период."
+        },
+        {
+          "check": "no PDF was recorded for the poisoned run",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the poisoned run stays closed (not requeued) while the worker keeps ticking",
+          "ok": true,
+          "detail": "[('error', 3), ('error', 3), ('error', 3), ('error', 3), ('error', 3), ('error', 3)]"
+        },
+        {
+          "check": "another tenant's job kept working during and after the poison cycles",
+          "ok": true,
+          "detail": "ok"
+        }
+      ],
+      "notes": {
+        "cycles": [
+          {
+            "attempt": 1,
+            "killed": true,
+            "healthy_again": true,
+            "lease_expired_by_injection": 1
+          },
+          {
+            "attempt": 2,
+            "killed": true,
+            "healthy_again": true,
+            "lease_expired_by_injection": 1
+          },
+          {
+            "attempt": 3,
+            "killed": true,
+            "healthy_again": true,
+            "lease_expired_by_injection": 1
+          }
+        ]
+      },
+      "seconds": 70.9
+    },
+    "S4_cancel_by_deleting_the_definition": {
+      "checks": [
+        {
+          "check": "the second run was still queued when its definition was deleted",
+          "ok": true,
+          "detail": "queued"
+        },
+        {
+          "check": "the first job finished ok",
+          "ok": true,
+          "detail": "ok"
+        },
+        {
+          "check": "the deleted queued run never built and left no row",
+          "ok": true,
+          "detail": "[1, 2, 3]"
+        },
+        {
+          "check": "the build was running when its definition was deleted",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the run row disappeared with its definition",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "nothing was resurrected after the in-flight build ended",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the container and its worker survived (same start time)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the slot was released",
+          "ok": true,
+          "detail": "host_busy 0"
+        },
+        {
+          "check": "the tenant's next job completes ok on attempt 1",
+          "ok": true,
+          "detail": "ok"
+        }
+      ],
+      "notes": {
+        "note": "there is no cancel API for a report run; deleting the definition is the cancel equivalent"
+      },
+      "seconds": 131.7
+    }
+  },
+  "vm_min_available_mib": 4856,
+  "oom_killed_containers": 0,
+  "cleanup": {
+    "owned": {
+      "container": 4,
+      "volume": 5,
+      "network": 1
+    },
+    "removed_by_full_id": 10,
+    "removed_ids_all_full": true,
+    "already_absent": [],
+    "not_ours": [],
+    "owned_remaining": [],
+    "unknown": [],
+    "observation_errors": [],
+    "unexpected_labelled": [],
+    "foreign_collisions": [],
+    "foreign_missing": [],
+    "foreign_changed": [],
+    "foreign_unstable_before_the_run": [
+      "85a4717a6e442fedee157e70568b9b24edbc234d12544c1c9e3647890614e54c"
+    ]
+  },
+  "verdict": "PASS",
+  "failed_checks": [],
+  "finished": "2026-10-16 02:07:45"
+}
