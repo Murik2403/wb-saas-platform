@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -114,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     if git("status", "--porcelain"):
         raise SystemExit("Refusing to build from a dirty working tree: the image must name a commit.")
     base.assert_local_engine()
+    os.environ["DOCKER_BUILDKIT"] = "0"  # BuildKit would try to resolve `FROM sha256:<id>` as a registry reference; the classic builder uses the local image
     info = json.loads(base.docker("image", "inspect", args.base))[0]
     base_revision = (info.get("Config", {}).get("Labels") or {}).get("org.opencontainers.image.revision", "")
     if not re.fullmatch(r"[0-9a-f]{40}", base_revision):
