@@ -59,3 +59,45 @@ python -m pytest scripts/tests/test_bench_pdf_slots_load.py -q    # verdict logi
 - Демо-данные, стенд 8 ГиБ / 12 vCPU; CPU упирается в throttle (86–96%), это ограничение кабинетов, а не слотов.
 - 4xx дашборда — деловые ответы (409/422), 503 в запросе PDF при занятых слотах — ожидаемое поведение.
 - Реальная синхронизация с WB и доставка отчётов не проверялись.
+
+## Strict gates (branch `claude/pdf-slots-observability-20261022`, base d0141b2)
+Why: the first version of the scenario (27070ca) could return `PASS` with no kernel `memory.peak`, with no API load, and with the driver data of one of four drivers. The acts `pdf-slots-load-{2,3,4}-2026-10-16.json` are kept unchanged as **historical** results of those gates. The observability draft from review (`deliveries/audit-followup-20261015/claude-slots-observability-DRAFT.patch`) is applied as the first commit; the rest was added on top.
+
+A result is `PASS` only if, in addition to the checks above:
+
+| Gate | What must hold |
+|---|---|
+| observations | every tenant has dashboard, health and in-request PDF observations, all requested paths seen, a real 200, only 200/409/422 answers; kernel counters (`cur`, `peak`, `high`, `max`, `oom`, `oom_kill`, CPU throttling) present for every tenant before and after, peak > 0; the sampler recorded load-window samples with zero errors and stopped before cleanup; every driver exited 0 with its own result and no worker thread raised |
+| jobs | each tenant: a NEW definition with exactly the 21 report metric codes **of the image**, its own `run_id`/`definition_id` returned by the enqueue, that run finished `ok`, exactly one run for that definition, no foreign or duplicate run, no delivery requested |
+| image | the image's source commit has the same `tenant-app` and `mh-redesign-lab/tenant-api` git trees as HEAD, and 7 key files (`pdf_budget`, `report_scheduler`, `store`, `pdf_builder`, `catalog`, `background_worker`, `api_server`) hash (SHA-256, CRLF-normalised) to HEAD's blobs inside **every** container |
+| topology | per container: the image id, uid 10001, read-only root, `cap_drop ALL`, no `cap_add`, unprivileged, the unchanged 1536 MiB limit, `WB_SAAS_PDF_SLOTS`/`WB_SAAS_PDF_SLOT_DIR`, its own data volume, the one shared `/pdf-slots` volume read-write (the image's own anonymous volume at `/app/tenant-app/data` is the only other volume); API + resident `background_worker` + nginx master alive with the **same PIDs** before and after; no restart, no OOM; the slot directory and every `pdf-slot-NN.lock` have the same device/inode in every tenant, owner 10001, exactly `slots` lock files, directory not accessible to others, no lock file writable by others |
+| admission | the real `tenant_budget` decision for the next tenant is taken before the load starts (timestamps compared), saw all N live tenants, and is `admitted`; `refused` is `REFUSED_NOT_RUN` before any load |
+| cleanup | every created object (containers incl. the drivers, volumes, network) is recorded by **full ID** when created and removed only by that ID after re-checking its name and run label; nothing unrecorded carrying the run label (reported, left alone); everything that existed before the run still exists (containers also compared by state) |
+| harness faults | any exception is a `FAIL` with its reason, never a traceback; cleanup still runs |
+
+`scripts/build_bench_overlay.py` builds the image on a stand without package network: the **committed** `tenant-app/` and `tenant-api` files (via `git archive`) over a base tenant image, refusing a dirty tree, a base without a commit label, or any difference in the dependency/runtime files (`requirements*`, entrypoint, nginx config, the Dockerfile) between the base's revision and HEAD. Limits: files deleted since the base stay in the image; the frontend bundle is the base's (irrelevant to API/PDF load). Used here: base `mh-dr-tenant:fdcc301`, dependencies/runtime files unchanged up to d0141b2.
+
+Tests: `scripts/tests/test_bench_pdf_slots_load.py` (verdict logic) + `test_bench_pdf_slots_attestation.py` (topology, image, jobs, ownership with a fake engine, refusal and fault paths) + `test_build_bench_overlay.py`: 141 passed; 14 mutants of the new gates all killed (`QUEUE`/strict simultaneous profiles are unchanged).
+
+### Results of the attested smokes (current gates, image from the sources of b19413b = d0141b2 app trees)
+| | 2 tenants | 3 tenants | 4 tenants |
+|---|---:|---:|---:|
+| verdict | PASS | PASS | PASS |
+| declared deadline / last PDF, s | 120 / 104.1 | 180 / 123.4 | 180 / 169.4 |
+| concurrent PDFs (intervals / lock files) | 2 / 2 | 2 / 2 | 2 / 2 |
+| VM MemAvailable minimum, MiB | 5012 | 4686 | 4374 |
+| kernel events high/max/oom/oom_kill | 0 | 0 | 0 |
+| container peak (kernel `memory.peak`) max, MiB | 423.4 | 420.0 | 429.1 |
+| `/healthz` probes / failures / p95 ms | 408 / 0 / 86 | 736 / 0 / 71 | 1341 / 0 / 74 |
+| admission | admitted, sees 2 | admitted, sees 3 | admitted, sees 4 |
+| jobs | 2 x (1 run, 21 metrics) | 3 x | 4 x |
+| objects recorded and removed by full ID | 8 / 8 | 10 / 10 | 12 / 12 |
+| unrecorded labelled / pre-existing objects missing | 0 / 0 | 0 / 0 | 0 / 0 |
+
+`foreign_changed` lists one pre-existing container (a restart-looping `audittest-traefik` that is not ours); it is recorded and not a failure. Locks are created by the application with mode 0644 inside a 0770 directory owned by 10001: the directory is the barrier, the files are not writable by others.
+
+### Not covered / not claimed
+- 20/25/30 remain `NOT_RUN` for this scenario; the strict simultaneous criterion and the negative 25/30 results are unchanged. No queue-aware 20/25/30 run was made.
+- Fault execution (unavailable slot directory, SIGKILL of a slot holder, lease expiry/fencing, poison, cancellation, duplicate jobs) is **not** exercised by this scenario; earlier separate evidence for SIGKILL recovery is in `PDF_BUDGET_2026-10-15.md`. Duplicate runs are only detected, not provoked.
+- Demo data, no marketplace sync, no deliveries; local 8 GiB / 12 vCPU Docker VM; this is not a fresh-OS test.
+

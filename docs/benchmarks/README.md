@@ -21,3 +21,11 @@ The 25 and 30 tenant steps remain **open**; no result in the next section replac
 |---|---|
 | `pdf-budget-evidence-2026-10-15.json` | 8 tenants, with and without 2 shared slots, plus SIGKILL recovery (`../PDF_BUDGET_2026-10-15.md`) |
 | `pdf-slots-load-*.json` | the load scenario (`scripts/bench_pdf_slots_load.py`): API and background of all N tenants at once, real PDF run per tenant, declared deadline, verdict with the list of failed checks (`../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`) |
+
+### Historical (old gates) and attested (current gates)
+| Files | Status |
+|---|---|
+| `pdf-slots-load-{2,3,4}-2026-10-16.json` | **Historical, unchanged.** `PASS` under the gates of 27070ca. Those gates accepted missing kernel peak / API / per-tenant driver data, so they are not evidence for the stricter criteria and are not rewritten. Image: an overlay on a d7f3729 base. |
+| `pdf-slots-load-obs-{2,3,4}-2026-10-15.json` | **FAILED, kept as recorded.** First run of the strict gates: three harness faults (a wrong source path, an over-strict mount rule, lock-file read bits), not load faults. |
+| `pdf-slots-load-attested-{2,3,4}-2026-10-15.json` | **Current smoke, `PASS`** with the strict gates from 6354bb3 on an image built from the committed sources of d0141b2 (`../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Strict gates"). 2-4 tenants only; not an acceptance of 20/25/30. |
+
