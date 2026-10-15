@@ -17,6 +17,12 @@ spec.loader.exec_module(load)
 CRITERIA = {"deadline_seconds": 180.0, "health_p95_ms": 3000.0, "floor_mib": 1500}
 
 
+def good_cleanup(tenants=4):
+    owned = {"container": tenants + 2, "volume": tenants + 1, "network": 1}
+    return {"owned": owned, "removed_by_full_id": sum(owned.values()), "removed_ids_all_full": True, "owned_remaining": {}, "unexpected_labelled": [],
+            "foreign_missing": [], "foreign_changed": []}
+
+
 def good_result(tenants=4, slots=2):
     return {
         "tenants": tenants, "slots": slots, "observation_failures": [],
@@ -25,7 +31,8 @@ def good_result(tenants=4, slots=2):
         "healthz": {"n": 300, "failures": 0, "p50_ms": 20, "p95_ms": 400, "max_ms": 900},
         "api": {"dashboard_5xx_or_no_answer": 0, "pdf_in_request_bad": 0},
         "kernel_memory": {"events": {"high": 0, "max": 0, "oom": 0, "oom_kill": 0}, "oom_killed_containers": 0, "restarts": 0},
-        "vm_min_available_mib": 3000, "admission": {"decision": "admitted", "running_tenants": tenants, "reserved_mib": tenants * 384}, "cleanup_residual_counts": {"container": 0, "volume": 0, "network": 0},
+        "vm_min_available_mib": 3000, "admission": {"decision": "admitted", "running_tenants": tenants, "reserved_mib": tenants * 384, "decided_at": 1000.0},
+        "load_started_at": 1010.0, "attestation_failures": [], "cleanup": good_cleanup(tenants), "cleanup_residual_counts": {"container": 0, "volume": 0, "network": 0},
     }
 
 
@@ -71,8 +78,20 @@ def test_the_deadline_is_declared_from_the_slots_not_from_the_result():
     ("restart", lambda r: r["kernel_memory"].update(restarts=1), "restarts"),
     ("stand limit reached", lambda r: r.update(vm_min_available_mib=1499), "stand limit reached"),
     ("no admission decision", lambda r: r.update(admission={}), "admission:"),
-    ("admission saw no running tenants", lambda r: r.update(admission={"decision": "admitted", "running_tenants": 0, "reserved_mib": 0}), "did not measure the real engine state"),
-    ("admission saw too few tenants", lambda r: r.update(admission={"decision": "refused", "running_tenants": 2, "reserved_mib": 768}), "2 running tenants"),
+    ("admission refused", lambda r: r["admission"].update(decision="refused", reason="memory"), "refused the next tenant"),
+    ("admission after the load started", lambda r: r["admission"].update(decided_at=1011.0), "not taken before the load"),
+    ("admission without a timestamp", lambda r: r["admission"].pop("decided_at"), "not taken before the load"),
+    ("attestation missing", lambda r: r.pop("attestation_failures"), "attestation:"),
+    ("attestation failed", lambda r: r.update(attestation_failures=["image: wrong"]), "attestation:"),
+    ("cleanup report missing", lambda r: r.pop("cleanup"), "no ownership report"),
+    ("cleanup recorded nothing", lambda r: r.update(cleanup=dict(good_cleanup(), owned={"container": 0, "volume": 0, "network": 0}, removed_by_full_id=0)), "recorded no objects"),
+    ("cleanup removed fewer than recorded", lambda r: r["cleanup"].update(removed_by_full_id=3), "removed by full ID"),
+    ("cleanup removed by short id", lambda r: r["cleanup"].update(removed_ids_all_full=False), "removed by full ID"),
+    ("own object remains", lambda r: r["cleanup"].update(owned_remaining={"volume": ["x"]}), "own objects remain"),
+    ("unrecorded labelled object", lambda r: r["cleanup"].update(unexpected_labelled=["container:abc"]), "were not recorded"),
+    ("foreign object gone", lambda r: r["cleanup"].update(foreign_missing=["deadbeef"]), "existed before the run are gone"),
+    ("admission saw no running tenants", lambda r: r.update(admission={"decision": "admitted", "running_tenants": 0, "reserved_mib": 0, "decided_at": 1000.0}), "did not measure the real engine state"),
+    ("admission saw too few tenants", lambda r: r.update(admission={"decision": "admitted", "running_tenants": 2, "reserved_mib": 768, "decided_at": 1000.0}), "2 running tenants"),
     ("cleanup residue", lambda r: r.update(cleanup_residual_counts={"container": 1, "volume": 0, "network": 0}), "cleanup:"),
     ("cleanup not verified", lambda r: r.update(cleanup_residual_counts=None), "cleanup:"),
 ])
