@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 import sys
 import threading
@@ -77,20 +78,63 @@ def peak_concurrency(intervals: list[tuple[float, float]]) -> int:
     return peak
 
 
-FULL_ID = __import__("re").compile(r"^[0-9a-f]{64}$")
+FULL_ID = re.compile(r"^[0-9a-f]{64}$")
+ABSENT = re.compile(r"(no such (object|container|volume|network)|network .* not found)", re.I)
+
+
+class ObservationError(RuntimeError):
+    """The engine could not be asked: the state is UNKNOWN, never 'absent' and never 'clean'."""
+
+
+class StartRefused(RuntimeError):
+    """The real admission / memory floor refused the next tenant BEFORE it was created."""
+
+    def __init__(self, index: int, info: dict):
+        super().__init__(f"tenant {index + 1} refused before creation: {info.get('reason') or info.get('code')}")
+        self.index, self.info = index, info
+
+
+def inspect_object(kind: str, reference: str) -> tuple[str, dict]:
+    """('present'|'absent'|'unknown', facts). Only Docker's own 'no such ...' answer is an authoritative absence."""
+    code, out, err = base.docker_status(kind, "inspect", reference)
+    if code == 0:
+        try:
+            data = json.loads(out)[0]
+        except (ValueError, IndexError, TypeError):
+            return "unknown", {"error": "unparseable inspect output"}
+        labels = (data.get("Config", {}).get("Labels") if kind == "container" else data.get("Labels")) or {}
+        return "present", {"id": data.get("Id") or data.get("Name"), "name": str(data.get("Name", "")).lstrip("/"), "label": labels.get(LABEL)}
+    if code > 0 and ABSENT.search(err):
+        return "absent", {}
+    return "unknown", {"error": (err or "no output")[:200], "status": code}
+
+
+def list_ids(*args: str) -> list[str]:
+    code, out, err = base.docker_status(*args)
+    if code != 0:
+        raise ObservationError(f"docker {' '.join(args[:2])} failed ({code}): {err[:160]}")
+    return out.split()
 
 
 def inventory() -> dict:
-    """Everything on the engine right now, by full ID, so that ownership can be proven before and after a run."""
-    containers = {}
-    ids = base.docker("ps", "-aq", "--no-trunc", check=False).split()
-    if ids:
-        for line in base.docker("inspect", "--format", "{{.Id}} {{.State.Running}} {{.State.StartedAt}}", *ids, check=False).splitlines():
-            fields = line.split()
-            if len(fields) == 3:
-                containers[fields[0]] = fields[1] + " " + fields[2]
-    return {"containers": containers, "volumes": set(base.docker("volume", "ls", "-q", check=False).split()),
-            "networks": set(base.docker("network", "ls", "-q", "--no-trunc", check=False).split())}
+    """Everything on the engine right now, by full ID, so that ownership can be proven before and after a run. Any failed
+    question raises: an inventory that could not be read must never look like an empty one."""
+    containers: dict[str, str] = {}
+    ids = list_ids("ps", "-aq", "--no-trunc")
+    for attempt in range(3):
+        if not ids:
+            break
+        code, out, err = base.docker_status("inspect", "--format", "{{.Id}} {{.State.Running}} {{.State.StartedAt}}", *ids)
+        if code == 0:
+            for line in out.splitlines():
+                fields = line.split()
+                if len(fields) == 3:
+                    containers[fields[0]] = fields[1] + " " + fields[2]
+            break
+        if attempt == 2 or not ABSENT.search(err):
+            raise ObservationError(f"docker inspect failed ({code}): {err[:160]}")
+        ids = list_ids("ps", "-aq", "--no-trunc")  # a container vanished between the list and the inspect: ask again
+    return {"containers": containers, "volumes": set(list_ids("volume", "ls", "-q")), "networks": set(list_ids("network", "ls", "-q", "--no-trunc"))}
 
 
 class Arm:
@@ -99,8 +143,16 @@ class Arm:
         self.run_id = uuid.uuid4().hex[:8]
         self.owned: dict[str, list[dict]] = {"container": [], "volume": [], "network": []}
         self.foreign_before: dict | None = None
+        self.unstable_before: list[str] = []
+        self.intents: list[tuple[str, str]] = []
+        self.collisions: list[str] = []
+        self.unknown: list[str] = []
         self.removed: list[dict] = []
+        self.absent_at_stop: list[str] = []
+        self.not_ours: list[str] = []
+        self.remaining: list[str] = []
         self.unexpected: list[str] = []
+        self.create_started: dict[str, float] = {}
         self.network = f"{args.prefix}-{name}-net-{self.run_id}"
         self.slot_volume = f"{args.prefix}-{name}-slots-{self.run_id}"
         self.names = [f"{args.prefix}-{name}-t{i:02d}-{self.run_id}" for i in range(1, args.tenants + 1)]
@@ -112,21 +164,88 @@ class Arm:
         """Record an object this run created. Only recorded objects are ever removed, and only by their full ID."""
         self.owned[kind].append({"id": identifier, "name": name})
 
-    def start(self) -> None:
+    def _reconcile(self, kind: str, name: str) -> None:
+        """A create whose answer was lost: ask by the pre-recorded name. Ours (our label) is adopted so it is cleaned up;
+        somebody else's is never touched and is reported; an unanswerable engine leaves the state UNKNOWN."""
+        state, info = inspect_object(kind, name)
+        if state == "present" and info.get("label") == self.run_id:
+            if not any(e["name"] == name for e in self.owned[kind]):
+                self.adopt(kind, info["id"], name)
+        elif state == "present":
+            self.collisions.append(f"{kind}:{name}")
+        elif state == "unknown":
+            self.unknown.append(f"{kind}:{name} (create answer lost, engine not answering: {info.get('error')})")
+
+    def _create(self, kind: str, name: str, *command: str) -> str:
+        """Create one object under a name reserved beforehand; it is mounted/used only after its name and label are verified."""
+        self.intents.append((kind, name))
+        try:
+            base.docker(*command)
+        except Exception:
+            self._reconcile(kind, name)
+            raise
+        state, info = inspect_object(kind, name)
+        if state != "present" or info.get("name") != name or info.get("label") != self.run_id:
+            if state == "present":
+                self.collisions.append(f"{kind}:{name}")
+            raise RuntimeError(f"refusing to use {kind} {name}: it is {state} but not created by this run (label {info.get('label')!r})")
+        self.adopt(kind, info["id"], name)
+        return info["id"]
+
+    def start(self, gate=None) -> None:
+        """Create everything. ``gate(index, name)`` is called BEFORE each tenant's first object is created; it returns a release
+        callable, or raises StartRefused, in which case no further tenant is created."""
         d = base.docker
-        self.foreign_before = inventory()
-        self.adopt("network", d("network", "create", "--internal", *self.label(), self.network), self.network)
+        first = inventory()
+        time.sleep(getattr(self.args, "stability_seconds", 3))
+        second = inventory()
+        self.foreign_before = second
+        self.unstable_before = sorted(i for i in set(first["containers"]) | set(second["containers"]) if first["containers"].get(i) != second["containers"].get(i))
+        reserved = [("network", self.network)] + ([("volume", self.slot_volume)] if self.slots else []) + [("container", n) for n in self.names] + [("volume", f"{n}-data") for n in self.names]
+        for kind, name in reserved:  # every name must be free before anything is created
+            state, info = inspect_object(kind, name)
+            if state != "absent":
+                raise RuntimeError(f"refusing to start: {kind} {name} is {state} {info.get('error', '')}".strip())
+        self._create("network", self.network, "network", "create", "--internal", *self.label(), self.network)
         if self.slots:
-            self.adopt("volume", d("volume", "create", *self.label(), self.slot_volume), self.slot_volume)
+            self._create("volume", self.slot_volume, "volume", "create", *self.label(), self.slot_volume)
             d("run", "--rm", "-u", "0", "--network", "none", "--cap-drop", "ALL", "--cap-add", "CHOWN", "--cap-add", "FOWNER", "--memory", "64m",
               "-v", f"{self.slot_volume}:/slots", base.HELPER_IMAGE, "sh", "-c", "chown 10001:10001 /slots && chmod 770 /slots")
+        refused: StartRefused | None = None
         with ThreadPoolExecutor(max_workers=3) as pool:
-            list(pool.map(self.create, range(len(self.names))))
+            futures = []
+            for i, name in enumerate(self.names):
+                release = None
+                if gate is not None:
+                    try:
+                        release = gate(i, name)
+                    except StartRefused as stop:
+                        refused = stop
+                        break
+                futures.append(pool.submit(self._create_guarded, i, release))
+            errors = []
+            for future in futures:
+                try:
+                    future.result()
+                except Exception as error:  # noqa: BLE001 - reported below, after every worker has finished
+                    errors.append(error)
+        if errors:
+            raise errors[0]
+        if refused is not None:
+            raise refused
+
+    def _create_guarded(self, i: int, release) -> None:
+        try:
+            self.create_started[self.names[i]] = time.time()
+            self.create(i)
+        finally:
+            if release is not None:
+                release()
 
     def create(self, i: int) -> None:
         d, name = base.docker, self.names[i]
         volume = f"{name}-data"
-        self.adopt("volume", d("volume", "create", *self.label(), volume), volume)
+        self._create("volume", volume, "volume", "create", *self.label(), volume)
         d("run", "--rm", "-u", "0", "--network", "none", "--cap-drop", "ALL", "--cap-add", "CHOWN", "--memory", "64m", "-v", f"{volume}:/data",
           base.HELPER_IMAGE, "chown", "10001:10001", "/data")
         d("run", "--rm", "--network", "none", "-u", "10001:10001", "--read-only", "--cap-drop", "ALL", "--memory", "1536m", "--oom-score-adj", "1000",
@@ -136,12 +255,12 @@ class Arm:
         for path, size in (("/tmp", "64m"), ("/var/lib/nginx", "64m"), ("/var/cache/nginx", "16m"), ("/var/log/nginx", "16m"), ("/run", "16m")):
             tmpfs += ["--tmpfs", f"{path}:rw,noexec,nosuid,size={size},uid=10001,gid=10001,mode=0777"]
         slot_args = ["-v", f"{self.slot_volume}:/pdf-slots", "-e", "WB_SAAS_PDF_SLOT_DIR=/pdf-slots", "-e", f"WB_SAAS_PDF_SLOTS={self.slots}"] if self.slots else []
-        self.adopt("container", d("run", "-d", "--name", name, "--network", self.network, "--network-alias", name, *self.label(),
+        self._create("container", name, "run", "-d", "--name", name, "--network", self.network, "--network-alias", name, *self.label(),
           "--label", f"wb-saas.slug={name}",  # the label the real admission code counts running tenants by
           "-u", "10001:10001", "--read-only",
           "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--memory", "1536m", "--memory-reservation", "384m", "--cpus", "1.0",
           "--oom-score-adj", "1000", "--pids-limit", "256", "-v", f"{volume}:/app/data", *tmpfs, *slot_args, *base.isolated_env_args(),
-          "-e", f"MH_ALLOWED_HOSTS=localhost,127.0.0.1,{name}", "-e", "MPLCONFIGDIR=/tmp/matplotlib", "-e", "HOME=/app", self.args.image), name)
+          "-e", f"MH_ALLOWED_HOSTS=localhost,127.0.0.1,{name}", "-e", "MPLCONFIGDIR=/tmp/matplotlib", "-e", "HOME=/app", self.args.image)
 
     def wait_healthy(self, names=None, timeout=300) -> None:
         deadline, pending = time.time() + timeout, set(names or self.names)
@@ -164,52 +283,68 @@ class Arm:
         states = [self.state(n)["runs"] for n in self.names]
         return all(runs and all(r["status"] in ("ok", "error") for r in runs) for runs in states)
 
-    def _owns(self, kind: str, entry: dict) -> bool:
-        """The object still carries this run's label and a name this run gave it, and its full ID is the recorded one."""
-        template = {"container": "{{.Id}}|{{.Name}}|{{index .Config.Labels \"%s\"}}" % LABEL, "volume": "{{.Name}}|{{.Name}}|{{index .Labels \"%s\"}}" % LABEL,
-                    "network": "{{.Id}}|{{.Name}}|{{index .Labels \"%s\"}}" % LABEL}[kind]
-        out = base.docker(kind, "inspect", "--format", template, entry["id"] if kind != "volume" else entry["name"], check=False)
-        fields = out.split("|")
-        if len(fields) != 3:
-            return False
-        identifier, name, label = fields
-        return (name.lstrip("/") == entry["name"] and label == self.run_id
-                and (kind == "volume" or (identifier == entry["id"] and bool(FULL_ID.match(entry["id"])))))
+    def _ours(self, kind: str, entry: dict, info: dict) -> bool:
+        """Still carries this run's label and the name this run gave it; containers and networks also keep the recorded full ID."""
+        return (info.get("name") == entry["name"] and info.get("label") == self.run_id
+                and (kind == "volume" or (info.get("id") == entry["id"] and bool(FULL_ID.match(entry["id"])))))
 
     def stop(self) -> None:
-        """Remove only what this run recorded, by full ID, after re-checking name and label. Anything else that carries the run
-        label is reported as unexpected and left alone."""
+        """Remove only what this run recorded, by full ID, after re-checking name and label. A removal counts only when a
+        following authoritative query says the object is gone; anything else is remaining or UNKNOWN."""
+        for kind, name in self.intents:  # a name reserved but never adopted: ours and leaked, someone else's, or unknown
+            if not any(e["name"] == name for e in self.owned[kind]):
+                self._reconcile(kind, name)
         for kind in ("container", "network", "volume"):
             for entry in self.owned[kind]:
-                if not self._owns(kind, entry):
-                    continue  # already gone or no longer ours: never touch it
-                if kind == "container":
-                    base.docker("rm", "-f", "-v", entry["id"], check=False, timeout=600)
-                elif kind == "network":
-                    base.docker("network", "rm", entry["id"], check=False)
+                reference = entry["name"] if kind == "volume" else entry["id"]
+                label = f"{kind}:{entry['name']}"
+                state, info = inspect_object(kind, reference)
+                if state == "absent":
+                    self.absent_at_stop.append(label)
+                    continue
+                if state == "unknown":
+                    self.unknown.append(f"{label} ({info.get('error')})")
+                    continue
+                if not self._ours(kind, entry, info):
+                    self.not_ours.append(label)
+                    continue
+                command = ("rm", "-f", "-v", reference) if kind == "container" else (kind, "rm", *(("-f",) if kind == "volume" else ()), reference)
+                code, _, err = base.docker_status(*command, timeout=600)
+                state, info = inspect_object(kind, reference)
+                if state == "absent":
+                    self.removed.append({"kind": kind, "id": entry["id"], "name": entry["name"]})
+                elif state == "present":
+                    self.remaining.append(f"{label} (rm status {code}: {err[:100]})")
                 else:
-                    base.docker("volume", "rm", "-f", entry["name"], check=False)
-                self.removed.append({"kind": kind, "id": entry["id"], "name": entry["name"]})
+                    self.unknown.append(f"{label} (removal unverifiable: {info.get('error')})")
         recorded = {kind: {e["id"] if kind != "volume" else e["name"] for e in entries} for kind, entries in self.owned.items()}
-        labelled = {"container": base.docker("ps", "-aq", "--no-trunc", "--filter", f"label={LABEL}={self.run_id}", check=False).split(),
-                    "volume": base.docker("volume", "ls", "-q", "--filter", f"label={LABEL}={self.run_id}", check=False).split(),
-                    "network": base.docker("network", "ls", "-q", "--no-trunc", "--filter", f"label={LABEL}={self.run_id}", check=False).split()}
-        self.unexpected = sorted(f"{kind}:{ident}" for kind, found in labelled.items() for ident in found if ident not in recorded[kind])
+        try:
+            labelled = {"container": list_ids("ps", "-aq", "--no-trunc", "--filter", f"label={LABEL}={self.run_id}"),
+                        "volume": list_ids("volume", "ls", "-q", "--filter", f"label={LABEL}={self.run_id}"),
+                        "network": list_ids("network", "ls", "-q", "--no-trunc", "--filter", f"label={LABEL}={self.run_id}")}
+            self.unexpected = sorted(f"{kind}:{ident}" for kind, found in labelled.items() for ident in found if ident not in recorded[kind])
+        except ObservationError as error:
+            self.unknown.append(f"label listing ({error})")
 
     def cleanup_report(self) -> dict:
-        """After stop(): proof that everything this run created is gone, that nothing unrecorded carries its label, and that
-        every object that existed before the run is still there, containers in the same state."""
-        now = inventory()
+        """After stop(): everything this run created is gone (confirmed by the engine), nothing unrecorded carries its label,
+        and every object that existed before the run still exists, containers in the same state. A question the engine could
+        not answer is listed as UNKNOWN and fails the act."""
+        errors: list[str] = []
+        now = None
+        try:
+            now = inventory()
+        except ObservationError as error:
+            errors.append(str(error))
         before = self.foreign_before or {"containers": {}, "volumes": set(), "networks": set()}
-        remaining = {kind: [e["id"] for e in entries if self._exists(kind, e)] for kind, entries in self.owned.items()}
+        stable = {i: s for i, s in before["containers"].items() if i not in self.unstable_before}
         return {"owned": {kind: len(entries) for kind, entries in self.owned.items()}, "removed_by_full_id": len(self.removed),
                 "removed_ids_all_full": all(bool(FULL_ID.match(r["id"])) or r["kind"] == "volume" for r in self.removed),
-                "owned_remaining": {kind: ids for kind, ids in remaining.items() if ids}, "unexpected_labelled": list(self.unexpected),
-                "foreign_missing": sorted([i for i in before["containers"] if i not in now["containers"]] + sorted(before["volumes"] - now["volumes"]) + sorted(before["networks"] - now["networks"])),
-                "foreign_changed": sorted(i for i, state in before["containers"].items() if i in now["containers"] and now["containers"][i] != state)}
-
-    def _exists(self, kind: str, entry: dict) -> bool:
-        return bool(base.docker(kind, "inspect", "--format", "{{.Name}}", entry["name"] if kind == "volume" else entry["id"], check=False))
+                "already_absent": list(self.absent_at_stop), "not_ours": list(self.not_ours), "owned_remaining": list(self.remaining),
+                "unknown": list(self.unknown), "observation_errors": errors, "unexpected_labelled": list(self.unexpected), "foreign_collisions": list(self.collisions),
+                "foreign_missing": None if now is None else sorted([i for i in before["containers"] if i not in now["containers"]] + sorted(before["volumes"] - now["volumes"]) + sorted(before["networks"] - now["networks"])),
+                "foreign_changed": None if now is None else sorted(i for i, state in stable.items() if i in now["containers"] and now["containers"][i] != state),
+                "foreign_unstable_before_the_run": list(self.unstable_before)}
 
 
 def vm_available(via: str) -> int:

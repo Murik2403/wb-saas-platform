@@ -19,8 +19,13 @@ CRITERIA = {"deadline_seconds": 180.0, "health_p95_ms": 3000.0, "floor_mib": 150
 
 def good_cleanup(tenants=4):
     owned = {"container": tenants + 2, "volume": tenants + 1, "network": 1}
-    return {"owned": owned, "removed_by_full_id": sum(owned.values()), "removed_ids_all_full": True, "owned_remaining": {}, "unexpected_labelled": [],
-            "foreign_missing": [], "foreign_changed": []}
+    return {"owned": owned, "removed_by_full_id": sum(owned.values()), "removed_ids_all_full": True, "already_absent": [], "not_ours": [], "owned_remaining": [],
+            "unknown": [], "observation_errors": [], "unexpected_labelled": [], "foreign_collisions": [], "foreign_missing": [], "foreign_changed": [],
+            "foreign_unstable_before_the_run": []}
+
+
+def good_gate(tenants=4):
+    return [{"index": i, "name": f"t{i}", "at": 900.0 + i, "create_started_at": 901.0 + i, "decision": "admitted"} for i in range(tenants)]
 
 
 def good_result(tenants=4, slots=2):
@@ -32,7 +37,7 @@ def good_result(tenants=4, slots=2):
         "api": {"dashboard_5xx_or_no_answer": 0, "pdf_in_request_bad": 0},
         "kernel_memory": {"events": {"high": 0, "max": 0, "oom": 0, "oom_kill": 0}, "oom_killed_containers": 0, "restarts": 0},
         "vm_min_available_mib": 3000, "admission": {"decision": "admitted", "running_tenants": tenants, "reserved_mib": tenants * 384, "decided_at": 1000.0},
-        "load_started_at": 1010.0, "attestation_failures": [], "cleanup": good_cleanup(tenants), "cleanup_residual_counts": {"container": 0, "volume": 0, "network": 0},
+        "load_started_at": 1010.0, "start_gate": good_gate(tenants), "attestation_failures": [], "cleanup": good_cleanup(tenants), "cleanup_residual_counts": {"container": 0, "volume": 0, "network": 0},
     }
 
 
@@ -85,11 +90,26 @@ def test_the_deadline_is_declared_from_the_slots_not_from_the_result():
     ("attestation failed", lambda r: r.update(attestation_failures=["image: wrong"]), "attestation:"),
     ("cleanup report missing", lambda r: r.pop("cleanup"), "no ownership report"),
     ("cleanup recorded nothing", lambda r: r.update(cleanup=dict(good_cleanup(), owned={"container": 0, "volume": 0, "network": 0}, removed_by_full_id=0)), "recorded no objects"),
-    ("cleanup removed fewer than recorded", lambda r: r["cleanup"].update(removed_by_full_id=3), "removed by full ID"),
-    ("cleanup removed by short id", lambda r: r["cleanup"].update(removed_ids_all_full=False), "removed by full ID"),
-    ("own object remains", lambda r: r["cleanup"].update(owned_remaining={"volume": ["x"]}), "own objects remain"),
+    ("cleanup confirmed fewer than recorded", lambda r: r["cleanup"].update(removed_by_full_id=3), "confirmed gone by full ID"),
+    ("cleanup removed by short id", lambda r: r["cleanup"].update(removed_ids_all_full=False), "confirmed gone by full ID"),
+    ("own object remains", lambda r: r["cleanup"].update(owned_remaining=["volume:x (rm status 1)"]), "own objects remain"),
+    ("removal unverifiable (UNKNOWN)", lambda r: r["cleanup"].update(unknown=["container:t1 (removal unverifiable)"]), "state UNKNOWN"),
+    ("engine could not be asked", lambda r: r["cleanup"].update(observation_errors=["docker ps failed"]), "could not be asked"),
+    ("recorded object vanished", lambda r: r["cleanup"].update(already_absent=["container:t1"]), "vanished before cleanup"),
+    ("recorded object changed hands", lambda r: r["cleanup"].update(not_ours=["volume:v"]), "no longer carry"),
     ("unrecorded labelled object", lambda r: r["cleanup"].update(unexpected_labelled=["container:abc"]), "were not recorded"),
+    ("name collision with a foreign object", lambda r: r["cleanup"].update(foreign_collisions=["volume:customer"]), "collided"),
     ("foreign object gone", lambda r: r["cleanup"].update(foreign_missing=["deadbeef"]), "existed before the run are gone"),
+    ("foreign missing unknown", lambda r: r["cleanup"].update(foreign_missing=None), "UNKNOWN, the engine could not be asked"),
+    ("foreign changed unknown", lambda r: r["cleanup"].update(foreign_changed=None), "UNKNOWN, the engine could not be asked"),
+    ("foreign container changed state", lambda r: r["cleanup"].update(foreign_changed=["f" * 64]), "changed state"),
+    ("report lacks a list", lambda r: r["cleanup"].pop("unknown"), "lacks unknown"),
+    ("report lacks the unstable list", lambda r: r["cleanup"].pop("foreign_unstable_before_the_run"), "lacks foreign_unstable_before_the_run"),
+    ("start gate missing", lambda r: r.pop("start_gate"), "BEFORE its first object"),
+    ("start gate for too few tenants", lambda r: r["start_gate"].pop(), "BEFORE its first object"),
+    ("a tenant was refused by the gate", lambda r: r["start_gate"][1].update(decision="refused"), "BEFORE its first object"),
+    ("gate decided after the tenant was created", lambda r: r["start_gate"][1].update(at=950.0), "BEFORE its first object"),
+    ("gate without creation time", lambda r: r["start_gate"][0].pop("create_started_at"), "BEFORE its first object"),
     ("admission saw no running tenants", lambda r: r.update(admission={"decision": "admitted", "running_tenants": 0, "reserved_mib": 0, "decided_at": 1000.0}), "did not measure the real engine state"),
     ("admission saw too few tenants", lambda r: r.update(admission={"decision": "admitted", "running_tenants": 2, "reserved_mib": 768, "decided_at": 1000.0}), "2 running tenants"),
     ("cleanup residue", lambda r: r.update(cleanup_residual_counts={"container": 1, "volume": 0, "network": 0}), "cleanup:"),

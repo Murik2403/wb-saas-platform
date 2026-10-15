@@ -6,7 +6,9 @@ Dockerfile copies from ``tenant-app/`` and ``mh-redesign-lab/tenant-api/`` (take
 committed content with LF endings, never the working tree) over a base image, and labels the result:
 
   wb-saas.bench-head               the commit the sources came from (bench_pdf_slots_load compares its source trees with HEAD's)
-  wb-saas.bench-base-image         id of the base image the dependencies, nginx and frontend come from
+  wb-saas.bench-base-image         id of the base image the dependencies, nginx and frontend come from (the build is FROM that
+                                   inspected immutable ID, with --pull=false --network none, and the result is refused unless it
+                                   starts with exactly the base's layers and keeps its runtime config)
   wb-saas.bench-base-revision      the revision label of that base image
 
 It refuses when the base would not be valid: a dirty tree, or any difference between the base's revision and HEAD in the
@@ -72,6 +74,28 @@ def render_dockerfile(base_image: str, lines: list[tuple[list[str], str]], label
     return "\n".join(body) + "\n"
 
 
+INHERITED_CONFIG = ("Entrypoint", "Cmd", "User", "WorkingDir", "Env", "ExposedPorts", "Volumes", "Healthcheck", "Shell", "StopSignal")
+
+
+def inheritance_failures(base_info: dict, built_info: dict) -> list[str]:
+    """The built image must be the base plus ONE overlay: every base layer first and unchanged, the runtime configuration
+    (entrypoint, user, env, volumes, healthcheck...) identical, and exactly the layers of the COPY steps on top."""
+    failed = []
+    base_layers = (base_info.get("RootFS") or {}).get("Layers") or []
+    built_layers = (built_info.get("RootFS") or {}).get("Layers") or []
+    if not base_layers or built_layers[:len(base_layers)] != base_layers:
+        failed.append("the built image does not start with exactly the base image's layers")
+    if len(built_layers) <= len(base_layers):
+        failed.append("the built image added no layer: nothing was overlaid")
+    base_config, built_config = base_info.get("Config") or {}, built_info.get("Config") or {}
+    for key in INHERITED_CONFIG:
+        if base_config.get(key) != built_config.get(key):
+            failed.append(f"the runtime config {key} differs from the base: {base_config.get(key)!r} -> {built_config.get(key)!r}")
+    if built_info.get("Architecture") != base_info.get("Architecture") or built_info.get("Os") != base_info.get("Os"):
+        failed.append("the platform differs from the base")
+    return failed
+
+
 def runtime_changes(base_revision: str) -> list[str]:
     return git("diff", "--name-only", base_revision, "HEAD", "--", *RUNTIME_PATHS).splitlines()
 
@@ -104,10 +128,15 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="bench-overlay-") as stage:
         stage_path = Path(stage)
         stage_sources(stage_path)
-        (stage_path / "Dockerfile").write_text(render_dockerfile(args.base, lines, labels), encoding="utf-8")
-        base.docker("build", "-q", "-t", args.tag, str(stage_path), timeout=900)
+        # FROM the inspected immutable ID, not the mutable tag; no pull and no network while building
+        (stage_path / "Dockerfile").write_text(render_dockerfile(info["Id"], lines, labels), encoding="utf-8")
+        base.docker("build", "--pull=false", "--network", "none", "-q", "-t", args.tag, str(stage_path), timeout=900)
     built = json.loads(base.docker("image", "inspect", args.tag))[0]
-    print(json.dumps({"tag": args.tag, "image_id": built["Id"], "head": head, "base_image": info["Id"], "base_revision": base_revision, "copied": len(lines)}))
+    problems = inheritance_failures(info, built)
+    if problems:
+        base.docker("image", "rm", args.tag, check=False)
+        raise SystemExit("Refusing the built image: " + "; ".join(problems))
+    print(json.dumps({"tag": args.tag, "image_id": built["Id"], "head": head, "base_image": info["Id"], "base_revision": base_revision, "copied": len(lines), "from": info["Id"], "inherited_layers": len(info["RootFS"]["Layers"]), "layers": len(built["RootFS"]["Layers"])}))
     return 0
 
 

@@ -65,3 +65,47 @@ def test_changed_dependencies_or_runtime_files_force_a_full_build():
     with pytest.raises(SystemExit) as refused:
         run_main("a" * 40, ["tenant-app/requirements.lock"])
     assert "Do a full build" in str(refused.value) and "requirements.lock" in str(refused.value)
+
+
+BASE = {"Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": ["sha256:a", "sha256:b"]},
+        "Config": {"Entrypoint": ["/usr/local/bin/x"], "Cmd": None, "User": "", "WorkingDir": "/app/tenant-app", "Env": ["A=1"], "ExposedPorts": {"8501/tcp": {}}, "Volumes": {"/app/tenant-app/data": {}},
+                   "Healthcheck": {"Test": ["CMD", "true"]}}}
+
+
+def built(**changes):
+    info = {"Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": ["sha256:a", "sha256:b", "sha256:c"]}, "Config": dict(BASE["Config"], Labels={"x": "y"})}
+    for key, value in changes.items():
+        if key == "Config":
+            info["Config"] = dict(info["Config"], **value)
+        else:
+            info[key] = value
+    return info
+
+
+def test_an_overlay_on_the_unchanged_base_is_accepted():
+    assert overlay.inheritance_failures(BASE, built()) == []
+
+
+@pytest.mark.parametrize("name,info,fragment", [
+    ("a base layer replaced", built(RootFS={"Layers": ["sha256:a", "sha256:z", "sha256:c"]}), "start with exactly"),
+    ("base layers reordered", built(RootFS={"Layers": ["sha256:b", "sha256:a", "sha256:c"]}), "start with exactly"),
+    ("nothing overlaid", built(RootFS={"Layers": ["sha256:a", "sha256:b"]}), "added no layer"),
+    ("entrypoint changed", built(Config={"Entrypoint": ["/bin/sh"]}), "Entrypoint"),
+    ("user changed", built(Config={"User": "0"}), "User"),
+    ("env changed", built(Config={"Env": ["A=2"]}), "Env"),
+    ("volume added", built(Config={"Volumes": {}}), "Volumes"),
+    ("healthcheck removed", built(Config={"Healthcheck": None}), "Healthcheck"),
+    ("other architecture", built(Architecture="arm64"), "platform"),
+])
+def test_each_departure_from_the_base_is_refused(name, info, fragment):
+    problems = overlay.inheritance_failures(BASE, info)
+    assert problems and any(fragment in line for line in problems), (name, problems)
+
+
+def test_a_base_without_layers_is_refused():
+    assert overlay.inheritance_failures({"Config": {}}, built())
+
+
+def test_the_dockerfile_is_built_from_the_immutable_id():
+    text = overlay.render_dockerfile("sha256:" + "1" * 64, overlay.copy_lines(DOCKERFILE), {"k": "v"})
+    assert text.splitlines()[0] == "FROM sha256:" + "1" * 64

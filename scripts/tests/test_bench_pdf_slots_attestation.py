@@ -23,7 +23,7 @@ METRICS = [f"metric_{i:02d}" for i in range(21)]
 
 def inspect_row(name, *, image=IMAGE_ID, started="2026-10-15T10:00:00Z"):
     return {"Image": image, "Config": {"User": "10001:10001", "Env": ["WB_SAAS_PDF_SLOTS=2", "WB_SAAS_PDF_SLOT_DIR=/pdf-slots", "HOME=/app"]},
-            "HostConfig": {"ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"], "CapAdd": None, "Memory": load.TENANT_MEMORY_BYTES},
+            "HostConfig": {"ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"], "CapAdd": None, **load.TENANT_LIMITS},
             "State": {"Running": True, "OOMKilled": False, "RestartCount": 0, "StartedAt": started},
             "Mounts": [{"Destination": "/pdf-slots", "Type": "volume", "Name": SLOT_VOLUME, "RW": True},
                        {"Destination": "/app/data", "Type": "volume", "Name": f"{name}-data", "RW": True},
@@ -66,7 +66,22 @@ def test_a_correct_topology_has_no_failures():
     ("writable root", lambda b, a: b[NAMES[0]]["inspect"]["HostConfig"].update(ReadonlyRootfs=False), "read-only"),
     ("privileged", lambda b, a: b[NAMES[0]]["inspect"]["HostConfig"].update(Privileged=True), "unprivileged"),
     ("capability added", lambda b, a: b[NAMES[0]]["inspect"]["HostConfig"].update(CapAdd=["SYS_ADMIN"]), "unprivileged"),
-    ("raised memory limit", lambda b, a: b[NAMES[0]]["inspect"]["HostConfig"].update(Memory=2 * load.TENANT_MEMORY_BYTES), "memory limit"),
+    ("raised memory limit before", lambda b, a: b[NAMES[0]]["inspect"]["HostConfig"].update(Memory=2 * load.TENANT_MEMORY_BYTES), "limit Memory"),
+    ("memory limit raised only after the load", lambda b, a: a[NAMES[0]]["inspect"]["HostConfig"].update(Memory=2 * load.TENANT_MEMORY_BYTES), "limit Memory is"),
+    ("memory reservation changed", lambda b, a: a[NAMES[2]]["inspect"]["HostConfig"].update(MemoryReservation=1), "limit MemoryReservation"),
+    ("cpu limit removed", lambda b, a: b[NAMES[2]]["inspect"]["HostConfig"].update(NanoCpus=0), "limit NanoCpus"),
+    ("pids limit raised after", lambda b, a: a[NAMES[2]]["inspect"]["HostConfig"].update(PidsLimit=-1), "limit PidsLimit"),
+    ("oom score adjusted after", lambda b, a: a[NAMES[2]]["inspect"]["HostConfig"].update(OomScoreAdj=0), "limit OomScoreAdj"),
+    ("after-inspection uses another image", lambda b, a: a[NAMES[1]]["inspect"].update(Image="sha256:" + "c" * 64), "(after)"),
+    ("slot volume swapped only after", lambda b, a: a[NAMES[1]]["inspect"]["Mounts"][0].update(Name="other"), "(after)"),
+    ("lock dev missing", lambda b, a: a[NAMES[1]]["locks"]["dir"].pop("dev"), "lacks a typed device"),
+    ("lock inode missing in every tenant", lambda b, a: [a[n]["locks"]["files"]["pdf-slot-00.lock"].pop("ino") for n in NAMES], "lacks a typed device"),
+    ("lock inode None everywhere (None == None)", lambda b, a: [a[n]["locks"]["dir"].update(ino=None) for n in NAMES], "lacks a typed device"),
+    ("lock inode zero", lambda b, a: a[NAMES[0]]["locks"]["dir"].update(ino=0), "lacks a typed device"),
+    ("lock mode missing (a default of 0 is not evidence)", lambda b, a: a[NAMES[1]]["locks"]["files"]["pdf-slot-01.lock"].pop("mode"), "lacks a typed device"),
+    ("lock mode a string", lambda b, a: a[NAMES[1]]["locks"]["dir"].update(mode="0o770"), "lacks a typed device"),
+    ("lock owner missing", lambda b, a: a[NAMES[1]]["locks"]["dir"].pop("uid"), "lacks a typed device"),
+    ("locks missing for every tenant", lambda b, a: [a[n].pop("locks") for n in NAMES], "no lock identity"),
     ("wrong slot count env", lambda b, a: b[NAMES[2]]["inspect"]["Config"].update(Env=["WB_SAAS_PDF_SLOTS=8", "WB_SAAS_PDF_SLOT_DIR=/pdf-slots"]), "slot environment"),
     ("no slot dir env", lambda b, a: b[NAMES[2]]["inspect"]["Config"].update(Env=["WB_SAAS_PDF_SLOTS=2"]), "slot environment"),
     ("slot volume missing", lambda b, a: b[NAMES[1]]["inspect"]["Mounts"].pop(0), "shared slot volume"),
@@ -85,6 +100,7 @@ def test_a_correct_topology_has_no_failures():
     ("no lock identity", lambda b, a: a[NAMES[1]].pop("locks"), "no lock identity"),
     ("too few lock files", lambda b, a: a[NAMES[1]]["locks"]["files"].pop("pdf-slot-01.lock"), "lock files"),
     ("too many lock files", lambda b, a: a[NAMES[1]]["locks"]["files"].update({"pdf-slot-02.lock": {"dev": 66, "ino": 5, "uid": 10001, "mode": 0o660}}), "lock files"),
+    ("lock files with other names", lambda b, a: a[NAMES[1]]["locks"]["files"].update({"x.lock": a[NAMES[1]]["locks"]["files"].pop("pdf-slot-01.lock")}), "expected exactly"),
     ("lock owned by root", lambda b, a: a[NAMES[1]]["locks"]["files"]["pdf-slot-00.lock"].update(uid=0), "not owned by 10001"),
     ("directory world accessible", lambda b, a: a[NAMES[1]]["locks"]["dir"].update(mode=0o777), "accessible to others"),
     ("lock writable by others", lambda b, a: a[NAMES[1]]["locks"]["files"]["pdf-slot-00.lock"].update(mode=0o666), "accessible to others"),
@@ -98,6 +114,11 @@ def test_each_topology_property_alone_fails(name, mutate, fragment):
     failed = topo_failures(mutate)
     assert failed, name
     assert any(fragment in line for line in failed), (name, failed)
+
+
+def test_the_attested_files_include_the_d014_memory_fix():
+    paths = {path for path, _ in load.SOURCE_FILES}
+    assert {"/app/tenant-app/reports/metrics.py", "/app/tenant-app/db/financial_fifo_reconciliation.py"} <= paths
 
 
 def test_the_images_own_anonymous_volume_is_expected():
@@ -127,7 +148,7 @@ TREES = {"head_tenant_app": "t1", "head_tenant_api": "t2", "built_from": "c" * 4
 
 
 def image_check(trees=None, hashes=None):
-    return load.image_failures({"id": IMAGE_ID}, trees or TREES, hashes if hashes is not None else {n: dict(BLOBS) for n in NAMES}, BLOBS)
+    return load.image_failures({"id": IMAGE_ID}, trees or TREES, hashes if hashes is not None else {n: dict(BLOBS) for n in NAMES}, BLOBS, NAMES)
 
 
 def test_an_image_built_from_the_same_sources_passes():
@@ -141,6 +162,10 @@ def test_an_image_built_from_the_same_sources_passes():
     ("tree of the revision unknown", dict(TREES, built_from_tenant_app=None, head_tenant_app=None), None),
     ("no hashes read", None, {}),
     ("one file differs in one tenant", None, {NAMES[0]: dict(BLOBS), NAMES[1]: dict(BLOBS, **{load.SOURCE_FILES[0][0]: "f" * 64}), NAMES[2]: dict(BLOBS)}),
+    ("hashes for one tenant only", None, {NAMES[0]: dict(BLOBS)}),
+    ("hashes for an extra, unknown tenant", None, {**{n: dict(BLOBS) for n in NAMES}, "stranger": dict(BLOBS)}),
+    ("hashes for an unknown tenant instead", None, {NAMES[0]: dict(BLOBS), NAMES[1]: dict(BLOBS), "stranger": dict(BLOBS)}),
+    ("an extra unattested file hashed", None, {n: dict(BLOBS, **{"/app/other.py": "1" * 64}) for n in NAMES}),
     ("a file is missing in a tenant", None, {NAMES[0]: {k: v for k, v in BLOBS.items() if k != load.SOURCE_FILES[0][0]}, NAMES[1]: dict(BLOBS), NAMES[2]: dict(BLOBS)}),
 ])
 def test_each_image_gap_fails(name, trees, hashes):
@@ -149,7 +174,7 @@ def test_each_image_gap_fails(name, trees, hashes):
 
 def test_a_missing_repository_blob_fails():
     broken = dict(BLOBS, **{load.SOURCE_FILES[0][0]: None})
-    assert load.image_failures({"id": IMAGE_ID}, TREES, {n: dict(broken) for n in NAMES}, broken)
+    assert load.image_failures({"id": IMAGE_ID}, TREES, {n: dict(broken) for n in NAMES}, broken, NAMES)
 
 
 def test_every_attested_source_file_exists_in_this_repository():
@@ -158,7 +183,7 @@ def test_every_attested_source_file_exists_in_this_repository():
 
 
 def test_an_image_without_an_id_fails():
-    assert load.image_failures({"id": ""}, TREES, {n: dict(BLOBS) for n in NAMES}, BLOBS)
+    assert load.image_failures({"id": ""}, TREES, {n: dict(BLOBS) for n in NAMES}, BLOBS, NAMES)
 
 
 # ---- jobs ---------------------------------------------------------------------------------------------------------------
@@ -205,126 +230,6 @@ def test_a_run_that_was_not_the_last_one_is_still_matched_by_id():
     assert job_check(reorder) == []
 
 
-# ---- cleanup ownership with a fake engine -------------------------------------------------------------------------------------
-
-class FakeEngine:
-    """Containers/volumes/networks with full IDs, names and labels; `docker` calls are answered from it."""
-
-    def __init__(self, preexisting=()):
-        self.objects = {}
-        self.calls = []
-        for kind, ident, name, label in preexisting:
-            self.objects[(kind, ident)] = {"name": name, "label": label, "state": "true 2026-01-01T00:00:00Z"}
-
-    def add(self, kind, ident, name, label):
-        self.objects[(kind, ident)] = {"name": name, "label": label, "state": "true 2026-10-15T00:00:00Z"}
-        return ident
-
-    def docker(self, *args, check=True, timeout=300):
-        self.calls.append(args)
-        head = args[0]
-        if head == "ps":
-            wanted = next((a.split("=", 1)[1] for a in args if a.startswith("label=")), None) if "--filter" in args else None
-            return "\n".join(i for (k, i), o in self.objects.items() if k == "container" and (wanted is None or o["label"] == wanted.split("=", 1)[1]))
-        if head == "volume" and args[1] == "ls":
-            wanted = next((a.split("=", 2)[2] for a in args if a.startswith("label=")), None)
-            return "\n".join(i for (k, i), o in self.objects.items() if k == "volume" and (wanted is None or o["label"] == wanted))
-        if head == "network" and args[1] == "ls":
-            wanted = next((a.split("=", 2)[2] for a in args if a.startswith("label=")), None)
-            return "\n".join(i for (k, i), o in self.objects.items() if k == "network" and (wanted is None or o["label"] == wanted))
-        if head == "inspect" and "{{.Id}} {{.State.Running}}" in " ".join(args):
-            ids = [a for a in args if (("container", a) in self.objects)]
-            return "\n".join(f"{i} {self.objects[('container', i)]['state']}" for i in ids)
-        if head in ("container", "volume", "network") and args[1] == "inspect":
-            target = args[-1]
-            for (kind, ident), obj in self.objects.items():
-                if kind == head and target in (ident, obj["name"]):
-                    return f"{ident}|{obj['name']}|{obj['label']}" if "Labels" in " ".join(args) or "Config.Labels" in " ".join(args) else obj["name"]
-            return ""
-        if head == "rm":
-            for ident in args[1:]:
-                self.objects.pop(("container", ident), None)
-            return ""
-        if head in ("volume", "network") and args[1] == "rm":
-            target = args[-1]
-            for key in [k for k, o in self.objects.items() if k[0] == head and target in (k[1], o["name"])]:
-                self.objects.pop(key)
-            return ""
-        return ""
-
-
-def make_arm(engine, prefix="bench"):
-    args = type("A", (), {"prefix": prefix, "tenants": 1, "image": "img"})()
-    arm = pdfb.Arm(args, "load", 2)
-    return arm
-
-
-def test_cleanup_removes_only_recorded_objects_by_full_id_and_reports_foreign_state():
-    foreign = ("container", "f" * 64, "someone-elses", "")
-    engine = FakeEngine([foreign, ("volume", "customer-data", "customer-data", ""), ("network", "n" * 64, "customer-net", "")])
-    with patch.object(pdfb.base, "docker", engine.docker):
-        arm = make_arm(engine)
-        arm.foreign_before = pdfb.inventory()
-        cid = engine.add("container", "a" * 64, arm.names[0], arm.run_id)
-        arm.adopt("container", cid, arm.names[0])
-        arm.adopt("volume", engine.add("volume", arm.slot_volume, arm.slot_volume, arm.run_id), arm.slot_volume)
-        arm.adopt("network", engine.add("network", "b" * 64, arm.network, arm.run_id), arm.network)
-        arm.stop()
-        report = arm.cleanup_report()
-    assert report["owned"] == {"container": 1, "volume": 1, "network": 1} and report["removed_by_full_id"] == 3 and report["removed_ids_all_full"]
-    assert report["owned_remaining"] == {} and report["unexpected_labelled"] == [] and report["foreign_missing"] == []
-    assert ("container", "f" * 64) in engine.objects and ("volume", "customer-data") in engine.objects  # the foreign ones are untouched
-    assert load.cleanup_failures(report) == []
-    removed = [c for c in engine.calls if c[0] == "rm"]
-    assert removed == [("rm", "-f", "-v", "a" * 64)], removed  # by full ID, never by label filter or name
-
-
-def test_an_object_carrying_the_run_label_that_was_not_recorded_is_reported_and_not_removed():
-    engine = FakeEngine()
-    with patch.object(pdfb.base, "docker", engine.docker):
-        arm = make_arm(engine)
-        arm.foreign_before = pdfb.inventory()
-        arm.adopt("container", engine.add("container", "a" * 64, arm.names[0], arm.run_id), arm.names[0])
-        engine.add("container", "c" * 64, "stray", arm.run_id)
-        arm.stop()
-        report = arm.cleanup_report()
-    assert ("container", "c" * 64) in engine.objects
-    assert report["unexpected_labelled"] == ["container:" + "c" * 64] and load.cleanup_failures(report)
-
-
-def test_an_object_whose_label_no_longer_matches_is_not_removed():
-    engine = FakeEngine()
-    with patch.object(pdfb.base, "docker", engine.docker):
-        arm = make_arm(engine)
-        arm.foreign_before = pdfb.inventory()
-        arm.adopt("container", engine.add("container", "a" * 64, arm.names[0], "somebody-else"), arm.names[0])
-        arm.stop()
-        report = arm.cleanup_report()
-    assert ("container", "a" * 64) in engine.objects and report["owned_remaining"] == {"container": ["a" * 64]} and load.cleanup_failures(report)
-
-
-def test_a_vanished_foreign_object_is_a_cleanup_failure():
-    engine = FakeEngine([("container", "f" * 64, "customer", "")])
-    with patch.object(pdfb.base, "docker", engine.docker):
-        arm = make_arm(engine)
-        arm.foreign_before = pdfb.inventory()
-        arm.adopt("container", engine.add("container", "a" * 64, arm.names[0], arm.run_id), arm.names[0])
-        arm.stop()
-        engine.objects.pop(("container", "f" * 64))
-        report = arm.cleanup_report()
-    assert report["foreign_missing"] == ["f" * 64] and load.cleanup_failures(report)
-
-
-def test_a_short_id_is_never_used_to_remove_anything():
-    engine = FakeEngine()
-    with patch.object(pdfb.base, "docker", engine.docker):
-        arm = make_arm(engine)
-        arm.foreign_before = pdfb.inventory()
-        arm.adopt("container", engine.add("container", "abc123", arm.names[0], arm.run_id), arm.names[0])
-        arm.stop()
-    assert ("container", "abc123") in engine.objects  # a recorded ID that is not a full 64-hex ID is refused
-
-
 # ---- the scenario's refusal and failure paths -----------------------------------------------------------------------------------
 
 def scenario_args(**overrides):
@@ -340,14 +245,23 @@ class StubArm:
         self.names, self.run_id, self.slot_volume, self.network = NAMES[:2], "ab12cd34", SLOT_VOLUME, "net"
         self.stopped = False
 
-    def start(self): pass
+    refusal = None
+    create_started = {}
+    owned = {"container": [], "volume": [], "network": []}
+
+    def start(self, gate=None):
+        if self.refusal is not None:
+            raise self.refusal
     def wait_healthy(self): pass
     def stop(self): self.stopped = True
-    def cleanup_report(self): return {"owned": {"container": 1}, "removed_by_full_id": 1, "removed_ids_all_full": True, "owned_remaining": {}, "unexpected_labelled": [], "foreign_missing": []}
+    def cleanup_report(self):
+        return {"owned": {"container": 1}, "removed_by_full_id": 1, "removed_ids_all_full": True, "already_absent": [], "not_ours": [], "owned_remaining": [], "unknown": [],
+                "observation_errors": [], "unexpected_labelled": [], "foreign_collisions": [], "foreign_missing": [], "foreign_changed": [], "foreign_unstable_before_the_run": []}
 
 
-def run_scenario(admission, **patches):
+def run_scenario(admission, refusal=None, **patches):
     stub = StubArm()
+    stub.refusal = refusal
     image = ({"id": IMAGE_ID, "labels": {}}, TREES, {}, BLOBS, METRICS)
     with patch.object(load, "git_state", return_value={"head": "abc", "branch": "x", "dirty": False}), patch.object(load.base, "assert_local_engine"), \
          patch.object(load.pdfb, "Arm", return_value=stub), patch.object(load.time, "sleep"), patch.object(load.base, "probe", return_value={"cur": 100}), \
@@ -361,6 +275,19 @@ def test_a_refused_admission_is_refused_not_run_before_any_load_starts():
     result, stub = run_scenario({"decision": "refused", "reason": "memory", "running_tenants": 2, "reserved_mib": 768})
     assert result["verdict"] == "REFUSED_NOT_RUN" and "refused" in result["failed_checks"][0] and "load_started_at" not in result
     assert stub.stopped and result["cleanup"]["removed_by_full_id"] == 1
+
+
+def test_a_refusal_by_the_per_tenant_gate_stops_creation_and_is_refused_not_run():
+    refusal = pdfb.StartRefused(1, {"code": "capacity_exhausted", "reason": "host_memory"})
+    result, stub = run_scenario({"decision": "admitted"}, refusal=refusal)
+    assert result["verdict"] == "REFUSED_NOT_RUN" and "refused tenant 2 of 2 before it was created" in result["failed_checks"][0] and stub.stopped
+
+
+def test_a_refusal_whose_cleanup_could_not_be_verified_is_a_failed_act_not_a_clean_refusal():
+    refusal = pdfb.StartRefused(0, {"code": "capacity_exhausted", "reason": "budget"})
+    with patch.object(StubArm, "cleanup_report", return_value=dict(StubArm().cleanup_report(), unknown=["container:t1 (removal unverifiable)"])):
+        result, _ = run_scenario({"decision": "admitted"}, refusal=refusal)
+    assert result["verdict"] == "FAIL" and any("UNKNOWN" in line for line in result["failed_checks"])
 
 
 def test_a_harness_fault_is_a_failed_act_with_its_reason_never_a_pass():

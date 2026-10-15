@@ -130,8 +130,13 @@ SOURCE_FILES = (("/app/tenant-app/reports/pdf_budget.py", "tenant-app/reports/pd
                 ("/app/tenant-app/reports/pdf_builder.py", "tenant-app/reports/pdf_builder.py"),
                 ("/app/tenant-app/reports/catalog.py", "tenant-app/reports/catalog.py"),
                 ("/app/tenant-app/background_worker.py", "tenant-app/background_worker.py"),
+                ("/app/tenant-app/reports/metrics.py", "tenant-app/reports/metrics.py"),
+                ("/app/tenant-app/db/financial_fifo_reconciliation.py", "tenant-app/db/financial_fifo_reconciliation.py"),
                 ("/app/tenant-app/api_server.py", "mh-redesign-lab/tenant-api/api_server.py"))
 TENANT_MEMORY_BYTES = 1536 * 1048576  # the limit pdfb.Arm gives every tenant; the scenario never raises it
+# every limit pdfb.Arm gives a tenant, checked in BOTH inspections (before and after the load)
+TENANT_LIMITS = {"Memory": TENANT_MEMORY_BYTES, "MemoryReservation": 384 * 1048576, "NanoCpus": 1_000_000_000, "PidsLimit": 256, "OomScoreAdj": 1000}
+RESERVATION_BYTES = 384 * 1048576
 
 # Runs until SIGTERM, then prints one JSON line. Per tenant: PARALLEL workers loop over the dashboard endpoints, one probe
 # loop for /healthz, and a loop that asks for a PDF built inside the request every PDF_EVERY seconds.
@@ -287,75 +292,98 @@ def process_roles(rows: list[dict]) -> dict:
     return roles
 
 
+def _positive_int(value) -> bool:
+    return type(value) is int and value > 0
+
+
+def lock_identity_failures(name: str, value, slots: int) -> list[str]:
+    """dev/inode/uid/mode must be PRESENT and typed; absence is never an equal pair of Nones or a default mode 0."""
+    if not isinstance(value, dict) or not isinstance(value.get("dir"), dict) or not isinstance(value.get("files"), dict):
+        return [f"topology: no lock identity read for {name}"]
+    failed = []
+    entries = {"directory": value["dir"], **{f: v for f, v in value["files"].items()}}
+    for label, entry in entries.items():
+        if not isinstance(entry, dict) or not _positive_int(entry.get("dev")) or not _positive_int(entry.get("ino")) or type(entry.get("uid")) is not int or type(entry.get("mode")) is not int:
+            failed.append(f"topology: {name} {label} lacks a typed device, inode, owner or mode")
+    wanted = {f"pdf-slot-{index:02d}.lock" for index in range(slots)}
+    if set(value["files"]) != wanted:
+        failed.append(f"topology: {name} sees lock files {sorted(value['files'])}, expected exactly {sorted(wanted)}")
+    if failed:
+        return failed
+    if value["dir"]["uid"] != 10001 or any(f["uid"] != 10001 for f in value["files"].values()):
+        failed.append(f"topology: {name} slot directory or locks are not owned by 10001")
+    if value["dir"]["mode"] & 0o007 or any(f["mode"] & 0o002 for f in value["files"].values()):
+        failed.append(f"topology: {name} slot directory is accessible to others or a lock file is writable by others")
+    return failed
+
+
 def topology_failures(names: list[str], expected: dict, before: dict, after: dict) -> list[str]:
     """expected: image_id, slot_volume, slots, memory_bytes. before/after: per tenant {"inspect": <docker inspect>, "processes": [...],
-    "locks": {...} (after only)}. Every property is attested from the engine, none is assumed from the command line."""
+    "locks": {...} (after only)}. Every property is attested from the engine, none is assumed from the command line, and every
+    tenant must be present in both inspections."""
     failed = []
     data_volumes = []
     for name in names:
-        row = before.get(name)
-        if not row or not isinstance(row.get("inspect"), dict) or name not in after or not isinstance(after[name].get("inspect"), dict):
+        if name not in before or name not in after or not isinstance(before[name].get("inspect"), dict) or not isinstance(after[name].get("inspect"), dict):
             failed.append("topology: no inspect data for " + name)
             continue
-        info = row["inspect"]
-        config, host, state = info.get("Config", {}), info.get("HostConfig", {}), info.get("State", {})
-        if info.get("Image") != expected["image_id"]:
-            failed.append(f"topology: {name} runs image {info.get('Image')}, expected {expected['image_id']}")
-        if config.get("User") != "10001:10001":
-            failed.append(f"topology: {name} runs as {config.get('User')}, expected 10001:10001")
-        if host.get("ReadonlyRootfs") is not True or host.get("Privileged") or "ALL" not in (host.get("CapDrop") or []) or host.get("CapAdd"):
-            failed.append(f"topology: {name} is not read-only/unprivileged/capability-free")
-        if host.get("Memory") != expected["memory_bytes"]:
-            failed.append(f"topology: {name} memory limit {host.get('Memory')} differs from {expected['memory_bytes']}")
-        environment = dict(item.split("=", 1) for item in config.get("Env", []) if "=" in item)
-        if environment.get("WB_SAAS_PDF_SLOTS") != str(expected["slots"]) or environment.get("WB_SAAS_PDF_SLOT_DIR") != "/pdf-slots":
-            failed.append(f"topology: {name} slot environment is {environment.get('WB_SAAS_PDF_SLOTS')}@{environment.get('WB_SAAS_PDF_SLOT_DIR')}")
-        mounts = {m.get("Destination"): m for m in info.get("Mounts", [])}
-        slot_mount = mounts.get("/pdf-slots")
-        if not slot_mount or slot_mount.get("Type") != "volume" or slot_mount.get("Name") != expected["slot_volume"] or slot_mount.get("RW") is not True:
-            failed.append(f"topology: {name} does not mount the shared slot volume read-write at /pdf-slots")
-        data_mount = mounts.get("/app/data")
-        if not data_mount or data_mount.get("Type") != "volume" or data_mount.get("Name") != f"{name}-data" or data_mount.get("RW") is not True:
-            failed.append(f"topology: {name} does not own its data volume")
-        else:
-            data_volumes.append(data_mount["Name"])
-        anonymous = mounts.get("/app/tenant-app/data")  # declared by the image (VOLUME); anonymous, removed with the container
-        if anonymous is not None and (anonymous.get("Type") != "volume" or not re.fullmatch(r"[0-9a-f]{64}", anonymous.get("Name", ""))):
-            failed.append(f"topology: {name} mounts something other than the image's anonymous volume at /app/tenant-app/data")
-        if len(mounts) != 2 + (anonymous is not None) + sum(1 for d in mounts if d.startswith(("/tmp", "/var/", "/run"))):
-            failed.append(f"topology: {name} has unexpected mounts {sorted(mounts)}")
-        roles_before, roles_after = process_roles(row.get("processes", [])), process_roles(after[name].get("processes", []))
+        for phase, row in (("before", before[name]), ("after", after[name])):
+            info = row["inspect"]
+            config, host = info.get("Config", {}), info.get("HostConfig", {})
+            if info.get("Image") != expected["image_id"]:
+                failed.append(f"topology: {name} runs image {info.get('Image')} ({phase}), expected {expected['image_id']}")
+            if config.get("User") != "10001:10001":
+                failed.append(f"topology: {name} runs as {config.get('User')} ({phase}), expected 10001:10001")
+            if host.get("ReadonlyRootfs") is not True or host.get("Privileged") or "ALL" not in (host.get("CapDrop") or []) or host.get("CapAdd"):
+                failed.append(f"topology: {name} is not read-only/unprivileged/capability-free ({phase})")
+            for key, wanted in {**TENANT_LIMITS, "Memory": expected["memory_bytes"]}.items():
+                if host.get(key) != wanted:
+                    failed.append(f"topology: {name} limit {key} is {host.get(key)} ({phase}), expected {wanted}")
+            environment = dict(item.split("=", 1) for item in config.get("Env", []) if "=" in item)
+            if environment.get("WB_SAAS_PDF_SLOTS") != str(expected["slots"]) or environment.get("WB_SAAS_PDF_SLOT_DIR") != "/pdf-slots":
+                failed.append(f"topology: {name} slot environment is {environment.get('WB_SAAS_PDF_SLOTS')}@{environment.get('WB_SAAS_PDF_SLOT_DIR')} ({phase})")
+            mounts = {m.get("Destination"): m for m in row["inspect"].get("Mounts", [])}
+            slot_mount = mounts.get("/pdf-slots")
+            if not slot_mount or slot_mount.get("Type") != "volume" or slot_mount.get("Name") != expected["slot_volume"] or slot_mount.get("RW") is not True:
+                failed.append(f"topology: {name} does not mount the shared slot volume read-write at /pdf-slots ({phase})")
+            data_mount = mounts.get("/app/data")
+            if not data_mount or data_mount.get("Type") != "volume" or data_mount.get("Name") != f"{name}-data" or data_mount.get("RW") is not True:
+                failed.append(f"topology: {name} does not own its data volume ({phase})")
+            elif phase == "before":
+                data_volumes.append(data_mount["Name"])
+            anonymous = mounts.get("/app/tenant-app/data")  # declared by the image (VOLUME); anonymous, removed with the container
+            if anonymous is not None and (anonymous.get("Type") != "volume" or not re.fullmatch(r"[0-9a-f]{64}", anonymous.get("Name", ""))):
+                failed.append(f"topology: {name} mounts something other than the image's anonymous volume at /app/tenant-app/data ({phase})")
+            if len(mounts) != 2 + (anonymous is not None) + sum(1 for d in mounts if d.startswith(("/tmp", "/var/", "/run"))):
+                failed.append(f"topology: {name} has unexpected mounts {sorted(mounts)} ({phase})")
+        roles_before, roles_after = process_roles(before[name].get("processes", [])), process_roles(after[name].get("processes", []))
         for role in ("api", "worker", "nginx"):
             if not roles_before[role] or roles_before[role] != roles_after[role]:
                 failed.append(f"topology: {name} {role} process missing or restarted ({roles_before[role]} -> {roles_after[role]})")
-        end = after[name]["inspect"].get("State", {})
+        state, end = before[name]["inspect"].get("State", {}), after[name]["inspect"].get("State", {})
         if not end.get("Running") or end.get("OOMKilled") or end.get("RestartCount", 0) != state.get("RestartCount", 0) or end.get("StartedAt") != state.get("StartedAt"):
             failed.append(f"topology: {name} was restarted, stopped or OOM-killed during the load")
     if len(set(data_volumes)) != len(data_volumes):
         failed.append("topology: two tenants share a data volume")
     locks = {name: after.get(name, {}).get("locks") for name in names}
-    reference = next((value for value in locks.values() if isinstance(value, dict)), None)
-    wanted = {f"pdf-slot-{index:02d}.lock" for index in range(expected["slots"])}
     for name, value in locks.items():
-        if not isinstance(value, dict) or not isinstance(value.get("dir"), dict):
-            failed.append("topology: no lock identity read for " + name)
-            continue
-        if len(value.get("files", {})) != expected["slots"] or not set(value["files"]) <= wanted:
-            failed.append(f"topology: {name} sees lock files {sorted(value.get('files', {}))} for {expected['slots']} slots")
-        if value["dir"].get("uid") != 10001 or any(f.get("uid") != 10001 for f in value["files"].values()):
-            failed.append(f"topology: {name} slot directory or locks are not owned by 10001")
-        if value["dir"].get("mode", 0) & 0o007 or any(f.get("mode", 0) & 0o002 for f in value["files"].values()):
-            failed.append(f"topology: {name} slot directory is accessible to others or a lock file is writable by others")
-        if reference is not None and (value["dir"].get("dev"), value["dir"].get("ino")) != (reference["dir"].get("dev"), reference["dir"].get("ino")):
-            failed.append(f"topology: {name} slot directory is not the same directory as the other tenants'")
-        if reference is not None and {k: (v.get("dev"), v.get("ino")) for k, v in value["files"].items()} != {k: (v.get("dev"), v.get("ino")) for k, v in reference["files"].items()}:
-            failed.append(f"topology: {name} lock files are not the same files as the other tenants'")
+        failed += lock_identity_failures(name, value, expected["slots"])
+    comparable = [v for v in locks.values() if not lock_identity_failures("x", v, expected["slots"])]
+    if comparable:
+        reference = comparable[0]
+        for name, value in locks.items():
+            if value in comparable:
+                if (value["dir"]["dev"], value["dir"]["ino"]) != (reference["dir"]["dev"], reference["dir"]["ino"]):
+                    failed.append(f"topology: {name} slot directory is not the same directory as the other tenants'")
+                if {k: (v["dev"], v["ino"]) for k, v in value["files"].items()} != {k: (v["dev"], v["ino"]) for k, v in reference["files"].items()}:
+                    failed.append(f"topology: {name} lock files are not the same files as the other tenants'")
     return failed
 
 
-def image_failures(image: dict, trees: dict, tenants_hashes: dict, blobs: dict) -> list[str]:
+def image_failures(image: dict, trees: dict, tenants_hashes: dict, blobs: dict, names: list[str] | None = None) -> list[str]:
     """image: {"id", "labels"}; trees: this commit's tenant-app/tenant-api trees and the trees of the commit the image says it was built from;
-    tenants_hashes: per tenant {container path: sha256}; blobs: {container path: sha256 of this commit's blob, CRLF-normalised}."""
+    tenants_hashes: per tenant {container path: sha256}; blobs: {container path: sha256 of this commit's blob, CRLF-normalised}.
+    Every named tenant must have hashed every attested file; a missing tenant or file is a failure, not a pass."""
     failed = [f"image: this commit has no blob for {path}" for path, digest in sorted(blobs.items()) if not digest]
     if not image.get("id") or not str(image["id"]).startswith("sha256:"):
         failed.append("image: no image id")
@@ -363,16 +391,23 @@ def image_failures(image: dict, trees: dict, tenants_hashes: dict, blobs: dict) 
             or trees["built_from_tenant_app"] != trees["head_tenant_app"] or trees["built_from_tenant_api"] != trees["head_tenant_api"]):
         failed.append("image: the commit the image was built from has different tenant-app/tenant-api sources than this commit "
                       f"({trees.get('built_from')}: {trees.get('built_from_tenant_app')} / {trees.get('built_from_tenant_api')})")
-    for name, hashes in tenants_hashes.items():
-        if hashes != blobs:
-            wrong = sorted(path for path in blobs if hashes.get(path) != blobs[path])
-            failed.append(f"image: {name} runs files that differ from this commit: {wrong}")
-    if not tenants_hashes:
-        failed.append("image: no file hashes read from any tenant")
+    expected_names = list(names) if names is not None else list(tenants_hashes)
+    if set(tenants_hashes) != set(expected_names) or not expected_names:
+        failed.append(f"image: file hashes cover {sorted(tenants_hashes)} but the tenants are {sorted(expected_names)}")
+    for name in expected_names:
+        hashes = tenants_hashes.get(name)
+        if not isinstance(hashes, dict) or hashes != blobs:
+            wrong = sorted(path for path in blobs if not isinstance(hashes, dict) or hashes.get(path) != blobs[path])
+            failed.append(f"image: {name} runs files that differ from this commit or were not hashed: {wrong}")
     return failed
 
 
+CLEANUP_LISTS = ("already_absent", "not_ours", "owned_remaining", "unknown", "observation_errors", "unexpected_labelled", "foreign_collisions")
+
+
 def cleanup_failures(cleanup) -> list[str]:
+    """Success needs positive, authoritative evidence. A missing field, an unanswerable engine or an unverifiable removal is
+    UNKNOWN and fails the act, exactly like a leftover."""
     if not isinstance(cleanup, dict):
         return ["cleanup: no ownership report"]
     failed = []
@@ -380,14 +415,24 @@ def cleanup_failures(cleanup) -> list[str]:
     total = sum(owned.values()) if isinstance(owned, dict) else 0
     if total == 0 or owned.get("container", 0) == 0:
         failed.append("cleanup: the run recorded no objects it created")
+    for field in CLEANUP_LISTS:
+        if type(cleanup.get(field)) is not list:
+            failed.append(f"cleanup: UNKNOWN, the report lacks {field}")
+    if cleanup.get("foreign_missing") is None or cleanup.get("foreign_changed") is None:
+        failed.append("cleanup: UNKNOWN, the engine could not be asked about pre-existing objects afterwards")
+    if type(cleanup.get("foreign_unstable_before_the_run")) is not list:
+        failed.append("cleanup: UNKNOWN, the report lacks foreign_unstable_before_the_run")
     if cleanup.get("removed_by_full_id") != total or not cleanup.get("removed_ids_all_full"):
-        failed.append(f"cleanup: {cleanup.get('removed_by_full_id')} of {total} recorded objects were removed by full ID")
-    if cleanup.get("owned_remaining"):
-        failed.append(f"cleanup: own objects remain: {cleanup['owned_remaining']}")
-    if cleanup.get("unexpected_labelled"):
-        failed.append(f"cleanup: objects carrying the run label were not recorded and were left alone: {cleanup['unexpected_labelled']}")
+        failed.append(f"cleanup: {cleanup.get('removed_by_full_id')} of {total} recorded objects were confirmed gone by full ID")
+    for field, text in (("unknown", "state UNKNOWN"), ("observation_errors", "the engine could not be asked"), ("owned_remaining", "own objects remain"),
+                        ("not_ours", "recorded objects no longer carry this run's name/label and were left alone"), ("already_absent", "recorded objects vanished before cleanup"),
+                        ("unexpected_labelled", "objects carrying the run label were not recorded and were left alone"), ("foreign_collisions", "names collided with objects this run did not create")):
+        if cleanup.get(field):
+            failed.append(f"cleanup: {text}: {cleanup[field]}")
     if cleanup.get("foreign_missing"):
         failed.append(f"cleanup: objects that existed before the run are gone: {cleanup['foreign_missing']}")
+    if cleanup.get("foreign_changed"):
+        failed.append(f"cleanup: pre-existing containers changed state during the run (not proven preserved): {cleanup['foreign_changed']}")
     return failed
 
 
@@ -442,6 +487,10 @@ def evaluate(result: dict, criteria: dict) -> tuple[str, list[str]]:
     elif admission.get("running_tenants") != n or not admission.get("reserved_mib"):
         failed.append(f"admission: the decision saw {admission.get('running_tenants')} running tenants and {admission.get('reserved_mib')} MiB reserved for {n} live tenants "
                       "(it did not measure the real engine state)")
+    gate = result.get("start_gate")
+    if (not isinstance(gate, list) or len(gate) != n or any(not isinstance(g, dict) or g.get("decision") != "admitted" or type(g.get("at")) is not float
+            or type(g.get("create_started_at")) is not float or not g["at"] < g["create_started_at"] for g in gate)):
+        failed.append("admission: every tenant must have been admitted by the real budget and memory floor BEFORE its first object was created")
     residual = result.get("cleanup_residual_counts")
     if residual is None or any(residual.values()):
         failed.append(f"cleanup: resources remain or were not verified: {residual}")
@@ -481,9 +530,42 @@ def admission_decision(arm: pdfb.Arm, reservation: str = "384m") -> dict:
 
 
 def residual_counts(report: dict) -> dict:
-    remaining = report.get("owned_remaining", {})
-    unexpected = report.get("unexpected_labelled", [])
-    return {kind: len(remaining.get(kind, [])) + sum(1 for item in unexpected if item.startswith(kind + ":")) for kind in ("container", "volume", "network")}
+    """Legacy per-kind counts of what is still there or unaccounted for (leftovers, UNKNOWN, unrecorded labelled objects)."""
+    items = [*report.get("owned_remaining", []), *report.get("unknown", []), *report.get("unexpected_labelled", []), *report.get("not_ours", []), *report.get("already_absent", [])]
+    return {kind: sum(1 for item in items if str(item).startswith(kind + ":")) + (len(report.get("observation_errors", [])) if kind == "container" else 0) for kind in ("container", "volume", "network")}
+
+
+def vm_available_helper() -> int:
+    """VM MemAvailable (MiB) asked of a throwaway container, so it can be read before the first tenant exists. Fails closed."""
+    code, out, err = base.docker_status("run", "--rm", "--network", "none", "--memory", "32m", base.HELPER_IMAGE, "cat", "/proc/meminfo", timeout=60)
+    if code != 0:
+        raise pdfb.ObservationError(f"VM memory unreadable ({code}): {err[:120]}")
+    for line in out.splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) // 1024
+    raise pdfb.ObservationError("MemAvailable not found")
+
+
+def make_gate(args, budget, client, record: list):
+    """Called before each tenant's first object is created: the real tenant_budget (budget + host floor, counting tenants still being
+    created) must admit one more. A refusal stops creation there; no further tenant is allocated."""
+    from tenant_budget import CapacityExhausted
+
+    def gate(index: int, name: str):
+        seen = []
+        at = time.time()
+
+        def available() -> int:
+            seen.append(vm_available_helper())
+            return seen[-1] * MIB
+        try:
+            budget.acquire(client, name, need=RESERVATION_BYTES, configured="", fraction=0.7, min_available=args.min_vm_available_mib * MIB, wait_seconds=0, host_available=available)
+        except CapacityExhausted as refusal:
+            record.append({"index": index, "name": name, "at": at, "decision": "refused", "vm_available_mib": seen[-1] if seen else None, "info": {k: v for k, v in refusal.info.items() if k != "message"}})
+            raise pdfb.StartRefused(index, refusal.info)
+        record.append({"index": index, "name": name, "at": at, "decision": "admitted", "vm_available_mib": seen[-1] if seen else None})
+        return lambda: budget.release(name)
+    return gate
 
 
 def inspect_tenant(name: str) -> dict:
@@ -599,6 +681,10 @@ def summarize_api(buckets: dict) -> tuple[dict, dict]:
     return api, {"n": len(health), "failures": health_fail, "p50_ms": round(percentile(health, .5)), "p95_ms": round(percentile(health, .95)), "max_ms": round(max(health, default=0))}
 
 
+class _Stop(Exception):
+    pass
+
+
 def scenario(args) -> dict:
     git = git_state()
     if git["dirty"] and not args.allow_dirty:
@@ -611,10 +697,24 @@ def scenario(args) -> dict:
                     "started": time.strftime("%Y-%m-%d %H:%M:%S"), "image": args.image, "topology": "nginx + API + resident background_worker per tenant, shared slot volume"}
     base.assert_local_engine()
     arm = pdfb.Arm(args, "load", args.slots)
+    gates: list[dict] = []
     drivers: list[str] = []
     stop = watcher = None
     try:
-        arm.start()
+        import docker as sdk
+        from tenant_budget import TenantBudget
+        try:
+            arm.start(gate=make_gate(args, TenantBudget(), sdk.DockerClient(base_url=base._LOCAL_ENDPOINT), gates))
+        except pdfb.StartRefused as refusal:
+            for entry in gates:
+                entry["create_started_at"] = arm.create_started.get(entry["name"])
+            result.update(verdict="REFUSED_NOT_RUN", start_gate=gates, tenants_created_before_refusal=len(arm.create_started),
+                          failed_checks=[f"admission: the real tenant budget / memory floor refused tenant {refusal.index + 1} of {args.tenants} before it was created "
+                                         f"({refusal.info.get('reason') or refusal.info.get('code')}); {len(arm.create_started)} tenants had been created"])
+            raise _Stop
+        for entry in gates:
+            entry["create_started_at"] = arm.create_started.get(entry["name"])
+        result["start_gate"] = gates
         arm.wait_healthy()
         time.sleep(args.settle)
         via = arm.names[0]
@@ -628,13 +728,13 @@ def scenario(args) -> dict:
         if result["admission"]["decision"] != "admitted":
             result.update(verdict="REFUSED_NOT_RUN", failed_checks=[f"admission: the real tenant budget {result['admission']['decision']} the next tenant "
                                                                     f"({result['admission'].get('reason')}) before the load started"])
-            return result
+            raise _Stop
         per_tenant = statistics.mean(base.mib(v.get("cur", 0)) for v in idle.values())
         need = args.slots * args.pdf_peak_delta_mib + args.tenants * args.api_delta_mib
         if result["idle_vm_available_mib"] - need < args.min_vm_available_mib:
             result.update(verdict="REFUSED_NOT_RUN", failed_checks=[f"stand: starting the load would leave {result['idle_vm_available_mib'] - need} MiB, below the "
                                                                     f"{args.min_vm_available_mib} MiB floor (per tenant idle {per_tenant:.0f} MiB)"])
-            return result
+            raise _Stop
         paths = pdfb_paths(args)
         samples: list[tuple[int, int | None]] = []
         sampler_errors = []
@@ -667,7 +767,7 @@ def scenario(args) -> dict:
         after = {n: base.probe(n) for n in arm.names}
         topology_after = collect_topology(arm, True)
         flat = [mine[n] or {"status": "missing", "started_at": None, "finished_at": None} for n in arm.names]
-        attestation = (image_failures(image, trees, hashes, blobs) + topology_failures(arm.names, {"image_id": image["id"], "slot_volume": arm.slot_volume, "slots": args.slots,
+        attestation = (image_failures(image, trees, hashes, blobs, arm.names) + topology_failures(arm.names, {"image_id": image["id"], "slot_volume": arm.slot_volume, "slots": args.slots,
                        "memory_bytes": TENANT_MEMORY_BYTES}, topology_before, topology_after) + job_failures(arm.names, jobs, runs, metric_codes))
         if len(metric_codes) != args.expect_metrics:
             attestation.append(f"jobs: the image has {len(metric_codes)} report metric codes, {args.expect_metrics} expected")
@@ -678,6 +778,8 @@ def scenario(args) -> dict:
                         "locks": topology_after[n]["locks"]} for n in arm.names}
         api, health = summarize_api(buckets)
         result.update(
+            _raw={"driver_buckets": buckets, "kernel_before": idle, "kernel_after": after, "topology_before": topology_before, "topology_after": topology_after,
+                  "file_hashes_per_tenant": hashes, "repository_blobs": blobs, "start_gate": gates, "vm_samples": samples},
             jobs=jobs, topology=topology, metric_codes=metric_codes, attestation_failures=attestation,
             observation_failures=observation_failures(arm.names, paths, buckets, idle, after, samples, sampler_errors, driver_errors),
             runs=[{k: r.get(k) for k in ("status", "attempts", "pdf_header_ok", "pdf_bytes", "error")} | {"started_at": r["started_at"], "finished_at": r["finished_at"]} for r in flat],
@@ -691,6 +793,8 @@ def scenario(args) -> dict:
                            "container_peak_mib_max": max(base.mib(v.get("peak", 0)) for v in after.values()),
                            "cpu_throttled_pct": round(100 * (sum(v.get("cpu_nr_throttled", 0) for v in after.values()) - sum(v.get("cpu_nr_throttled", 0) for v in idle.values()))
                                                       / max(1, sum(v.get("cpu_nr_periods", 0) for v in after.values()) - sum(v.get("cpu_nr_periods", 0) for v in idle.values())), 1)})
+    except _Stop:
+        pass  # a recorded refusal: fall through to cleanup and the cleanup verdict
     except Exception as error:  # a harness fault is a failed act with its reason, never a traceback and never a pass
         result.update(verdict="FAIL", failed_checks=[f"harness: {type(error).__name__}: {str(error)[:300]}"])
     finally:
@@ -705,8 +809,11 @@ def scenario(args) -> dict:
         result["cleanup_residual_counts"] = residual_counts(result["cleanup"])
     if "verdict" not in result:
         result["verdict"], result["failed_checks"] = evaluate(result, criteria)
-    elif result["verdict"] == "FAIL":
-        result["failed_checks"] += [f"cleanup: {line}" for line in cleanup_failures(result.get("cleanup"))]
+    elif result["verdict"] in ("FAIL", "REFUSED_NOT_RUN"):
+        problems = cleanup_failures(result.get("cleanup"))
+        if problems:  # a refusal is only a clean refusal when everything created was removed and verified
+            result["verdict"] = "FAIL"
+            result["failed_checks"] = result.get("failed_checks", []) + problems
     result["finished"] = time.strftime("%Y-%m-%d %H:%M:%S")
     return result
 
@@ -750,6 +857,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="bench-pdf-slots-load.json")
     args = parser.parse_args(argv)
     result = scenario(args)
+    raw = result.pop("_raw", None)
+    if raw is not None:  # the evidence the gates were computed from, so they can be replayed independently
+        raw_path = Path(args.out).with_suffix(".raw.json")
+        raw_text = json.dumps(raw, ensure_ascii=False, separators=(",", ":"), default=list)
+        raw_path.write_text(raw_text, encoding="utf-8")
+        result["raw_evidence"] = {"file": raw_path.name, "sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(), "bytes": len(raw_text.encode("utf-8"))}
     Path(args.out).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: result.get(k) for k in ("verdict", "failed_checks", "seconds_to_last_run", "peak_concurrent_pdfs_from_intervals", "vm_min_available_mib")}, ensure_ascii=False))
     return 0 if result["verdict"] == "PASS" else 1
