@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Обработка и защита данных — MARKETSHELPER{% endblock %}
-{% block description %}Сведения об операторе MARKETSHELPER в реестре Роскомнадзора, размещении данных и порядке обращения по вопросам персональных данных.{% endblock %}
+{% block description %}Сведения об операторе MARKETSHELPER в реестре Роскомнадзора и порядке обращения по вопросам персональных данных.{% endblock %}
 {% block card_extra_class %} card-wide compliance-page{% endblock %}
 {% block head %}
 <style>
@@ -24,12 +24,6 @@
   .compliance-register dd { margin: 0; }
   .compliance-register .registry-link { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
   .compliance-page .compliance-note { color: var(--text-faint); font-size: .84rem; }
-  .compliance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-  .compliance-flow { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-  .compliance-flow dl, .compliance-flow dd { margin: 0; }
-  .compliance-flow dt { color: var(--text-faint); font-size: .75rem; font-weight: 600; margin: 0 0 6px; }
-  .compliance-flow dd { color: var(--text-muted); font-size: .9rem; line-height: 1.65; }
-  .compliance-flow dd + dt { margin-top: 16px; }
   .compliance-page .compliance-steps { padding-left: 24px; margin: 0; }
   .compliance-steps li { padding: 0 0 14px 6px; }
   .compliance-steps li:last-child { padding-bottom: 0; }
@@ -39,8 +33,7 @@
   .compliance-page .back-link { margin-top: 28px; min-height: 44px; display: inline-flex; align-items: center; }
   @media (max-width: 620px) {
     .card.compliance-page { padding: 24px 20px; margin: 20px 12px; width: calc(100% - 24px); }
-    .compliance-grid { grid-template-columns: minmax(0, 1fr); }
-    .compliance-flow, .compliance-register { padding: 18px; }
+    .compliance-register { padding: 18px; }
     .compliance-section { padding-top: 26px; }
     .compliance-nav a { flex: 1 1 calc(50% - 8px); justify-content: center; text-align: center; }
   }
@@ -55,9 +48,9 @@
 <header>
   <span class="compliance-eyebrow">MARKETSHELPER · Персональные данные{% if compliance_status.reviewed_at %} · Обновлено <time datetime="{{ compliance_status.reviewed_at }}">15 октября 2026</time>{% endif %}</span>
   <h1>Обработка и защита данных</h1>
-  <p class="subtitle">Сведения об операторе, размещении данных и порядке обращения. Условия обработки описаны в <a href="/privacy">политике персональных данных</a>.</p>
+  <p class="subtitle">Сведения об операторе и порядке обращения. Условия обработки описаны в <a href="/privacy">политике персональных данных</a>.</p>
   <nav class="compliance-nav" aria-label="Разделы страницы">
-    <a href="#registry">Реестр РКН</a><a href="#data">Хранение данных</a><a href="#incidents">Инциденты</a><a href="#requests">Ваши обращения</a>
+    <a href="#registry">Реестр РКН</a><a href="#incidents">Инциденты</a><a href="#requests">Ваши обращения</a>
   </nav>
 </header>
 
@@ -72,19 +65,6 @@
     </dl>
     <p>{{ compliance_status.rkn.status_hint }}</p>
     <a class="registry-link" href="{{ compliance_status.rkn.record_url }}">Открыть запись на сайте РКН ↗</a>
-  </div>
-</section>
-
-<section id="data" class="compliance-section" aria-labelledby="data-title">
-  <h2 id="data-title">Хранение данных и внешние каналы</h2>
-  <p>Основные базы и резервные копии размещаются в России. Для каждого направления отдельно проверяются поставщики и условия обработки.</p>
-  <div class="compliance-grid">
-    {% for row in compliance_status.localization %}
-    <article class="compliance-flow" aria-labelledby="flow-{{ loop.index }}">
-      <h3 id="flow-{{ loop.index }}">{{ row.direction }}</h3>
-      <dl><dt>Как устроено</dt><dd>{{ row.current_state }}</dd><dt>Контроль</dt><dd>{{ row.update_action }}</dd></dl>
-    </article>
-    {% endfor %}
   </div>
 </section>
 

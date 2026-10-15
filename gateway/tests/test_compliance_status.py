@@ -75,21 +75,22 @@ class ComplianceStatusTests(unittest.TestCase):
             self.assertIn("Telegram временно отключён", json.dumps(context, ensure_ascii=False))
         self.assertEqual(fallback["rkn"]["status"], "Требуется ручная проверка")
 
-    def test_public_page_presents_each_flow_and_working_navigation(self) -> None:
+    def test_public_page_omits_storage_description_and_preserves_navigation(self) -> None:
         response = TestClient(gateway_app.app).get("/compliance")
         self.assertEqual(response.status_code, 200)
         body = response.text
         markup = ComplianceMarkup()
         markup.feed(body)
-        self.assertEqual(markup.flows, len(compliance.get_compliance_status()["localization"]))
+        self.assertEqual(markup.flows, 0)
         self.assertEqual(markup.tables, 0, "Multi-column technical table must not return on phones")
-        self.assertEqual(markup.local_targets, {"registry", "data", "incidents", "requests"})
+        self.assertEqual(markup.local_targets, {"registry", "incidents", "requests"})
         self.assertTrue(markup.local_targets.issubset(markup.ids))
         for href in (compliance.get_compliance_status()["rkn"]["record_url"],
                      "/privacy", "/consent", "/contacts", "/delete-account",
                      "https://mintrud.gov.ru/docs/laws/130"):
             self.assertIn(href, markup.links)
         self.assertIn("77-26-574895", body)
-        self.assertIn("Telegram временно отключён", body)
+        for removed in ("Хранение данных", "Внешние каналы", "Журналы событий", "Резервные копии", "Timeweb", 'id="data"'):
+            self.assertNotIn(removed, body)
         self.assertNotIn("Не подано", body)
         self.assertNotIn("в рабочее время", body)
