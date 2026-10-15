@@ -75,6 +75,11 @@ DRIVER = r'''
 import json, signal, sys, threading, time, urllib.request, urllib.error
 targets, paths, parallel, pdf_every = json.loads(sys.argv[1]), json.loads(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
 stop, lock, out = threading.Event(), threading.Lock(), {}
+worker_errors = []
+def thread_failure(args):
+    worker_errors.append(type(args.exc_value).__name__)
+    stop.set()
+threading.excepthook = thread_failure
 signal.signal(signal.SIGTERM, lambda *a: stop.set())
 def hit(host, path, timeout=180):
     started = time.perf_counter()
@@ -122,7 +127,8 @@ def tenant(host):
 threads = [threading.Thread(target=tenant, args=(t,)) for t in targets]
 [t.start() for t in threads]
 [t.join() for t in threads]
-print(json.dumps(out))
+print(json.dumps({"buckets": out, "worker_errors": worker_errors}))
+sys.exit(2 if worker_errors else 0)
 '''
 
 
@@ -142,9 +148,47 @@ def percentile(values: list[float], fraction: float) -> float:
     return ordered[min(len(ordered) - 1, max(0, int(round(fraction * len(ordered))) - 1))]
 
 
+def observation_failures(names, paths, buckets, before, after, samples, sampler_errors, driver_errors):
+    """Missing observations are failures, never inferred zero load/OOM/peak."""
+    failed = []
+    if driver_errors:
+        failed.append("drivers: subprocess or worker failed")
+    if set(buckets) != set(names):
+        failed.append("coverage: every tenant driver bucket is required")
+    required_paths = {path.split("?")[0] for path in paths}
+    for name in names:
+        bucket = buckets.get(name, {})
+        if not bucket.get("calc_ms") or not bucket.get("health_ms") or not bucket.get("api_pdf"):
+            failed.append("coverage: tenant lacks dashboard, health or PDF observations: " + name)
+        codes = bucket.get("calc_codes", {})
+        seen = {key.split(" ", 1)[1] for key, count in codes.items() if " " in key and count > 0}
+        if not required_paths <= seen or not any(key.startswith("200 ") and count > 0 for key, count in codes.items()):
+            failed.append("coverage: tenant lacks requested paths or successful calculation: " + name)
+        if any(key.split(" ", 1)[0] not in {"200", "409", "422"} for key in codes):
+            failed.append("coverage: unexpected dashboard response: " + name)
+    required = {"cur", "peak", "ev_high", "ev_max", "ev_oom", "ev_oom_kill", "cpu_nr_throttled", "cpu_nr_periods"}
+    for label, observed in (("before", before), ("after", after)):
+        if set(observed) != set(names):
+            failed.append("kernel: incomplete tenant probes " + label)
+        for name in names:
+            row = observed.get(name, {})
+            if not required <= set(row) or any(type(row.get(key)) is not int or row[key] < 0 for key in required):
+                failed.append("kernel: missing counters or real peak " + label + " " + name)
+            elif row["peak"] <= 0 or row["cur"] <= 0:
+                failed.append("kernel: nonpositive memory observation " + name)
+    if sampler_errors or not samples:
+        failed.append("sampler: failed or no load-window observations")
+    if any(type(memory) is not int or memory <= 0 or type(busy) is not int or busy < 0 for memory, busy in samples):
+        failed.append("sampler: missing memory or real lock observations")
+    return failed
+
+
 def evaluate(result: dict, criteria: dict) -> tuple[str, list[str]]:
     """PASS only when every named check holds; the failed checks are listed, never softened."""
     failed: list[str] = []
+    observations = result.get("observation_failures")
+    if type(observations) is not list or observations:
+        failed.append("observability: complete per-tenant load/kernel/driver/sampler evidence required")
     n, slots = result["tenants"], result["slots"]
     runs = result["runs"]
     if len(runs) != n or any(r["status"] != "ok" for r in runs):
@@ -247,15 +291,26 @@ def run_drivers(arm: pdfb.Arm, args, paths: list[str]) -> list[str]:
     return names
 
 
-def collect_drivers(names: list[str]) -> dict:
+def collect_drivers(names: list[str]) -> tuple[dict, list[str]]:
     merged: dict = {}
+    errors = []
     for name in names:
         base.docker("kill", "-s", "TERM", name, check=False)
     for name in names:
-        base.docker("wait", name, check=False, timeout=240)
+        exit_code = base.docker("wait", name, check=False, timeout=240)
+        if exit_code != "0":
+            errors.append("DriverExit")
         text = base.docker("logs", name, check=False).strip().splitlines()
-        merged.update(json.loads(text[-1]) if text else {})
-    return merged
+        payload = json.loads(text[-1]) if text else {}
+        if set(payload) != {"buckets", "worker_errors"} or type(payload["buckets"]) is not dict or type(payload["worker_errors"]) is not list:
+            errors.append("InvalidDriverResult")
+            continue
+        errors.extend(payload["worker_errors"])
+        for tenant, bucket in payload["buckets"].items():
+            if tenant in merged:
+                errors.append("DuplicateTenantBucket")
+            merged[tenant] = bucket
+    return merged, errors
 
 
 def summarize_api(buckets: dict) -> tuple[dict, dict]:
@@ -290,6 +345,7 @@ def scenario(args) -> dict:
     base.assert_local_engine()
     arm = pdfb.Arm(args, "load", args.slots)
     drivers: list[str] = []
+    stop = watcher = None
     try:
         arm.start()
         arm.wait_healthy()
@@ -306,14 +362,15 @@ def scenario(args) -> dict:
             return result
         paths = pdfb_paths(args)
         samples: list[tuple[int, int | None]] = []
+        sampler_errors = []
         stop = threading.Event()
 
         def sample():
             while not stop.is_set():
                 try:
                     samples.append((vm_available(via), arm.state(via)["slots"].get("host_busy")))
-                except Exception:
-                    pass
+                except Exception as error:
+                    sampler_errors.append(type(error).__name__)
                 stop.wait(1.0)
         watcher = threading.Thread(target=sample, daemon=True)
         watcher.start()
@@ -329,13 +386,14 @@ def scenario(args) -> dict:
             seconds_to_last = round(max(pdfb.parse_ts(r[-1]["finished_at"]) for r in runs.values() if r[-1]["finished_at"]) - t0, 1)
         stop.set()
         watcher.join(timeout=5)
-        buckets = collect_drivers(drivers)
+        buckets, driver_errors = collect_drivers(drivers)
         drivers = []
         after = {n: base.probe(n) for n in arm.names}
         flat = [r[-1] for r in runs.values()]
         intervals = [(pdfb.parse_ts(r["started_at"]), pdfb.parse_ts(r["finished_at"])) for r in flat if r["status"] == "ok" and r["finished_at"]]
         api, health = summarize_api(buckets)
         result.update(
+            observation_failures=observation_failures(arm.names, paths, buckets, idle, after, samples, sampler_errors, driver_errors),
             runs=[{k: r.get(k) for k in ("status", "attempts", "pdf_header_ok", "pdf_bytes", "error")} | {"started_at": r["started_at"], "finished_at": r["finished_at"]} for r in flat],
             seconds_to_last_run=seconds_to_last, peak_concurrent_pdfs_from_intervals=pdfb.peak_concurrency(intervals),
             peak_busy_slots_sampled=max((s[1] or 0 for s in samples), default=None), vm_min_available_mib=min((s[0] for s in samples), default=result["idle_vm_available_mib"]),
@@ -348,6 +406,12 @@ def scenario(args) -> dict:
                            "cpu_throttled_pct": round(100 * (sum(v.get("cpu_nr_throttled", 0) for v in after.values()) - sum(v.get("cpu_nr_throttled", 0) for v in idle.values()))
                                                       / max(1, sum(v.get("cpu_nr_periods", 0) for v in after.values()) - sum(v.get("cpu_nr_periods", 0) for v in idle.values())), 1)})
     finally:
+        if stop is not None:
+            stop.set()
+        if watcher is not None:
+            watcher.join(timeout=5)
+            if watcher.is_alive():
+                result.setdefault("observation_failures", []).append("sampler: did not stop before cleanup")
         for name in drivers:
             base.docker("rm", "-f", name, check=False)
         arm.stop()

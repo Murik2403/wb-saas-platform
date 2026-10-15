@@ -19,7 +19,7 @@ CRITERIA = {"deadline_seconds": 180.0, "health_p95_ms": 3000.0, "floor_mib": 150
 
 def good_result(tenants=4, slots=2):
     return {
-        "tenants": tenants, "slots": slots,
+        "tenants": tenants, "slots": slots, "observation_failures": [],
         "runs": [{"status": "ok", "attempts": 1, "pdf_header_ok": True, "pdf_bytes": 60_000} for _ in range(tenants)],
         "seconds_to_last_run": 120.0, "peak_concurrent_pdfs_from_intervals": slots, "peak_busy_slots_sampled": slots,
         "healthz": {"n": 300, "failures": 0, "p50_ms": 20, "p95_ms": 400, "max_ms": 900},
@@ -154,3 +154,64 @@ def test_the_embedded_scripts_are_valid_python_and_the_driver_stops_on_sigterm()
     for script in (load.DRIVER, load.STATE):
         ast.parse(script)
     assert "signal.SIGTERM" in load.DRIVER and "pdf_header_ok" in load.STATE
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda r: r.pop("observation_failures"),
+    lambda r: r.update(observation_failures=["missing kernel peak"]),
+    lambda r: r.update(observation_failures=["missing per-tenant driver"]),
+    lambda r: r.update(observation_failures=["sampler failed"]),
+])
+def test_missing_or_failed_observations_never_pass(mutate):
+    result = good_result()
+    mutate(result)
+    assert load.evaluate(result, CRITERIA)[0] == "FAIL"
+
+
+def observations():
+    names = ["t1", "t2"]
+    paths = ["/api/v1/dashboard/today"]
+    buckets = {name: bucket(pdf=[{"status":200,"retry_after":None,"ms":1}]) for name in names}
+    row = {"cur":100,"peak":200,"ev_high":0,"ev_max":0,"ev_oom":0,"ev_oom_kill":0,"cpu_nr_throttled":0,"cpu_nr_periods":10}
+    return [names, paths, buckets, {n:dict(row) for n in names}, {n:dict(row) for n in names}, [(3000,2)], [], []]
+
+
+def test_complete_raw_observations_pass():
+    assert load.observation_failures(*observations()) == []
+
+
+@pytest.mark.parametrize("index,mutate", [
+    (2, lambda value:value.pop("t2")),
+    (2, lambda value:value["t2"].update(calc_ms=[])),
+    (2, lambda value:value["t2"].update(health_ms=[])),
+    (2, lambda value:value["t2"].update(api_pdf=[])),
+    (2, lambda value:value["t2"].update(calc_codes={"403 /api/v1/dashboard/today":2})),
+    (3, lambda value:value["t2"].pop("peak")),
+    (4, lambda value:value["t2"].pop("ev_oom")),
+    (4, lambda value:value["t2"].pop("ev_oom_kill")),
+    (4, lambda value:value["t2"].update(peak=0)),
+    (5, lambda value:value.clear()),
+    (5, lambda value:value.append((3000,None))),
+    (6, lambda value:value.append("SamplerError")),
+    (7, lambda value:value.append("DriverThreadError")),
+])
+def test_each_raw_observation_gap_fails(index, mutate):
+    values = observations()
+    mutate(values[index])
+    assert load.observation_failures(*values)
+
+
+def test_driver_exit_and_missing_result_are_not_silently_merged():
+    payload={"buckets":{"t1":bucket()},"worker_errors":["RuntimeError"]}
+    def docker(*args, **kwargs):
+        if args[0] == "wait":return "2"
+        if args[0] == "logs":return load.json.dumps(payload)
+        return ""
+    with patch.object(load.base,"docker",side_effect=docker):
+        buckets,errors=load.collect_drivers(["own-driver"])
+    assert set(buckets)=={"t1"} and errors==["DriverExit","RuntimeError"]
+
+
+def test_driver_thread_exceptions_are_recorded_and_exit_nonzero():
+    assert "threading.excepthook = thread_failure" in load.DRIVER
+    assert "sys.exit(2 if worker_errors else 0)" in load.DRIVER
