@@ -47,6 +47,11 @@ def _json_srid(raw_json: Any) -> str:
     return _text(payload.get("srid") or payload.get("SRID"))
 
 
+def _srid_payload(raw_json: Any) -> str:
+    """Retain exactly the existing SRID interpretation, not the unused payload."""
+    return json.dumps({"srid": _json_srid(raw_json)}, ensure_ascii=True, separators=(",", ":"))
+
+
 def _event_type(row: dict[str, Any]) -> str:
     from financial_operations import financial_event_type
     return financial_event_type(row)
@@ -254,14 +259,28 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
         return pd.DataFrame(columns=_COLUMNS)
     with connect() as conn:
         conn.execute('BEGIN')
+        # Shared/manual history authenticates the entire original source row.
+        # Protect every referenced ID in all three tables, regardless of shop,
+        # active status or which projection table is currently preferred. Read
+        # these identities in this same snapshot; never compact their payloads.
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        preserve_raw_ids = set()
+        for table in ("warehouse_financial_bindings", "warehouse_financial_projection", "migration_historical_documents"):
+            if table in tables:
+                preserve_raw_ids.update(row[0] for row in conn.execute(f"SELECT rrd_id FROM {table}"))
         finance = conn.execute(
             """SELECT *
                  FROM financial_report
                 WHERE operation_date >= ? AND operation_date < ?
                 ORDER BY operation_date,rrd_id""",
             (start.isoformat(), end_exclusive.isoformat()),
-        ).fetchall()
-        financial_rows = [dict(row) for row in finance]
+        )
+        financial_rows = []
+        for source in finance:
+            row = dict(source)
+            if row.get("rrd_id") not in preserve_raw_ids and "raw_json" in row:
+                row["raw_json"] = _srid_payload(row["raw_json"])
+            financial_rows.append(row)
         relevant_srids: dict[int, set[str]] = defaultdict(set)
         relevant_nm_ids: set[int] = set()
         for row in financial_rows:
@@ -282,7 +301,7 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
             for nm_id, srids in (relevant_srids.items() if allow_local_fifo else ()):
                 for srid_chunk in _chunks(sorted(srids)):
                     srid_placeholders = ",".join("?" for _ in srid_chunk)
-                    fifo_events.extend(dict(row) for row in conn.execute(
+                    events = conn.execute(
                         f"""SELECT e.*,s.raw_json AS sales_raw_json
                               FROM sales_fifo_events e
                               LEFT JOIN sales s ON s.id=e.sale_record_id
@@ -290,7 +309,13 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
                                AND e.event_type IN ('sale','return')
                              ORDER BY e.id""",
                         [nm_id, *srid_chunk],
-                    ).fetchall())
+                    )
+                    for source in events:
+                        event = dict(source)
+                        # No provenance consumer receives these internal event
+                        # payloads; reconciliation uses only their source SRID.
+                        event["sales_raw_json"] = _srid_payload(event["sales_raw_json"])
+                        fifo_events.append(event)
             event_ids = [int(event["id"]) for event in fifo_events]
             for event_chunk in _chunks(event_ids):
                 event_placeholders = ",".join("?" for _ in event_chunk)
