@@ -523,3 +523,87 @@ def test_a_stable_container_that_restarts_during_the_run_is_still_a_failure(engi
     engine.objects[("container", steady)]["state"] = "true 2026-10-15T20:00:01Z"
     report = arm.cleanup_report()
     assert report["foreign_changed"] == [steady] and load.cleanup_failures(report)
+
+
+# ---- inventory(): an exit-0 answer must cover exactly the listed IDs, one typed row each --------------------------------------
+
+def inventory_with(ps_ids, inspect_out, volumes="", networks=""):
+    def status(*args, timeout=120):
+        if args[0] == "ps":
+            return 0, "\n".join(ps_ids), ""
+        if args[0] == "inspect":
+            return 0, inspect_out, ""
+        if args[:2] == ("volume", "ls"):
+            return 0, volumes, ""
+        if args[:2] == ("network", "ls"):
+            return 0, networks, ""
+        return 0, "", ""
+    with patch.object(pdfb.base, "docker_status", status):
+        return pdfb.inventory()
+
+
+def row(identifier, running="true", started="2026-01-01T00:00:00Z", state="running", restarts="0"):
+    return f"{identifier} {running} {started} {state} {restarts}"
+
+
+A, B = "a" * 64, "b" * 64
+
+
+def test_a_complete_typed_inspect_answer_is_accepted():
+    inv = inventory_with([A, B], row(A) + "\n" + row(B, "false", state="exited"))
+    assert set(inv["containers"]) == {A, B} and inv["statuses"][B] == "exited"
+
+
+@pytest.mark.parametrize("name,out", [
+    ("malformed success (the review's counterexample)", "MALFORMED_SUCCESS_STDOUT"),
+    ("empty success", ""),
+    ("partial: one of two", row(A)),
+    ("duplicate row", row(A) + "\n" + row(A) + "\n" + row(B)),
+    ("unexpected extra id", row(A) + "\n" + row(B) + "\n" + row("c" * 64)),
+    ("another id instead", row(A) + "\n" + row("c" * 64)),
+    ("short id", row(A) + "\n" + row(B[:12])),
+    ("four fields", row(A) + "\n" + f"{B} true 2026-01-01T00:00:00Z running"),
+    ("six fields", row(A) + "\n" + row(B) + " extra"),
+    ("running is not a boolean", row(A) + "\n" + row(B, running="maybe")),
+    ("unknown status", row(A) + "\n" + row(B, state="wobbling")),
+    ("restart count not a number", row(A) + "\n" + row(B, restarts="x")),
+    ("negative restart count", row(A) + "\n" + row(B, restarts="-1")),
+])
+def test_each_exit_zero_inspect_gap_is_an_observation_error(name, out):
+    with pytest.raises(pdfb.ObservationError):
+        inventory_with([A, B], out)
+
+
+def test_duplicate_or_malformed_listed_ids_are_errors():
+    with pytest.raises(pdfb.ObservationError):
+        inventory_with([A, A], row(A))
+    with pytest.raises(pdfb.ObservationError):
+        inventory_with([A[:12]], row(A[:12]))
+    with pytest.raises(pdfb.ObservationError):
+        inventory_with([], "", volumes="v\nv")
+    with pytest.raises(pdfb.ObservationError):
+        inventory_with([], "", networks="not-a-full-id")
+
+
+def test_an_empty_engine_is_a_valid_empty_inventory():
+    inv = inventory_with([], "")
+    assert inv["containers"] == {} and inv["volumes"] == set() and inv["networks"] == set()
+
+
+def test_the_reviews_counterexample_no_longer_yields_a_clean_cleanup(engine):
+    """A foreign container is listed by ps, but the formatted inspect answers exit 0 with garbage: the baseline must not be recorded as empty."""
+    engine.put("container", "customer", ident="f" * 64)
+    original = engine.status
+
+    def garbage(*args, **kwargs):
+        if args[0] == "inspect" and args[1] == "--format":
+            return 0, "MALFORMED_SUCCESS_STDOUT", ""
+        return original(*args, **kwargs)
+    with patch.object(pdfb.base, "docker_status", garbage):
+        arm = new_arm(tenants=1)
+        with pytest.raises(pdfb.ObservationError):
+            arm.start()
+        assert not [c for c in engine.calls if c[0] == "run"], "nothing was created on an unreadable baseline"
+        arm.stop()
+        report = arm.cleanup_report()
+    assert report["observation_errors"] and report["foreign_missing"] is None and load.cleanup_failures(report)

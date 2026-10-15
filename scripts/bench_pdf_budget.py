@@ -116,27 +116,56 @@ def list_ids(*args: str) -> list[str]:
     return out.split()
 
 
+CONTAINER_STATUSES = {"created", "running", "paused", "restarting", "removing", "exited", "dead"}
+
+
+def parse_container_rows(requested: list[str], text: str) -> tuple[dict, dict]:
+    """One typed row per requested full ID, nothing else. An exit-0 answer that is empty, partial, duplicated, malformed or about
+    other IDs is a failed observation, never a smaller inventory."""
+    states: dict[str, str] = {}
+    statuses: dict[str, str] = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) != 5:
+            raise ObservationError(f"inspect row has {len(fields)} fields, expected 5: {line[:80]!r}")
+        identifier, running, started, status, restarts = fields
+        if not FULL_ID.match(identifier) or running not in ("true", "false") or status not in CONTAINER_STATUSES or not restarts.isdigit():
+            raise ObservationError(f"inspect row is malformed: {line[:80]!r}")
+        if identifier in states:
+            raise ObservationError(f"inspect answered the container {identifier[:12]} twice")
+        states[identifier] = f"{running} {started} {restarts}"  # running, StartedAt, RestartCount
+        statuses[identifier] = status
+    if set(states) != set(requested):
+        missing, extra = sorted(set(requested) - set(states)), sorted(set(states) - set(requested))
+        raise ObservationError(f"inspect answered for {len(states)} of {len(requested)} containers (missing {[m[:12] for m in missing]}, unexpected {[e[:12] for e in extra]})")
+    return states, statuses
+
+
+def checked_ids(args: tuple, *, full: bool) -> list[str]:
+    ids = list_ids(*args)
+    if len(set(ids)) != len(ids) or (full and not all(FULL_ID.match(i) for i in ids)):
+        raise ObservationError(f"docker {' '.join(args[:2])} returned duplicate or malformed IDs")
+    return ids
+
+
 def inventory() -> dict:
-    """Everything on the engine right now, by full ID, so that ownership can be proven before and after a run. Any failed
-    question raises: an inventory that could not be read must never look like an empty one."""
+    """Everything on the engine right now, by full ID, so that ownership can be proven before and after a run. Any failed or
+    incomplete answer raises: an inventory that could not be read exactly must never look like a smaller or an empty one."""
     containers: dict[str, str] = {}
     statuses: dict[str, str] = {}
-    ids = list_ids("ps", "-aq", "--no-trunc")
     for attempt in range(3):
+        ids = checked_ids(("ps", "-aq", "--no-trunc"), full=True)
         if not ids:
             break
         code, out, err = base.docker_status("inspect", "--format", "{{.Id}} {{.State.Running}} {{.State.StartedAt}} {{.State.Status}} {{.RestartCount}}", *ids)
         if code == 0:
-            for line in out.splitlines():
-                fields = line.split()
-                if len(fields) == 5:
-                    containers[fields[0]] = fields[1] + " " + fields[2] + " " + fields[4]  # running, StartedAt, RestartCount
-                    statuses[fields[0]] = fields[3]
+            containers, statuses = parse_container_rows(ids, out)
             break
         if attempt == 2 or not ABSENT.search(err):
             raise ObservationError(f"docker inspect failed ({code}): {err[:160]}")
-        ids = list_ids("ps", "-aq", "--no-trunc")  # a container vanished between the list and the inspect: ask again
-    return {"containers": containers, "statuses": statuses, "volumes": set(list_ids("volume", "ls", "-q")), "networks": set(list_ids("network", "ls", "-q", "--no-trunc"))}
+        # a container vanished between the list and the inspect: ask again from the list
+    return {"containers": containers, "statuses": statuses, "volumes": set(checked_ids(("volume", "ls", "-q"), full=False)),
+            "networks": set(checked_ids(("network", "ls", "-q", "--no-trunc"), full=True))}
 
 
 class Arm:
