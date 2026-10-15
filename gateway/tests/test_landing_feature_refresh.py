@@ -69,6 +69,22 @@ class LandingRefreshTests(unittest.TestCase):
         for question in faq['mainEntity']:
             self.assertIn(question['acceptedAnswer']['text'], html)
 
+    def test_three_profit_examples_are_complete_and_not_claimed_as_customer_results(self):
+        html = self.client.get('/').text
+        section = re.search(r'<section\b[^>]*id="profit-cases"[^>]*>(.*?)</section>', html, re.S).group(1)
+        examples = re.findall(r'<article\b[^>]*class="profit-case"[^>]*>(.*?)</article>', section, re.S)
+        self.assertEqual(len(examples), 3)
+        for number, example in enumerate(examples, 1):
+            self.assertIn(f'Расчётный пример 0{number}', example)
+            self.assertEqual(re.findall(r'<dt>(.*?)</dt>', example), ['До', 'В MARKETSHELPER', 'Результат'])
+        self.assertIn('дороже на 22%', examples[0])
+        self.assertIn('потребность в материалах', examples[1])
+        self.assertIn('документальные суммы', examples[2])
+        self.assertNotIn('115 000', section)
+        self.assertNotIn('Устранён риск', section)
+        self.assertNotIn('реальных клиентов', section)
+        self.assertIn('href="/register"', section)
+
     def test_new_release_journal_links_to_training_and_preserves_previous_release(self):
         html = self.client.get('/updates').text
         self.assertIn('<time datetime="2026-10-03">', html)

@@ -175,6 +175,47 @@
     {% include "marketing_calculator.html" %}
   </div>
 
+  <section class="section profit-cases" id="profit-cases" aria-labelledby="profit-cases-title">
+    <div class="section-head">
+      <div class="eyebrow">От цифр — к решению</div>
+      <h2 id="profit-cases-title">Три ситуации, в которых прибыль легко потерять из виду</h2>
+      <p>Расчётные примеры для продавца-производителя: подорожание сырья, нехватка материалов и сверка налогов. Проверьте каждый сценарий на данных своего товара.</p>
+    </div>
+    <div class="profit-cases-grid">
+      <article class="profit-case" aria-labelledby="profit-case-cost-title">
+        <span class="profit-case-label">Расчётный пример 01 · Аксессуары</span>
+        <h3 id="profit-case-cost-title">Сырьё подорожало. А маржа?</h3>
+        <dl>
+          <div><dt>До</dt><dd>В примере новая партия кожи и фурнитуры дороже на 22%, а таблица по-прежнему считает прибыль по прошлой закупке.</dd></div>
+          <div><dt>В MARKETSHELPER</dt><dd>FIFO связывает закупки, выпуск и себестоимость проданных партий. В финансовом отчёте её можно сопоставить с удержаниями WB и расходами на рекламу.</dd></div>
+          <div class="profit-case-result"><dt>Результат</dt><dd>Видно, какая партия снижает прибыль. Цена и рекламный бюджет пересматриваются с учётом новой себестоимости.</dd></div>
+        </dl>
+        <a href="/sebestoimost-wb">Проверить состав себестоимости →</a>
+      </article>
+      <article class="profit-case" aria-labelledby="profit-case-materials-title">
+        <span class="profit-case-label">Расчётный пример 02 · Швейный цех</span>
+        <h3 id="profit-case-materials-title">Заказы есть, а ткани на смену хватит?</h3>
+        <dl>
+          <div><dt>До</dt><dd>Ткань и фурнитуру считают отдельно от готовых изделий. Задание на пошив уже выдано, а нужного материала не хватает.</dd></div>
+          <div><dt>В MARKETSHELPER</dt><dd>Техкарта переводит план выпуска в потребность в материалах. Её можно сопоставить с учтёнными остатками сырья и подготовить закупку.</dd></div>
+          <div class="profit-case-result"><dt>Результат</dt><dd>До запуска смены понятно, что нужно докупить и какой объём можно выпустить из имеющихся материалов.</dd></div>
+        </dl>
+        <a href="/dlya-proizvoditeley-wb">Связать сырьё, выпуск и продажи →</a>
+      </article>
+      <article class="profit-case" aria-labelledby="profit-case-tax-title">
+        <span class="profit-case-label">Расчётный пример 03 · Налоги ИП</span>
+        <h3 id="profit-case-tax-title">Выплата на счёт — ещё не налоговая база</h3>
+        <dl>
+          <div><dt>До</dt><dd>Налог считают от банковских поступлений, а доходы, удержания WB и документы расходов остаются в разных таблицах.</dd></div>
+          <div><dt>В MARKETSHELPER</dt><dd>Отдельный налоговый раздел собирает документальные суммы, начисления и оплаты. Сверка показывает расхождения и сохраняет источники расчёта.</dd></div>
+          <div class="profit-case-result"><dt>Результат</dt><dd>Понятно, какие суммы и документы требуют проверки. Расчёт налога можно сверить отдельно от управленческой прибыли и учесть при планировании денег.</dd></div>
+        </dl>
+        <a href="/training#lesson-12-tax">Посмотреть налоговый раздел →</a>
+      </article>
+    </div>
+    <div class="profit-cases-action"><a class="btn btn-primary" href="/register">Проверить свой товар бесплатно</a><span>{{ trial_days }} дней без привязки карты</span></div>
+  </section>
+
   <section class="section" id="compare">
     <div class="section-head">
       <div class="eyebrow">Проверьте свой сценарий</div>
@@ -408,6 +449,21 @@
 .feature.scenario-card h3{color:var(--text)}
 .feature.scenario-card p{color:var(--text-muted)}
 .feature.scenario-card a{display:inline-block;min-height:44px;padding:10px 0;color:var(--accent-strong)}
+.profit-cases-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch}
+.profit-cases .profit-case{min-width:0;display:flex;flex-direction:column;padding:24px;border:1px solid var(--border-strong);border-radius:20px;background:var(--surface);color:var(--text);overflow-wrap:anywhere}
+.profit-cases .profit-case-label{color:var(--accent-strong);font-size:.76rem;font-weight:600;line-height:1.6}
+.profit-cases .profit-case h3{margin:14px 0 20px;font-size:1.2rem;line-height:1.35;color:var(--text);text-wrap:balance}
+.profit-cases .profit-case dl{display:grid;gap:18px;margin:0 0 16px}
+.profit-cases .profit-case dt{margin:0 0 6px;font-size:.76rem;line-height:1.5;font-weight:700;color:var(--text)}
+.profit-cases .profit-case dd{margin:0;color:var(--text-muted);font-size:.9rem;line-height:1.65}
+.profit-cases .profit-case-result{padding-top:16px;border-top:1px solid var(--border)}
+.profit-cases .profit-case-result dt{color:var(--accent-strong)}
+.profit-cases .profit-case a{margin-top:auto;display:inline-flex;align-items:center;min-height:44px;padding:10px 0;font-size:.87rem;line-height:1.5;font-weight:600;color:var(--accent-strong)}
+.profit-cases a:focus-visible{outline:3px solid var(--focus);outline-offset:4px;border-radius:6px}
+.profit-cases-action{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:24px}
+.profit-cases-action span{color:var(--text-muted);font-size:.85rem;line-height:1.5}
+@media(max-width:1000px){.profit-cases-grid{grid-template-columns:1fr}.profit-cases .profit-case{padding:24px}.profit-cases .profit-case h3{max-width:32ch}}
+@media(max-width:400px){.profit-cases .profit-case{padding:20px}.profit-cases-action .btn{width:100%;padding-inline:14px}}
 .workspace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 .workspace-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:24px;min-width:0}
 .workspace-card h3{margin:10px 0;font-size:1.12rem;color:var(--text);text-wrap:balance}
