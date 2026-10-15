@@ -177,8 +177,12 @@ def evaluate(result: dict, criteria: dict) -> tuple[str, list[str]]:
         failed.append(f"kernel memory: {memory['oom_killed_containers']} OOM-killed containers, {memory['restarts']} restarts")
     if result["vm_min_available_mib"] < criteria["floor_mib"]:
         failed.append(f"stand: VM MemAvailable fell to {result['vm_min_available_mib']} MiB, below the {criteria['floor_mib']} MiB floor (stand limit reached)")
-    if not result.get("admission", {}).get("decision"):
+    admission = result.get("admission", {})
+    if not admission.get("decision"):
         failed.append("admission: no decision was recorded")
+    elif admission.get("running_tenants") != n or not admission.get("reserved_mib"):
+        failed.append(f"admission: the decision saw {admission.get('running_tenants')} running tenants and {admission.get('reserved_mib')} MiB reserved for {n} live tenants "
+                      "(it did not measure the real engine state)")
     residual = result.get("cleanup_residual_counts")
     if residual is None or any(residual.values()):
         failed.append(f"cleanup: resources remain or were not verified: {residual}")

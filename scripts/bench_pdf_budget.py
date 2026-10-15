@@ -111,7 +111,9 @@ class Arm:
         for path, size in (("/tmp", "64m"), ("/var/lib/nginx", "64m"), ("/var/cache/nginx", "16m"), ("/var/log/nginx", "16m"), ("/run", "16m")):
             tmpfs += ["--tmpfs", f"{path}:rw,noexec,nosuid,size={size},uid=10001,gid=10001,mode=0777"]
         slot_args = ["-v", f"{self.slot_volume}:/pdf-slots", "-e", "WB_SAAS_PDF_SLOT_DIR=/pdf-slots", "-e", f"WB_SAAS_PDF_SLOTS={self.slots}"] if self.slots else []
-        d("run", "-d", "--name", name, "--network", self.network, "--network-alias", name, *self.label(), "-u", "10001:10001", "--read-only",
+        d("run", "-d", "--name", name, "--network", self.network, "--network-alias", name, *self.label(),
+          "--label", f"wb-saas.slug={name}",  # the label the real admission code counts running tenants by
+          "-u", "10001:10001", "--read-only",
           "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--memory", "1536m", "--memory-reservation", "384m", "--cpus", "1.0",
           "--oom-score-adj", "1000", "--pids-limit", "256", "-v", f"{volume}:/app/data", *tmpfs, *slot_args, *base.isolated_env_args(),
           "-e", f"MH_ALLOWED_HOSTS=localhost,127.0.0.1,{name}", "-e", "MPLCONFIGDIR=/tmp/matplotlib", "-e", "HOME=/app", self.args.image)
