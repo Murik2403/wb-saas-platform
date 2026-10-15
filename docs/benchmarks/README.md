@@ -39,3 +39,11 @@ The 25 and 30 tenant steps remain **open**; no result in the next section replac
 
 Raw evidence (per-tenant driver buckets, kernel counters before/after, both inspections, process lists, lock identities, hashes) is in the `.raw.json` sidecar named, with its sha256, in each act.
 
+### PDF fault scenarios (branch `claude/pdf-faults-20261024`, base 97b0d5f)
+| File | Status |
+|---|---|
+| `pdf-faults-3-2026-10-16.json` | **FAILED, kept as recorded.** Harness fault before any fault was injected: `op() got multiple values for argument 'name'`; fixed with a regression test. |
+| `pdf-faults-3b-2026-10-16.json` | `PASS`: 3 tenants, all four scenarios, 33 of 33 checks. |
+| `pdf-faults-4-2026-10-16.json` | `PASS`: 4 tenants, 33 of 33 checks. |
+Description and limits: `../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Fault scenarios".
+

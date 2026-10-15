@@ -118,3 +118,22 @@ The review of 98e3d5f required five changes; all are in `scripts/`, `scripts/tes
 
 Not done: 20/25/30 (`NOT_RUN`, no large run, no production touched); fault *execution* in real containers (SIGKILL of a slot holder, lease expiry, poison, cancellation); fresh-OS recovery stays with Codex.
 
+## Inventory fix (review of f54e656, P2)
+`inventory()` accepted an exit-0 `docker inspect` answer that was empty, partial or malformed and recorded a smaller (even empty) baseline of pre-existing objects. Now every listed ID must come back exactly once as a typed row (full 64-hex ID, boolean running, known status, numeric restart count, five fields), no duplicate, unexpected or missing ID; listings of containers, volumes and networks reject duplicates and short IDs. Anything else is an `ObservationError`: the run refuses to start on an unreadable baseline and a cleanup report without a readable post-run inventory is UNKNOWN. The review's counterexample is a regression test; 5 mutants of the parser are all killed.
+
+## Fault scenarios (`scripts/bench_pdf_faults.py`, branch `claude/pdf-faults-20261024`, base 97b0d5f)
+Real local tenants (3 or 4, demo data, one shared slot volume, `WB_SAAS_PDF_SLOTS=2`), the real resident worker, real PDF builds, the same admission gate per tenant and the same fail-closed ownership/cleanup as the load scenario. The act is `PASS` only if every check of every scenario holds.
+
+| Scenario | Fault | What is checked (all held in both runs) |
+|---|---|---|
+| S1 | `docker kill` (SIGKILL) of the tenant that builds while another tenant waits for a slot | exit code 137; the slot is free / the queued tenant starts within 0.6 s (limit 15 s); the restarted tenant's run is requeued and finishes ok on attempt 2 with a real PDF; the other runs stay on attempt 1; at most 2 builds overlap; a duplicate enqueue returns the same run in every tenant |
+| S2 | a run whose owner stopped renewing (`dead-worker`, expired lease) in a LIVE tenant | the resident worker takes it over without a restart (attempt 2); the dead owner's late `finish_run` and `heartbeat` are both rejected and change nothing, while the new attempt is running and after it finished; ok with a real PDF |
+| S3 | the worker dies on every attempt: SIGKILL, restart, lease expiry, three times | the run is closed with the "interrupted 3 times" error at attempt 3, no PDF recorded, and stays closed (never requeued) through six further worker ticks; another tenant's job completes ok meanwhile |
+| S4 | cancel (see below) of a queued run and of a running build | the queued run vanishes and never builds; the running build's definition is deleted: the row disappears, nothing is resurrected when the build ends, the container and worker survive (same start time), the slot is released, and the tenant's next job completes ok on attempt 1 |
+
+Findings and limits to read with the table:
+- **There is no cancel API for a report run.** The cancel equivalent tested is `delete_definition`, which also deletes the definition's runs. An in-flight build is not interrupted by it (it finishes and its result is discarded); a PDF file it wrote is not tracked by any row (orphan file, not measured here).
+- **The kernel frees a SIGKILLed holder's slot at once, but the run stays `running` until its lease expires** (300 s); only then does the live worker requeue it, and a restart does not shorten that (startup recovery only takes expired leases). The scenarios therefore expire the dead owner's lease by an explicit, recorded injection into the tenant's own demo database instead of waiting 300 s; the 300 s wait itself was not exercised.
+- S3's poison cycle uses real SIGKILLs and the real recovery code, with the same lease-expiry injection after each kill.
+- Demo data, 8 GiB / 12 vCPU local stand; no marketplace sync, no deliveries; 20/25/30 not exercised; no production touched; fresh-OS recovery stays with Codex. Not covered: an unavailable or read-only slot directory.
+
