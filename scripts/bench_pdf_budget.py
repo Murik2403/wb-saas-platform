@@ -30,6 +30,7 @@ import sys
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -65,8 +66,13 @@ print(json.dumps({"runs": rows, "slots": slots}))
 '''
 
 
+MOSCOW = timezone(timedelta(hours=3))  # Europe/Moscow has been UTC+3 without daylight saving since 2014
+
+
 def parse_ts(text: str) -> float:
-    return time.mktime(time.strptime(text, "%Y-%m-%dT%H:%M:%S"))
+    """The tenants stamp runs with naive Moscow time (reports/store.py). Read them as Moscow time, never as the benchmark host's
+    local time: in a UTC container ``time.mktime`` made every run look three hours late (a 66 s run was reported as 10866 s)."""
+    return datetime.strptime(text, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=MOSCOW).timestamp()
 
 
 def peak_concurrency(intervals: list[tuple[float, float]]) -> int:

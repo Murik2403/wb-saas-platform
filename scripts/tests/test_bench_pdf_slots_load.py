@@ -254,3 +254,17 @@ def test_driver_exit_and_missing_result_are_not_silently_merged():
 def test_driver_thread_exceptions_are_recorded_and_exit_nonzero():
     assert "threading.excepthook = thread_failure" in load.DRIVER
     assert "sys.exit(2 if worker_errors else 0)" in load.DRIVER
+
+
+def test_run_timestamps_are_moscow_time_whatever_the_benchmark_hosts_timezone_is():
+    """Found by the isolated-daemon smokes: in a UTC container every 66 s run was reported as 10866 s (a 3 h offset)."""
+    import datetime
+    import os
+    import subprocess
+    expected = datetime.datetime(2026, 10, 16, 7, 0, 0, tzinfo=datetime.timezone.utc).timestamp()  # 10:00:00 Moscow
+    assert load.pdfb.parse_ts("2026-10-16T10:00:00") == expected
+    code = ("import sys; sys.path.insert(0, %r); import bench_pdf_budget as b; print(b.parse_ts('2026-10-16T10:00:00'))" % str(SCRIPTS))
+    for zone in ("UTC0", "MSK-3", "EST5EDT"):
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env={**os.environ, "TZ": zone}).stdout.strip()
+        assert float(out) == expected, (zone, out)
+    assert load.pdfb.parse_ts("2026-10-16T10:01:06") - load.pdfb.parse_ts("2026-10-16T10:00:00") == 66
