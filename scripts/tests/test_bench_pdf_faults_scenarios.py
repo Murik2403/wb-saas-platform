@@ -194,6 +194,27 @@ def test_s1_waits_for_enough_running_builds_not_only_for_held_slot_files():
     assert not [e for e in world.events if e[1] == "kill"]
 
 
+def test_s1_rechecks_the_victim_is_still_running_at_the_kill_instant():
+    """The review's third finding: the chosen victim finished between the precondition and the kill, so the kill would interrupt nothing."""
+    world = World(["t-a", "t-b", "t-c"])
+
+    def victim_finishes(found):
+        run = next(iter(world.tenants[found["victim"]]["runs"].values()))
+        run.update(status="ok", finished=world.t, pdf=True)
+    outcome = run_with(world, faults.s1_sigkill, after_wait=victim_finishes, busy=lambda name: 2)  # the slot files still read full: only the victim's status says it is over
+    assert results(outcome)["every slot busy, the victim still running and a tenant waiting, all re-read at the moment of the kill"] is False
+    assert not [e for e in world.events if e[1] == "kill"], "nothing may be killed after the victim has finished"
+
+
+def test_s1_rechecks_that_every_slot_is_still_busy_at_the_kill_instant():
+    """The slot files agreed at the precondition and showed a free slot a moment later: no kill."""
+    world = World(["t-a", "t-b", "t-c"])
+    readings = iter([2, 1, 1, 1, 1, 1])
+    outcome = run_with(world, faults.s1_sigkill, busy=lambda name: next(readings, 1))
+    assert results(outcome)["every slot busy, the victim still running and a tenant waiting, all re-read at the moment of the kill"] is False
+    assert not [e for e in world.events if e[1] == "kill"]
+
+
 def test_s1_rechecks_the_waiting_tenant_at_the_kill_instant():
     """The contender started between the precondition and the kill: nothing waits any more, so nothing is killed."""
     world = World(["t-a", "t-b", "t-c"])
@@ -203,7 +224,7 @@ def test_s1_rechecks_the_waiting_tenant_at_the_kill_instant():
             for run in world.tenants[name]["runs"].values():
                 run.update(status="running", attempts=1, left=10, started=world.t)
     outcome = run_with(world, faults.s1_sigkill, after_wait=contender_starts)
-    assert results(outcome)["every slot busy and a tenant observed waiting for one at the moment of the kill"] is False
+    assert results(outcome)["every slot busy, the victim still running and a tenant waiting, all re-read at the moment of the kill"] is False
     assert not [e for e in world.events if e[1] == "kill"]
 
 

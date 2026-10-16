@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from config import DB_PATH
 from reports import delivery
-from reports.pdf_budget import PdfBusy, pdf_slot, try_pdf_slot
+from reports.pdf_budget import PdfBusy, announce_background_waiting, pdf_slot, try_pdf_slot, withdraw_background_waiting
 from reports.store import LEASE_SECONDS, ReportStore
 
 CHECK_INTERVAL_SECONDS = 5
@@ -187,6 +187,9 @@ def deliver_report(
     return results
 
 
+_deferred = {"due": False}  # a scheduled report found every slot busy during the current tick
+
+
 def run_definition(store: ReportStore, definition: dict, *, period_days: int | None = None) -> bool:
     """Synchronous generate + deliver -- used by the background scheduler
     loop (check_once/loop), where blocking on a slow delivery is harmless
@@ -198,6 +201,8 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int | N
         return False  # a fresh crash lease must expire/recover, never spawn a second scheduled delivery
     slot = try_pdf_slot()
     if slot is None:
+        _deferred["due"] = True
+        announce_background_waiting()  # requests must not take the slot this schedule is waiting for
         return False
     with slot:
         run_id = store.start_run(definition["id"], delivery_requested=bool(definition.get("email_enabled") or definition.get("telegram_enabled")))
@@ -215,6 +220,7 @@ def process_queued(store: ReportStore, *, limit: int = 1) -> int:
             break
         slot = try_pdf_slot()
         if slot is None:
+            announce_background_waiting()  # this queued run has priority over requests until it gets a slot
             break  # every PDF slot is busy: the run stays queued (durable) and the next tick tries again
         delivery = None
         with slot:
@@ -243,6 +249,19 @@ def process_queued(store: ReportStore, *, limit: int = 1) -> int:
 
 
 def check_once(*, deliver: bool = True) -> int:
+    _deferred["due"] = False
+    try:
+        return _check_once(deliver=deliver)
+    finally:
+        # keep the beacon only while queued or due reports are still waiting for a slot; a crash drops it with the process
+        try:
+            if not _deferred["due"] and not ReportStore(DB_PATH).has_queued():
+                withdraw_background_waiting()
+        except Exception:  # noqa: BLE001 - an unreadable store must not leave requests blocked forever: the beacon dies with the process anyway
+            withdraw_background_waiting()
+
+
+def _check_once(*, deliver: bool = True) -> int:
     store = ReportStore(DB_PATH)
     from shop_schedule_runner import run_one
     run_one()
@@ -260,6 +279,9 @@ def check_once(*, deliver: bool = True) -> int:
                         with slot:
                             generate_and_save(store, definition)
                         generated += 1
+                    else:
+                        _deferred["due"] = True
+                        announce_background_waiting()
             except Exception as exc:
                 print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Ошибка отчёта '{definition['name']}': {exc}", flush=True)
     return generated

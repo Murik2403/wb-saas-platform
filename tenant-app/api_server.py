@@ -362,10 +362,9 @@ def generate_report(definition_id: int) -> dict:
     if definition is None:
         raise HTTPException(status_code=404, detail="not_found")
 
-    from reports.pdf_budget import PdfBusy, pdf_slot
-    try:
-        with pdf_slot(wait=15):  # a request must not sit behind other tenants' reports for long: ask the user to retry
-            pdf_bytes, file_path = generate_and_save(store, definition)
+    from reports.pdf_budget import PdfBusy, interactive_pdf
+    try:  # a request must not sit behind other tenants' reports for long (15 s) nor outlive the proxy timeout: ask the user to retry
+        pdf_bytes, file_path = interactive_pdf(lambda: generate_and_save(store, definition), wait=15)
     except PdfBusy as exc:
         raise HTTPException(status_code=503, detail=str(exc), headers={"Retry-After": "30"}) from exc
     except Exception as exc:

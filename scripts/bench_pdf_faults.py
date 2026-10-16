@@ -252,11 +252,16 @@ def s1_sigkill(arm: pdfb.Arm, args) -> dict:
         return {"checks": checks + [check("every slot busy and a tenant observed waiting for one before the kill", False, "never observed: nothing was killed")], "notes": notes}
     victim = ready["victim"]
     others = [n for n in names if n != victim]
-    still_waiting = [n for n in others if status_of(n) == "queued"]  # re-read at the kill instant
-    checks.append(check("every slot busy and a tenant observed waiting for one at the moment of the kill", bool(still_waiting) and ready["busy"] == args.slots,
-                        f"busy {ready['busy']}, waiting {[n[-12:] for n in still_waiting]}"))
-    if not still_waiting:
+    # everything the kill depends on is read again at the kill instant: the slot files, the victim's status and the waiting tenant
+    busy_now = host_busy(others[0])
+    victim_state = status_of(victim)
+    still_waiting = [n for n in others if status_of(n) == "queued"]
+    precondition = bool(still_waiting) and busy_now == args.slots and victim_state == "running"
+    checks.append(check("every slot busy, the victim still running and a tenant waiting, all re-read at the moment of the kill", precondition,
+                        f"busy {busy_now}, victim {victim_state}, waiting {[n[-12:] for n in still_waiting]}"))
+    if not precondition:
         return {"checks": checks, "notes": notes}
+    ready["busy"] = busy_now
     killed_at = time.time()
     base.docker("kill", victim)
     exit_code = base.docker("inspect", "--format", "{{.State.ExitCode}}", victim, check=False)
