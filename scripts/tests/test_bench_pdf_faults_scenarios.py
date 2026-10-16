@@ -33,6 +33,7 @@ class World:
         self.slots = slots
         self.duration = duration or {}
         self.events = []
+        self.claims = []  # (tick, tenant, run id, attempt)
         self.tenants = {n: {"runs": {}, "defs": {}, "alive": True, "seq": itertools.count(1), "started": 0} for n in names}
 
     # -- time
@@ -54,6 +55,7 @@ class World:
             queued = sorted((r for r in tn["runs"].values() if r["status"] == "queued"), key=lambda r: r["id"])
             if queued and self.running_total() < self.slots:
                 queued[0].update(status="running", attempts=queued[0]["attempts"] + 1, left=self.duration.get(name, 4), started=self.t, dead=False)
+                self.claims.append((self.t, name, queued[0]["id"], queued[0]["attempts"]))
 
     # -- the container-side operations
     def op(self, tenant, operation, **arg):
@@ -219,6 +221,31 @@ def test_s3_a_neighbour_build_is_running_at_each_of_the_three_kills_and_all_comp
     assert [c["neighbour_status_at_kill"] for c in outcome["notes"]["cycles"]] == ["running"] * 3
 
 
+def test_s3_the_neighbour_is_already_building_before_each_poison_attempt_starts():
+    """The review's second finding, in time: a neighbour job that starts after the poison attempt does not prove isolation."""
+    world = World(["t-a", "t-b", "t-c"], duration={"t-a": 12, "t-c": 60})
+    run_with(world, faults.s3_poison)
+    poison = [c for c in world.claims if c[1] == "t-c"]
+    neighbour = [c for c in world.claims if c[1] == "t-a"]
+    assert [c[3] for c in poison] == [1, 2, 3] and len(neighbour) == 3
+    assert all(n[0] <= p[0] for n, p in zip(neighbour, poison)), (neighbour, poison)
+
+
+def test_s3_a_poison_build_that_finishes_before_the_kill_takes_effect_fails_the_scenario():
+    """The failure of the first v2 run: the build ended on its own, the kill hit an idle tenant and nothing was interrupted."""
+    world = World(["t-a", "t-b", "t-c"], duration={"t-a": 12, "t-c": 1})
+    original = world.docker
+
+    def slow_kill(*args, **kwargs):
+        if args[0] == "kill":
+            for _ in range(5):
+                world.tick()  # time passes before the kill lands
+        return original(*args, **kwargs)
+    world.docker = slow_kill
+    outcome = run_with(world, faults.s3_poison)
+    assert not all(c["ok"] for c in outcome["checks"]), "a kill that interrupted nothing must not pass"
+
+
 def test_s3_a_neighbour_that_never_builds_fails_the_scenario():
     """Work after the poison episode would not be isolation: if the other tenant has nothing running at the kill, the check fails."""
     world = World(["t-a", "t-b", "t-c"], duration={"t-c": 60})
@@ -324,7 +351,7 @@ def drive_scenario(memory_reads, oom_answer, scenarios_ok=True):
     with patch.object(load, "git_state", return_value={"head": "x", "dirty": False}), patch.object(faults.base, "assert_local_engine"), patch.object(faults.pdfb, "Arm", return_value=arm), \
          patch("docker.DockerClient"), patch("tenant_budget.TenantBudget"), patch.object(faults.load, "make_gate", side_effect=gate), patch.object(faults.time, "sleep"), \
          patch.object(faults.load, "collect_image", return_value=({"id": "x"}, {}, {}, {}, [])), patch.object(faults.load, "image_failures", return_value=[]), \
-         patch.object(faults.load, "vm_available", side_effect=memory_reads), patch.object(faults.threading, "Event", ThreeSamples), patch.object(faults.threading, "Thread", ImmediateThread), \
+         patch.object(faults.load, "vm_available_helper", side_effect=memory_reads), patch.object(faults.threading, "Event", ThreeSamples), patch.object(faults.threading, "Thread", ImmediateThread), \
          patch.object(faults, "run_scenarios", return_value=scenarios), patch.object(faults.base, "docker_status", return_value=oom_answer):
         return faults.scenario(scenario_args())
 

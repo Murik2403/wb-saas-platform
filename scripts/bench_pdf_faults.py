@@ -306,16 +306,23 @@ def s2_lease(arm: pdfb.Arm, args) -> dict:
 
 
 def s3_poison(arm: pdfb.Arm, args) -> dict:
+    """Each cycle first starts a build in ANOTHER tenant and waits until it is running; only then is the poison run (re)claimed and killed,
+    so the kill always lands while the neighbour is building and before the poison build can finish by itself."""
     name, other = arm.names[2], arm.names[0]
     checks, notes = [], {"cycles": []}
     definition = op(name, "define", name="faults-s3")["definition_id"]
-    run_id = op(name, "enqueue", definition_id=definition)["run_id"]
-    neighbours = []  # one build per cycle in ANOTHER tenant, enqueued at the start of the cycle and observed running at the kill
+    run_id = None
+    neighbours = []
     for cycle in (1, 2, 3):
         job = new_job(other, f"faults-s3-neighbour-{cycle}")
         neighbours.append(job)
-        claimed = wait_until(lambda: (lambda r: r if r and r["status"] == "running" and r["attempts"] == cycle else None)(run_by_id(name, run_id)), 90, 1)
-        neighbour_running = wait_until(lambda: (run_by_id(other, job["run_id"]) or {}).get("status") == "running", 60, 0.5)
+        neighbour_running = wait_until(lambda: (run_by_id(other, job["run_id"]) or {}).get("status") == "running", 90, 0.5)
+        if cycle == 1:
+            run_id = op(name, "enqueue", definition_id=definition)["run_id"]  # the poison run enters only after the neighbour is building
+            injected = 1
+        else:
+            injected = op(name, "expire_leases")["expired"]  # the previous kill's dead lease ends now: the worker requeues and re-claims
+        claimed = wait_until(lambda: (lambda r: r if r and r["status"] == "running" and r["attempts"] == cycle else None)(run_by_id(name, run_id)), 90, 0.5)
         if not claimed:
             checks.append(check(f"attempt {cycle} was claimed by the worker", False, str(run_by_id(name, run_id))))
             break
@@ -323,10 +330,11 @@ def s3_poison(arm: pdfb.Arm, args) -> dict:
         base.docker("kill", name)
         base.docker("start", name)
         healthy = wait_healthy(arm, name)
-        injected = op(name, "expire_leases")["expired"] if healthy else 0
-        notes["cycles"].append({"attempt": cycle, "killed": True, "healthy_again": healthy, "lease_expired_by_injection": injected, "neighbour_status_at_kill": at_kill})
-        checks += [check(f"attempt {cycle}: SIGKILL, restart, the dead lease was expired by injection", healthy and injected == 1, str(notes["cycles"][-1])),
+        notes["cycles"].append({"attempt": cycle, "killed": True, "healthy_again": healthy, "lease_expired_by_injection_before_this_attempt": injected, "neighbour_status_at_kill": at_kill})
+        checks += [check(f"attempt {cycle}: claimed after the other tenant was building, SIGKILL, restart", healthy and injected == 1, str(notes["cycles"][-1])),
                    check(f"attempt {cycle}: the other tenant had a build RUNNING at the moment of the kill", bool(neighbour_running) and at_kill == "running", f"status at kill {at_kill}")]
+    last = op(name, "expire_leases")["expired"]  # the third dead lease ends: recovery must close the run instead of requeueing it
+    checks.append(check("the third dead lease was expired by injection on exactly the poison run", last == 1, str(last)))
     final = wait_until(lambda: (lambda r: r if r and r["status"] == "error" else None)(run_by_id(name, run_id)), 60, 1)
     checks += [check("after the third interruption the run is closed with an error", bool(final) and final["attempts"] == 3, str(final and {k: final[k] for k in ("status", "attempts")})),
                check("the error says it was interrupted 3 times", bool(final) and POISON_TEXT in (final.get("error") or ""), str(final and final.get("error"))),
@@ -429,7 +437,7 @@ def scenario(args) -> dict:
         def sample():
             while not stop.is_set():
                 try:
-                    samples.append((time.time(), load.vm_available(arm.names[0])))
+                    samples.append((time.time(), load.vm_available_helper()))  # not through a tenant: S1 and S3 kill tenants
                 except Exception as error:  # noqa: BLE001 - a failed read is an observation error, never a missing zero
                     sample_errors.append({"at": time.time(), "error": f"{type(error).__name__}: {str(error)[:100]}"})
                 stop.wait(args.sample_interval)
@@ -475,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fault-timeout", type=float, default=240.0)
     parser.add_argument("--min-vm-available-mib", type=int, default=1500)
     parser.add_argument("--settle", type=int, default=20)
-    parser.add_argument("--sample-interval", type=float, default=2.0)
+    parser.add_argument("--sample-interval", type=float, default=2.0, help="pause between memory reads (each read starts a throwaway container)")
     parser.add_argument("--prefix", default="bench")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--out", default="bench-pdf-faults.json")
