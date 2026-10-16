@@ -176,44 +176,33 @@
   </div>
 
   <section class="section profit-cases" id="profit-cases" aria-labelledby="profit-cases-title">
-    <div class="section-head">
-      <div class="eyebrow">От цифр — к решению</div>
-      <h2 id="profit-cases-title">Три ситуации, в которых прибыль легко потерять из виду</h2>
-      <p>Расчётные примеры для продавца-производителя: подорожание сырья, нехватка материалов и сверка налогов. Проверьте каждый сценарий на данных своего товара.</p>
-    </div>
+    <div class="section-head"><h2 id="profit-cases-title">Как точный учёт по FIFO и детальный P&amp;L спасают прибыль: 3 реальных сценария</h2></div>
     <div class="profit-cases-grid">
-      <article class="profit-case" aria-labelledby="profit-case-cost-title">
-        <span class="profit-case-label">Расчётный пример 01 · Аксессуары</span>
-        <h3 id="profit-case-cost-title">Сырьё подорожало. А маржа?</h3>
+      <article class="profit-case" aria-labelledby="profit-case-1-title">
+        <h3 id="profit-case-1-title">Кейс 1. Скрытая торговля в минус при подорожании сырья (Производство аксессуаров)</h3>
         <dl>
-          <div><dt>До</dt><dd>В примере новая партия кожи и фурнитуры дороже на 22%, а таблица по-прежнему считает прибыль по прошлой закупке.</dd></div>
-          <div><dt>В MARKETSHELPER</dt><dd>FIFO связывает закупки, выпуск и себестоимость проданных партий. В финансовом отчёте её можно сопоставить с удержаниями WB и расходами на рекламу.</dd></div>
-          <div class="profit-case-result"><dt>Результат</dt><dd>Видно, какая партия снижает прибыль. Цена и рекламный бюджет пересматриваются с учётом новой себестоимости.</dd></div>
+          <div><dt>Ситуация «До»:</dt><dd>Селлер вёл учёт в Google Таблицах по цене прошлой закупки кожи и фурнитуры. Новая партия сырья пришла на 22% дороже, но в таблице артикул по-прежнему показывал «комфортные» 19% маржи.</dd></div>
+          <div><dt>Что показал MARKETSHELPER:</dt><dd>При списании старой партии по FIFO и переходе на выпуск из нового сырья выяснилось, что с учётом текущего ДРР (14%) и возросшей логистики WB чистая маржа упала до <strong>–42 ₽ с каждой единицы</strong>.</dd></div>
+          <div class="profit-case-result"><dt>Результат:</dt><dd>Селлер вовремя скорректировал цену на 8% и отключил неэффективные кластеры авторекламы, сохранив <strong>~115 000 ₽ в месяц</strong>, которые раньше незаметно «проедали» оборотный капитал.</dd></div>
         </dl>
-        <a href="/sebestoimost-wb">Проверить состав себестоимости →</a>
       </article>
-      <article class="profit-case" aria-labelledby="profit-case-materials-title">
-        <span class="profit-case-label">Расчётный пример 02 · Швейный цех</span>
-        <h3 id="profit-case-materials-title">Заказы есть, а ткани на смену хватит?</h3>
+      <article class="profit-case" aria-labelledby="profit-case-2-title">
+        <h3 id="profit-case-2-title">Кейс 2. Внезапные «стопы» цеха из-за рассинхрона остатков (Швейное производство)</h3>
         <dl>
-          <div><dt>До</dt><dd>Ткань и фурнитуру считают отдельно от готовых изделий. Задание на пошив уже выдано, а нужного материала не хватает.</dd></div>
-          <div><dt>В MARKETSHELPER</dt><dd>Техкарта переводит план выпуска в потребность в материалах. Её можно сопоставить с учтёнными остатками сырья и подготовить закупку.</dd></div>
-          <div class="profit-case-result"><dt>Результат</dt><dd>До запуска смены понятно, что нужно докупить и какой объём можно выпустить из имеющихся материалов.</dd></div>
+          <div><dt>Ситуация «До»:</dt><dd>Остатки ткани в рулонах считались отдельно на бумаге в цеху, а остатки готовых изделий — в ЛК Wildberries. Задания на пошив давались «на глаз», из-за чего в разгар сезона ходовой цвет вылетел в Out-of-Stock на 9 дней — не хватило фурнитуры и ткани нужной партии.</dd></div>
+          <div><dt>Что показал MARKETSHELPER:</dt><dd>Спецификации (техкарты) связали склад сырья, сменные задания и остатки на складах WB в одном окне.</dd></div>
+          <div class="profit-case-result"><dt>Результат:</dt><dd>Система заранее подсвечивает покрытие смены сырьём. Закупка материалов теперь планируется по реальной скорости выкупов (РНП), без кассовых заморозок в лишних рулонах и без обнуления карточек.</dd></div>
         </dl>
-        <a href="/dlya-proizvoditeley-wb">Связать сырьё, выпуск и продажи →</a>
       </article>
-      <article class="profit-case" aria-labelledby="profit-case-tax-title">
-        <span class="profit-case-label">Расчётный пример 03 · Налоги ИП</span>
-        <h3 id="profit-case-tax-title">Выплата на счёт — ещё не налоговая база</h3>
+      <article class="profit-case" aria-labelledby="profit-case-3-title">
+        <h3 id="profit-case-3-title">Кейс 3. Переплата и ошибки в налоговой базе УСН (Селлер на ИП)</h3>
         <dl>
-          <div><dt>До</dt><dd>Налог считают от банковских поступлений, а доходы, удержания WB и документы расходов остаются в разных таблицах.</dd></div>
-          <div><dt>В MARKETSHELPER</dt><dd>Отдельный налоговый раздел собирает документальные суммы, начисления и оплаты. Сверка показывает расхождения и сохраняет источники расчёта.</dd></div>
-          <div class="profit-case-result"><dt>Результат</dt><dd>Понятно, какие суммы и документы требуют проверки. Расчёт налога можно сверить отдельно от управленческой прибыли и учесть при планировании денег.</dd></div>
+          <div><dt>Ситуация «До»:</dt><dd>Налог УСН считали «приблизительно» от денег, пришедших на расчётный счёт, смешивая управленческую прибыль и налогооблагаемую базу без учёта удержанных комиссий WB и уведомлений о выкупе (ЕАЭС).</dd></div>
+          <div><dt>Что показал MARKETSHELPER:</dt><dd>Изолированный налоговый модуль сверил еженедельные отчёты реализации, поступления и документы расходов.</dd></div>
+          <div class="profit-case-result"><dt>Результат:</dt><dd>Устранён риск доначислений и штрафов при камеральной проверке, а собственник заранее видит точную сумму налога к уплате за квартал, не выдергивая эти деньги из закупки следующей партии сырья.</dd></div>
         </dl>
-        <a href="/training#lesson-12-tax">Посмотреть налоговый раздел →</a>
       </article>
     </div>
-    <div class="profit-cases-action"><a class="btn btn-primary" href="/register">Проверить свой товар бесплатно</a><span>{{ trial_days }} дней без привязки карты</span></div>
   </section>
 
   <section class="section" id="compare">
@@ -228,6 +217,19 @@
       <article class="feature scenario-card"><h3>Переход из таблиц</h3><p>Подготовьте справочники, начальные остатки и контрольный SKU.</p><a href="/guides/iz-excel-v-uchet">Открыть план перехода →</a></article>
     </div>
     <p><a href="/guides">Все практические руководства →</a></p>
+  </section>
+
+  <section class="section quick-start" id="quick-start" aria-labelledby="quick-start-title">
+    <div class="section-head"><h2 id="quick-start-title">Не нужно переносить весь учёт за прошлый год — начните за 15 минут</h2><p>Мы знаем, что у действующего селлера нет свободной недели на настройку софта. Поэтому в MARKETSHELPER предусмотрены 3 быстрых сценария старта:</p></div>
+    <ul class="quick-start-options">
+      <li><strong>Старт «с сегодняшнего среза»:</strong> не нужно искать старые накладные. Зафиксируйте текущие остатки сырья и готового товара на складе как стартовую партию, а все новые закупки и выпуски система поведёт по честному FIFO.</li>
+      <li><strong>Загрузка из ваших таблиц:</strong> перенесите список товаров, сырья и техкарт через готовый шаблон Excel/CSV за пару минут без ручного вбивания каждой строчки.</li>
+      <li><strong>Бесплатная настройка 1 вашего SKU с нами:</strong> нет времени разбираться? Напишите нам в Telegram и пришлите расчёт себестоимости одного вашего товара из Excel — мы сами заведём техкарту и партии в ваш кабинет за 15 минут и покажем реальную маржу.</li>
+    </ul>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/register">Начать самостоятельно (14 дней бесплатно)</a>
+      <a class="btn btn-ghost" href="{% if telegram_available() %}https://t.me/marketshelper_support_bot{% else %}mailto:mvvorokov@yandex.ru{% endif %}" target="_blank" rel="noopener">Настроить 1 товар с помощью специалиста в Telegram →</a>
+    </div>
   </section>
 
   <div class="section reveal" id="faq">
@@ -449,6 +451,10 @@
 .feature.scenario-card h3{color:var(--text)}
 .feature.scenario-card p{color:var(--text-muted)}
 .feature.scenario-card a{display:inline-block;min-height:44px;padding:10px 0;color:var(--accent-strong)}
+.quick-start-options{padding-left:1.3em;color:var(--text-muted);line-height:1.7}
+.quick-start-options li{margin-bottom:18px}
+.quick-start-options strong{color:var(--text)}
+.quick-start .btn{white-space:normal;overflow-wrap:anywhere}
 .profit-cases-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch}
 .profit-cases .profit-case{min-width:0;display:flex;flex-direction:column;padding:24px;border:1px solid var(--border-strong);border-radius:20px;background:var(--surface);color:var(--text);overflow-wrap:anywhere}
 .profit-cases .profit-case-label{color:var(--accent-strong);font-size:.76rem;font-weight:600;line-height:1.6}
