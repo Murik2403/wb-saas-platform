@@ -33,3 +33,23 @@ class DashboardProjectionTests(DbTestCase):
         self.assertEqual(projected.financial,ordinary.financial)
         for field in ['daily','products','ads','stocks','alerts','financial_products','financial_unallocated','hourly']:
             pd.testing.assert_frame_equal(getattr(projected,field),getattr(ordinary,field))
+
+    def test_quality_omits_large_financial_payload_without_changing_diagnostics(self):
+        import ui_helpers
+        self.seed(count=80, raw_size=65536)
+        context = ({}, True, {"status": "ok", "finished_at": "2026-09-01T12:00:00+03:00"}, None)
+        memory = []
+        def measured_reader(**kwargs):
+            frame = ingest.read_financial(**kwargs)
+            memory.append(int(frame.memory_usage(deep=True).sum()))
+            return frame
+        with patch('ui_helpers.read_financial', side_effect=measured_reader):
+            projected = ui_helpers.build_data_quality_overview(*context)
+        self.assertLess(memory[0], 80 * 4096, "Diagnostic reader materialized the raw report payload")
+        with patch('ui_helpers.read_financial', side_effect=lambda **kwargs: ingest.read_financial()):
+            ordinary = ui_helpers.build_data_quality_overview(*context)
+        self.assertEqual(projected[1], ordinary[1])
+        for index in (0, 2, 3):
+            pd.testing.assert_frame_equal(projected[index], ordinary[index])
+        with core.connect() as conn:
+            self.assertGreater(conn.execute('SELECT length(raw_json) FROM financial_report LIMIT 1').fetchone()[0], 65536)
