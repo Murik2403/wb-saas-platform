@@ -418,10 +418,14 @@ def upsert_financial(rows: Iterable[dict[str, Any]], *, source_identity: str | N
         conn.executemany(sql, values)
     return len(payload)
 
-def read_financial(*, omit_raw: bool = False) -> pd.DataFrame:
+def read_financial(*, omit_raw: bool = False, dates_only: bool = False) -> pd.DataFrame:
     from .core import connect, ensure_financial_schema, _table_projection
     ensure_financial_schema()
     with connect() as conn:
+        # Quality diagnostics need row count and date freshness only. Avoid
+        # decoding deduction JSON or materializing unrelated money columns.
+        if dates_only:
+            return pd.read_sql_query("SELECT operation_date FROM financial_report", conn)
         # Keep the bounded reason even on fast reads that omit the large raw
         # payload. This works for existing snake_case and new camelCase rows;
         # no destructive rewrite or migration of historical reports is needed.

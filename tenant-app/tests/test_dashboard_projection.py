@@ -45,7 +45,7 @@ class DashboardProjectionTests(DbTestCase):
             return frame
         with patch('ui_helpers.read_financial', side_effect=measured_reader):
             projected = ui_helpers.build_data_quality_overview(*context)
-        self.assertLess(memory[0], 80 * 4096, "Diagnostic reader materialized the raw report payload")
+        self.assertLess(memory[0], 80 * 128, "Diagnostic reader materialized unused report columns")
         with patch('ui_helpers.read_financial', side_effect=lambda **kwargs: ingest.read_financial()):
             ordinary = ui_helpers.build_data_quality_overview(*context)
         self.assertEqual(projected[1], ordinary[1])

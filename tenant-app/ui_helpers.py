@@ -553,7 +553,7 @@ def build_data_quality_overview(
     materials = read_table("material_inventory_color")
     pipeline = read_table("product_pipeline")
     # Diagnostics use canonical dates/counts, never the source JSON payload.
-    financial = read_financial(omit_raw=True)
+    financial = read_financial(omit_raw=True, dates_only=True)
 
     catalog_count = int(len(catalog))
     rows.append(_quality_row(
