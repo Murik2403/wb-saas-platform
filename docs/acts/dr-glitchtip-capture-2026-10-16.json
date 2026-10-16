@@ -1,0 +1,150 @@
+{
+  "formatVersion": 1,
+  "scope": "copy-only current GlitchTip, PostgreSQL18, host/runtime config and images; isolated restore",
+  "fullServerDR": false,
+  "capture": {
+    "captured": true,
+    "container_count": 12,
+    "image_ids": [
+      "sha256:34d5089d0b414945342848518b383f11f5b3a645504ed87b77ffeb9d683d0e48",
+      "sha256:61347d5be344617b3391198f8ce35097dc27b1dc0b001f9ae49d072fb2409096",
+      "sha256:78d130e285adc8dfc916b4908b0e041209977995acc91d347cbaa358a2abcc24",
+      "sha256:93c4a6cefadf542872c4ab6ba1cde4a7f74cf1da9d43518f0a382527b11b6785",
+      "sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2",
+      "sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6",
+      "sha256:b579582e9533989bd5b440e8e64332e908268d1d72e076ea5a190631907696c3",
+      "sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+      "sha256:da602851fd559337f49f54da60048ea74828df55065166c6c44a989171837b47",
+      "sha256:ed2e8b9112a771f8af84e00531616a2935962597e9bfaae83a3f743b8e3a19d4"
+    ],
+    "file_count": 77,
+    "database_count": 1,
+    "running_services_unchanged": true,
+    "source_plaintext_removed": true,
+    "private_key_uploaded": false
+  },
+  "artifacts": {
+    "capture.enc": {
+      "bytes": 3666692,
+      "sha256": "812a3e0c6d6dcc80d98aeb95d2d308c6bf62da66bd9a72fde214618dcc9a8b4a",
+      "plaintext_sha256": "57530b0530b586e84f3fbbe3bced25b489bdcdf0eea5b4ffe88a85e4a6411057",
+      "recipient": "e7b1404f3d9ca12913a51617fd4caff6673bf349addd9c03364f2f26c288fb46"
+    },
+    "images.enc": {
+      "bytes": 797342982,
+      "sha256": "a860db08ccaad71fe191f8ef3ce1973b5f71aede3e5347a01dd36914cf8c5b39",
+      "plaintext_sha256": "35a82d2efcd35bd89cd5d0b9c5ff39e39a461359a42427ee69dc618e1837746b",
+      "recipient": "e7b1404f3d9ca12913a51617fd4caff6673bf349addd9c03364f2f26c288fb46"
+    }
+  },
+  "authentication": {
+    "authenticated": true,
+    "host_files": 77,
+    "databases": 1,
+    "images_loaded_and_ids_verified": 10,
+    "plaintext_images_removed": true,
+    "config_plaintext_on_disk": false,
+    "private_key_uploaded": false
+  },
+  "source_postcheck": {
+    "source_services_unchanged": true,
+    "running": 12,
+    "health": {
+      "/wb-tenant-demo": "healthy",
+      "/wb-saas-gateway-1": "healthy",
+      "/wb-tenant-alexdalex-msk": "healthy",
+      "/wb-tenant-letoocean": "healthy",
+      "/wb-tenant-marketing": "healthy",
+      "/wb-tenant-mvvorokov": "healthy",
+      "/wb-saas-provisioner-1": "healthy",
+      "/wb-saas-docker-control-proxy-p1": "not_configured",
+      "/wb-saas-docker-discovery-proxy-p1": "not_configured",
+      "/wb-saas-traefik-1": "not_configured",
+      "/glitchtip-glitchtip-1": "healthy",
+      "/glitchtip-postgres-1": "healthy"
+    },
+    "capture_operator_sha256": "342fdbb7515fceb5290dc0f6a371b8e0431ed1c7619e32df1e8389ecb8f444cc",
+    "plaintext_source_temporaries_absent": true
+  },
+  "offsite": {
+    "offsite_verified": true,
+    "artifacts": [
+      {
+        "object": "timeweb-s3:marketshelper-backups/dr-completion-v1/mh-dr-copy-20261016-ff87150365ef46b5854371d2909906d9/812a3e0c6d6dcc80d98aeb95d2d308c6bf62da66bd9a72fde214618dcc9a8b4a-capture.enc",
+        "bytes": 3666692,
+        "readback_sha256": "812a3e0c6d6dcc80d98aeb95d2d308c6bf62da66bd9a72fde214618dcc9a8b4a"
+      },
+      {
+        "object": "timeweb-s3:marketshelper-backups/dr-completion-v1/mh-dr-copy-20261016-ff87150365ef46b5854371d2909906d9/a860db08ccaad71fe191f8ef3ce1973b5f71aede3e5347a01dd36914cf8c5b39-images.enc",
+        "bytes": 797342982,
+        "readback_sha256": "a860db08ccaad71fe191f8ef3ce1973b5f71aede3e5347a01dd36914cf8c5b39"
+      }
+    ],
+    "private_key_uploaded": false,
+    "existing_objects_deleted": false
+  },
+  "negative_crypto": {
+    "tampered": true,
+    "wrong_key": true
+  },
+  "restore": {
+    "run": "mh-dr-glitchtip-5e7573e847e6",
+    "network": "none; GlitchTip shares only isolated PG namespace",
+    "ports_published": false,
+    "production_runtime_changed": false,
+    "fullServerDR": false,
+    "local_engine": "d6b301f7-ccc8-418a-91b2-daba6a6dcce1",
+    "snapshot_table_counts_match": true,
+    "snapshot_tables": 369,
+    "snapshot_rows": 766,
+    "snapshot_counts_sha256": "118d1860afc51ab71bf0b694b7cb9e44735f7603aee665811eb3fe6c53b27add",
+    "postgres_version": "18.6",
+    "restored_database_bytes": 2750832,
+    "pg_restore_exit": 0,
+    "pg_amcheck_exit": 0,
+    "database_quality": {
+      "tables": 532,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    "glitchtip_health": 200,
+    "event_probe": {
+      "local_ingest_status": 200,
+      "synthetic_event_persisted": true,
+      "homepage_status": 200,
+      "restored_counts": {
+        "users": 1,
+        "organizations": 1,
+        "projects": 2,
+        "events_before": 27
+      },
+      "event_id": "2b4aaee713dd4c68940744fcdad486a2"
+    },
+    "images": [
+      "sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+      "sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6"
+    ],
+    "passed": true,
+    "original_local_containers_preserved": true,
+    "cleanup_confirmed": true
+  },
+  "operator_sha256": {
+    "capture_remote.py": "342fdbb7515fceb5290dc0f6a371b8e0431ed1c7619e32df1e8389ecb8f444cc",
+    "event_probe.py": "e15062f6989384815bbea795f759a1685bebdd706a0006bfd764640d1b83c670",
+    "prepare_capture.py": "0aed5bbac560ff208359a876536e2889791a9a89b0255ca983c1dcec52feea8d",
+    "publish_remote.py": "22cbac4b070330d53e54a1be15f8d4c817c0e4f64e6a7fa91e0988c6a0b8c220",
+    "verify_restore.py": "59e3a47d9e58ac0fd06e557fe966c495ad3b577c2542f32b4ed07325417c1581"
+  },
+  "negative_runs_retained": [
+    "capture-execution-proof.json",
+    "offsite-execution-proof.json",
+    "isolated-restore-first-fail.json",
+    "isolated-restore-second-fail.json"
+  ],
+  "final_check": {
+    "source_identity_unchanged": true,
+    "all_configured_health_checks_healthy": true,
+    "running_services": 12,
+    "owned_local_restore_containers_remaining": 0
+  }
+}
