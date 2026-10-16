@@ -42,3 +42,10 @@ def test_the_stand_limits_are_the_ones_of_the_docker24_audit():
 def test_a_short_commit_id_is_refused_before_anything_is_touched(tmp_path):
     with pytest.raises(SystemExit):
         runner.main(["--phase", "smoke", "--head", "abc123", "--image-id", "sha256:x", "--image-tar", "a", "--helper-tar", "b", "--bundle", "c", "--evidence", str(tmp_path)])
+
+
+def test_a_run_needs_free_windows_memory_that_covers_its_own_growth_above_the_floor():
+    gib = 1024 ** 3
+    assert runner.required_windows_free(20) < runner.required_windows_free(25) < runner.required_windows_free(30)
+    assert runner.required_windows_free(30) > 12 * gib, "the Docker24 30-run took 9.8 GiB of Windows memory and ended 0.66 GiB above the floor"
+    assert runner.required_windows_free(30) >= runner.MIN_WINDOWS_FREE_BYTES + int(30 * 0.33 * gib)

@@ -48,6 +48,16 @@ PHASES = {
     "load": [("load", 20), ("load", 25), ("load", 30)],
     "faults": [("faults", 3), ("faults", 4)],
 }
+GIB = 1024 ** 3
+
+
+def required_windows_free(tenants: int) -> int:
+    """Windows memory that must be free BEFORE a run so that its own growth cannot reach the 2 GiB floor: the Docker24 audit's 20/25/30 runs
+    took the Windows free memory from 12.4 to 2.7 GiB (about 0.33 GiB per tenant), so floor + 0.33 GiB per tenant + 1 GiB of margin.
+    A run that cannot start under this rule is recorded NOT_RUN instead of being cut short by the watchdog half-way."""
+    return int(MIN_WINDOWS_FREE_BYTES + tenants * 0.33 * GIB + 1 * GIB)
+
+
 DEADLINE_SECONDS = {"smoke": 45 * 60, "load": 150 * 60, "faults": 50 * 60}
 EXEC_TIMEOUT_SECONDS = {"load": 3000, "faults": 1500}
 
@@ -197,6 +207,13 @@ def main(argv: list[str] | None = None) -> int:
             reclaim = subprocess.run(["wsl", "-d", "docker-desktop", "-u", "root", "--", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"], capture_output=True, timeout=45)
             if reclaim.returncode:
                 raise RuntimeError("Pre-run cache reclaim failed")
+            need, free = required_windows_free(tenants), windows_available()
+            if kind == "load" and tenants >= 10 and free < need:
+                summary = {"kind": kind, "tenants": tenants, "verdict": "NOT_RUN", "reason": f"Windows free memory {free // 1024 ** 2} MiB is below the {need // 1024 ** 2} MiB this run needs to stay above the 2 GiB floor"}
+                result["acts"].append(summary)
+                save()
+                print(json.dumps(summary), flush=True)
+                break  # a larger run needs even more: stop here and say so
             command, path = benchmark_command(kind, tenants, args.image_id)
             print(f"Starting {kind} {tenants} in the dedicated daemon {run}", flush=True)
             done = engine("exec", "-w", "/work/repo", cid, *command, timeout=min(EXEC_TIMEOUT_SECONDS[kind], max(60, int(deadline - time.monotonic()))), check=False)
