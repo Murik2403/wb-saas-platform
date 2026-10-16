@@ -1,0 +1,1210 @@
+{
+  "run": "2f9805bc7fd5",
+  "phase": "smoke",
+  "productionTouched": false,
+  "source": "bde27bf2a69942b40e1ba91ea1df18f5e1263326",
+  "image": "sha256:28d4e0ddc200f76b821c1494857ba52d893ebbd80895999a18c60990465a51be",
+  "acts": [
+    {
+      "kind": "load",
+      "tenants": 2,
+      "exit": 1,
+      "copied": true,
+      "verdict": "FAIL",
+      "failed_checks": [
+        "deadline: last run finished after 10866.1 s, declared 120.0 s"
+      ],
+      "sha256": "a01686b4ef861e164b1c4a16f2be6ab145145e75bd72236a4a9fa02dbd1f303a",
+      "rawCopied": true,
+      "head": "bde27bf2a69942b40e1ba91ea1df18f5e1263326",
+      "dirty": false,
+      "rawSha256": "58f369c4582e6bdb560cc16c62be165c7b6c66d73cacb93838e39c29c6b5019f"
+    },
+    {
+      "kind": "load",
+      "tenants": 3,
+      "exit": 1,
+      "copied": true,
+      "verdict": "FAIL",
+      "failed_checks": [
+        "deadline: last run finished after 10936.0 s, declared 180.0 s"
+      ],
+      "sha256": "c7215fe1290c25013aa56ab2b6635ae49c27edb08f38977cdccde1479d06e0ba",
+      "rawCopied": true,
+      "head": "bde27bf2a69942b40e1ba91ea1df18f5e1263326",
+      "dirty": false,
+      "rawSha256": "e6297aa8f82f99b306baa3f2c643784265697659b3656bd6a3759324d83a9cb7"
+    },
+    {
+      "kind": "load",
+      "tenants": 4,
+      "exit": 1,
+      "copied": true,
+      "verdict": "FAIL",
+      "failed_checks": [
+        "deadline: last run finished after 10950.9 s, declared 180.0 s"
+      ],
+      "sha256": "1f6b4b053515f8b5cf2d23395461cb4e2bca17cddc63cc5e69eac939b1ab0da5",
+      "rawCopied": true,
+      "head": "bde27bf2a69942b40e1ba91ea1df18f5e1263326",
+      "dirty": false,
+      "rawSha256": "2dd16db1f4cf196e7c3de084cef607fc1641baa6eb8f4f4dcb5c583704aac199"
+    }
+  ],
+  "memory": [
+    {
+      "at": 1792188812.1081722,
+      "windowsAvailableMiB": 7145
+    },
+    {
+      "at": 1792188814.1195483,
+      "windowsAvailableMiB": 6990
+    },
+    {
+      "at": 1792188816.1254196,
+      "windowsAvailableMiB": 6637
+    },
+    {
+      "at": 1792188818.1359825,
+      "windowsAvailableMiB": 6574
+    },
+    {
+      "at": 1792188820.1365392,
+      "windowsAvailableMiB": 6400
+    },
+    {
+      "at": 1792188822.1456478,
+      "windowsAvailableMiB": 7530
+    },
+    {
+      "at": 1792188824.1583543,
+      "windowsAvailableMiB": 7501
+    },
+    {
+      "at": 1792188826.16965,
+      "windowsAvailableMiB": 7478
+    },
+    {
+      "at": 1792188828.1782308,
+      "windowsAvailableMiB": 7260
+    },
+    {
+      "at": 1792188830.190239,
+      "windowsAvailableMiB": 7242
+    },
+    {
+      "at": 1792188832.202681,
+      "windowsAvailableMiB": 7177
+    },
+    {
+      "at": 1792188834.2170208,
+      "windowsAvailableMiB": 7082
+    },
+    {
+      "at": 1792188836.2250721,
+      "windowsAvailableMiB": 6824
+    },
+    {
+      "at": 1792188838.237944,
+      "windowsAvailableMiB": 6040
+    },
+    {
+      "at": 1792188840.2469673,
+      "windowsAvailableMiB": 5785
+    },
+    {
+      "at": 1792188842.2505515,
+      "windowsAvailableMiB": 5635
+    },
+    {
+      "at": 1792188844.2582917,
+      "windowsAvailableMiB": 5596
+    },
+    {
+      "at": 1792188846.2653015,
+      "windowsAvailableMiB": 5609
+    },
+    {
+      "at": 1792188848.2705164,
+      "windowsAvailableMiB": 5492
+    },
+    {
+      "at": 1792188850.274349,
+      "windowsAvailableMiB": 5472
+    },
+    {
+      "at": 1792188852.2754378,
+      "windowsAvailableMiB": 5423
+    },
+    {
+      "at": 1792188854.2766147,
+      "windowsAvailableMiB": 5175
+    },
+    {
+      "at": 1792188856.2881134,
+      "windowsAvailableMiB": 5063
+    },
+    {
+      "at": 1792188858.2944577,
+      "windowsAvailableMiB": 4868
+    },
+    {
+      "at": 1792188860.309957,
+      "windowsAvailableMiB": 4698
+    },
+    {
+      "at": 1792188862.316577,
+      "windowsAvailableMiB": 4668
+    },
+    {
+      "at": 1792188864.3192651,
+      "windowsAvailableMiB": 4577
+    },
+    {
+      "at": 1792188866.3207083,
+      "windowsAvailableMiB": 5236
+    },
+    {
+      "at": 1792188868.324156,
+      "windowsAvailableMiB": 4976
+    },
+    {
+      "at": 1792188870.336843,
+      "windowsAvailableMiB": 4785
+    },
+    {
+      "at": 1792188872.338029,
+      "windowsAvailableMiB": 4707
+    },
+    {
+      "at": 1792188874.3466628,
+      "windowsAvailableMiB": 4662
+    },
+    {
+      "at": 1792188876.356335,
+      "windowsAvailableMiB": 4706
+    },
+    {
+      "at": 1792188878.3569982,
+      "windowsAvailableMiB": 4620
+    },
+    {
+      "at": 1792188880.3656788,
+      "windowsAvailableMiB": 7099
+    },
+    {
+      "at": 1792188882.3700092,
+      "windowsAvailableMiB": 6988
+    },
+    {
+      "at": 1792188884.378443,
+      "windowsAvailableMiB": 7014
+    },
+    {
+      "at": 1792188886.3815022,
+      "windowsAvailableMiB": 6725
+    },
+    {
+      "at": 1792188888.3942387,
+      "windowsAvailableMiB": 6688
+    },
+    {
+      "at": 1792188890.4093606,
+      "windowsAvailableMiB": 6737
+    },
+    {
+      "at": 1792188892.4145103,
+      "windowsAvailableMiB": 6532
+    },
+    {
+      "at": 1792188894.4272947,
+      "windowsAvailableMiB": 7485
+    },
+    {
+      "at": 1792188896.4327803,
+      "windowsAvailableMiB": 7389
+    },
+    {
+      "at": 1792188898.4475346,
+      "windowsAvailableMiB": 7285
+    },
+    {
+      "at": 1792188900.4484563,
+      "windowsAvailableMiB": 6939
+    },
+    {
+      "at": 1792188902.4634778,
+      "windowsAvailableMiB": 6692
+    },
+    {
+      "at": 1792188904.477749,
+      "windowsAvailableMiB": 6236
+    },
+    {
+      "at": 1792188906.4900763,
+      "windowsAvailableMiB": 5972
+    },
+    {
+      "at": 1792188908.4989257,
+      "windowsAvailableMiB": 5577
+    },
+    {
+      "at": 1792188910.505691,
+      "windowsAvailableMiB": 6129
+    },
+    {
+      "at": 1792188912.510248,
+      "windowsAvailableMiB": 6382
+    },
+    {
+      "at": 1792188914.5226305,
+      "windowsAvailableMiB": 6296
+    },
+    {
+      "at": 1792188916.5320835,
+      "windowsAvailableMiB": 6375
+    },
+    {
+      "at": 1792188918.5441961,
+      "windowsAvailableMiB": 6329
+    },
+    {
+      "at": 1792188920.558756,
+      "windowsAvailableMiB": 6264
+    },
+    {
+      "at": 1792188922.5687351,
+      "windowsAvailableMiB": 6152
+    },
+    {
+      "at": 1792188924.5689533,
+      "windowsAvailableMiB": 6117
+    },
+    {
+      "at": 1792188926.579489,
+      "windowsAvailableMiB": 6036
+    },
+    {
+      "at": 1792188928.5864737,
+      "windowsAvailableMiB": 5922
+    },
+    {
+      "at": 1792188930.6001837,
+      "windowsAvailableMiB": 5927
+    },
+    {
+      "at": 1792188932.6076849,
+      "windowsAvailableMiB": 5895
+    },
+    {
+      "at": 1792188934.6168818,
+      "windowsAvailableMiB": 5868
+    },
+    {
+      "at": 1792188936.6288471,
+      "windowsAvailableMiB": 5862
+    },
+    {
+      "at": 1792188938.6365097,
+      "windowsAvailableMiB": 5650
+    },
+    {
+      "at": 1792188940.638136,
+      "windowsAvailableMiB": 5533
+    },
+    {
+      "at": 1792188942.6451504,
+      "windowsAvailableMiB": 5445
+    },
+    {
+      "at": 1792188944.6566343,
+      "windowsAvailableMiB": 6096
+    },
+    {
+      "at": 1792188946.6621413,
+      "windowsAvailableMiB": 6102
+    },
+    {
+      "at": 1792188948.6763911,
+      "windowsAvailableMiB": 6099
+    },
+    {
+      "at": 1792188950.6845918,
+      "windowsAvailableMiB": 6103
+    },
+    {
+      "at": 1792188952.6951282,
+      "windowsAvailableMiB": 6070
+    },
+    {
+      "at": 1792188954.7071993,
+      "windowsAvailableMiB": 6096
+    },
+    {
+      "at": 1792188956.720337,
+      "windowsAvailableMiB": 6060
+    },
+    {
+      "at": 1792188958.73007,
+      "windowsAvailableMiB": 6065
+    },
+    {
+      "at": 1792188960.7380807,
+      "windowsAvailableMiB": 6037
+    },
+    {
+      "at": 1792188962.7449684,
+      "windowsAvailableMiB": 6035
+    },
+    {
+      "at": 1792188964.7540114,
+      "windowsAvailableMiB": 6061
+    },
+    {
+      "at": 1792188966.7561593,
+      "windowsAvailableMiB": 6071
+    },
+    {
+      "at": 1792188968.7697005,
+      "windowsAvailableMiB": 6078
+    },
+    {
+      "at": 1792188970.7725863,
+      "windowsAvailableMiB": 6190
+    },
+    {
+      "at": 1792188972.7853365,
+      "windowsAvailableMiB": 6165
+    },
+    {
+      "at": 1792188974.797395,
+      "windowsAvailableMiB": 6168
+    },
+    {
+      "at": 1792188976.8088865,
+      "windowsAvailableMiB": 6154
+    },
+    {
+      "at": 1792188978.8108356,
+      "windowsAvailableMiB": 6173
+    },
+    {
+      "at": 1792188980.8206017,
+      "windowsAvailableMiB": 6177
+    },
+    {
+      "at": 1792188982.827669,
+      "windowsAvailableMiB": 6146
+    },
+    {
+      "at": 1792188984.831403,
+      "windowsAvailableMiB": 6181
+    },
+    {
+      "at": 1792188986.841017,
+      "windowsAvailableMiB": 6180
+    },
+    {
+      "at": 1792188988.84871,
+      "windowsAvailableMiB": 6181
+    },
+    {
+      "at": 1792188990.8619869,
+      "windowsAvailableMiB": 6178
+    },
+    {
+      "at": 1792188992.86465,
+      "windowsAvailableMiB": 6144
+    },
+    {
+      "at": 1792188994.8774707,
+      "windowsAvailableMiB": 6160
+    },
+    {
+      "at": 1792188996.8863652,
+      "windowsAvailableMiB": 6295
+    },
+    {
+      "at": 1792188998.889662,
+      "windowsAvailableMiB": 6454
+    },
+    {
+      "at": 1792189000.8935397,
+      "windowsAvailableMiB": 6678
+    },
+    {
+      "at": 1792189002.8976226,
+      "windowsAvailableMiB": 6649
+    },
+    {
+      "at": 1792189004.9129772,
+      "windowsAvailableMiB": 6685
+    },
+    {
+      "at": 1792189006.9157088,
+      "windowsAvailableMiB": 6684
+    },
+    {
+      "at": 1792189008.916624,
+      "windowsAvailableMiB": 6688
+    },
+    {
+      "at": 1792189010.9273908,
+      "windowsAvailableMiB": 6688
+    },
+    {
+      "at": 1792189012.9411697,
+      "windowsAvailableMiB": 6659
+    },
+    {
+      "at": 1792189014.9416504,
+      "windowsAvailableMiB": 6651
+    },
+    {
+      "at": 1792189016.9442842,
+      "windowsAvailableMiB": 6658
+    },
+    {
+      "at": 1792189018.9574847,
+      "windowsAvailableMiB": 6640
+    },
+    {
+      "at": 1792189020.9615722,
+      "windowsAvailableMiB": 6601
+    },
+    {
+      "at": 1792189022.9751792,
+      "windowsAvailableMiB": 6583
+    },
+    {
+      "at": 1792189024.9892945,
+      "windowsAvailableMiB": 6626
+    },
+    {
+      "at": 1792189026.9970663,
+      "windowsAvailableMiB": 6630
+    },
+    {
+      "at": 1792189029.0045328,
+      "windowsAvailableMiB": 6579
+    },
+    {
+      "at": 1792189031.0136821,
+      "windowsAvailableMiB": 6616
+    },
+    {
+      "at": 1792189033.027586,
+      "windowsAvailableMiB": 6629
+    },
+    {
+      "at": 1792189035.0326495,
+      "windowsAvailableMiB": 6641
+    },
+    {
+      "at": 1792189037.0357373,
+      "windowsAvailableMiB": 6584
+    },
+    {
+      "at": 1792189039.050675,
+      "windowsAvailableMiB": 6566
+    },
+    {
+      "at": 1792189041.0627754,
+      "windowsAvailableMiB": 6545
+    },
+    {
+      "at": 1792189043.0673974,
+      "windowsAvailableMiB": 6553
+    },
+    {
+      "at": 1792189045.0778234,
+      "windowsAvailableMiB": 6444
+    },
+    {
+      "at": 1792189047.090106,
+      "windowsAvailableMiB": 6345
+    },
+    {
+      "at": 1792189049.0997496,
+      "windowsAvailableMiB": 6367
+    },
+    {
+      "at": 1792189051.1089976,
+      "windowsAvailableMiB": 6312
+    },
+    {
+      "at": 1792189053.1180239,
+      "windowsAvailableMiB": 6039
+    },
+    {
+      "at": 1792189055.1307383,
+      "windowsAvailableMiB": 5897
+    },
+    {
+      "at": 1792189057.1385796,
+      "windowsAvailableMiB": 5660
+    },
+    {
+      "at": 1792189059.1404846,
+      "windowsAvailableMiB": 5365
+    },
+    {
+      "at": 1792189061.1523347,
+      "windowsAvailableMiB": 5107
+    },
+    {
+      "at": 1792189063.1633925,
+      "windowsAvailableMiB": 5928
+    },
+    {
+      "at": 1792189065.177387,
+      "windowsAvailableMiB": 5959
+    },
+    {
+      "at": 1792189067.1789,
+      "windowsAvailableMiB": 5889
+    },
+    {
+      "at": 1792189069.180739,
+      "windowsAvailableMiB": 5842
+    },
+    {
+      "at": 1792189071.1889694,
+      "windowsAvailableMiB": 5821
+    },
+    {
+      "at": 1792189073.1975641,
+      "windowsAvailableMiB": 5736
+    },
+    {
+      "at": 1792189075.1980844,
+      "windowsAvailableMiB": 5626
+    },
+    {
+      "at": 1792189077.2093103,
+      "windowsAvailableMiB": 5479
+    },
+    {
+      "at": 1792189079.214286,
+      "windowsAvailableMiB": 5359
+    },
+    {
+      "at": 1792189081.228881,
+      "windowsAvailableMiB": 5153
+    },
+    {
+      "at": 1792189083.2428916,
+      "windowsAvailableMiB": 4944
+    },
+    {
+      "at": 1792189085.2530687,
+      "windowsAvailableMiB": 5975
+    },
+    {
+      "at": 1792189087.2532065,
+      "windowsAvailableMiB": 5978
+    },
+    {
+      "at": 1792189089.2649245,
+      "windowsAvailableMiB": 6094
+    },
+    {
+      "at": 1792189091.2746735,
+      "windowsAvailableMiB": 6082
+    },
+    {
+      "at": 1792189093.286293,
+      "windowsAvailableMiB": 6116
+    },
+    {
+      "at": 1792189095.2887614,
+      "windowsAvailableMiB": 6049
+    },
+    {
+      "at": 1792189097.297242,
+      "windowsAvailableMiB": 5900
+    },
+    {
+      "at": 1792189099.3120615,
+      "windowsAvailableMiB": 5906
+    },
+    {
+      "at": 1792189101.32086,
+      "windowsAvailableMiB": 5918
+    },
+    {
+      "at": 1792189103.3298523,
+      "windowsAvailableMiB": 5829
+    },
+    {
+      "at": 1792189105.3416052,
+      "windowsAvailableMiB": 5830
+    },
+    {
+      "at": 1792189107.3466864,
+      "windowsAvailableMiB": 5929
+    },
+    {
+      "at": 1792189109.353825,
+      "windowsAvailableMiB": 5866
+    },
+    {
+      "at": 1792189111.3644156,
+      "windowsAvailableMiB": 5640
+    },
+    {
+      "at": 1792189113.3699574,
+      "windowsAvailableMiB": 5597
+    },
+    {
+      "at": 1792189115.382691,
+      "windowsAvailableMiB": 6075
+    },
+    {
+      "at": 1792189117.3952498,
+      "windowsAvailableMiB": 6294
+    },
+    {
+      "at": 1792189119.3968189,
+      "windowsAvailableMiB": 6282
+    },
+    {
+      "at": 1792189121.4061122,
+      "windowsAvailableMiB": 6131
+    },
+    {
+      "at": 1792189123.417583,
+      "windowsAvailableMiB": 6130
+    },
+    {
+      "at": 1792189125.4282823,
+      "windowsAvailableMiB": 6119
+    },
+    {
+      "at": 1792189127.4296966,
+      "windowsAvailableMiB": 6106
+    },
+    {
+      "at": 1792189129.4369934,
+      "windowsAvailableMiB": 6096
+    },
+    {
+      "at": 1792189131.4445832,
+      "windowsAvailableMiB": 5873
+    },
+    {
+      "at": 1792189133.454682,
+      "windowsAvailableMiB": 5668
+    },
+    {
+      "at": 1792189135.4547853,
+      "windowsAvailableMiB": 5480
+    },
+    {
+      "at": 1792189137.4595811,
+      "windowsAvailableMiB": 5305
+    },
+    {
+      "at": 1792189139.4656692,
+      "windowsAvailableMiB": 5129
+    },
+    {
+      "at": 1792189141.4770076,
+      "windowsAvailableMiB": 5812
+    },
+    {
+      "at": 1792189143.4796815,
+      "windowsAvailableMiB": 5806
+    },
+    {
+      "at": 1792189145.4885063,
+      "windowsAvailableMiB": 5703
+    },
+    {
+      "at": 1792189147.5011024,
+      "windowsAvailableMiB": 5624
+    },
+    {
+      "at": 1792189149.5135508,
+      "windowsAvailableMiB": 5651
+    },
+    {
+      "at": 1792189151.5220168,
+      "windowsAvailableMiB": 5678
+    },
+    {
+      "at": 1792189153.5321565,
+      "windowsAvailableMiB": 5658
+    },
+    {
+      "at": 1792189155.5367718,
+      "windowsAvailableMiB": 5534
+    },
+    {
+      "at": 1792189157.5457366,
+      "windowsAvailableMiB": 5525
+    },
+    {
+      "at": 1792189159.5533965,
+      "windowsAvailableMiB": 5559
+    },
+    {
+      "at": 1792189161.561597,
+      "windowsAvailableMiB": 6224
+    },
+    {
+      "at": 1792189163.573946,
+      "windowsAvailableMiB": 6239
+    },
+    {
+      "at": 1792189165.5886905,
+      "windowsAvailableMiB": 6140
+    },
+    {
+      "at": 1792189167.5947278,
+      "windowsAvailableMiB": 6142
+    },
+    {
+      "at": 1792189169.5998523,
+      "windowsAvailableMiB": 6135
+    },
+    {
+      "at": 1792189171.6108716,
+      "windowsAvailableMiB": 6130
+    },
+    {
+      "at": 1792189173.6207817,
+      "windowsAvailableMiB": 5949
+    },
+    {
+      "at": 1792189175.6359007,
+      "windowsAvailableMiB": 5761
+    },
+    {
+      "at": 1792189177.6469038,
+      "windowsAvailableMiB": 5575
+    },
+    {
+      "at": 1792189179.6505978,
+      "windowsAvailableMiB": 5470
+    },
+    {
+      "at": 1792189181.6561618,
+      "windowsAvailableMiB": 5582
+    },
+    {
+      "at": 1792189183.6654704,
+      "windowsAvailableMiB": 6031
+    },
+    {
+      "at": 1792189185.6681778,
+      "windowsAvailableMiB": 6022
+    },
+    {
+      "at": 1792189187.6786025,
+      "windowsAvailableMiB": 6004
+    },
+    {
+      "at": 1792189189.6865768,
+      "windowsAvailableMiB": 5948
+    },
+    {
+      "at": 1792189191.701511,
+      "windowsAvailableMiB": 5841
+    },
+    {
+      "at": 1792189193.714941,
+      "windowsAvailableMiB": 5717
+    },
+    {
+      "at": 1792189195.723363,
+      "windowsAvailableMiB": 5577
+    },
+    {
+      "at": 1792189197.7234507,
+      "windowsAvailableMiB": 5512
+    },
+    {
+      "at": 1792189199.7381396,
+      "windowsAvailableMiB": 6396
+    },
+    {
+      "at": 1792189201.742924,
+      "windowsAvailableMiB": 6241
+    },
+    {
+      "at": 1792189203.7553902,
+      "windowsAvailableMiB": 6280
+    },
+    {
+      "at": 1792189205.766426,
+      "windowsAvailableMiB": 6282
+    },
+    {
+      "at": 1792189207.7724726,
+      "windowsAvailableMiB": 6241
+    },
+    {
+      "at": 1792189209.7823875,
+      "windowsAvailableMiB": 6069
+    },
+    {
+      "at": 1792189211.7915761,
+      "windowsAvailableMiB": 5997
+    },
+    {
+      "at": 1792189213.800778,
+      "windowsAvailableMiB": 5892
+    },
+    {
+      "at": 1792189215.8131683,
+      "windowsAvailableMiB": 5554
+    },
+    {
+      "at": 1792189217.8238325,
+      "windowsAvailableMiB": 5422
+    },
+    {
+      "at": 1792189219.8254714,
+      "windowsAvailableMiB": 6077
+    },
+    {
+      "at": 1792189221.8365364,
+      "windowsAvailableMiB": 5904
+    },
+    {
+      "at": 1792189223.8481572,
+      "windowsAvailableMiB": 5658
+    },
+    {
+      "at": 1792189225.8623765,
+      "windowsAvailableMiB": 5501
+    },
+    {
+      "at": 1792189227.875619,
+      "windowsAvailableMiB": 5487
+    },
+    {
+      "at": 1792189229.8830276,
+      "windowsAvailableMiB": 5817
+    },
+    {
+      "at": 1792189231.8930876,
+      "windowsAvailableMiB": 5633
+    },
+    {
+      "at": 1792189233.9043407,
+      "windowsAvailableMiB": 5458
+    },
+    {
+      "at": 1792189235.9106116,
+      "windowsAvailableMiB": 5359
+    },
+    {
+      "at": 1792189237.9159641,
+      "windowsAvailableMiB": 5257
+    },
+    {
+      "at": 1792189239.9305186,
+      "windowsAvailableMiB": 5059
+    },
+    {
+      "at": 1792189241.9347844,
+      "windowsAvailableMiB": 4849
+    },
+    {
+      "at": 1792189243.9408667,
+      "windowsAvailableMiB": 4812
+    },
+    {
+      "at": 1792189245.941631,
+      "windowsAvailableMiB": 4584
+    },
+    {
+      "at": 1792189247.9559882,
+      "windowsAvailableMiB": 4426
+    },
+    {
+      "at": 1792189249.9652085,
+      "windowsAvailableMiB": 5162
+    },
+    {
+      "at": 1792189251.9772725,
+      "windowsAvailableMiB": 5059
+    },
+    {
+      "at": 1792189253.9914742,
+      "windowsAvailableMiB": 4977
+    },
+    {
+      "at": 1792189255.9942422,
+      "windowsAvailableMiB": 4939
+    },
+    {
+      "at": 1792189258.0061245,
+      "windowsAvailableMiB": 4717
+    },
+    {
+      "at": 1792189260.019727,
+      "windowsAvailableMiB": 4563
+    },
+    {
+      "at": 1792189262.0299044,
+      "windowsAvailableMiB": 4534
+    },
+    {
+      "at": 1792189264.041268,
+      "windowsAvailableMiB": 5274
+    },
+    {
+      "at": 1792189266.0568604,
+      "windowsAvailableMiB": 5068
+    },
+    {
+      "at": 1792189268.0576901,
+      "windowsAvailableMiB": 4956
+    },
+    {
+      "at": 1792189270.0590022,
+      "windowsAvailableMiB": 4946
+    },
+    {
+      "at": 1792189272.0739,
+      "windowsAvailableMiB": 4770
+    },
+    {
+      "at": 1792189274.0834136,
+      "windowsAvailableMiB": 4494
+    },
+    {
+      "at": 1792189276.0903609,
+      "windowsAvailableMiB": 4235
+    },
+    {
+      "at": 1792189278.0953891,
+      "windowsAvailableMiB": 4023
+    },
+    {
+      "at": 1792189280.0988955,
+      "windowsAvailableMiB": 4880
+    },
+    {
+      "at": 1792189282.110116,
+      "windowsAvailableMiB": 4739
+    },
+    {
+      "at": 1792189284.1176615,
+      "windowsAvailableMiB": 4404
+    },
+    {
+      "at": 1792189286.12072,
+      "windowsAvailableMiB": 4139
+    },
+    {
+      "at": 1792189288.13229,
+      "windowsAvailableMiB": 3718
+    },
+    {
+      "at": 1792189290.1435468,
+      "windowsAvailableMiB": 5146
+    },
+    {
+      "at": 1792189292.1543796,
+      "windowsAvailableMiB": 5126
+    },
+    {
+      "at": 1792189294.1586106,
+      "windowsAvailableMiB": 5040
+    },
+    {
+      "at": 1792189296.1664205,
+      "windowsAvailableMiB": 4881
+    },
+    {
+      "at": 1792189298.177357,
+      "windowsAvailableMiB": 4744
+    },
+    {
+      "at": 1792189300.1892154,
+      "windowsAvailableMiB": 4560
+    },
+    {
+      "at": 1792189302.1985974,
+      "windowsAvailableMiB": 4309
+    },
+    {
+      "at": 1792189304.2108366,
+      "windowsAvailableMiB": 5325
+    },
+    {
+      "at": 1792189306.2179081,
+      "windowsAvailableMiB": 5033
+    },
+    {
+      "at": 1792189308.2220314,
+      "windowsAvailableMiB": 4708
+    },
+    {
+      "at": 1792189310.2372162,
+      "windowsAvailableMiB": 4570
+    },
+    {
+      "at": 1792189312.2424731,
+      "windowsAvailableMiB": 4085
+    },
+    {
+      "at": 1792189314.25319,
+      "windowsAvailableMiB": 4932
+    },
+    {
+      "at": 1792189316.2619617,
+      "windowsAvailableMiB": 4587
+    },
+    {
+      "at": 1792189318.2710283,
+      "windowsAvailableMiB": 4374
+    },
+    {
+      "at": 1792189320.2712965,
+      "windowsAvailableMiB": 4230
+    },
+    {
+      "at": 1792189322.281816,
+      "windowsAvailableMiB": 3996
+    },
+    {
+      "at": 1792189324.2958076,
+      "windowsAvailableMiB": 4819
+    },
+    {
+      "at": 1792189326.3019154,
+      "windowsAvailableMiB": 5178
+    },
+    {
+      "at": 1792189328.3093505,
+      "windowsAvailableMiB": 5178
+    },
+    {
+      "at": 1792189330.3152442,
+      "windowsAvailableMiB": 5154
+    },
+    {
+      "at": 1792189332.3249345,
+      "windowsAvailableMiB": 5082
+    },
+    {
+      "at": 1792189334.3331022,
+      "windowsAvailableMiB": 5108
+    },
+    {
+      "at": 1792189336.3431487,
+      "windowsAvailableMiB": 5123
+    },
+    {
+      "at": 1792189338.3550906,
+      "windowsAvailableMiB": 5009
+    },
+    {
+      "at": 1792189340.3566625,
+      "windowsAvailableMiB": 5509
+    },
+    {
+      "at": 1792189342.3615263,
+      "windowsAvailableMiB": 5450
+    },
+    {
+      "at": 1792189344.3713615,
+      "windowsAvailableMiB": 5466
+    },
+    {
+      "at": 1792189346.3720498,
+      "windowsAvailableMiB": 5431
+    },
+    {
+      "at": 1792189348.3722506,
+      "windowsAvailableMiB": 5231
+    },
+    {
+      "at": 1792189350.3725693,
+      "windowsAvailableMiB": 5196
+    },
+    {
+      "at": 1792189352.3759925,
+      "windowsAvailableMiB": 4896
+    },
+    {
+      "at": 1792189354.390496,
+      "windowsAvailableMiB": 4669
+    },
+    {
+      "at": 1792189356.4021657,
+      "windowsAvailableMiB": 4488
+    },
+    {
+      "at": 1792189358.4067028,
+      "windowsAvailableMiB": 5455
+    },
+    {
+      "at": 1792189360.4146101,
+      "windowsAvailableMiB": 5453
+    },
+    {
+      "at": 1792189362.422733,
+      "windowsAvailableMiB": 5333
+    },
+    {
+      "at": 1792189364.4343083,
+      "windowsAvailableMiB": 5282
+    },
+    {
+      "at": 1792189366.435578,
+      "windowsAvailableMiB": 5240
+    },
+    {
+      "at": 1792189368.445583,
+      "windowsAvailableMiB": 5310
+    }
+  ],
+  "errors": [],
+  "scope": "isolated Linux Docker daemon (DinD); not fresh-OS recovery",
+  "startedAt": "2026-10-16T22:13:29.290700+00:00",
+  "outer": {
+    "ID": "d6b301f7-ccc8-418a-91b2-daba6a6dcce1",
+    "MemTotal": 25200033792,
+    "NCPU": 12,
+    "OSType": "linux"
+  },
+  "foreignBefore": [
+    "981b886480045627795d82a606fdd9944b58a0c75163334ba005b545c1d334e8",
+    "245e7d6cac29ad3c3197eaebe3242df2a5cb1d5f6eada4a1e970da369f01699e",
+    "ee4d466270e0c1183b1d6287ca476eda746ccfcc71bd6870cf8eccbfa842838b",
+    "6b99d22d90796152fe62a3189a64fc53bb21e70118da93b4415fc0b4779da63a",
+    "0792ff379598e0043503b87c84b2a4b6cd7f5cf55345277009e9a6e79e2f7eaa",
+    "e0e23c045409d0569a537daa6f83b6b574d11e1dccaf43fcf631bd4af273b4ca",
+    "33f5f07a1b7317168a6dea8bafff642d007b4726fd2b623261e7dda3aedc276c",
+    "87a16e9c936e6186e46dcff805e2e8163b70af24ba5c7cfd6f0cc0957b757e26",
+    "78459cb0f29cc10119d356b0cce0cc3f0b67bd91b7d8a70e212b878bb1f318db",
+    "4cdfeb49de7cdd198fa90a00c798e5238e780c677a30f31159c2c3d73011007f",
+    "c878b1a323cff28274afaea3698c061aeecb5a7b238ebd1af8202190e78b8db1",
+    "79734004aebc5c08a2300fcc24462976cfb79ab74d908ed1176db5f60afa486c",
+    "85a4717a6e442fedee157e70568b9b24edbc234d12544c1c9e3647890614e54c",
+    "f3483d84bd3399859c3ffc93967ed307bdbd5c29f31cce59e661840e3cb1689d",
+    "fe3c47ff9cd158de3f1ae94049dcac59f8487a2a91de5ad8dce89e296743791d",
+    "701ee9790649c60ef94792ba37546ddf56d62a5afbcc6423f69140439e96d6f0",
+    "218a2b72f41b9f550fa557f2006ddc2f4d071b0c7d7d128b32a7b079a41a81cc",
+    "2eed612dc45c85d1ed90ca523491b0e7ed888a287a18057e8a23be1529d36e6b"
+  ],
+  "daemonId": "836a81dd99914fd700224ed461fea097b3f811e255516c2a76baa4d17ad629ca",
+  "daemonName": "mh-accept-smoke-2f9805bc7fd5",
+  "retainedVolume": "mh-accept-smoke-2f9805bc7fd5-docker",
+  "supportImage": "sha256:19f3f183d0da431fa0c8e59d004985627e3d4c0e8b032d72bfdb1b68fcf8dc9c",
+  "innerEngine": "1f7bfa0b-ca7f-4e40-86b6-d8862279a55d",
+  "innerResidual": {
+    "containers": [],
+    "volumes": [],
+    "networks": []
+  },
+  "daemonStopped": true,
+  "standRemoved": true,
+  "completedAt": "2026-10-16T22:22:51.174968+00:00"
+}
