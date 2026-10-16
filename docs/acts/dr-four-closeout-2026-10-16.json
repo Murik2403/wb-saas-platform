@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "date": "2026-10-16",
+  "timezone": "Europe/Moscow",
+  "kind": "four remaining DR local functional gates",
+  "continued_from": "docs/acts/full-dr-native-2026-10-16.json",
+  "private_vm_continuation": true,
+  "initial_accepted_disk_unchanged": true,
+  "local_functional_gates_passed": true,
+  "local_gates": {
+    "s3_policy_retention": true,
+    "reviewed_site_drift_and_alert": true,
+    "full_five_tenant_https_data_quality": true,
+    "host_security_and_local_monitoring": true
+  },
+  "full_external_production_dr_accepted": false,
+  "production_dr_mutations": false,
+  "separate_authorized_landing_release": "243fb94525451f3b55f47e7a6fc47371201d90c0",
+  "stand_only_quality_revision": "a180ecd11f2535872b87b2885e9158a95e07a81a",
+  "quality_first_request_after_reboot_seconds": 25.588,
+  "http_timeout_seconds": 45,
+  "reboot": {
+    "seconds": 337.9,
+    "same_12_container_ids_and_images": true,
+    "machine_and_engine_preserved": true
+  },
+  "post_reboot": {
+    "passed": true,
+    "s3_policy_after_reboot": {
+      "versions_checked": true,
+      "object_lock_checked": true,
+      "unversioned": true,
+      "object_lock_disabled": true
+    },
+    "signed_agent_local_probe_after_reboot": true,
+    "ssh_ufw_sysctl_persisted": true,
+    "real_ledger_backup_over_s3_after_reboot": true,
+    "site_drift_clean_after_reboot": true,
+    "full_five_tenant_linked_after_reboot": true,
+    "data_quality_timing": [
+      {
+        "slug": "mvvorokov",
+        "seconds": 25.588
+      },
+      {
+        "slug": "demo",
+        "seconds": 7.774
+      },
+      {
+        "slug": "marketing",
+        "seconds": 1.91
+      },
+      {
+        "slug": "letoocean",
+        "seconds": 2.04
+      },
+      {
+        "slug": "alexdalex-msk",
+        "seconds": 2.242
+      }
+    ],
+    "cron_tick_after_reboot": 1792165141,
+    "memory_events": {
+      "/wb-tenant-demo": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-saas-gateway-1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-tenant-alexdalex-msk": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-tenant-letoocean": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-tenant-marketing": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-tenant-mvvorokov": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-saas-provisioner-1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-saas-docker-control-proxy-p1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-saas-docker-discovery-proxy-p1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/wb-saas-traefik-1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/glitchtip-glitchtip-1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "/glitchtip-postgres-1": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    },
+    "production_contacted": false
+  },
+  "source_receipt_hashes": {
+    "s3-policy-proof.json": "69241bf8e0b0be573bbf2e5b9ab2f910263fa8ab3387eaa084d6e623d5c2f2f4",
+    "s3-durable-dns-fix.json": "bd6a1915f72e6b678578b0414a7c8192307a3f0a2911f9590e45a95c9adc93cb",
+    "drift-review.json": "12a387c69eacd84727b843dc3c25a408b1041b063379e9acbbf80f0f1f62180a",
+    "drift-proof.json": "a1e8eae1c017247bf1e3494ecaefaa01e9cbd74e35dd23c42dd0bb1d3b5b55c5",
+    "quality-differential.json": "670a79bf06c0a9941d4bdb80dacab64910892f4c9a43f3e1b2b918a3d3ea8099",
+    "quality-differential-v2.json": "7e25ce96e5520cb7e4c6c6dccff941c64148b35a1fd788b133993111ea5e5dcd",
+    "quality-differential-v3.json": "90a43e9b3559590c3cbe4ae4c2f51fd4ee8989922c89b1d83e86622d60cbaa81",
+    "quality-rollout-proof-v3.json": "bd0679569df1b21450d64cd6880565c1a02f54cfc1ddf27c180e6c5f624d87fe",
+    "host-security-before-reboot.json": "2ef8a04c00001280ff6ee8835d7d540fca3af237d5b67b0d267135851064e5f4",
+    "post-reboot-proof.json": "83e4399d9ac133c91cba8d8da9caf757173308625c40ab35560851a448f16482",
+    "retention-final-proof.json": "368aa1ea1c8ac8e1b093825000688b4ad0eebf3abaa8f1e7227ffc28df2a6227"
+  },
+  "host_unit_events": {
+    "mh-dr-s3": {
+      "restarts": 0,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    },
+    "zabbix-agent": {
+      "restarts": 0,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    }
+  },
+  "retention_scope": {
+    "encrypted_format_deleted": "WBSAASBK2 synthetic expired demo archive",
+    "local_deleted": 1,
+    "remote_deleted": 1,
+    "staging_deleted": 0,
+    "held_unknown_fresh_preserved": true,
+    "full_fresh_cipher_s3_readback_after_reboot": true,
+    "s3_receiver": "isolated MinIO, pinned official source compiled with checksum-verified Go toolchain",
+    "real_timeweb_bucket_called": false
+  },
+  "monitoring_scope": {
+    "original": "zabbix-agent-timeweb 127",
+    "replacement": "official signed zabbix-agent 7.0.31 for Ubuntu24",
+    "config_version_127_and_passive_tcp_metrics_verified": true,
+    "provider_heartbeat_verified": false
+  },
+  "exclusions": [
+    "Public DNS/ACME cutover and new public certificate issuance were not performed",
+    "Timeweb bucket IAM/availability from recovered VM were not tested; S3 receiver was isolated MinIO",
+    "Provider-side Zabbix heartbeat not tested; signed official agent 7.0.31 substituted for zabbix-agent-timeweb 127",
+    "Business snapshot is 2026-10-14; config/runtime/GlitchTip are 2026-10-16, not globally atomic",
+    "No WB/Ozon sync, actual payments or real outbound email/Telegram delivery",
+    "Not a 20-30 tenant load acceptance",
+    "Password login/new registration not executed; fresh copy-only sessions were created and revoked"
+  ],
+  "shutdown": {
+    "passed": true,
+    "owned_vm_stopped": {
+      "stopped": true,
+      "reason": "requested_stop",
+      "exitcode": 0,
+      "name": "mh-full-dr-72a4a4ec17124d7b885f11d34a0d2e15"
+    },
+    "localhost_ports_closed": {
+      "22232": true,
+      "18090": true,
+      "18453": true,
+      "24454": true
+    },
+    "parent_disk_sha256": "08e155cb2f2eb2e18da4832ce15b2cc46766cd7e8cf7f9d3f13cd8cbdd2bbd4b",
+    "accepted_parent_disk_unchanged": true,
+    "private_overlay_acl_verified": true,
+    "desktop_docker_running": true,
+    "desktop_engine": "d6b301f7-ccc8-418a-91b2-daba6a6dcce1"
+  },
+  "evidence_directory": "deliveries/dr-closeout-20261016",
+  "saved_utc": "2026-10-16T15:46:06.067552+00:00"
+}
