@@ -110,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bundle", required=True)
     parser.add_argument("--evidence", required=True)
     parser.add_argument("--keep", action="store_true", help="keep the daemon volume for inspection")
+    parser.add_argument("--only", type=int, nargs="+", help="run only these tenant counts of the phase, still in the phase's order (e.g. --only 20)")
     args = parser.parse_args(argv)
     if len(args.head) != 40:
         raise SystemExit("--head must be the full commit id")
@@ -199,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         if actual != args.head or text(engine("exec", "-w", "/work/repo", cid, "git", "status", "--porcelain")):
             raise RuntimeError("The stand's checkout is not the clean, exact commit")
         save()
-        for kind, tenants in PHASES[args.phase]:
+        for kind, tenants in [item for item in PHASES[args.phase] if not args.only or item[1] in args.only]:
             if result["errors"]:
                 break
             owned()

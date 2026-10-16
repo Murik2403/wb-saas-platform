@@ -49,3 +49,8 @@ def test_a_run_needs_free_windows_memory_that_covers_its_own_growth_above_the_fl
     assert runner.required_windows_free(20) < runner.required_windows_free(25) < runner.required_windows_free(30)
     assert runner.required_windows_free(30) > 12 * gib, "the Docker24 30-run took 9.8 GiB of Windows memory and ended 0.66 GiB above the floor"
     assert runner.required_windows_free(30) >= runner.MIN_WINDOWS_FREE_BYTES + int(30 * 0.33 * gib)
+
+
+def test_only_selects_tenant_counts_without_reordering_the_phase():
+    selected = [item for item in runner.PHASES["load"] if item[1] in [25, 20]]
+    assert selected == [("load", 20), ("load", 25)]
