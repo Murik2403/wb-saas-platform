@@ -1,0 +1,131 @@
+{
+  "scenario": "PDF slot and lease faults on real tenants",
+  "git": {
+    "head": "2cacabf73c57bc7f58bf0b24150ad106945fb336",
+    "branch": "claude/pdf-faults-20261024",
+    "dirty": false
+  },
+  "tenants": 3,
+  "slots": 2,
+  "image": {
+    "reference": "bench-tenant:fc-b22d871",
+    "id": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+    "source_trees": {
+      "head_tenant_app": "05ee1aa0a18f8e52cecc5242a1a84fd1116f4386",
+      "head_tenant_api": "681642f40ac3bbb5c10f862e0c8a86135cee937e",
+      "built_from": "b22d87179c8b428c6b9141774e9d1ea35ba63ba1",
+      "built_from_tenant_app": "05ee1aa0a18f8e52cecc5242a1a84fd1116f4386",
+      "built_from_tenant_api": "681642f40ac3bbb5c10f862e0c8a86135cee937e"
+    }
+  },
+  "floor_mib": 1500,
+  "started": "2026-10-16 01:48:28",
+  "start_gate": [
+    {
+      "index": 0,
+      "name": "bench-faults-t01-2746b96c",
+      "at": 1792104514.5253348,
+      "decision": "admitted",
+      "vm_available_mib": 5999,
+      "create_started_at": 1792104514.8283203
+    },
+    {
+      "index": 1,
+      "name": "bench-faults-t02-2746b96c",
+      "at": 1792104514.8283203,
+      "decision": "admitted",
+      "vm_available_mib": 6012,
+      "create_started_at": 1792104515.160327
+    },
+    {
+      "index": 2,
+      "name": "bench-faults-t03-2746b96c",
+      "at": 1792104515.160327,
+      "decision": "admitted",
+      "vm_available_mib": 6012,
+      "create_started_at": 1792104515.4723306
+    }
+  ],
+  "image_attestation": [],
+  "scenarios": {
+    "S1_sigkill_slot_holder": {
+      "checks": [
+        {
+          "check": "scenario completed",
+          "ok": false,
+          "detail": ""
+        }
+      ],
+      "error": "TypeError: op() got multiple values for argument 'name'",
+      "seconds": 0.0
+    },
+    "S2_lease_expiry_and_fencing": {
+      "checks": [
+        {
+          "check": "scenario completed",
+          "ok": false,
+          "detail": ""
+        }
+      ],
+      "error": "TypeError: op() got multiple values for argument 'name'",
+      "seconds": 0.0
+    },
+    "S3_poison_job": {
+      "checks": [
+        {
+          "check": "scenario completed",
+          "ok": false,
+          "detail": ""
+        }
+      ],
+      "error": "TypeError: op() got multiple values for argument 'name'",
+      "seconds": 0.0
+    },
+    "S4_cancel_by_deleting_the_definition": {
+      "checks": [
+        {
+          "check": "scenario completed",
+          "ok": false,
+          "detail": ""
+        }
+      ],
+      "error": "TypeError: op() got multiple values for argument 'name'",
+      "seconds": 0.0
+    }
+  },
+  "vm_min_available_mib": 5485,
+  "oom_killed_containers": 0,
+  "cleanup": {
+    "owned": {
+      "container": 3,
+      "volume": 4,
+      "network": 1
+    },
+    "removed_by_full_id": 8,
+    "removed_ids_all_full": true,
+    "already_absent": [],
+    "not_ours": [],
+    "owned_remaining": [],
+    "unknown": [],
+    "observation_errors": [],
+    "unexpected_labelled": [],
+    "foreign_collisions": [],
+    "foreign_missing": [],
+    "foreign_changed": [],
+    "foreign_unstable_before_the_run": [
+      "85a4717a6e442fedee157e70568b9b24edbc234d12544c1c9e3647890614e54c"
+    ]
+  },
+  "verdict": "FAIL",
+  "failed_checks": [
+    "S1_sigkill_slot_holder: the scenario itself failed: TypeError: op() got multiple values for argument 'name'",
+    "S1_sigkill_slot_holder: scenario completed ()",
+    "S2_lease_expiry_and_fencing: the scenario itself failed: TypeError: op() got multiple values for argument 'name'",
+    "S2_lease_expiry_and_fencing: scenario completed ()",
+    "S3_poison_job: the scenario itself failed: TypeError: op() got multiple values for argument 'name'",
+    "S3_poison_job: scenario completed ()",
+    "S4_cancel_by_deleting_the_definition: the scenario itself failed: TypeError: op() got multiple values for argument 'name'",
+    "S4_cancel_by_deleting_the_definition: scenario completed ()"
+  ],
+  "finished": "2026-10-16 01:49:12"
+}
