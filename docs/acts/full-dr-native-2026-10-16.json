@@ -1,0 +1,194 @@
+{
+  "date_moscow": "2026-10-16",
+  "source_commit": "5c13a2b",
+  "scope": "separate clean Ubuntu VM, original production images, no production deployment/restart/reconfiguration",
+  "core_restore_and_os_reboot_passed": true,
+  "full_server_dr_acceptance_passed": false,
+  "source_data_point": "2026-10-14",
+  "configuration_point": "2026-10-16",
+  "source_os": "Ubuntu 22.04/Python3.10",
+  "target_os": "Ubuntu24.04/Python3.12",
+  "native_engine_id": "f5c0df95-a51b-4bf0-934d-fe7308bcbb2c",
+  "machine_sha256": "49f9ebe875d77ef00ccf4352f688a9d3915c1bcc321e28bc29c7620b5ce68a55",
+  "reboot": {
+    "seconds": 346.6,
+    "before_boot_id": "e79f86b5-aed3-4402-b370-2341f06d4ea9",
+    "after_boot_id": "65af14fc-6946-4374-9731-169297359dd1",
+    "same_container_ids_and_images": 12,
+    "automatic_start": true,
+    "cron_tick_after_boot": true
+  },
+  "passed": {
+    "sqlite_integrity": 21,
+    "sqlite_tables_including_internal": 798,
+    "postgres": {
+      "passed": true,
+      "databases": [
+        {
+          "tables": 369,
+          "rows": 766,
+          "row_counts_match_dump": true,
+          "pg_amcheck": true
+        }
+      ],
+      "isolated_restore_bootstrap_role": true
+    },
+    "role_and_forwardauth_groups": 5,
+    "password_login_tested": false,
+    "credential_decryption": true,
+    "tls_system_ca_sni_hosts": 7,
+    "training_media_full_hash_and_ranges": 32,
+    "glitchtip_event_persisted": true,
+    "test_ca_issuance_and_automatic_renewal": {
+      "passed": true,
+      "real_http01": true,
+      "automatic_renewal_without_restart_or_storage_deletion": true,
+      "observed": [
+        {
+          "serial": "7499715790732450192",
+          "epoch": 1792156115.3294792,
+          "not_after": "2026-10-16T13:13:25+00:00"
+        },
+        {
+          "serial": "7743376285294913178",
+          "epoch": 1792156170.8891635,
+          "not_after": "2026-10-16T13:14:24+00:00"
+        }
+      ],
+      "private_ca": true,
+      "public_dns_or_acme_changed": false,
+      "production_acme_network_tested": false
+    },
+    "local_smtp_receipts": 8,
+    "container_memory_events_high_max_oom_oom_kill": 0,
+    "source_volume_labels_and_contents_preserved": 13
+  },
+  "jobs": [
+    {
+      "name": "wb-saas-backup",
+      "state": "disabled_in_source",
+      "active_commands": 0
+    },
+    {
+      "name": "wb-saas-offsite-backup",
+      "slot": 0,
+      "exit_code": 0,
+      "seconds": 284.5,
+      "command_sha256": "edf623a9eb56b75773a9da809bf1a4f075431d21b05b507122fcbbfb2aa4963a"
+    },
+    {
+      "name": "wb-saas-offsite-backup",
+      "slot": 1,
+      "exit_code": 0,
+      "seconds": 3.48,
+      "command_sha256": "9c7cf2fa0b54275557abeeb0e41738881b8627cc0c97320fec736c39ecf9322f"
+    },
+    {
+      "name": "wb-saas-pdn-backup",
+      "slot": 0,
+      "exit_code": 0,
+      "seconds": 3.38,
+      "command_sha256": "64b9d9d6f5f482869fe6ed3269a78261e9a57fa3080e15c692519ca27c532de1"
+    },
+    {
+      "name": "wb-saas-pdn-backup",
+      "slot": 1,
+      "exit_code": 0,
+      "seconds": 0.9,
+      "command_sha256": "d20e02668cb94911d3eeed8ac78a727ba3eeb1b914f7a55ca07ab0f997b90593"
+    },
+    {
+      "name": "wb-saas-pdn-backup",
+      "slot": 2,
+      "exit_code": 1,
+      "seconds": 6.2,
+      "command_sha256": "376cda6276731f969464fed20cfb0daaaecc5a7aef710ab51d702b8fc816f9e0"
+    },
+    {
+      "name": "wb-saas-drift",
+      "slot": 0,
+      "exit_code": 1,
+      "seconds": 14.38,
+      "command_sha256": "d86477bfdc8e95a35b5ef58b98b529be802b5b0d474eb2243f3db396e7da59d0"
+    },
+    {
+      "name": "wb-saas-billing",
+      "slot": 0,
+      "exit_code": 0,
+      "seconds": 8.0,
+      "command_sha256": "8d5dc6b1515bfe977a9519b3281dd1fc75b91560ce56d77472b1eeac74411503"
+    },
+    {
+      "name": "wb-saas-trial-emails",
+      "slot": 0,
+      "exit_code": 0,
+      "seconds": 8.13,
+      "command_sha256": "d8beae4554771aed0287174d0727b59fad2e81a1ec9f832755874f2df79fe625"
+    }
+  ],
+  "offsite_on_stand": "real encryption/rclone copy/check against filesystem alias, not live S3; source encrypted supplement uploads separately read back from actual S3",
+  "remaining": [
+    {
+      "item": "pdn_retention",
+      "state": "NOT_ACCEPTED",
+      "reason": "fixed live-S3 provider-policy verifier correctly refuses filesystem alias: s3_policy_config_unavailable; real policy and retention acceptance not exercised on this guest"
+    },
+    {
+      "item": "site_drift",
+      "state": "DETECTED_DRIFT",
+      "reason": "restored baseline 2026-09-29: 1 critical (/robots.txt new Disallow /feedback) and 23 warnings; needs reviewed baseline update, no silent snapshot replacement"
+    },
+    {
+      "item": "large_tenant_data_quality",
+      "state": "TIMEOUT",
+      "diagnostic": {
+        "gate": "tenant_data_quality_status",
+        "group_slot": 2,
+        "http_status": null,
+        "passed": false,
+        "error_class": "TimeoutError"
+      },
+      "reason": "full linked check did not pass; access-only checks are separate and do not override the failed data-quality check"
+    },
+    {
+      "item": "host_security_and_provider_agent",
+      "state": "NOT_TESTED",
+      "reason": "source UFW/SSH/sysctl configs archived but not applied/accepted on new OS; provider zabbix-agent not restored/accepted"
+    }
+  ],
+  "boundaries": [
+    "shadow DNS and private ACME test CA only; no public DNS/CA cutover",
+    "no live WB/Ozon sync, YooKassa charge/refund or outbound customer email/Telegram",
+    "no production runtime changes; copy-only encrypted supplements were captured earlier in this rehearsal",
+    "no claim of a globally atomic 2026-10-16 data point; business data snapshot is 2026-10-14",
+    "TCG functional rehearsal, not 20-30 tenant performance acceptance"
+  ],
+  "evidence": {
+    "private_raw_sha256": "98eadf946c64f8ccda15827c35125c0ab3295ece2c15f2432c2e890a8d586845",
+    "reboot_proof_sha256": "027b0a6c126c9500f2a3281d293362776c79175926e83fb91bf2ca3d0f6de86b",
+    "summary_sha256": "084259119566c2874a0ca1a802490cc0cf8ad4b613dcba829c0697742dc7bb4a",
+    "host_state_encrypted_offsite": {
+      "offsite_readback_verified": true,
+      "sha256": "dcb25793113cdf4a1a41d424d8a79a42ada0e8ed80b717d2f4e7e56125e92ae7",
+      "bytes": 60366,
+      "plaintext_uploaded": false,
+      "owner_encrypted_file": "dr-host-state-metadata-20261016.enc",
+      "remote": "timeweb-s3:marketshelper-backups/dr-completion-v1/mh-dr-hostdeps-20261016-7a2d0b0cb0f040688e5ce8fd5589959d/dcb25793113cdf4a1a41d424d8a79a42ada0e8ed80b717d2f4e7e56125e92ae7-host-state-metadata.enc"
+    },
+    "previous_failed_attempt_receipts_preserved": true,
+    "final_stop_proof_sha256": "ac769e36b9b0ceaa00f43ec6ec4632b000a8ea68c8a28a9bc7f8554c1339d0ef"
+  },
+  "stand_shutdown": {
+    "passed": true,
+    "qemu": {
+      "stopped": true,
+      "reason": "requested_stop",
+      "exitcode": 0,
+      "name": "mh-full-dr-7a2d0b0cb0f040688e5ce8fd5589959d"
+    },
+    "localhost_listeners_remaining": 0,
+    "local_desktop_engine_preserved": "d6b301f7-ccc8-418a-91b2-daba6a6dcce1",
+    "local_desktop_stopped_or_restarted_by_this_task": false,
+    "production_runtime_touched": false
+  }
+}
