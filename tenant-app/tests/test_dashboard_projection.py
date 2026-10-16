@@ -53,3 +53,12 @@ class DashboardProjectionTests(DbTestCase):
             pd.testing.assert_frame_equal(projected[index], ordinary[index])
         with core.connect() as conn:
             self.assertGreater(conn.execute('SELECT length(raw_json) FROM financial_report LIMIT 1').fetchone()[0], 65536)
+
+    def test_financial_date_projection_preserves_freshness_with_mixed_date_formats(self):
+        self.seed(count=2)
+        with core.connect() as conn:
+            conn.execute("UPDATE financial_report SET operation_date='2026-10-15T00:00:00' WHERE rrd_id=0")
+            conn.execute("CREATE INDEX financial_quality_date_test ON financial_report(operation_date)")
+        full = pd.to_datetime(ingest.read_financial()['operation_date'], errors='coerce')
+        dates = pd.to_datetime(ingest.read_financial(dates_only=True)['operation_date'], errors='coerce')
+        self.assertEqual(dates.max(), full.max())
