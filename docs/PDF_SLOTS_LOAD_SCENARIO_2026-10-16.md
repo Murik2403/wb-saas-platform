@@ -52,7 +52,7 @@ python -m pytest scripts/tests/test_bench_pdf_slots_load.py -q    # verdict logi
 | Throttle CPU, % | 96,1 | 91,2 | 86,0 |
 | Admission (реальный `tenant_budget`) | admitted, видит 2, резерв 768 | admitted, 3, 1152 | admitted, 4, 1536 |
 
-Первый прогон (4c100a2) записал `running_tenants=0`: у кабинетов стенда не было метки `wb-saas.slug`, и admission мерился «в пустоту». Исправлено в b50a1fb (метка + вердикт падает, если admission не увидел все N кабинетов); прежние акты заменены новыми.
+Первый прогон (4c100a2) записал `running_tenants=0`: у кабинетов стенда не было метки `wb-saas.slug`, и admission мерился «в пустоту». Исправлено в b50a1fb (метка + вердикт падает, если admission не увидел все N кабинетов). Результаты первого прогона в репозиторий не коммитились (они лежали во временном каталоге и были перезаписаны перезапуском), поэтому как акты они не сохранены: сохранён только описанный здесь факт и коммит-исправление; все коммитнутые акты неизменны.
 
 ## Границы
 - Это smoke на 2–4 кабинетах, а не приёмка 20/25/30: 20/25/30 не измерялись этим сценарием; прежние отрицательные результаты лежат отдельно (`docs/benchmarks/README.md`).
@@ -124,9 +124,9 @@ Not done: 20/25/30 (`NOT_RUN`, no large run, no production touched); fault *exec
 ## Fault scenarios (`scripts/bench_pdf_faults.py`, branch `claude/pdf-faults-20261024`, base 97b0d5f)
 Real local tenants (3 or 4, demo data, one shared slot volume, `WB_SAAS_PDF_SLOTS=2`), the real resident worker, real PDF builds, the same admission gate per tenant and the same fail-closed ownership/cleanup as the load scenario. The act is `PASS` only if every check of every scenario holds.
 
-| Scenario | Fault | What is checked (all held in both runs) |
+| Scenario | Fault | What is checked (all held in both runs; the slot hand-over time was 0.6 s on 3 tenants and 1.1 s on 4) |
 |---|---|---|
-| S1 | `docker kill` (SIGKILL) of the tenant that builds while another tenant waits for a slot | exit code 137; the slot is free / the queued tenant starts within 0.6 s (limit 15 s); the restarted tenant's run is requeued and finishes ok on attempt 2 with a real PDF; the other runs stay on attempt 1; at most 2 builds overlap; a duplicate enqueue returns the same run in every tenant |
+| S1 | `docker kill` (SIGKILL) of the tenant that builds while another tenant waits for a slot | exit code 137; the slot is free / the queued tenant starts within 0.6 s / 1.1 s (limit 15 s); the restarted tenant's run is requeued and finishes ok on attempt 2 with a real PDF; the other runs stay on attempt 1; at most 2 builds overlap; a duplicate enqueue returns the same run in every tenant |
 | S2 | a run whose owner stopped renewing (`dead-worker`, expired lease) in a LIVE tenant | the resident worker takes it over without a restart (attempt 2); the dead owner's late `finish_run` and `heartbeat` are both rejected and change nothing, while the new attempt is running and after it finished; ok with a real PDF |
 | S3 | the worker dies on every attempt: SIGKILL, restart, lease expiry, three times | the run is closed with the "interrupted 3 times" error at attempt 3, no PDF recorded, and stays closed (never requeued) through six further worker ticks; another tenant's job completes ok meanwhile |
 | S4 | cancel (see below) of a queued run and of a running build | the queued run vanishes and never builds; the running build's definition is deleted: the row disappears, nothing is resurrected when the build ends, the container and worker survive (same start time), the slot is released, and the tenant's next job completes ok on attempt 1 |

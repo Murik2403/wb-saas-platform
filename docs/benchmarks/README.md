@@ -25,7 +25,7 @@ The 25 and 30 tenant steps remain **open**; no result in the next section replac
 ### Historical (old gates) and attested (current gates)
 | Files | Status |
 |---|---|
-| `pdf-slots-load-{2,3,4}-2026-10-16.json` | **Historical, unchanged.** `PASS` under the gates of 27070ca. Those gates accepted missing kernel peak / API / per-tenant driver data, so they are not evidence for the stricter criteria and are not rewritten. Image: an overlay on a d7f3729 base. |
+| `pdf-slots-load-{2,3,4}-2026-10-16.json` | **Historical, unchanged.** `PASS` under the gates of 27070ca. Those gates accepted missing kernel peak / API / per-tenant driver data, so they are not evidence for the stricter criteria and are not rewritten. The acts record only the image tag (`bench-tenant:pdfload`), not the commit or base it was built from: the statement that it was an overlay on a d7f3729 base comes from the author's notes and cannot be checked from the act. |
 | `pdf-slots-load-obs-{2,3,4}-2026-10-15.json` | **FAILED, kept as recorded.** First run of the strict gates: three harness faults (a wrong source path, an over-strict mount rule, lock-file read bits), not load faults. |
 | `pdf-slots-load-attested-{2,3,4}-2026-10-15.json` | **Current smoke, `PASS`** with the strict gates from 6354bb3 on an image built from the committed sources of d0141b2 (`../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Strict gates"). 2-4 tenants only; not an acceptance of 20/25/30. |
 
@@ -37,7 +37,7 @@ The 25 and 30 tenant steps remain **open**; no result in the next section replac
 | `pdf-slots-load-strict-2b-2026-10-15.json` | Repeat of the same 2-tenant scenario: `PASS`, last PDF at 117.6 s. Both results are evidence of the same variance (90-121 s over the 2-tenant runs); neither replaces the other. |
 | `pdf-slots-load-strict-{3,4}-2026-10-15.json` (+ `.raw.json`) | `PASS` under the fail-closed gates (139.4 s and 150.9 s against 180 s). |
 
-Raw evidence (per-tenant driver buckets, kernel counters before/after, both inspections, process lists, lock identities, hashes) is in the `.raw.json` sidecar named, with its sha256, in each act.
+Raw evidence (per-tenant driver buckets, kernel counters before/after, both inspections, process lists, lock identities, hashes) is in a `.raw.json` sidecar that is named, with its sha256 and size, in the `raw_evidence` field of the acts that have one (the failclosed, strict, fair, pressure and release acts). Older acts (the 2026-10-16 historical load acts, `obs`, `attested`, the fault acts and the density acts) have no sidecar.
 
 ### PDF fault scenarios (branch `claude/pdf-faults-20261024`, base 97b0d5f)
 | File | Status |
@@ -65,3 +65,11 @@ Description and limits: `../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Fau
 | `pdf-faults-v4-3-2026-10-16.json` | `PASS`, fault scenarios on the fixed code (S1 re-reads slots, victim and contender at the kill instant). |
 The real 20/25/30 acts of the Docker24 stand (FAIL, 7/20, 8/25, 7/30) stay as delivered; they were not rerun here.
 
+
+
+### Release acceptance in an isolated Docker daemon (branch `claude/release-acceptance-20261028`, candidate 024a6fe; `../RELEASE_ACCEPTANCE_2026-10-17.md`)
+Run by `scripts/run_local_daemon_acceptance.py` inside a separate Docker-in-Docker daemon (own `/var/lib/docker` volume, network `none`, 20 GiB, 10 CPUs, no host socket or bind mounts), from a git bundle of the committed source; each act keeps its original file names so that its `raw_evidence` reference resolves inside its own directory.
+| Directory | Status |
+|---|---|
+| `release-2026-10-17/smoke-tzbug-FAILED/` | **FAILED, kept as recorded.** 2/3/4 tenants: every check but the deadline held; the deadline failed because the harness read the tenants' Moscow timestamps in the UTC container's local time (a 66 s run was reported as 10866 s). Fixed in 18dfecb with a regression test. |
+| `release-2026-10-17/smoke-pass/` | `PASS` 2/3/4 tenants from commit 18dfecb (candidate application trees of 024a6fe); sidecar hashes verified; the daemon container and volume confirmed removed; no inner leftovers. |
