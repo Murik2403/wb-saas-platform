@@ -159,17 +159,30 @@ def isolated_env_args():
     return [item for key, value in ISOLATED_ENV.items() for item in ("-e", key + "=" + value)]
 
 
-def docker(*args: str, check: bool = True, timeout: int = 300) -> str:
+def _run_docker(args: tuple, timeout: int) -> subprocess.CompletedProcess:
     command = ["docker", *(["--host", _LOCAL_ENDPOINT] if _LOCAL_ENDPOINT else []), *args]
     environment = os.environ.copy()
     if _LOCAL_ENDPOINT:
         # A user's context switch during the run must not redirect load or cleanup.
         environment.pop("DOCKER_CONTEXT", None)
         environment.pop("DOCKER_HOST", None)
-    done = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=environment)
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=environment)
+
+
+def docker(*args: str, check: bool = True, timeout: int = 300) -> str:
+    done = _run_docker(args, timeout)
     if check and done.returncode != 0:
         raise RuntimeError(f"docker {' '.join(args[:3])} failed: {done.stderr.strip()[:300]}")
     return done.stdout.strip()
+
+
+def docker_status(*args: str, timeout: int = 120) -> tuple[int, str, str]:
+    """(exit status, stdout, stderr); a timeout or a missing CLI is status -1, never an empty success."""
+    try:
+        done = _run_docker(args, timeout)
+    except (subprocess.TimeoutExpired, OSError) as error:
+        return -1, "", f"{type(error).__name__}: {str(error)[:160]}"
+    return done.returncode, done.stdout.strip(), done.stderr.strip()
 
 
 def assert_local_engine() -> None:
