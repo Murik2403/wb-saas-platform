@@ -255,7 +255,11 @@ def check_once(*, deliver: bool = True) -> int:
     finally:
         # keep the beacon only while queued or due reports are still waiting for a slot; a crash drops it with the process
         try:
-            if not _deferred["due"] and not ReportStore(DB_PATH).has_queued():
+            from shop_schedule_runner import pdf_waiting
+            secondary_waiting = pdf_waiting()
+            if secondary_waiting:
+                announce_background_waiting()
+            if not _deferred["due"] and not ReportStore(DB_PATH).has_queued() and not secondary_waiting:
                 withdraw_background_waiting()
         except Exception:  # noqa: BLE001 - an unreadable store must not leave requests blocked forever: the beacon dies with the process anyway
             withdraw_background_waiting()

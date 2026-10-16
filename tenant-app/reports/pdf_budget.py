@@ -346,6 +346,9 @@ def interactive_pdf(build, *, wait: float = 15.0, deadline: float | None = None)
         _interactive.context = {"cancelled": cancelled}
         try:
             with pdf_slot(wait=wait):
+                # A worker can announce itself while this request is being granted a slot.
+                # Recheck while holding admission; the context releases it if we yield.
+                _interactive_yield()
                 if cancelled.is_set():
                     raise PdfBusy("Запрос отменён: время ожидания истекло")
                 box["value"] = build()

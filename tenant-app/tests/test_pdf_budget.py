@@ -307,7 +307,7 @@ def scheduler_env(tmp_path, monkeypatch, store, host):
     monkeypatch.setattr(scheduler, "build_report_pdf", fake_pdf)
     monkeypatch.setattr(scheduler, "DB_PATH", store.db_path)  # check_once opens the tenant database itself
     import types
-    monkeypatch.setitem(sys.modules, "shop_schedule_runner", types.SimpleNamespace(run_one=lambda: None))
+    monkeypatch.setitem(sys.modules, "shop_schedule_runner", types.SimpleNamespace(run_one=lambda: None, pdf_waiting=lambda: False))
     return calls
 
 

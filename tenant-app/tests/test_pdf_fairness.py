@@ -51,6 +51,24 @@ def test_no_beacon_means_requests_are_not_held_back(host):
     assert interactive_pdf(lambda: "pdf", wait=1) == "pdf"
 
 
+def test_beacon_appearing_at_slot_grant_refuses_build_and_releases_slot(host, monkeypatch):
+    real_try = pdf_budget._try_once
+    built = []
+    def grant_with_waiter():
+        release = real_try()
+        assert release is not None
+        announce_background_waiting()
+        return release
+    monkeypatch.setattr(pdf_budget, "_try_once", grant_with_waiter)
+    with pytest.raises(PdfBusy, match="очереди"):
+        interactive_pdf(lambda: built.append(True), wait=1)
+    assert built == []
+    monkeypatch.setattr(pdf_budget, "_try_once", real_try)
+    withdraw_background_waiting()
+    with pdf_slot(wait=0):
+        pass  # refusal released both the tenant and the host slot
+
+
 def test_a_beacon_is_visible_while_held_and_gone_after_withdrawal(host):
     assert announce_background_waiting() is True and announce_background_waiting() is True  # idempotent
     assert len(list(host.glob("pdf-bg-wait-*.lock"))) == 1 and background_waiting() is True

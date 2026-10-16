@@ -11,6 +11,7 @@ NOW=datetime(2026,9,30,10,tzinfo=timezone.utc)
 
 @pytest.fixture
 def state(tmp_path,monkeypatch):
+    monkeypatch.setattr(runner,'_waiting_pdf',{},raising=False)
     monkeypatch.setattr(core,'DB_PATH',tmp_path/'main.sqlite3')
     monkeypatch.setattr(config,'DATA_DIR',tmp_path)
     monkeypatch.setattr(config,'DATA_ENCRYPTION_KEY',Fernet.generate_key().decode())
@@ -36,6 +37,107 @@ def configure(state,kind='sync',**kw):
 
 def events():
     with core.connect() as conn:return [dict(r) for r in conn.execute('SELECT * FROM shop_schedule_events')]
+
+
+def test_secondary_busy_pdf_retains_priority_until_success_or_disable(state,monkeypatch):
+    from reports import pdf_budget
+    import report_scheduler as scheduler
+    from reports.store import ReportStore
+    slots=config.DATA_DIR/'pdf-slots';slots.mkdir()
+    monkeypatch.setenv('WB_SAAS_PDF_SLOT_DIR',str(slots))
+    monkeypatch.setattr(scheduler,'DB_PATH',core.DB_PATH)
+    monkeypatch.setattr(scheduler,'_is_due',lambda *args:False)
+    configure(state,'pdf')
+    due=NOW+timedelta(minutes=60)
+    original=runner.prepare
+    monkeypatch.setattr(runner,'prepare',lambda *a,**k:{'response':{'pdf_busy':True}})
+    try:
+        assert runner.run_one(now=due)
+        assert runner.pdf_waiting()
+        # The primary queue is empty, but check_once must keep the secondary beacon.
+        assert not ReportStore(core.DB_PATH).has_queued()
+        monkeypatch.setattr(runner,'run_one',lambda:False)
+        scheduler.check_once(deliver=False)
+        assert pdf_budget.background_waiting()
+        # Reconfiguration removes the exact deferred identity, even before its retry.
+        configure(state,'pdf',enabled=False,expected_generation=1)
+        scheduler.check_once(deliver=False)
+        assert not runner.pdf_waiting() and not pdf_budget.background_waiting()
+    finally:
+        pdf_budget.withdraw_background_waiting()
+
+
+def test_secondary_priority_drops_after_success_and_never_for_sync(state,monkeypatch):
+    from reports.pdf_budget import PdfBusy
+    configure(state,'pdf');due=NOW+timedelta(minutes=60)
+    original=runner.prepare
+    def busy(*a,**k):raise PdfBusy('busy')
+    monkeypatch.setattr(runner,'prepare',busy)
+    assert runner.run_one(now=due)
+    assert runner.pdf_waiting()
+    monkeypatch.setattr(runner,'prepare',original)
+    assert runner.run_one(now=due+timedelta(seconds=5))
+    assert not runner.pdf_waiting()
+    configure(state,'sync')
+    monkeypatch.setattr(runner,'prepare',busy)
+    assert runner.run_one(now=due+timedelta(seconds=10))
+    assert not runner.pdf_waiting()
+
+
+def test_secondary_stale_busy_lease_cannot_create_priority(state,monkeypatch):
+    from reports.pdf_budget import PdfBusy
+    configure(state,'pdf');due=NOW+timedelta(minutes=60)
+    def replaced(*a,**k):
+        configure(state,'pdf',enabled=False,expected_generation=1)
+        raise PdfBusy('busy')
+    monkeypatch.setattr(runner,'prepare',replaced)
+    assert runner.run_one(now=due)
+    assert not runner.pdf_waiting()
+
+
+@pytest.mark.parametrize('change',['role','acl','generation','failure'])
+def test_secondary_priority_revalidates_authorization_and_deferred_identity(state,monkeypatch,change):
+    from reports.pdf_budget import PdfBusy
+    configure(state,'pdf');due=NOW+timedelta(minutes=60)
+    def busy(*a,**k):raise PdfBusy('busy')
+    monkeypatch.setattr(runner,'prepare',busy)
+    assert runner.run_one(now=due) and runner.pdf_waiting()
+    if change=='role':monkeypatch.setattr(runner,'current_role',lambda actor:'viewer')
+    elif change=='acl':warehouse.grant(state['shop'],'1',False,'owner')
+    elif change=='generation':configure(state,'pdf',expected_generation=1)
+    else:
+        def failed(*a,**k):raise RuntimeError('failed')
+        monkeypatch.setattr(runner,'prepare',failed)
+        runner.run_one(now=due+timedelta(seconds=5))
+    assert not runner.pdf_waiting()
+
+
+def test_primary_and_secondary_waiters_do_not_clear_each_others_priority(state,monkeypatch):
+    from reports import pdf_budget
+    from reports.store import ReportStore
+    import report_scheduler as scheduler
+    slots=config.DATA_DIR/'pdf-slots';slots.mkdir()
+    monkeypatch.setenv('WB_SAAS_PDF_SLOT_DIR',str(slots))
+    monkeypatch.setattr(scheduler,'DB_PATH',core.DB_PATH)
+    monkeypatch.setattr(scheduler,'_check_once',lambda **kwargs:0)
+    configure(state,'pdf')
+    def busy(*a,**k):raise pdf_budget.PdfBusy('busy')
+    monkeypatch.setattr(runner,'prepare',busy)
+    assert runner.run_one(now=NOW+timedelta(minutes=60))
+    store=ReportStore(core.DB_PATH)
+    primary=store.add_definition(name='primary',metrics=['stocks'],schedule_type='daily',schedule_time='00:00')
+    store.enqueue_run(primary)
+    try:
+        scheduler.check_once()
+        assert pdf_budget.background_waiting()
+        configure(state,'pdf',enabled=False,expected_generation=1)
+        scheduler.check_once()
+        assert not runner.pdf_waiting() and pdf_budget.background_waiting()
+        store.delete_definition(primary)
+        scheduler.check_once()
+        assert not pdf_budget.background_waiting()
+    finally:
+        pdf_budget.withdraw_background_waiting()
 
 def test_default_disabled_owner_opt_in_requires_existing_acl_no_grant(state):
     value=schedules.listing(state['shop'],'1','owner')

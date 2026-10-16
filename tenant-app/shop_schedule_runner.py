@@ -7,6 +7,42 @@ from shop_membership import current_role
 from shop_workspace_service import prepare
 from reports.pdf_budget import PdfBusy
 
+# Only successfully deferred PDF jobs earn priority, never a sync or an arbitrary
+# future/due schedule. The parent worker owns the beacon, not the short-lived child.
+_waiting_pdf = {}
+
+
+def _waiting_key(job):
+    from db import core
+    return (str(core.DB_PATH.resolve()), job['id'])
+
+
+def pdf_waiting():
+    """Revalidate deferred identities so disable/reconfigure/revoke cannot leave a phantom beacon."""
+    from db import core
+    path = str(core.DB_PATH.resolve())
+    if not any(key[0] == path for key in _waiting_pdf):
+        return False  # disabled-by-default tenants need no extra database access
+    with connect() as conn:
+        for key, expected in list(_waiting_pdf.items()):
+            if key[0] != path:
+                continue
+            row = conn.execute('SELECT * FROM shop_schedules WHERE id=?', (key[1],)).fetchone()
+            valid = bool(row and row['enabled'] and row['kind'] == 'pdf'
+                         and (row['generation'], row['next_due_utc'], row['attempts']) == expected)
+            if valid:
+                try:
+                    if current_role(row['actor']) not in {'owner', 'manager'}:
+                        valid = False
+                    else:
+                        record = schedules.target(conn, row['shop_id'], row['actor'], True)
+                        valid = record['account_identity'] == row['identity']
+                except (PermissionError, ValueError):
+                    valid = False
+            if not valid:
+                _waiting_pdf.pop(key, None)
+    return any(key[0] == path for key in _waiting_pdf)
+
 def membership(job):
     role=current_role(job['actor'])
     if role not in {'owner','manager'}:raise PermissionError('membership_denied')
@@ -15,6 +51,7 @@ def membership(job):
 def run_one(*,now=None):
     job=schedules.claim(now)
     if not job:return False
+    _waiting_pdf.pop(_waiting_key(job), None)
     try:
         membership(job)
         with connect() as conn:
@@ -53,6 +90,10 @@ def run_one(*,now=None):
             with connect() as conn:
                 conn.execute('BEGIN IMMEDIATE')
                 schedules.defer_pdf_busy(conn,job,now=now)
+            if job['kind'] == 'pdf':
+                _waiting_pdf[_waiting_key(job)] = (job['generation'], job['next_due_utc'], job['attempts'])
+                from reports.pdf_budget import announce_background_waiting
+                announce_background_waiting()
         except Exception:
             pass  # obsolete lease/configuration must not affect its replacement
     except Exception as exc:
