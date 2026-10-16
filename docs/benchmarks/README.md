@@ -56,3 +56,12 @@ Description and limits: `../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Fau
 | `pdf-faults-v3-3-2026-10-16.json` | `PASS` with the fixed harness (db86d64): 38 of 38 checks, 0 memory read errors, every scenario covered by samples with gaps <= 2.5 s, typed OOM flags for every tenant after every scenario and at the end. |
 | `pdf-faults-v3-4-2026-10-16.json` | `PASS`, same gates, 4 tenants. |
 
+### Queue priority and request deadline (branch `claude/pdf-fairness-20261026`, base 49be22f; `../PDF_FAIRNESS_2026-10-16.md`)
+| File | Status |
+|---|---|
+| `pdf-slots-pressure-before-6-2026-10-16.json` (+ `.raw.json`) | **FAILED, kept as recorded.** The starvation of the real 20/25/30 run reproduced locally with the previous code: 6 tenants, a request for a PDF every second per tenant, declared deadline 240 s: 3 of 6 background PDFs finished while requests got 31 builds. |
+| `pdf-slots-pressure-after-6-2026-10-16.json` (+ `.raw.json`) | `PASS` with the fix, same scenario and criteria: all 6 background PDFs in 218.5 s (deadline 240 s); requests: 8 served, 1264 refused with 503 + Retry-After, none otherwise. |
+| `pdf-slots-load-fair-4-2026-10-16.json` | `PASS`, default pressure, 4 tenants, 139.6 s (deadline 180 s). |
+| `pdf-faults-v4-3-2026-10-16.json` | `PASS`, fault scenarios on the fixed code (S1 re-reads slots, victim and contender at the kill instant). |
+The real 20/25/30 acts of the Docker24 stand (FAIL, 7/20, 8/25, 7/30) stay as delivered; they were not rerun here.
+
