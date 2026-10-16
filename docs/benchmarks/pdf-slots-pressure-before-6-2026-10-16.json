@@ -1,0 +1,866 @@
+{
+  "scenario": "shared PDF slots under simultaneous API and background load",
+  "git": {
+    "head": "a346358bcc55adb885d2a1273486007447215279",
+    "branch": "claude/pdf-faults2-20261025",
+    "dirty": false
+  },
+  "tenants": 6,
+  "slots": 2,
+  "declared_before_start": {
+    "deadline_seconds": 240.0,
+    "health_p95_ms": 3000.0,
+    "floor_mib": 1500,
+    "formula": "ceil(tenants/slots)*pdf_seconds+margin",
+    "pdf_seconds": 60.0,
+    "margin_seconds": 60.0,
+    "api_parallel_per_tenant": 3,
+    "api_pdf_request_every_seconds": 1.0
+  },
+  "started": "2026-10-16 14:57:11",
+  "image": {
+    "reference": "bench-tenant:fc-b22d871",
+    "id": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+    "labels": {
+      "org.opencontainers.image.revision": "b22d87179c8b428c6b9141774e9d1ea35ba63ba1",
+      "wb-saas.bench-base-image": "sha256:9f02e4b491ce7ef8ebd5d6a84a03d32938aa8c3907f1c4d4f7835f9c6c1325a7",
+      "wb-saas.bench-base-revision": "fdcc3017d61bbcbfb64e6bb4232ec150ce907688",
+      "wb-saas.bench-head": "b22d87179c8b428c6b9141774e9d1ea35ba63ba1"
+    },
+    "source_trees": {
+      "head_tenant_app": "05ee1aa0a18f8e52cecc5242a1a84fd1116f4386",
+      "head_tenant_api": "681642f40ac3bbb5c10f862e0c8a86135cee937e",
+      "built_from": "b22d87179c8b428c6b9141774e9d1ea35ba63ba1",
+      "built_from_tenant_app": "05ee1aa0a18f8e52cecc5242a1a84fd1116f4386",
+      "built_from_tenant_api": "681642f40ac3bbb5c10f862e0c8a86135cee937e"
+    },
+    "key_file_sha256_in_every_tenant": {
+      "/app/tenant-app/reports/pdf_budget.py": "6eb94581cb710fdc2711f9c53fcdce2f5476dc008b48d8e6e286defbae2e6846",
+      "/app/tenant-app/report_scheduler.py": "a1386adc5faf85996727a591fc168d6465d003532d5743d768f3ebbe8a5bb868",
+      "/app/tenant-app/reports/store.py": "3b3f1f8f103b652701aed8a01df2c39904a7cc5979fb86fb3503053aee0ac1d6",
+      "/app/tenant-app/reports/pdf_builder.py": "a1038571416153df650f0de6f247260d8acb02868083205bfd99ae02e300e945",
+      "/app/tenant-app/reports/catalog.py": "d6dd649a093f6136165de86d2db8b38d261bf101ea8934f0b0c88e076982a6f1",
+      "/app/tenant-app/background_worker.py": "06865161a05714be4d19f3cada846bb2578e6d4caa2cc2c031f9f369739141e1",
+      "/app/tenant-app/reports/metrics.py": "d22343775ae4f053f2e468a22f9c8580a1d4d80db3119ec4379efe934208e6bd",
+      "/app/tenant-app/db/financial_fifo_reconciliation.py": "4c80abd22ec59d2f11054402c55a6368e3b8968561d2ad48287eb2db575eff92",
+      "/app/tenant-app/api_server.py": "b1e627604dc12dacaf3d5d9b28289d7a9651d517b055ab7322688acec8aae7c5"
+    }
+  },
+  "topology": {
+    "bench-load-t01-0e6bf4d9": {
+      "image": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t01-0e6bf4d9-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "da3a814f6b40dba8c077880fe6ee3fddb4b0a8437a0378354dbb307fbf7cd5f2"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-0e6bf4d9"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "98685"
+        ],
+        "worker": [
+          "98686"
+        ],
+        "nginx": [
+          "98687"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "98685"
+        ],
+        "worker": [
+          "98686"
+        ],
+        "nginx": [
+          "98687"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 588766,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 742959,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 742921,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t02-0e6bf4d9": {
+      "image": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t02-0e6bf4d9-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "59c0730512e85ed690772a38c9aa75a5efddccac10f909d8751ab55b2f42dca2"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-0e6bf4d9"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "98776"
+        ],
+        "worker": [
+          "98777"
+        ],
+        "nginx": [
+          "98778"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "98776"
+        ],
+        "worker": [
+          "98777"
+        ],
+        "nginx": [
+          "98778"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 588766,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 742959,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 742921,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t03-0e6bf4d9": {
+      "image": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t03-0e6bf4d9-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "cd7be8b2426982ee6fc24b4f47fc47995a89df9cb662e0128b921fc0e40dedf8"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-0e6bf4d9"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "98936"
+        ],
+        "worker": [
+          "98937"
+        ],
+        "nginx": [
+          "98938"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "98936"
+        ],
+        "worker": [
+          "98937"
+        ],
+        "nginx": [
+          "98938"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 588766,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 742959,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 742921,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t04-0e6bf4d9": {
+      "image": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t04-0e6bf4d9-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "9131d37fd6792d92be4ea5eb2edd6a446db2965f46cb08a059c2a9555e6b00d9"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-0e6bf4d9"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "99418"
+        ],
+        "worker": [
+          "99419"
+        ],
+        "nginx": [
+          "99420"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "99418"
+        ],
+        "worker": [
+          "99419"
+        ],
+        "nginx": [
+          "99420"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 588766,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 742959,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 742921,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t05-0e6bf4d9": {
+      "image": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t05-0e6bf4d9-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "5b6b34a330ae981cc51c7fcc0a825c2347555db6bf8c5c5556bf31381844b3ca"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-0e6bf4d9"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "99521"
+        ],
+        "worker": [
+          "99522"
+        ],
+        "nginx": [
+          "99523"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "99521"
+        ],
+        "worker": [
+          "99522"
+        ],
+        "nginx": [
+          "99523"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 588766,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 742959,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 742921,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t06-0e6bf4d9": {
+      "image": "sha256:e65b25bfab21b34b9b356f580ddb3407c957962049d6d684a6d36893fb55e03e",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t06-0e6bf4d9-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "288d7ca8e1a5d392b2d4e3b110edc3da7b88ef39989111d610b2dd5ad5cd2fa7"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-0e6bf4d9"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "99617"
+        ],
+        "worker": [
+          "99618"
+        ],
+        "nginx": [
+          "99619"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "99617"
+        ],
+        "worker": [
+          "99618"
+        ],
+        "nginx": [
+          "99619"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 588766,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 742959,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 742921,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    }
+  },
+  "start_gate": [
+    {
+      "index": 0,
+      "name": "bench-load-t01-0e6bf4d9",
+      "at": 1792151836.6291294,
+      "decision": "admitted",
+      "vm_available_mib": 21249,
+      "create_started_at": 1792151837.0181623
+    },
+    {
+      "index": 1,
+      "name": "bench-load-t02-0e6bf4d9",
+      "at": 1792151837.0186987,
+      "decision": "admitted",
+      "vm_available_mib": 21273,
+      "create_started_at": 1792151837.320491
+    },
+    {
+      "index": 2,
+      "name": "bench-load-t03-0e6bf4d9",
+      "at": 1792151837.320491,
+      "decision": "admitted",
+      "vm_available_mib": 21275,
+      "create_started_at": 1792151837.6867125
+    },
+    {
+      "index": 3,
+      "name": "bench-load-t04-0e6bf4d9",
+      "at": 1792151837.6867125,
+      "decision": "admitted",
+      "vm_available_mib": 21248,
+      "create_started_at": 1792151839.4262297
+    },
+    {
+      "index": 4,
+      "name": "bench-load-t05-0e6bf4d9",
+      "at": 1792151838.1299014,
+      "decision": "admitted",
+      "vm_available_mib": 21241,
+      "create_started_at": 1792151839.74751
+    },
+    {
+      "index": 5,
+      "name": "bench-load-t06-0e6bf4d9",
+      "at": 1792151838.5522614,
+      "decision": "admitted",
+      "vm_available_mib": 21247,
+      "create_started_at": 1792151840.071728
+    }
+  ],
+  "idle_vm_available_mib": 20781,
+  "admission": {
+    "decision": "admitted",
+    "budget_mib": 16822,
+    "reserved_mib": 2304,
+    "free_mib": 14518,
+    "running_tenants": 6,
+    "host_available_mib": 20792,
+    "decided_at": 1792151887.4670005
+  },
+  "load_started_at": 1792151887.4726434,
+  "jobs": {
+    "bench-load-t01-0e6bf4d9": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t02-0e6bf4d9": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t03-0e6bf4d9": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t04-0e6bf4d9": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t05-0e6bf4d9": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t06-0e6bf4d9": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    }
+  },
+  "metric_codes": [
+    "abc_analysis",
+    "ad_funnel",
+    "ad_performance",
+    "ads",
+    "buyout_rate",
+    "cost_structure",
+    "frozen_capital",
+    "oos_risk",
+    "organic_vs_ads",
+    "pnl",
+    "returns_cancellations",
+    "roi_by_sku",
+    "sales_orders",
+    "stock_in_transit",
+    "stocks",
+    "unit_economics",
+    "warehouse_stocks",
+    "wb_commission_rate",
+    "wb_deductions",
+    "wb_incident_losses",
+    "weekday_pattern"
+  ],
+  "attestation_failures": [
+    "jobs: bench-load-t02-0e6bf4d9 run 1 ended running (definition 1, enqueued 1)",
+    "jobs: bench-load-t04-0e6bf4d9 run 1 ended running (definition 1, enqueued 1)",
+    "jobs: bench-load-t06-0e6bf4d9 run 1 ended queued (definition 1, enqueued 1)"
+  ],
+  "observation_failures": [],
+  "runs": [
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 856283,
+      "error": null,
+      "started_at": "2026-10-16T14:58:56",
+      "finished_at": "2026-10-16T15:00:04"
+    },
+    {
+      "status": "running",
+      "attempts": 1,
+      "pdf_header_ok": null,
+      "pdf_bytes": null,
+      "error": null,
+      "started_at": "2026-10-16T15:01:51",
+      "finished_at": null
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 856291,
+      "error": null,
+      "started_at": "2026-10-16T14:58:16",
+      "finished_at": "2026-10-16T14:59:18"
+    },
+    {
+      "status": "running",
+      "attempts": 1,
+      "pdf_header_ok": null,
+      "pdf_bytes": null,
+      "error": null,
+      "started_at": "2026-10-16T15:01:53",
+      "finished_at": null
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 856283,
+      "error": null,
+      "started_at": "2026-10-16T15:00:14",
+      "finished_at": "2026-10-16T15:01:14"
+    },
+    {
+      "status": "queued",
+      "attempts": 0,
+      "pdf_header_ok": null,
+      "pdf_bytes": null,
+      "error": null,
+      "started_at": "2026-10-16T14:58:08",
+      "finished_at": null
+    }
+  ],
+  "seconds_to_last_run": null,
+  "peak_concurrent_pdfs_from_intervals": 2,
+  "peak_busy_slots_sampled": 2,
+  "vm_min_available_mib": 19103,
+  "vm_drop_mib": 1678,
+  "api": {
+    "dashboard_requests": 188237,
+    "dashboard_p50_ms": 15,
+    "dashboard_p95_ms": 71,
+    "dashboard_max_ms": 2525,
+    "dashboard_5xx_or_no_answer": 0,
+    "dashboard_status_by_endpoint": {
+      "200 /api/v1/control/data-quality": 18828,
+      "200 /api/v1/dashboard/ads": 18827,
+      "200 /api/v1/dashboard/analytics": 18823,
+      "200 /api/v1/dashboard/assistant": 18823,
+      "409 /api/v1/dashboard/customer-quality": 18822,
+      "200 /api/v1/dashboard/finance": 18820,
+      "422 /api/v1/dashboard/management-economics": 9415,
+      "200 /api/v1/dashboard/management-pnl": 9415,
+      "200 /api/v1/dashboard/management-pnl/monthly": 9413,
+      "200 /api/v1/dashboard/production": 9412,
+      "200 /api/v1/dashboard/reports": 9411,
+      "200 /api/v1/dashboard/stock": 9411,
+      "200 /api/v1/dashboard/supply": 9410,
+      "200 /api/v1/dashboard/today": 9407
+    },
+    "pdf_in_request_total": 102,
+    "pdf_in_request_200": 31,
+    "pdf_in_request_503_retry_after": 71,
+    "pdf_in_request_bad": 0,
+    "pdf_in_request_max_ms": 24767
+  },
+  "healthz": {
+    "n": 3189,
+    "failures": 0,
+    "p50_ms": 9,
+    "p95_ms": 70,
+    "max_ms": 289
+  },
+  "kernel_memory": {
+    "events": {
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0
+    },
+    "oom_killed_containers": 0,
+    "restarts": 0,
+    "container_peak_mib_max": 471.5,
+    "cpu_throttled_pct": 71.8
+  },
+  "cleanup": {
+    "owned": {
+      "container": 8,
+      "volume": 7,
+      "network": 1
+    },
+    "removed_by_full_id": 16,
+    "removed_ids_all_full": true,
+    "already_absent": [],
+    "not_ours": [],
+    "owned_remaining": [],
+    "unknown": [],
+    "observation_errors": [],
+    "unexpected_labelled": [],
+    "foreign_collisions": [],
+    "foreign_missing": [],
+    "foreign_changed": [],
+    "foreign_unstable_before_the_run": [
+      "85a4717a6e442fedee157e70568b9b24edbc234d12544c1c9e3647890614e54c"
+    ]
+  },
+  "cleanup_residual_counts": {
+    "container": 0,
+    "volume": 0,
+    "network": 0
+  },
+  "verdict": "FAIL",
+  "failed_checks": [
+    "attestation: image, topology and job identity must be proven: jobs: bench-load-t02-0e6bf4d9 run 1 ended running (definition 1, enqueued 1); jobs: bench-load-t04-0e6bf4d9 run 1 ended running (definition 1, enqueued 1); jobs: bench-load-t06-0e6bf4d9 run 1 ended queued (definition 1, enqueued 1)",
+    "runs: not every tenant finished its PDF run with status ok",
+    "deadline: last run finished after None s, declared 240.0 s",
+    "pdf: a run did not leave a real PDF (header %PDF- and a plausible size)"
+  ],
+  "finished": "2026-10-16 15:03:06",
+  "raw_evidence": {
+    "file": "pdf-slots-pressure-before-6-2026-10-16.raw.json",
+    "sha256": "737ba6b4b14f2cf0e1a5cf870e1e9f5f2a994d96fc2793db713e6f6a7409a5a8",
+    "bytes": 3654567
+  }
+}
