@@ -4,19 +4,21 @@ Every scenario uses the real resident ``background_worker`` of each tenant, one 
 PDF builds; faults are real (``docker kill`` = SIGKILL) or, where a real wait would take the 300 s lease, an explicit and recorded
 injection into the tenant's own demo database.
 
-  S1 sigkill   the tenant that holds a slot is SIGKILLed mid-build: the kernel frees the slot at once and the queued tenant takes it;
+  S1 sigkill   with every slot busy and a tenant POSITIVELY OBSERVED waiting for one (otherwise nothing is killed and the act fails),
+               the tenant that holds a slot is SIGKILLed mid-build; the waiting tenant is then observed taking over: the kernel frees the slot at once and the queued tenant takes it;
                after the restart the dead owner's lease is expired (injected: the real lease lasts 300 s) and the worker requeues the run
                (attempt 2) and finishes it; the other tenants' PDFs are untouched; a duplicate enqueue returns the same run
   S2 lease     a run whose owner stopped renewing is requeued by the live worker WITHOUT a restart and finished (attempt 2); the stale
                owner is fenced: its late finish/heartbeat are rejected and change nothing, while the new attempt runs and after it ended
   S3 poison    a job whose worker dies on every attempt is SIGKILLed three times; after the third interruption it is closed with the
-               "interrupted 3 times" error and never requeued again, while another tenant keeps working
+               "interrupted 3 times" error and never requeued again; another tenant has a build RUNNING at each of the three kills and
+               completes all of them
   S4 cancel    there is no cancel API for a run; the cancel equivalent is deleting the definition. A queued run vanishes and never
                builds; a running build survives the deletion, the worker keeps living, nothing is resurrected, the slot is released and
                the next job of that tenant completes
 
 The act is ``PASS`` only if every named check of every scenario holds, the real admission gates every tenant before its creation, and
-the cleanup of everything the run created is confirmed by the engine (same fail-closed ownership rules as bench_pdf_slots_load.py).
+memory and OOM observations are complete (any unreadable sample or OOM flag is a failure) and the cleanup of everything the run created is confirmed by the engine (same fail-closed ownership rules as bench_pdf_slots_load.py).
 Local engine only; refuses a dirty tree. 20/25/30 are not exercised.
 
     python scripts/bench_pdf_faults.py --image bench-tenant:fc-xxxx --tenants 3 --out docs/benchmarks/pdf-faults-3.json
@@ -39,6 +41,7 @@ import bench_tenant_density as base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 POISON_TEXT = "прервана 3 раза"
+SCENARIO_KEYS = ("S1_sigkill_slot_holder", "S2_lease_expiry_and_fencing", "S3_poison_job", "S4_cancel_by_deleting_the_definition")
 
 OPS = r'''
 import json, sqlite3, sys, os
@@ -99,11 +102,56 @@ def check(name: str, ok: bool, detail: str = "") -> dict:
     return {"check": name, "ok": bool(ok), "detail": detail}
 
 
+SAMPLE_GAP_LIMIT_SECONDS = 10.0
+
+
+def sample_coverage(samples: list, window: tuple, limit: float = SAMPLE_GAP_LIMIT_SECONDS) -> dict:
+    """Samples are (time, MiB). A scenario window is covered only if samples touch both ends within ``limit`` and no gap exceeds it."""
+    start, end = window
+    inside = sorted(t for t, _ in samples if start - limit <= t <= end + limit)
+    points = [start, *inside, end]
+    gaps = [b - a for a, b in zip(points, points[1:])]
+    return {"count": len([t for t in inside if start <= t <= end]), "max_gap_seconds": round(max(gaps), 1) if gaps else None}
+
+
+def resource_failures(result: dict) -> list[str]:
+    """Memory samples and OOM flags must be complete, typed and error-free for every scenario and every tenant: a failed read is
+    UNKNOWN, never a quiet zero."""
+    failed = []
+    resources = result.get("resource_observation")
+    if not isinstance(resources, dict):
+        return ["resources: the memory observation was not recorded"]
+    if resources.get("errors") or not isinstance(resources.get("errors"), list):
+        failed.append(f"resources: {len(resources.get('errors') or [])} memory reads failed or the error list is missing (UNKNOWN): {str(resources.get('errors'))[:200]}")
+    if type(resources.get("samples")) is not int or resources["samples"] < 1 or type(resources.get("min_mib")) is not int:
+        failed.append("resources: no typed memory sample was read")
+    windows = resources.get("windows")
+    if not isinstance(windows, dict) or set(windows) != set(SCENARIO_KEYS):
+        failed.append("resources: memory coverage is not recorded for exactly the four scenarios")
+    else:
+        for key in SCENARIO_KEYS:
+            window = windows[key]
+            if not isinstance(window, dict) or type(window.get("count")) is not int or window["count"] < 2 or window.get("max_gap_seconds") is None or window["max_gap_seconds"] > SAMPLE_GAP_LIMIT_SECONDS:
+                failed.append(f"resources: {key} is not covered by memory samples (count {window.get('count') if isinstance(window, dict) else None}, largest gap {window.get('max_gap_seconds') if isinstance(window, dict) else None} s)")
+    oom = result.get("oom")
+    names = result.get("tenant_names")
+    if not isinstance(oom, dict) or not isinstance(names, list) or not names or oom.get("errors") != []:
+        failed.append(f"oom: the OOM flags were not read cleanly (UNKNOWN): {str(oom.get('errors') if isinstance(oom, dict) else oom)[:200]}")
+        return failed
+    sections = {"final": oom.get("final"), **{f"after {key}": (oom.get("per_scenario") or {}).get(key) for key in SCENARIO_KEYS}}
+    for label, flags in sections.items():
+        if not isinstance(flags, dict) or set(flags) != set(names) or any(type(value) is not bool for value in flags.values()):
+            failed.append(f"oom: {label} does not hold a typed OOM flag for every tenant")
+        elif any(flags.values()):
+            failed.append(f"kernel memory: {label}: OOM-killed {[n[-12:] for n, v in flags.items() if v]}")
+    return failed
+
+
 def failed_checks(result: dict) -> list[str]:
     """PASS needs every check of every scenario, a complete set of scenarios, an admitted gate per tenant and a confirmed cleanup."""
     failed = []
     scenarios = result.get("scenarios")
-    expected = ("S1_sigkill_slot_holder", "S2_lease_expiry_and_fencing", "S3_poison_job", "S4_cancel_by_deleting_the_definition")
+    expected = SCENARIO_KEYS
     if not isinstance(scenarios, dict) or set(scenarios) != set(expected):
         failed.append(f"scenarios: expected exactly {list(expected)}, got {sorted(scenarios) if isinstance(scenarios, dict) else scenarios}")
         scenarios = scenarios if isinstance(scenarios, dict) else {}
@@ -120,10 +168,9 @@ def failed_checks(result: dict) -> list[str]:
     if (not isinstance(gate, list) or len(gate) != tenants or any(not isinstance(g, dict) or g.get("decision") != "admitted" or type(g.get("at")) is not float
             or type(g.get("create_started_at")) is not float or not g["at"] < g["create_started_at"] for g in gate)):
         failed.append("admission: every tenant must have been admitted by the real budget and memory floor BEFORE its first object was created")
-    if result.get("vm_min_available_mib") is None or result["vm_min_available_mib"] < result.get("floor_mib", 1500):
+    if type(result.get("vm_min_available_mib")) is not int or result["vm_min_available_mib"] < result.get("floor_mib", 1500):
         failed.append(f"stand: VM MemAvailable fell to {result.get('vm_min_available_mib')} MiB (stand limit reached or not measured)")
-    if result.get("oom_killed_containers") != 0:
-        failed.append(f"kernel memory: {result.get('oom_killed_containers')} OOM-killed containers")
+    failed += resource_failures(result)
     failed += load.cleanup_failures(result.get("cleanup"))
     return failed
 
@@ -157,6 +204,19 @@ def wait_healthy(arm: pdfb.Arm, name: str, timeout: int = 120) -> bool:
     return bool(wait_until(lambda: base.docker("inspect", "--format", "{{.State.Health.Status}}", name, check=False) == "healthy", timeout, 2))
 
 
+def observe_oom(names: list[str]) -> tuple[dict, list[str]]:
+    """{container: OOMKilled} read with its exit status; an unavailable, empty or non-boolean answer is an error, never False."""
+    flags: dict = {}
+    errors: list[str] = []
+    for name in names:
+        code, out, err = base.docker_status("inspect", "--format", "{{.State.OOMKilled}}", name)
+        if code == 0 and out in ("true", "false"):
+            flags[name] = out == "true"
+        else:
+            errors.append(f"{name[-12:]}: status {code}, answer {out[:40]!r} {err[:80]}")
+    return flags, errors
+
+
 def new_job(name: str, label: str) -> dict:
     definition = op(name, "define", name=label)["definition_id"]
     first = op(name, "enqueue", definition_id=definition)["run_id"]
@@ -173,21 +233,39 @@ def s1_sigkill(arm: pdfb.Arm, args) -> dict:
     checks, notes = [], {}
     jobs = {n: new_job(n, "faults-s1") for n in names}
     checks.append(check("a duplicate enqueue returns the same run in every tenant", all(j["run_id"] == j["second_enqueue_run_id"] for j in jobs.values()), str({n[-12:]: j for n, j in jobs.items()})))
-    running = wait_until(lambda: next((n for n in names if (run_by_id(n, jobs[n]["run_id"]) or {}).get("status") == "running"), None), 120, 1)
-    if not running:
-        return {"checks": checks + [check("a build reached running", False, "none started")], "notes": notes}
-    victim = running
+
+    def status_of(tenant):
+        return (run_by_id(tenant, jobs[tenant]["run_id"]) or {}).get("status")
+
+    def contended():
+        """All slots busy AND at least one tenant waiting: only then is a kill a test of the hand-over."""
+        states = {n: status_of(n) for n in names}
+        running = [n for n in names if states[n] == "running"]
+        waiting = [n for n in names if states[n] == "queued"]
+        if len(running) >= args.slots and waiting:
+            busy = host_busy(next(n for n in names if n != running[0]))
+            if busy == args.slots:
+                return {"victim": running[0], "contenders": waiting, "busy": busy}
+        return None
+    ready = wait_until(contended, 90, 0.5)
+    if not ready:
+        return {"checks": checks + [check("every slot busy and a tenant observed waiting for one before the kill", False, "never observed: nothing was killed")], "notes": notes}
+    victim = ready["victim"]
     others = [n for n in names if n != victim]
-    busy_before = host_busy(others[0])
-    queued = [n for n in others if (run_by_id(n, jobs[n]["run_id"]) or {}).get("status") == "queued"]
+    still_waiting = [n for n in others if status_of(n) == "queued"]  # re-read at the kill instant
+    checks.append(check("every slot busy and a tenant observed waiting for one at the moment of the kill", bool(still_waiting) and ready["busy"] == args.slots,
+                        f"busy {ready['busy']}, waiting {[n[-12:] for n in still_waiting]}"))
+    if not still_waiting:
+        return {"checks": checks, "notes": notes}
     killed_at = time.time()
     base.docker("kill", victim)
     exit_code = base.docker("inspect", "--format", "{{.State.ExitCode}}", victim, check=False)
-    freed = wait_until(lambda: host_busy(others[0]) < busy_before or any((run_by_id(n, jobs[n]["run_id"]) or {}).get("status") in ("running", "ok") and n in queued for n in others), 60, 0.25)
-    seconds_to_free = round(time.time() - killed_at, 1)
-    notes.update(victim=victim[-12:], busy_before_kill=busy_before, seconds_until_slot_free_or_queue_moved=seconds_to_free, exit_code=exit_code, queued_before_kill=[n[-12:] for n in queued])
+    took_over = wait_until(lambda: next((n for n in still_waiting if status_of(n) in ("running", "ok")), None), 60, 0.25)
+    seconds_to_takeover = round(time.time() - killed_at, 1)
+    notes.update(victim=victim[-12:], slots_busy_before_kill=ready["busy"], waiting_before_kill=[n[-12:] for n in still_waiting], exit_code=exit_code,
+                 waiting_tenant_seen_running_after_kill=took_over and took_over[-12:], seconds_until_waiting_tenant_running=seconds_to_takeover)
     checks += [check("the container died by SIGKILL (exit 137)", exit_code == "137", f"exit code {exit_code}"),
-               check("the slot was released (or the queued tenant took it) within 15 s", bool(freed) and seconds_to_free <= 15, f"{seconds_to_free} s")]
+               check("the tenant that was waiting took the freed slot within 15 s (observed queued before, running after)", bool(took_over) and seconds_to_takeover <= 15, f"{seconds_to_takeover} s")]
     base.docker("start", victim)
     healthy = wait_healthy(arm, victim)
     checks.append(check("the killed tenant became healthy again", healthy, ""))
@@ -232,30 +310,36 @@ def s3_poison(arm: pdfb.Arm, args) -> dict:
     checks, notes = [], {"cycles": []}
     definition = op(name, "define", name="faults-s3")["definition_id"]
     run_id = op(name, "enqueue", definition_id=definition)["run_id"]
+    neighbours = []  # one build per cycle in ANOTHER tenant, enqueued at the start of the cycle and observed running at the kill
     for cycle in (1, 2, 3):
+        job = new_job(other, f"faults-s3-neighbour-{cycle}")
+        neighbours.append(job)
         claimed = wait_until(lambda: (lambda r: r if r and r["status"] == "running" and r["attempts"] == cycle else None)(run_by_id(name, run_id)), 90, 1)
+        neighbour_running = wait_until(lambda: (run_by_id(other, job["run_id"]) or {}).get("status") == "running", 60, 0.5)
         if not claimed:
             checks.append(check(f"attempt {cycle} was claimed by the worker", False, str(run_by_id(name, run_id))))
             break
+        at_kill = (run_by_id(other, job["run_id"]) or {}).get("status")
         base.docker("kill", name)
         base.docker("start", name)
         healthy = wait_healthy(arm, name)
         injected = op(name, "expire_leases")["expired"] if healthy else 0
-        notes["cycles"].append({"attempt": cycle, "killed": True, "healthy_again": healthy, "lease_expired_by_injection": injected})
-        checks.append(check(f"attempt {cycle}: SIGKILL, restart, the dead lease was expired by injection", healthy and injected == 1, str(notes["cycles"][-1])))
+        notes["cycles"].append({"attempt": cycle, "killed": True, "healthy_again": healthy, "lease_expired_by_injection": injected, "neighbour_status_at_kill": at_kill})
+        checks += [check(f"attempt {cycle}: SIGKILL, restart, the dead lease was expired by injection", healthy and injected == 1, str(notes["cycles"][-1])),
+                   check(f"attempt {cycle}: the other tenant had a build RUNNING at the moment of the kill", bool(neighbour_running) and at_kill == "running", f"status at kill {at_kill}")]
     final = wait_until(lambda: (lambda r: r if r and r["status"] == "error" else None)(run_by_id(name, run_id)), 60, 1)
     checks += [check("after the third interruption the run is closed with an error", bool(final) and final["attempts"] == 3, str(final and {k: final[k] for k in ("status", "attempts")})),
                check("the error says it was interrupted 3 times", bool(final) and POISON_TEXT in (final.get("error") or ""), str(final and final.get("error"))),
                check("no PDF was recorded for the poisoned run", bool(final) and not final["file_recorded"], "")]
-    normal = new_job(other, "faults-s3-normal")
     settled = []
     for _ in range(6):  # the poisoned run must stay closed and never be requeued while the worker keeps ticking
         time.sleep(5)
         row = run_by_id(name, run_id)
         settled.append(row and (row["status"], row["attempts"]))
     checks.append(check("the poisoned run stays closed (not requeued) while the worker keeps ticking", all(s == ("error", 3) for s in settled), str(settled)))
-    other_final = wait_until(lambda: (lambda r: r if r and r["status"] in ("ok", "error") else None)(run_by_id(other, normal["run_id"])), args.fault_timeout, 2)
-    checks.append(check("another tenant's job kept working during and after the poison cycles", bool(other_final) and other_final["status"] == "ok" and other_final["pdf_header_ok"], str(other_final and other_final["status"])))
+    finals = [wait_until(lambda j=j: (lambda r: r if r and r["status"] in ("ok", "error") else None)(run_by_id(other, j["run_id"])), args.fault_timeout, 2) for j in neighbours]
+    checks.append(check("every build of the other tenant, running through the kill cycles, completed ok on attempt 1 with a real PDF",
+                        len(finals) == 3 and all(f and f["status"] == "ok" and f["attempts"] == 1 and f["pdf_header_ok"] for f in finals), str([f and (f["status"], f["attempts"]) for f in finals])))
     return {"checks": checks, "notes": notes}
 
 
@@ -293,6 +377,8 @@ def s4_cancel(arm: pdfb.Arm, args) -> dict:
 
 def run_scenarios(arm: pdfb.Arm, args) -> dict:
     out = {}
+    oom_after: dict = {}
+    oom_errors: list[str] = []
     for key, fn in (("S1_sigkill_slot_holder", s1_sigkill), ("S2_lease_expiry_and_fencing", s2_lease), ("S3_poison_job", s3_poison), ("S4_cancel_by_deleting_the_definition", s4_cancel)):
         started = time.time()
         try:
@@ -300,6 +386,11 @@ def run_scenarios(arm: pdfb.Arm, args) -> dict:
         except Exception as error:  # noqa: BLE001 - a scenario fault is a failed scenario with its reason
             out[key] = {"checks": [check("scenario completed", False, "")], "error": f"{type(error).__name__}: {str(error)[:300]}"}
         out[key]["seconds"] = round(time.time() - started, 1)
+        out[key]["window"] = [started, time.time()]
+        flags, errors = observe_oom(arm.names)
+        oom_after[key] = flags
+        oom_errors += [f"after {key}: {e}" for e in errors]
+    out["_oom_after_each_scenario"] = {"per_scenario": oom_after, "errors": oom_errors}
     return out
 
 
@@ -312,7 +403,8 @@ def scenario(args) -> dict:
     base.assert_local_engine()
     arm = pdfb.Arm(args, "faults", args.slots)
     gates: list[dict] = []
-    samples: list[int] = []
+    samples: list[tuple[float, int]] = []
+    sample_errors: list[dict] = []
     stop = threading.Event()
     watcher = None
     try:
@@ -337,17 +429,24 @@ def scenario(args) -> dict:
         def sample():
             while not stop.is_set():
                 try:
-                    samples.append(load.vm_available(arm.names[0]))
-                except Exception:  # noqa: BLE001 - recorded as a gap below
-                    pass
-                stop.wait(2.0)
+                    samples.append((time.time(), load.vm_available(arm.names[0])))
+                except Exception as error:  # noqa: BLE001 - a failed read is an observation error, never a missing zero
+                    sample_errors.append({"at": time.time(), "error": f"{type(error).__name__}: {str(error)[:100]}"})
+                stop.wait(args.sample_interval)
         watcher = threading.Thread(target=sample, daemon=True)
         watcher.start()
-        result["scenarios"] = run_scenarios(arm, args)
+        scenarios = run_scenarios(arm, args)
+        oom = scenarios.pop("_oom_after_each_scenario")
         stop.set()
         watcher.join(timeout=5)
-        result["vm_min_available_mib"] = min(samples) if samples else None
-        result["oom_killed_containers"] = sum(base.docker("inspect", "--format", "{{.State.OOMKilled}}", n, check=False) == "true" for n in arm.names)
+        if watcher.is_alive():
+            sample_errors.append({"at": time.time(), "error": "the sampler did not stop"})
+        final_flags, final_errors = observe_oom(arm.names)
+        windows = {key: {**sample_coverage(samples, tuple(entry["window"])), "window": entry["window"]} for key, entry in scenarios.items() if isinstance(entry, dict) and "window" in entry}
+        result.update(scenarios=scenarios, tenant_names=list(arm.names), vm_min_available_mib=min((m for _, m in samples), default=None),
+                      resource_observation={"samples": len(samples), "min_mib": min((m for _, m in samples), default=None), "interval_seconds": args.sample_interval,
+                                            "errors": sample_errors, "windows": windows, "sample_times": [round(t, 1) for t, _ in samples], "sample_mib": [m for _, m in samples]},
+                      oom={"final": final_flags, "per_scenario": oom["per_scenario"], "errors": oom["errors"] + [f"final: {e}" for e in final_errors]})
     except load._Stop:
         pass
     except Exception as error:  # noqa: BLE001
@@ -376,6 +475,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fault-timeout", type=float, default=240.0)
     parser.add_argument("--min-vm-available-mib", type=int, default=1500)
     parser.add_argument("--settle", type=int, default=20)
+    parser.add_argument("--sample-interval", type=float, default=2.0)
     parser.add_argument("--prefix", default="bench")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--out", default="bench-pdf-faults.json")

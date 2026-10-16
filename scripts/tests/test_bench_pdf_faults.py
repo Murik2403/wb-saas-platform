@@ -25,8 +25,21 @@ def good_cleanup():
             "unexpected_labelled": [], "foreign_collisions": [], "foreign_missing": [], "foreign_changed": [], "foreign_unstable_before_the_run": []}
 
 
+NAMES = ["t-a", "t-b", "t-c"]
+
+
+def good_resources():
+    windows = {name: {"count": 20, "max_gap_seconds": 2.5, "window": [0.0, 40.0]} for name in SCENARIOS}
+    return {"samples": 80, "min_mib": 4000, "interval_seconds": 2.0, "errors": [], "windows": windows}
+
+
+def good_oom():
+    flags = {n: False for n in NAMES}
+    return {"final": dict(flags), "per_scenario": {name: dict(flags) for name in SCENARIOS}, "errors": []}
+
+
 def good_result(tenants=3):
-    return {"tenants": tenants, "floor_mib": 1500, "vm_min_available_mib": 4000, "oom_killed_containers": 0, "cleanup": good_cleanup(),
+    return {"tenants": tenants, "floor_mib": 1500, "vm_min_available_mib": 4000, "tenant_names": list(NAMES), "resource_observation": good_resources(), "oom": good_oom(), "cleanup": good_cleanup(),
             "start_gate": [{"index": i, "name": f"t{i}", "at": 100.0 + i, "create_started_at": 101.0 + i, "decision": "admitted"} for i in range(tenants)],
             "scenarios": {name: {"checks": [faults.check("something holds", True), faults.check("something else holds", True)]} for name in SCENARIOS}}
 
@@ -55,7 +68,25 @@ def test_a_complete_clean_result_has_no_failures():
     ("gate after creation", lambda r: r["start_gate"][0].update(at=500.0), "BEFORE its first object"),
     ("vm memory not measured", lambda r: r.update(vm_min_available_mib=None), "not measured"),
     ("vm below the floor", lambda r: r.update(vm_min_available_mib=1499), "stand limit"),
-    ("an oom kill", lambda r: r.update(oom_killed_containers=1), "OOM-killed"),
+    ("an oom kill at the end", lambda r: r["oom"]["final"].update({"t-b": True}), "OOM-killed"),
+    ("an oom kill after one scenario", lambda r: r["oom"]["per_scenario"][SCENARIOS[1]].update({"t-a": True}), "OOM-killed"),
+    ("oom flags not recorded", lambda r: r.pop("oom"), "UNKNOWN"),
+    ("oom read errors", lambda r: r["oom"].update(errors=["t-a: status 1, answer ''"]), "UNKNOWN"),
+    ("oom error list missing", lambda r: r["oom"].pop("errors"), "UNKNOWN"),
+    ("oom flag missing for a tenant", lambda r: r["oom"]["final"].pop("t-c"), "typed OOM flag"),
+    ("oom flag not a boolean", lambda r: r["oom"]["final"].update({"t-c": "false"}), "typed OOM flag"),
+    ("oom flags for another tenant", lambda r: r["oom"]["per_scenario"][SCENARIOS[0]].update({"stranger": False}), "typed OOM flag"),
+    ("a scenario has no oom flags", lambda r: r["oom"]["per_scenario"].pop(SCENARIOS[3]), "typed OOM flag"),
+    ("tenant names not recorded", lambda r: r.pop("tenant_names"), "UNKNOWN"),
+    ("resource observation missing", lambda r: r.pop("resource_observation"), "not recorded"),
+    ("memory reads failed", lambda r: r["resource_observation"].update(errors=[{"at": 1.0, "error": "RuntimeError: x"}]), "memory reads failed"),
+    ("memory error list missing", lambda r: r["resource_observation"].pop("errors"), "memory reads failed"),
+    ("no memory sample", lambda r: r["resource_observation"].update(samples=0), "no typed memory sample"),
+    ("minimum not typed", lambda r: r["resource_observation"].update(min_mib=None), "no typed memory sample"),
+    ("a scenario has too few samples", lambda r: r["resource_observation"]["windows"][SCENARIOS[2]].update(count=1), "not covered by memory samples"),
+    ("a scenario has a long gap", lambda r: r["resource_observation"]["windows"][SCENARIOS[0]].update(max_gap_seconds=60.0), "not covered by memory samples"),
+    ("a scenario has an unmeasured gap", lambda r: r["resource_observation"]["windows"][SCENARIOS[0]].update(max_gap_seconds=None), "not covered by memory samples"),
+    ("a scenario window missing", lambda r: r["resource_observation"]["windows"].pop(SCENARIOS[1]), "exactly the four scenarios"),
     ("cleanup unverifiable", lambda r: r["cleanup"].update(unknown=["container:x"]), "UNKNOWN"),
     ("cleanup missing", lambda r: r.pop("cleanup"), "no ownership report"),
 ])
