@@ -47,3 +47,12 @@ Raw evidence (per-tenant driver buckets, kernel counters before/after, both insp
 | `pdf-faults-4-2026-10-16.json` | `PASS`: 4 tenants, 33 of 33 checks. |
 Description and limits: `../PDF_SLOTS_LOAD_SCENARIO_2026-10-16.md`, section "Fault scenarios".
 
+### PDF fault scenarios, review fixes (branch `claude/pdf-faults2-20261025`, base c55bc3b)
+| File | Status |
+|---|---|
+| `pdf-faults-3b-2026-10-16.json`, `pdf-faults-4-2026-10-16.json` | Earlier `PASS` acts (33 of 33). Their gates did not require a complete memory/OOM observation, a waiting contender before the S1 kill, or a neighbour build running through the S3 kills; kept as recorded, not upgraded. |
+| `pdf-faults-v2-3-2026-10-16.json` | **FAILED, kept as recorded.** First run of the stricter gates. Two harness faults found by them: S3 waited for the neighbour after the poison run was claimed, so the 30 s build ended by itself and the second kill hit an idle tenant (nothing to expire); the memory sampler read through tenant 1, which S1 had just killed (2 failed reads = UNKNOWN). |
+| `pdf-faults-v2-4-2026-10-16.json` | **FAILED, kept as recorded.** The same S3 ordering fault on 4 tenants (the third kill hit an already finished build) and 2 failed memory reads. |
+| `pdf-faults-v3-3-2026-10-16.json` | `PASS` with the fixed harness (db86d64): 38 of 38 checks, 0 memory read errors, every scenario covered by samples with gaps <= 2.5 s, typed OOM flags for every tenant after every scenario and at the end. |
+| `pdf-faults-v3-4-2026-10-16.json` | `PASS`, same gates, 4 tenants. |
+
