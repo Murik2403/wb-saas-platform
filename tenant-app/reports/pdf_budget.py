@@ -14,6 +14,15 @@ nothing has to be cleaned up or expired:
 
 Waiting never builds a PDF anyway. Callers that can wait without holding any state use ``try_pdf_slot`` and leave the work
 queued; callers inside a request use a short ``wait`` and turn ``PdfBusy`` into 503 + Retry-After.
+
+Queued background work has priority over requests. A request polls for a slot several times a second; a worker tries once per
+tick, so under a steady stream of requests the workers never won a freed slot and the queue starved (real 20/25/30-tenant run:
+7 to 8 background PDFs finished while requests took 13 to 29 builds). A worker that finds every slot busy while it has work
+waiting therefore holds a *beacon* (an OS-locked file next to the slot files, so it disappears with the process). While any
+beacon is held, a request does not take or wait for a slot: ``interactive_pdf`` answers PdfBusy (503 + Retry-After) at once.
+
+A request also has a hard deadline (``interactive_pdf``): slot wait and build together stay below the 60 s proxy timeout of the
+tenant's nginx, so the caller gets 200 or 503 and never a 504.
 """
 from __future__ import annotations
 
@@ -21,6 +30,7 @@ import os
 import random
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -30,7 +40,12 @@ except Exception:  # noqa: BLE001
     DATA_DIR = Path(os.environ.get("WB_SAAS_DATA_DIR", "."))
 
 POLL_SECONDS = 0.5
+BEACON_PREFIX = "pdf-bg-wait-"
+STALE_BEACON_SECONDS = 120.0
+INTERACTIVE_DEADLINE_SECONDS = 50.0  # below the 60 s proxy_read_timeout of the tenant's nginx
 _held = threading.local()
+_interactive = threading.local()
+_beacon = None  # (path, handle) of this process's "background work is waiting" beacon
 
 
 class PdfBusy(RuntimeError):
@@ -102,6 +117,84 @@ def _host_slots() -> tuple[Path | None, int]:
     except ValueError:
         count = 1
     return (Path(directory) if directory else None), count
+
+
+def _beacon_directory() -> Path | None:
+    directory, _ = _host_slots()
+    return directory if directory is not None and directory.is_dir() else None
+
+
+def announce_background_waiting() -> bool:
+    """Hold the beacon: this process has queued background work and found every slot busy. Idempotent; True while held."""
+    global _beacon
+    if _beacon is not None:
+        return True
+    directory = _beacon_directory()
+    if directory is None:
+        return False
+    path = directory / f"{BEACON_PREFIX}{os.getpid()}-{uuid.uuid4().hex[:8]}.lock"
+    try:
+        handle = _open(path, create_parent=False)
+    except OSError:
+        return False
+    if not _lock(handle):
+        handle.close()
+        return False
+    _beacon = (path, handle)
+    return True
+
+
+def withdraw_background_waiting() -> None:
+    global _beacon
+    if _beacon is None:
+        return
+    path, handle = _beacon
+    _beacon = None
+    try:
+        try:
+            _unlock(handle)
+        finally:
+            handle.close()
+    except OSError:
+        pass
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def background_waiting() -> bool:
+    """True while any process holds a beacon (an unlocked, old beacon file is a dead process's leftover and is removed)."""
+    directory = _beacon_directory()
+    if directory is None:
+        return False
+    try:
+        candidates = list(directory.glob(f"{BEACON_PREFIX}*.lock"))
+    except OSError:
+        return False
+    for path in candidates:
+        try:
+            handle = path.open("r+b")
+        except OSError:
+            continue
+        try:
+            if not _lock(handle):
+                return True
+            _unlock(handle)
+            try:
+                old = time.time() - path.stat().st_mtime > STALE_BEACON_SECONDS
+            except OSError:
+                old = False
+        except OSError:
+            continue
+        finally:
+            handle.close()
+        if old:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+    return False
 
 
 def tenant_slot_directory() -> Path:
@@ -216,9 +309,60 @@ def pdf_slot(wait: float = 0.0):
             break
         if time.monotonic() >= deadline:
             raise PdfBusy("Сейчас формируется максимум отчётов: повторите через минуту")
+        _interactive_yield()
         time.sleep(POLL_SECONDS + random.random() * 0.25)
     with _held_slot(release):
         yield
+
+
+def _interactive_yield() -> None:
+    """Inside ``interactive_pdf``: give up waiting when the request was abandoned or queued background work needs the slots."""
+    context = getattr(_interactive, "context", None)
+    if context is None:
+        return
+    if context["cancelled"].is_set():
+        raise PdfBusy("Запрос отменён: время ожидания истекло")
+    if background_waiting():
+        raise PdfBusy(BACKGROUND_FIRST)
+
+
+BACKGROUND_FIRST = "Сначала формируются отчёты из очереди: повторите через минуту"
+
+
+def interactive_pdf(build, *, wait: float = 15.0, deadline: float | None = None):
+    """Run ``build()`` for a request under one PDF slot, answering within ``deadline`` seconds whatever happens.
+
+    * queued background work has priority: while any beacon is held, PdfBusy at once, before anything is started;
+    * the slot wait (``wait``) and the build share ``deadline``; past it PdfBusy is raised to the caller. A build that already
+      started cannot be killed: it finishes in its thread and keeps its slots until then (so the memory budget holds), its
+      result is dropped; a request still waiting for a slot when abandoned never starts to build.
+    """
+    if background_waiting():
+        raise PdfBusy(BACKGROUND_FIRST)
+    cancelled = threading.Event()
+    box: dict = {}
+
+    def target():
+        _interactive.context = {"cancelled": cancelled}
+        try:
+            with pdf_slot(wait=wait):
+                if cancelled.is_set():
+                    raise PdfBusy("Запрос отменён: время ожидания истекло")
+                box["value"] = build()
+        except BaseException as error:  # noqa: BLE001 - handed to the caller's thread
+            box["error"] = error
+        finally:
+            _interactive.context = None
+
+    thread = threading.Thread(target=target, name="interactive-pdf", daemon=True)
+    thread.start()
+    thread.join(max(0.0, INTERACTIVE_DEADLINE_SECONDS if deadline is None else deadline))
+    if thread.is_alive():
+        cancelled.set()
+        raise PdfBusy("Отчёт формируется дольше допустимого времени: повторите через минуту")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
 
 
 def try_pdf_slot():

@@ -520,3 +520,73 @@ def test_internal_cabinet_slot_path_requires_the_actual_private_child_parent(tmp
     monkeypatch.setenv("MH_INTERNAL_PDF_TENANT_DIR", str(tmp_path / "foreign"))
     with pytest.raises(ValueError, match="internal cabinet"):
         try_pdf_slot()
+
+
+# ---- queued work has priority over requests: the worker's beacon ----------------------------------------------------------------
+
+def test_a_queued_run_that_finds_every_slot_busy_holds_the_beacon_until_it_has_run(tmp_path, host, store, scheduler_env):
+    run = store.enqueue_run(definition(store))
+    first, second = hold(tmp_path, "t1"), hold(tmp_path, "t2")
+    try:
+        assert scheduler.check_once(deliver=False) == 0
+        assert pdf_budget.background_waiting() is True  # requests now yield to this run
+        assert row(store, run)["status"] == "queued"
+    finally:
+        stop(first, second)
+    try:
+        time.sleep(0.3)
+        assert scheduler.check_once(deliver=False) == 1
+        assert row(store, run)["status"] == "ok" and pdf_budget.background_waiting() is False  # drained: the beacon is gone
+    finally:
+        pdf_budget.withdraw_background_waiting()
+
+
+def test_a_due_schedule_waiting_for_a_slot_holds_the_beacon_and_drops_it_once_generated(tmp_path, host, store, scheduler_env):
+    store.add_definition(name="due", metrics=["stocks"], schedule_type="daily", schedule_time="00:00")
+    first, second = hold(tmp_path, "t1"), hold(tmp_path, "t2")
+    try:
+        assert scheduler.check_once(deliver=True) == 0
+        assert pdf_budget.background_waiting() is True
+    finally:
+        stop(first, second)
+    try:
+        time.sleep(0.3)
+        assert scheduler.check_once(deliver=True) == 1
+        assert pdf_budget.background_waiting() is False
+    finally:
+        pdf_budget.withdraw_background_waiting()
+
+
+def test_a_tick_with_nothing_waiting_holds_no_beacon(tmp_path, host, store, scheduler_env):
+    try:
+        assert scheduler.check_once(deliver=False) == 0
+        assert pdf_budget.background_waiting() is False
+        assert list(host.glob("pdf-bg-wait-*.lock")) == []
+    finally:
+        pdf_budget.withdraw_background_waiting()
+
+
+def test_a_beacon_from_a_busy_tick_is_dropped_by_the_next_tick_when_the_queue_was_emptied_elsewhere(tmp_path, host, store, scheduler_env):
+    run = store.enqueue_run(definition(store))
+    first, second = hold(tmp_path, "t1"), hold(tmp_path, "t2")
+    try:
+        scheduler.check_once(deliver=False)
+        assert pdf_budget.background_waiting() is True
+        store.delete_definition(store.list_definitions()[0]["id"])  # the waiting run disappears (cancelled)
+        scheduler.check_once(deliver=False)
+        assert pdf_budget.background_waiting() is False
+    finally:
+        stop(first, second)
+        pdf_budget.withdraw_background_waiting()
+
+
+def test_generate_now_route_yields_to_queued_background_reports_and_creates_no_run(tmp_path, host, store, monkeypatch):
+    import api_server
+    from fastapi import HTTPException
+    monkeypatch.setattr(api_server, "DB_PATH", store.db_path)
+    definition(store)
+    monkeypatch.setattr(pdf_budget, "background_waiting", lambda: True)
+    with pytest.raises(HTTPException) as busy:
+        api_server.generate_report(store.list_definitions()[0]["id"])
+    assert busy.value.status_code == 503 and busy.value.headers == {"Retry-After": "30"} and store.list_runs() == []
+

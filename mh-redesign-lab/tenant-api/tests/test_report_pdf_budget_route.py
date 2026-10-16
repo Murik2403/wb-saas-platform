@@ -67,3 +67,27 @@ def test_pdf_download_refuses_unusable_configured_host_budget_before_render(clie
     monkeypatch.setattr(api, "build_report_pdf", lambda *args: pytest.fail("Configured host budget failure must not bypass admission"))
     response = client.get("/api/v1/operations/reports/pdf")
     assert response.status_code == 503 and response.headers["retry-after"] == "30"
+
+
+def test_pdf_download_is_refused_at_once_while_queued_background_reports_wait(client, monkeypatch):
+    monkeypatch.setattr(pdf_budget, "background_waiting", lambda: True)
+    monkeypatch.setattr(api, "build_report_pdf", lambda *args: pytest.fail("a request must not build while queued reports wait for the slots"))
+    response = client.get("/api/v1/operations/reports/pdf")
+    assert response.status_code == 503 and response.headers["retry-after"] == "30"
+    assert "очереди" in response.json()["detail"]
+
+
+def test_pdf_download_answers_503_before_the_proxy_timeout_when_the_build_is_too_slow(client, monkeypatch):
+    """The real-run 504 after 60047 ms: a build that cannot finish inside the deadline is answered 503, never left to the proxy."""
+    import threading
+    import time
+    release = threading.Event()
+    monkeypatch.setattr(pdf_budget, "INTERACTIVE_DEADLINE_SECONDS", 0.5)
+    monkeypatch.setattr(api, "build_report_pdf", lambda *args: release.wait(20) and b"%PDF-late")
+    started = time.monotonic()
+    response = client.get("/api/v1/operations/reports/pdf")
+    elapsed = time.monotonic() - started
+    release.set()
+    assert response.status_code == 503 and response.headers["retry-after"] == "30" and elapsed < 5
+    assert "дольше допустимого" in response.json()["detail"]
+

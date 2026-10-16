@@ -1,0 +1,776 @@
+{
+  "scenario": "PDF slot and lease faults on real tenants",
+  "git": {
+    "head": "b838ea4ae83cc60c540fdb4896c7fef665b2274c",
+    "branch": "claude/pdf-fairness-20261026",
+    "dirty": false
+  },
+  "tenants": 3,
+  "slots": 2,
+  "image": {
+    "reference": "bench-tenant:fair-eefb519",
+    "id": "sha256:3ade23071cf5f5d7476fd8148955da380a7f0e21d4fbcb620817b87ff5ba5f36",
+    "source_trees": {
+      "head_tenant_app": "b93bf44c8a151a141b424657500227d791a366d4",
+      "head_tenant_api": "eceee5114ee55d3431e7fa15d6a8d5ed744a2eb2",
+      "built_from": "eefb519db1d9e90079546590aec852c5ec86be94",
+      "built_from_tenant_app": "b93bf44c8a151a141b424657500227d791a366d4",
+      "built_from_tenant_api": "eceee5114ee55d3431e7fa15d6a8d5ed744a2eb2"
+    }
+  },
+  "floor_mib": 1500,
+  "started": "2026-10-16 15:08:34",
+  "start_gate": [
+    {
+      "index": 0,
+      "name": "bench-faults-t01-7e7046b4",
+      "at": 1792152519.9158416,
+      "decision": "admitted",
+      "vm_available_mib": 21153,
+      "create_started_at": 1792152520.1934986
+    },
+    {
+      "index": 1,
+      "name": "bench-faults-t02-7e7046b4",
+      "at": 1792152520.1934986,
+      "decision": "admitted",
+      "vm_available_mib": 21162,
+      "create_started_at": 1792152520.48328
+    },
+    {
+      "index": 2,
+      "name": "bench-faults-t03-7e7046b4",
+      "at": 1792152520.4838176,
+      "decision": "admitted",
+      "vm_available_mib": 21164,
+      "create_started_at": 1792152520.8220928
+    }
+  ],
+  "image_attestation": [],
+  "scenarios": {
+    "S1_sigkill_slot_holder": {
+      "checks": [
+        {
+          "check": "a duplicate enqueue returns the same run in every tenant",
+          "ok": true,
+          "detail": "{'t01-7e7046b4': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}, 't02-7e7046b4': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}, 't03-7e7046b4': {'definition_id': 1, 'run_id': 1, 'second_enqueue_run_id': 1}}"
+        },
+        {
+          "check": "every slot busy, the victim still running and a tenant waiting, all re-read at the moment of the kill",
+          "ok": true,
+          "detail": "busy 2, victim running, waiting ['t03-7e7046b4']"
+        },
+        {
+          "check": "the container died by SIGKILL (exit 137)",
+          "ok": true,
+          "detail": "exit code 137"
+        },
+        {
+          "check": "the tenant that was waiting took the freed slot within 15 s (observed queued before, running after)",
+          "ok": true,
+          "detail": "2.3 s"
+        },
+        {
+          "check": "the killed tenant became healthy again",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the dead owner's lease was expired by injection (the real lease lasts 300 s) on exactly its running run",
+          "ok": true,
+          "detail": "{'expired': 1}"
+        },
+        {
+          "check": "every tenant's run finished",
+          "ok": true,
+          "detail": "{'t01-7e7046b4': 'ok', 't02-7e7046b4': 'ok', 't03-7e7046b4': 'ok'}"
+        },
+        {
+          "check": "every run finished ok with a real PDF",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the killed tenant's run was requeued and finished on attempt 2",
+          "ok": true,
+          "detail": "attempts 2"
+        },
+        {
+          "check": "the other tenants' runs were not repeated (attempt 1)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "at most 2 builds overlapped in time",
+          "ok": true,
+          "detail": "peak 2"
+        }
+      ],
+      "notes": {
+        "victim": "t01-7e7046b4",
+        "slots_busy_before_kill": 2,
+        "waiting_before_kill": [
+          "t03-7e7046b4"
+        ],
+        "exit_code": "137",
+        "waiting_tenant_seen_running_after_kill": "t03-7e7046b4",
+        "seconds_until_waiting_tenant_running": 2.3,
+        "final": {
+          "t01-7e7046b4": {
+            "status": "ok",
+            "attempts": 2,
+            "started_at": "2026-10-16T15:09:46",
+            "finished_at": "2026-10-16T15:10:21"
+          },
+          "t02-7e7046b4": {
+            "status": "ok",
+            "attempts": 1,
+            "started_at": "2026-10-16T15:09:19",
+            "finished_at": "2026-10-16T15:09:46"
+          },
+          "t03-7e7046b4": {
+            "status": "ok",
+            "attempts": 1,
+            "started_at": "2026-10-16T15:09:24",
+            "finished_at": "2026-10-16T15:09:50"
+          }
+        }
+      },
+      "seconds": 68.9,
+      "window": [
+        1792152553.8753123,
+        1792152622.802602
+      ]
+    },
+    "S2_lease_expiry_and_fencing": {
+      "checks": [
+        {
+          "check": "the live worker took the abandoned run over without a restart (attempt 2)",
+          "ok": true,
+          "detail": "{'status': 'running', 'attempts': 2, 'lease_owner': 'worker-8'}"
+        },
+        {
+          "check": "the dead owner's late finish is rejected",
+          "ok": true,
+          "detail": "False"
+        },
+        {
+          "check": "the dead owner's late heartbeat is rejected",
+          "ok": true,
+          "detail": "False"
+        },
+        {
+          "check": "the run is unchanged by the stale owner (still running, not the dead owner's lease, no file)",
+          "ok": true,
+          "detail": "{'id': 2, 'definition_id': 2, 'status': 'running', 'attempts': 2, 'lease_owner': 'worker-8', 'lease_expires_at': '2026-10-16T15:15:26', 'started_at': '2026-10-16T15:10:26', 'finished_at': None, 'error': None, 'file_present': False, 'pdf_header_ok': False, 'file_recorded': False}"
+        },
+        {
+          "check": "the run finished ok on attempt 2 with a real PDF",
+          "ok": true,
+          "detail": "{'status': 'ok', 'attempts': 2, 'pdf_bytes': 856272}"
+        },
+        {
+          "check": "after completion a stale finish/heartbeat still changes nothing",
+          "ok": true,
+          "detail": "{'id': 2, 'definition_id': 2, 'status': 'ok', 'attempts': 2, 'lease_owner': None, 'lease_expires_at': None, 'started_at': '2026-10-16T15:10:26', 'finished_at': '2026-10-16T15:11:01', 'error': None, 'file_present': True, 'pdf_header_ok': True, 'pdf_bytes': 856272, 'file_recorded': True}"
+        }
+      ],
+      "notes": {
+        "stale_owner_while_running": {
+          "finish_accepted": false,
+          "heartbeat_accepted": false
+        }
+      },
+      "seconds": 41.1,
+      "window": [
+        1792152623.000486,
+        1792152664.102432
+      ]
+    },
+    "S3_poison_job": {
+      "checks": [
+        {
+          "check": "attempt 1: claimed after the other tenant was building, SIGKILL, restart",
+          "ok": true,
+          "detail": "{'attempt': 1, 'killed': True, 'healthy_again': True, 'lease_expired_by_injection_before_this_attempt': 1, 'neighbour_status_at_kill': 'running'}"
+        },
+        {
+          "check": "attempt 1: the other tenant had a build RUNNING at the moment of the kill",
+          "ok": true,
+          "detail": "status at kill running"
+        },
+        {
+          "check": "attempt 2: claimed after the other tenant was building, SIGKILL, restart",
+          "ok": true,
+          "detail": "{'attempt': 2, 'killed': True, 'healthy_again': True, 'lease_expired_by_injection_before_this_attempt': 1, 'neighbour_status_at_kill': 'running'}"
+        },
+        {
+          "check": "attempt 2: the other tenant had a build RUNNING at the moment of the kill",
+          "ok": true,
+          "detail": "status at kill running"
+        },
+        {
+          "check": "attempt 3: claimed after the other tenant was building, SIGKILL, restart",
+          "ok": true,
+          "detail": "{'attempt': 3, 'killed': True, 'healthy_again': True, 'lease_expired_by_injection_before_this_attempt': 1, 'neighbour_status_at_kill': 'running'}"
+        },
+        {
+          "check": "attempt 3: the other tenant had a build RUNNING at the moment of the kill",
+          "ok": true,
+          "detail": "status at kill running"
+        },
+        {
+          "check": "the third dead lease was expired by injection on exactly the poison run",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "check": "after the third interruption the run is closed with an error",
+          "ok": true,
+          "detail": "{'status': 'error', 'attempts': 3}"
+        },
+        {
+          "check": "the error says it was interrupted 3 times",
+          "ok": true,
+          "detail": "Сборка прервана 3 раза подряд (возможно, нехватка памяти). Запустите отчёт вручную или уменьшите период."
+        },
+        {
+          "check": "no PDF was recorded for the poisoned run",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the poisoned run stays closed (not requeued) while the worker keeps ticking",
+          "ok": true,
+          "detail": "[('error', 3), ('error', 3), ('error', 3), ('error', 3), ('error', 3), ('error', 3)]"
+        },
+        {
+          "check": "every build of the other tenant, running through the kill cycles, completed ok on attempt 1 with a real PDF",
+          "ok": true,
+          "detail": "[('ok', 1), ('ok', 1), ('ok', 1)]"
+        }
+      ],
+      "notes": {
+        "cycles": [
+          {
+            "attempt": 1,
+            "killed": true,
+            "healthy_again": true,
+            "lease_expired_by_injection_before_this_attempt": 1,
+            "neighbour_status_at_kill": "running"
+          },
+          {
+            "attempt": 2,
+            "killed": true,
+            "healthy_again": true,
+            "lease_expired_by_injection_before_this_attempt": 1,
+            "neighbour_status_at_kill": "running"
+          },
+          {
+            "attempt": 3,
+            "killed": true,
+            "healthy_again": true,
+            "lease_expired_by_injection_before_this_attempt": 1,
+            "neighbour_status_at_kill": "running"
+          }
+        ]
+      },
+      "seconds": 142.2,
+      "window": [
+        1792152664.2438934,
+        1792152806.4848824
+      ]
+    },
+    "S4_cancel_by_deleting_the_definition": {
+      "checks": [
+        {
+          "check": "the second run was still queued when its definition was deleted",
+          "ok": true,
+          "detail": "queued"
+        },
+        {
+          "check": "the first job finished ok",
+          "ok": true,
+          "detail": "ok"
+        },
+        {
+          "check": "the deleted queued run never built and left no row",
+          "ok": true,
+          "detail": "[1, 2, 3]"
+        },
+        {
+          "check": "the build was running when its definition was deleted",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the run row disappeared with its definition",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "nothing was resurrected after the in-flight build ended",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the container and its worker survived (same start time)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "check": "the slot was released",
+          "ok": true,
+          "detail": "host_busy 0"
+        },
+        {
+          "check": "the tenant's next job completes ok on attempt 1",
+          "ok": true,
+          "detail": "ok"
+        }
+      ],
+      "notes": {
+        "note": "there is no cancel API for a report run; deleting the definition is the cancel equivalent"
+      },
+      "seconds": 132.2,
+      "window": [
+        1792152806.697497,
+        1792152938.8946471
+      ]
+    }
+  },
+  "tenant_names": [
+    "bench-faults-t01-7e7046b4",
+    "bench-faults-t02-7e7046b4",
+    "bench-faults-t03-7e7046b4"
+  ],
+  "vm_min_available_mib": 20193,
+  "resource_observation": {
+    "samples": 165,
+    "min_mib": 20193,
+    "interval_seconds": 2.0,
+    "errors": [],
+    "windows": {
+      "S1_sigkill_slot_holder": {
+        "count": 30,
+        "max_gap_seconds": 2.4,
+        "window": [
+          1792152553.8753123,
+          1792152622.802602
+        ]
+      },
+      "S2_lease_expiry_and_fencing": {
+        "count": 18,
+        "max_gap_seconds": 2.4,
+        "window": [
+          1792152623.000486,
+          1792152664.102432
+        ]
+      },
+      "S3_poison_job": {
+        "count": 60,
+        "max_gap_seconds": 2.4,
+        "window": [
+          1792152664.2438934,
+          1792152806.4848824
+        ]
+      },
+      "S4_cancel_by_deleting_the_definition": {
+        "count": 57,
+        "max_gap_seconds": 2.4,
+        "window": [
+          1792152806.697497,
+          1792152938.8946471
+        ]
+      }
+    },
+    "sample_times": [
+      1792152553.9,
+      1792152556.2,
+      1792152558.5,
+      1792152560.9,
+      1792152563.2,
+      1792152565.5,
+      1792152567.8,
+      1792152570.1,
+      1792152572.4,
+      1792152574.8,
+      1792152577.1,
+      1792152579.4,
+      1792152581.7,
+      1792152584.0,
+      1792152586.3,
+      1792152588.6,
+      1792152590.9,
+      1792152593.2,
+      1792152595.6,
+      1792152597.9,
+      1792152600.3,
+      1792152602.6,
+      1792152604.9,
+      1792152607.3,
+      1792152609.6,
+      1792152612.0,
+      1792152614.3,
+      1792152616.7,
+      1792152619.1,
+      1792152621.3,
+      1792152623.6,
+      1792152626.0,
+      1792152628.3,
+      1792152630.7,
+      1792152633.0,
+      1792152635.3,
+      1792152637.7,
+      1792152640.1,
+      1792152642.4,
+      1792152644.8,
+      1792152647.1,
+      1792152649.5,
+      1792152651.9,
+      1792152654.2,
+      1792152656.5,
+      1792152658.9,
+      1792152661.3,
+      1792152663.6,
+      1792152665.9,
+      1792152668.3,
+      1792152670.6,
+      1792152672.9,
+      1792152675.2,
+      1792152677.5,
+      1792152679.9,
+      1792152682.3,
+      1792152684.6,
+      1792152686.9,
+      1792152689.2,
+      1792152691.6,
+      1792152693.9,
+      1792152696.2,
+      1792152698.6,
+      1792152701.0,
+      1792152703.3,
+      1792152705.7,
+      1792152708.0,
+      1792152710.4,
+      1792152712.7,
+      1792152715.0,
+      1792152717.3,
+      1792152719.6,
+      1792152722.0,
+      1792152724.4,
+      1792152726.8,
+      1792152729.1,
+      1792152731.5,
+      1792152733.9,
+      1792152736.2,
+      1792152738.6,
+      1792152740.9,
+      1792152743.3,
+      1792152745.7,
+      1792152748.0,
+      1792152750.4,
+      1792152752.7,
+      1792152755.1,
+      1792152757.5,
+      1792152759.8,
+      1792152762.1,
+      1792152764.4,
+      1792152766.7,
+      1792152769.0,
+      1792152771.3,
+      1792152773.6,
+      1792152776.0,
+      1792152778.4,
+      1792152780.8,
+      1792152783.1,
+      1792152785.5,
+      1792152787.9,
+      1792152790.2,
+      1792152792.6,
+      1792152795.0,
+      1792152797.4,
+      1792152799.8,
+      1792152802.2,
+      1792152804.5,
+      1792152806.9,
+      1792152809.3,
+      1792152811.6,
+      1792152813.9,
+      1792152816.2,
+      1792152818.5,
+      1792152820.9,
+      1792152823.2,
+      1792152825.6,
+      1792152827.9,
+      1792152830.3,
+      1792152832.6,
+      1792152835.0,
+      1792152837.3,
+      1792152839.7,
+      1792152842.0,
+      1792152844.3,
+      1792152846.6,
+      1792152849.0,
+      1792152851.4,
+      1792152853.7,
+      1792152856.0,
+      1792152858.4,
+      1792152860.7,
+      1792152863.0,
+      1792152865.4,
+      1792152867.7,
+      1792152870.0,
+      1792152872.4,
+      1792152874.8,
+      1792152877.1,
+      1792152879.4,
+      1792152881.8,
+      1792152884.1,
+      1792152886.4,
+      1792152888.8,
+      1792152891.3,
+      1792152893.6,
+      1792152896.1,
+      1792152898.5,
+      1792152900.9,
+      1792152903.2,
+      1792152905.6,
+      1792152907.9,
+      1792152910.3,
+      1792152912.6,
+      1792152914.9,
+      1792152917.2,
+      1792152919.6,
+      1792152921.9,
+      1792152924.3,
+      1792152926.7,
+      1792152929.0,
+      1792152931.4,
+      1792152933.7,
+      1792152936.1,
+      1792152938.4
+    ],
+    "sample_mib": [
+      21040,
+      21058,
+      21036,
+      20909,
+      21010,
+      20898,
+      20731,
+      20732,
+      20692,
+      20563,
+      20400,
+      20378,
+      20416,
+      20423,
+      20557,
+      20421,
+      20293,
+      20242,
+      20193,
+      20235,
+      20341,
+      20448,
+      20419,
+      20349,
+      20312,
+      20338,
+      20386,
+      20327,
+      20272,
+      20395,
+      20420,
+      20442,
+      20386,
+      20360,
+      20451,
+      20502,
+      20551,
+      20502,
+      20476,
+      20449,
+      20464,
+      20551,
+      20649,
+      20714,
+      20725,
+      20728,
+      20693,
+      20694,
+      20683,
+      20644,
+      20629,
+      20664,
+      20631,
+      20565,
+      20605,
+      20583,
+      20491,
+      20559,
+      20488,
+      20487,
+      20399,
+      20406,
+      20497,
+      20517,
+      20521,
+      20609,
+      20617,
+      20620,
+      20541,
+      20775,
+      20664,
+      20779,
+      20837,
+      20771,
+      20707,
+      20724,
+      20754,
+      20708,
+      20726,
+      20726,
+      20726,
+      20772,
+      20773,
+      20763,
+      20763,
+      20784,
+      20763,
+      20692,
+      20767,
+      20802,
+      20701,
+      20620,
+      20697,
+      20754,
+      20756,
+      20826,
+      20909,
+      20785,
+      20744,
+      20797,
+      20735,
+      20758,
+      20759,
+      20763,
+      20766,
+      20770,
+      20780,
+      20787,
+      20793,
+      20740,
+      20766,
+      20778,
+      20714,
+      20649,
+      20645,
+      20852,
+      20773,
+      20765,
+      20678,
+      20640,
+      20627,
+      20555,
+      20582,
+      20599,
+      20543,
+      20648,
+      20669,
+      20701,
+      20770,
+      20840,
+      20781,
+      20677,
+      20686,
+      20685,
+      20650,
+      20564,
+      20565,
+      20530,
+      20664,
+      20640,
+      20503,
+      20502,
+      20501,
+      20502,
+      20501,
+      20491,
+      20501,
+      20526,
+      20456,
+      20482,
+      20488,
+      20536,
+      20472,
+      20367,
+      20353,
+      20353,
+      20415,
+      20502,
+      20431,
+      20500,
+      20480,
+      20446,
+      20453,
+      20535,
+      20657
+    ]
+  },
+  "oom": {
+    "final": {
+      "bench-faults-t01-7e7046b4": false,
+      "bench-faults-t02-7e7046b4": false,
+      "bench-faults-t03-7e7046b4": false
+    },
+    "per_scenario": {
+      "S1_sigkill_slot_holder": {
+        "bench-faults-t01-7e7046b4": false,
+        "bench-faults-t02-7e7046b4": false,
+        "bench-faults-t03-7e7046b4": false
+      },
+      "S2_lease_expiry_and_fencing": {
+        "bench-faults-t01-7e7046b4": false,
+        "bench-faults-t02-7e7046b4": false,
+        "bench-faults-t03-7e7046b4": false
+      },
+      "S3_poison_job": {
+        "bench-faults-t01-7e7046b4": false,
+        "bench-faults-t02-7e7046b4": false,
+        "bench-faults-t03-7e7046b4": false
+      },
+      "S4_cancel_by_deleting_the_definition": {
+        "bench-faults-t01-7e7046b4": false,
+        "bench-faults-t02-7e7046b4": false,
+        "bench-faults-t03-7e7046b4": false
+      }
+    },
+    "errors": []
+  },
+  "cleanup": {
+    "owned": {
+      "container": 3,
+      "volume": 4,
+      "network": 1
+    },
+    "removed_by_full_id": 8,
+    "removed_ids_all_full": true,
+    "already_absent": [],
+    "not_ours": [],
+    "owned_remaining": [],
+    "unknown": [],
+    "observation_errors": [],
+    "unexpected_labelled": [],
+    "foreign_collisions": [],
+    "foreign_missing": [],
+    "foreign_changed": [],
+    "foreign_unstable_before_the_run": [
+      "85a4717a6e442fedee157e70568b9b24edbc234d12544c1c9e3647890614e54c"
+    ]
+  },
+  "verdict": "PASS",
+  "failed_checks": [],
+  "finished": "2026-10-16 15:15:42"
+}
