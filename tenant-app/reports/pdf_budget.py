@@ -137,8 +137,12 @@ def announce_background_waiting() -> bool:
         handle = _open(path, create_parent=False)
     except OSError:
         return False
-    if not _lock(handle):
+    if not _lock(handle):  # another process's check locked the brand-new file first: leave nothing behind, the caller retries
         handle.close()
+        try:
+            path.unlink()
+        except OSError:
+            pass
         return False
     _beacon = (path, handle)
     return True
@@ -304,12 +308,12 @@ def pdf_slot(wait: float = 0.0):
         return
     deadline = time.monotonic() + max(0.0, wait)
     while True:
+        _interactive_yield()  # before every attempt: a slot freed at this very moment must not go to a request while queued work waits
         release = _try_once()
         if release is not None:
             break
         if time.monotonic() >= deadline:
             raise PdfBusy("Сейчас формируется максимум отчётов: повторите через минуту")
-        _interactive_yield()
         time.sleep(POLL_SECONDS + random.random() * 0.25)
     with _held_slot(release):
         yield

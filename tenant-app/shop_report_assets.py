@@ -40,11 +40,11 @@ def generate_one(run_id):
     # Manual generation only. Private workers never send emails or Telegram.
     from reports.store import ReportStore
     import report_scheduler
-    from reports.pdf_budget import pdf_slot
+    from reports.pdf_budget import interactive_pdf
     store=ReportStore(DB_PATH)
     if type(run_id)!=int or run_id<1:raise ValueError('Invalid selected report run')
-    with pdf_slot(wait=0):
-        return _generate_one_admitted(store, report_scheduler, run_id)
+    # A manual request: queued background reports of the shared slots go first (the beacon), and it answers within the request deadline.
+    return interactive_pdf(lambda: _generate_one_admitted(store, report_scheduler, run_id), wait=0)
 
 
 def _generate_one_admitted(store, report_scheduler, run_id):

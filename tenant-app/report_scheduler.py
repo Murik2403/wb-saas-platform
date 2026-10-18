@@ -204,6 +204,7 @@ def run_definition(store: ReportStore, definition: dict, *, period_days: int | N
         _deferred["due"] = True
         announce_background_waiting()  # requests must not take the slot this schedule is waiting for
         return False
+    withdraw_background_waiting()  # holding a slot: this worker no longer waits, so a free second slot is not withheld from requests
     with slot:
         run_id = store.start_run(definition["id"], delivery_requested=bool(definition.get("email_enabled") or definition.get("telegram_enabled")))
         pdf_bytes, file_path = generate_and_save(store, definition, period_days=period_days, run_id=run_id)
@@ -222,6 +223,7 @@ def process_queued(store: ReportStore, *, limit: int = 1) -> int:
         if slot is None:
             announce_background_waiting()  # this queued run has priority over requests until it gets a slot
             break  # every PDF slot is busy: the run stays queued (durable) and the next tick tries again
+        withdraw_background_waiting()  # holding a slot: not waiting any more (re-announced at the end of the tick while a backlog remains)
         delivery = None
         with slot:
             job = store.claim_next_queued(owner=LEASE_OWNER)
@@ -253,13 +255,13 @@ def check_once(*, deliver: bool = True) -> int:
     try:
         return _check_once(deliver=deliver)
     finally:
-        # keep the beacon only while queued or due reports are still waiting for a slot; a crash drops it with the process
+        # hold the beacon exactly while queued, due or shop-schedule reports still wait for a slot (including the pause before the
+        # next tick, after this worker withdrew it on taking a slot); a crash drops it with the process
         try:
             from shop_schedule_runner import pdf_waiting
-            secondary_waiting = pdf_waiting()
-            if secondary_waiting:
+            if _deferred["due"] or ReportStore(DB_PATH).has_queued() or pdf_waiting():
                 announce_background_waiting()
-            if not _deferred["due"] and not ReportStore(DB_PATH).has_queued() and not secondary_waiting:
+            else:
                 withdraw_background_waiting()
         except Exception:  # noqa: BLE001 - an unreadable store must not leave requests blocked forever: the beacon dies with the process anyway
             withdraw_background_waiting()
@@ -280,6 +282,7 @@ def _check_once(*, deliver: bool = True) -> int:
                 else:
                     slot = try_pdf_slot()
                     if slot is not None:
+                        withdraw_background_waiting()
                         with slot:
                             generate_and_save(store, definition)
                         generated += 1

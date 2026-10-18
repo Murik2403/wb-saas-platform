@@ -9,6 +9,7 @@ import streamlit as st
 from config import DB_PATH
 from report_scheduler import deliver_report, generate_and_save
 from reports import delivery
+from reports.pdf_budget import PdfBusy, interactive_pdf
 from reports.metrics import METRIC_LABELS
 from reports.store import ReportStore
 from ui_helpers import render_empty_state, render_section_header
@@ -30,8 +31,11 @@ def _schedule_label(definition: dict) -> str:
 
 
 def _generate_now(store: ReportStore, definition: dict) -> None:
-    try:
-        pdf_bytes, file_path = generate_and_save(store, definition)
+    try:  # the same priority and deadline as the API endpoints: queued background reports first, never an open-ended wait for a slot
+        pdf_bytes, file_path = interactive_pdf(lambda: generate_and_save(store, definition), wait=15)
+    except PdfBusy as exc:
+        st.session_state["reports_page_message"] = ("error", f"{exc}. Повторите через минуту.")
+        return
     except Exception as exc:
         st.session_state["reports_page_message"] = ("error", f"Не удалось сгенерировать: {exc}")
         return
