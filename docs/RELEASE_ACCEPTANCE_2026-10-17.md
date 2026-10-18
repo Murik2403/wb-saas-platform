@@ -56,3 +56,22 @@ No restored copy of a large production database exists on this machine and produ
 | 243 MiB | OOM on the first section | OOM on the first section | 768m |
 
 The single worker does not raise the peak: it equals the old one within 5 MiB, because the peak is the dashboard computation (`calculations.build_dashboard`), not the number of processes. The finding that matters for rollout is older than this change: the production hard ceiling is 768 MiB (`TENANT_MEM_LIMIT`), and a PDF on a database of about 120 MiB (about 190k orders) already peaks at 715 MiB; above that it is killed by OOM in the old code and in the new. Reducing the memory of `build_dashboard` (reading only the period instead of whole tables) is the next step for large tenants and is not part of this change.
+
+## Mobile (Android built here, iOS and signing are external)
+
+Toolchain downloaded to `C:\Users\mvvor\bm-tmp\android-tools` (outside the repository): Temurin JDK 21.0.12 (sha256 matches the published value), Android SDK platform 36, build-tools 36.0.0, Gradle 8.14.3 through the wrapper; `npm ci` from the lock file, `tsc --noEmit` clean, `cap sync android`. `./gradlew assembleDebug assembleRelease bundleRelease lintDebug` succeed (lint: no errors; the unit-test task has no sources).
+
+| Artefact | sha256 |
+|---|---|
+| `app-debug.apk` | ccf059da079ed07d4dacfda96df88795f97fbe161f02467710ffefe1592eedc5 |
+| `app-release-unsigned.apk` | ecd4da6b921bdd1149371f80b9471da2bda8252695c9ac237d7c27d9f8380fd8 |
+| `app-release.aab` | 4cb320a57d8d59113b2b693eaa0858b428e90a118236f2000ae14e1349ae3961 |
+
+Package `ru.marketshelper.app`, version 1 / 1.0, minSdk 24, target 36. The manifest declares App Links with `autoVerify` for `https://marketshelper.ru` on `/verify-email`, `/reset-password`, `/team/accept` (more paths in the full manifest). The gateway serves `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association` from `WB_SAAS_ANDROID_PACKAGE`, `WB_SAAS_ANDROID_SHA256`, `WB_SAAS_IOS_APP_ID`.
+
+Exact external remainders (not done here: no signing keys created, nothing published):
+1. Upload keystore and Play App Signing: the release is unsigned. The SHA-256 certificate fingerprint(s) (upload key and the Play App Signing key) must be set in `WB_SAAS_ANDROID_SHA256` on the gateway, otherwise App Links stay unverified. The gateway does not validate the fingerprint syntax.
+2. Apple: Team ID for `WB_SAAS_IOS_APP_ID`, a Mac with Xcode for the iOS build, entitlements (Associated Domains, Push), APNs key, App Store Connect record.
+3. Push: the manifest requests `POST_NOTIFICATIONS` and FCM (`com.google.android.c2dm.permission.RECEIVE`), so a Firebase `google-services.json` is required for push to work; without Firebase drop the push plugin and the permission.
+4. Store accounts (Google Play Console, Apple Developer), store listing, reviewer account and support email, the live `/delete-account` page.
+5. Real-device checks: App Links verification on a signed build, push delivery, the deep links above, the back button and keyboard behaviour on a phone.
