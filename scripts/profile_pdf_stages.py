@@ -22,7 +22,7 @@ import time
 from datetime import date, timedelta
 from pathlib import Path
 
-APP = Path(__file__).resolve().parents[1] / "tenant-app"
+APP = Path(os.environ.get("WB_SAAS_APP_DIR") or Path(__file__).resolve().parents[1] / "tenant-app")
 sys.path.insert(0, str(APP))
 
 
