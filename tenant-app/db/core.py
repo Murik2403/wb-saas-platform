@@ -1375,7 +1375,7 @@ def _table_projection(conn, name: str, *, omit_raw: bool = False) -> str:
     return ",".join('"' + column.replace('"', '""') + '"' for column in columns)
 
 
-READ_CHUNK_ROWS = 50_000
+READ_CHUNK_ROWS = 10_000
 _LOSSLESS_TYPES = ({int}, {float, type(None)}, {str, type(None)}, {type(None)})
 
 
@@ -1446,22 +1446,21 @@ def read_sql_chunked(sql: str, conn, params=()) -> pd.DataFrame:
         rows = [tuple(row) for row in rows]
         total += len(rows)
         chunk = pd.DataFrame.from_records(rows, columns=columns, coerce_float=True)
+        by_column = list(zip(*rows))
         for index, column in enumerate(columns):
             if raw[column] is not None:
-                raw[column].extend(row[index] for row in rows)
+                raw[column].extend(by_column[index])
                 continue
-            types = {type(row[index]) for row in rows}
-            part = chunk[column]
-            if types in _LOSSLESS_TYPES:
-                parts[column].append(part)
+            if set(map(type, by_column[index])) in _LOSSLESS_TYPES:
+                parts[column].append(chunk[column].copy())  # a copy: a view would keep the whole chunk frame alive
             else:
                 raw[column] = [value for earlier in parts[column] for value in _original_values(earlier)]
-                raw[column].extend(row[index] for row in rows)
+                raw[column].extend(by_column[index])
                 parts[column] = []
     if total == 0:
         return pd.DataFrame.from_records([], columns=columns, coerce_float=True)
     built = {}
-    for column in columns:
+    for column in columns:  # one column at a time: its parts are released as soon as the column exists
         unified = _unify_parts(parts[column]) if raw[column] is None else None
         if unified is not None:
             built[column] = unified
@@ -1469,7 +1468,9 @@ def read_sql_chunked(sql: str, conn, params=()) -> pd.DataFrame:
             if raw[column] is None:
                 raw[column] = [value for earlier in parts[column] for value in _original_values(earlier)]
             built[column] = pd.DataFrame.from_records([(value,) for value in raw[column]], columns=[column], coerce_float=True)[column]
-    return pd.DataFrame(built, columns=columns)
+        parts[column] = None
+        raw[column] = None
+    return pd.DataFrame(built, columns=columns, copy=False)
 
 
 def read_table(name: str, *, omit_raw: bool = False) -> pd.DataFrame:
