@@ -1,0 +1,94 @@
+{
+ "period": [
+  "2026-09-20",
+  "2026-10-19"
+ ],
+ "baseline_peak_mib": 112.2,
+ "tables": {
+  "orders": {
+   "rows": 386250,
+   "frame_mib": 90.8,
+   "read_s": 2.45,
+   "peak_mib_after_read": 595.9,
+   "peak_growth_mib": 482.9,
+   "columns": 14,
+   "string_columns_mib": 26.5,
+   "rows_in_period": 178350,
+   "share_in_period_percent": 46.2
+  },
+  "sales": {
+   "rows": 363900,
+   "frame_mib": 91.2,
+   "read_s": 2.15,
+   "peak_mib_after_read": 632.4,
+   "peak_growth_mib": 36.6,
+   "columns": 15,
+   "string_columns_mib": 16.7,
+   "rows_in_period": 176700,
+   "share_in_period_percent": 48.6
+  },
+  "ads_daily": {
+   "rows": 118950,
+   "frame_mib": 18.1,
+   "read_s": 0.36,
+   "peak_mib_after_read": 632.4,
+   "peak_growth_mib": 0.0,
+   "columns": 12,
+   "string_columns_mib": 0.0,
+   "rows_in_period": 56550,
+   "share_in_period_percent": 47.5
+  },
+  "stocks": {
+   "rows": 1950,
+   "frame_mib": 0.2,
+   "read_s": 0.01,
+   "peak_mib_after_read": 632.4,
+   "peak_growth_mib": 0.0,
+   "columns": 9,
+   "string_columns_mib": 0.0,
+   "rows_in_period": 1950,
+   "share_in_period_percent": 100.0,
+   "rows_in_latest_snapshot": 1950
+  },
+  "costs": {
+   "rows": 1950,
+   "frame_mib": 0.4,
+   "read_s": 0.01,
+   "peak_mib_after_read": 632.4,
+   "peak_growth_mib": 0.0,
+   "columns": 17,
+   "string_columns_mib": 0.1
+  },
+  "products_catalog": {
+   "rows": 1950,
+   "frame_mib": 0.3,
+   "read_s": 0.01,
+   "peak_mib_after_read": 632.4,
+   "peak_growth_mib": 0.0,
+   "columns": 6,
+   "string_columns_mib": 0.0
+  },
+  "financial_report": {
+   "rows": 363900,
+   "frame_mib": 107.2,
+   "read_s": 3.63,
+   "peak_mib_after_read": 882.9,
+   "peak_growth_mib": 250.5,
+   "columns": 28,
+   "string_columns_mib": 16.7,
+   "rows_in_period": 176700,
+   "share_in_period_percent": 48.6
+  }
+ },
+ "stages": [],
+ "build_dashboard": {
+  "seconds": 108.1,
+  "process_peak_mib": 2126.0,
+  "growth_over_baseline_mib": 1243.1,
+  "python_allocations_peak_mib": 778.9,
+  "result_rows": {
+   "daily": 30,
+   "products": 1950
+  }
+ }
+}
