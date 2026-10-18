@@ -1374,12 +1374,36 @@ def _table_projection(conn, name: str, *, omit_raw: bool = False) -> str:
     return ",".join('"' + column.replace('"', '""') + '"' for column in columns)
 
 
+READ_CHUNK_ROWS = 50_000
+
+
+def read_sql_chunked(sql: str, conn, params=()) -> pd.DataFrame:
+    """`pd.read_sql_query(sql, conn)` without holding every row as a Python tuple at once.
+
+    pandas fetches the whole result into a list of tuples before building the frame, which peaks at several times the finished
+    frame on large tables. This reads READ_CHUNK_ROWS rows at a time. A chunk infers its own dtypes, so a column that is
+    NULL-only in one chunk (object) and numeric in another (float64) would no longer match what one whole read gives; every column
+    whose dtype is not the same in all chunks is therefore rebuilt from its values with the same `DataFrame.from_records`
+    inference the whole read uses, so the result is identical to `pd.read_sql_query`, dtypes included."""
+    chunks = list(pd.read_sql_query(sql, conn, params=params, chunksize=READ_CHUNK_ROWS))
+    if not chunks:
+        return pd.read_sql_query(sql, conn, params=params)
+    if len(chunks) == 1:
+        return chunks[0]
+    frame = pd.concat(chunks, ignore_index=True)
+    for column in frame.columns:
+        if len({chunk[column].dtype for chunk in chunks}) > 1:
+            values = frame[column].tolist()
+            frame[column] = pd.DataFrame.from_records([(value,) for value in values], columns=[column], coerce_float=True)[column]
+    return frame
+
+
 def read_table(name: str, *, omit_raw: bool = False) -> pd.DataFrame:
     allowed = {"orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "financial_report", "production_settings", "material_inventory", "material_inventory_color", "product_pipeline", "production_capacity", "execution_tasks", "inventory_movements", "procurement_orders", "procurement_items", "suppliers", "procurement_payments", "material_cost_layers", "material_fifo_consumptions", "production_cost_batches", "wip_blank_batches", "wip_blank_allocations", "sync_log"}
     if name not in allowed:
         raise ValueError("Недопустимая таблица")
     with connect() as conn:
-        return pd.read_sql_query(f"SELECT {_table_projection(conn, name, omit_raw=omit_raw)} FROM {name}", conn)
+        return read_sql_chunked(f"SELECT {_table_projection(conn, name, omit_raw=omit_raw)} FROM {name}", conn)
 
 def table_count(name: str) -> int:
     allowed = {"orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "production_settings", "material_inventory", "material_inventory_color", "product_pipeline", "production_capacity", "execution_tasks", "inventory_movements", "procurement_orders", "procurement_items", "suppliers", "procurement_payments", "material_cost_layers", "material_fifo_consumptions", "production_cost_batches", "wip_blank_batches", "wip_blank_allocations"}

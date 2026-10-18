@@ -419,7 +419,7 @@ def upsert_financial(rows: Iterable[dict[str, Any]], *, source_identity: str | N
     return len(payload)
 
 def read_financial(*, omit_raw: bool = False, dates_only: bool = False) -> pd.DataFrame:
-    from .core import connect, ensure_financial_schema, _table_projection
+    from .core import connect, ensure_financial_schema, _table_projection, read_sql_chunked
     ensure_financial_schema()
     with connect() as conn:
         # Quality diagnostics need row count and date freshness only. Avoid
@@ -436,5 +436,5 @@ def read_financial(*, omit_raw: bool = False, dates_only: bool = False) -> pd.Da
             COALESCE(json_extract(raw_json, '$.bonusTypeName'),
                      json_extract(raw_json, '$.bonus_type_name'), '')
             ELSE '' END AS deduction_reason"""
-        return pd.read_sql_query(
+        return read_sql_chunked(
             f"SELECT {_table_projection(conn, 'financial_report', omit_raw=omit_raw)}, {reason} FROM financial_report", conn)
