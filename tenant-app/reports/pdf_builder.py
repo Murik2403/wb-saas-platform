@@ -228,6 +228,21 @@ def _render_report_pdf(name: str, metric_codes: list[str], start: date, end: dat
     ]
 
     isolated = os.environ.get("WB_SAAS_REPORT_ISOLATED_METRICS", "0") == "1"
+    isolated_tmp = tempfile.TemporaryDirectory(prefix="marketshelper-report-") if isolated else None
+    isolated_dir = isolated_tmp.name if isolated_tmp else ""
+    if isolated:
+        # one isolated process for the whole report (reports/report_worker.py): imports and the dashboard are done once
+        completed = subprocess.run(
+            [sys.executable, "-m", "reports.report_worker", start.isoformat(), end.isoformat(), isolated_dir, *metric_codes],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+        )
+        if completed.returncode != 0:
+            isolated_tmp.cleanup()
+            detail = (completed.stderr or completed.stdout or "неизвестная ошибка").strip()
+            raise RuntimeError(f"Раздел отчёта не сформирован: {detail[-800:]}")
 
     for idx, code in enumerate(metric_codes):
         if idx > 0:
@@ -242,30 +257,8 @@ def _render_report_pdf(name: str, metric_codes: list[str], start: date, end: dat
             )
 
         if isolated:
-            with tempfile.TemporaryDirectory(prefix="marketshelper-report-") as tmp_dir:
-                image_path = os.path.join(tmp_dir, "metric.png")
-                result_path = os.path.join(tmp_dir, "metric.json")
-                completed = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "reports.metric_worker",
-                        code,
-                        start.isoformat(),
-                        end.isoformat(),
-                        image_path,
-                        result_path,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=180,
-                    check=False,
-                )
-                if completed.returncode != 0:
-                    detail = (completed.stderr or completed.stdout or "неизвестная ошибка").strip()
-                    raise RuntimeError(f"Раздел «{code}» не сформирован: {detail[-800:]}")
-                payload = json.loads(open(result_path, encoding="utf-8").read())
-                image_bytes = open(image_path, "rb").read()
+            image_bytes = open(os.path.join(isolated_dir, f"{idx}.png"), "rb").read()
+            payload = json.loads(open(os.path.join(isolated_dir, f"{idx}.json"), encoding="utf-8").read())
             result_title = str(payload["title"])
             result_summary = str(payload["summary"])
             img_buffer = io.BytesIO(image_bytes)
@@ -287,5 +280,9 @@ def _render_report_pdf(name: str, metric_codes: list[str], start: date, end: dat
         ]
         story.append(KeepTogether(metric_story))
 
-    doc.build(story, canvasmaker=NumberedCanvas)
+    try:
+        doc.build(story, canvasmaker=NumberedCanvas)
+    finally:
+        if isolated_tmp is not None:
+            isolated_tmp.cleanup()
     return buffer.getvalue()
