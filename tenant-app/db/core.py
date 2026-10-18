@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 
 from config import DB_PATH
@@ -1375,27 +1376,100 @@ def _table_projection(conn, name: str, *, omit_raw: bool = False) -> str:
 
 
 READ_CHUNK_ROWS = 50_000
+_LOSSLESS_TYPES = ({int}, {float, type(None)}, {str, type(None)}, {type(None)})
+
+
+def _original_values(part: pd.Series) -> list:
+    """The Python values a chunk part was built from. Only parts whose conversion lost nothing are kept as parts (see below):
+    int64, float64 (NaN is how a NULL appears; SQLite cannot store a real NaN), str (missing = NULL) and all-NULL object."""
+    return [None if (value is None or value is pd.NA or (isinstance(value, float) and value != value)) else value for value in part.tolist()]
+
+
+_EXACT_FLOAT_INT = 2 ** 53
+
+
+def _unify_parts(parts: list[pd.Series]) -> pd.Series | None:
+    """One column from lossless chunk parts, equal to what a whole read infers, or None when that cannot be shown exactly.
+
+    Same dtype everywhere: concatenate. Mixed int64 / float64 / all-NULL parts: a whole read of ints and NULLs or floats is
+    float64, and an int converts to float64 without change only up to 2**53, so the parts are cast and joined when every integer
+    is within that bound. NULL-only parts next to text parts take the text dtype. Anything else is rebuilt from the original values."""
+    dtypes = {part.dtype for part in parts}
+    if len(dtypes) == 1:
+        return pd.concat(parts, ignore_index=True)
+
+    def kind(part: pd.Series) -> str:
+        if isinstance(part.dtype, np.dtype):
+            return {"i": "i", "f": "f", "O": "n"}.get(part.dtype.kind, "?")  # n: a NULL-only object part
+        return "t"  # pandas' text dtype
+
+    kinds = {kind(part) for part in parts}
+    if kinds <= {"i", "f", "n"}:
+        pieces = []
+        for part in parts:
+            if kind(part) == "n":
+                pieces.append(pd.Series([float("nan")] * len(part), dtype="float64"))
+            elif kind(part) == "i":
+                if len(part) and (int(part.max()) > _EXACT_FLOAT_INT or int(part.min()) < -_EXACT_FLOAT_INT):
+                    return None
+                pieces.append(part.astype("float64"))
+            else:
+                pieces.append(part)
+        return pd.concat(pieces, ignore_index=True)
+    if kinds == {"t", "n"} and len({part.dtype for part in parts if kind(part) == "t"}) == 1:
+        text_dtype = next(part.dtype for part in parts if kind(part) == "t")
+        return pd.concat([part if kind(part) == "t" else pd.Series([None] * len(part), dtype=text_dtype) for part in parts], ignore_index=True)
+    return None
 
 
 def read_sql_chunked(sql: str, conn, params=()) -> pd.DataFrame:
-    """`pd.read_sql_query(sql, conn)` without holding every row as a Python tuple at once.
+    """`pd.read_sql_query(sql, conn, params=params)` without holding every row as a Python tuple at once.
 
     pandas fetches the whole result into a list of tuples before building the frame, which peaks at several times the finished
-    frame on large tables. This reads READ_CHUNK_ROWS rows at a time. A chunk infers its own dtypes, so a column that is
-    NULL-only in one chunk (object) and numeric in another (float64) would no longer match what one whole read gives; every column
-    whose dtype is not the same in all chunks is therefore rebuilt from its values with the same `DataFrame.from_records`
-    inference the whole read uses, so the result is identical to `pd.read_sql_query`, dtypes included."""
-    chunks = list(pd.read_sql_query(sql, conn, params=params, chunksize=READ_CHUNK_ROWS))
-    if not chunks:
-        return pd.read_sql_query(sql, conn, params=params)
-    if len(chunks) == 1:
-        return chunks[0]
-    frame = pd.concat(chunks, ignore_index=True)
-    for column in frame.columns:
-        if len({chunk[column].dtype for chunk in chunks}) > 1:
-            values = frame[column].tolist()
-            frame[column] = pd.DataFrame.from_records([(value,) for value in values], columns=[column], coerce_float=True)[column]
-    return frame
+    frame on large tables. This fetches READ_CHUNK_ROWS rows at a time and builds each chunk with the same
+    `DataFrame.from_records(..., coerce_float=True)` call pandas uses. A chunk infers dtypes from its own values only, and
+    SQLite columns may mix storage classes (an integer above 2**53 next to a float or a string), so a chunk can convert a value
+    before the other chunks decide the column's final dtype. Nothing is converted early: a chunk part is kept as a part only while
+    its Python values are all `int`, or all `float`/NULL, or all `str`/NULL, or all NULL (int64, float64, str and object parts
+    hold exactly those values) and all parts have the same dtype; the moment a column stops being that, its original Python
+    values (recovered from the earlier parts, taken as fetched from later chunks) are collected and the column is built once with
+    the whole read's inference. The result equals `pd.read_sql_query`, dtypes and index included."""
+    cursor = conn.execute(sql, tuple(params) if params else ())
+    columns = [description[0] for description in cursor.description]
+    parts: dict[str, list] = {column: [] for column in columns}
+    raw: dict[str, list | None] = {column: None for column in columns}
+    total = 0
+    while True:
+        rows = cursor.fetchmany(READ_CHUNK_ROWS)
+        if not rows:
+            break
+        rows = [tuple(row) for row in rows]
+        total += len(rows)
+        chunk = pd.DataFrame.from_records(rows, columns=columns, coerce_float=True)
+        for index, column in enumerate(columns):
+            if raw[column] is not None:
+                raw[column].extend(row[index] for row in rows)
+                continue
+            types = {type(row[index]) for row in rows}
+            part = chunk[column]
+            if types in _LOSSLESS_TYPES:
+                parts[column].append(part)
+            else:
+                raw[column] = [value for earlier in parts[column] for value in _original_values(earlier)]
+                raw[column].extend(row[index] for row in rows)
+                parts[column] = []
+    if total == 0:
+        return pd.DataFrame.from_records([], columns=columns, coerce_float=True)
+    built = {}
+    for column in columns:
+        unified = _unify_parts(parts[column]) if raw[column] is None else None
+        if unified is not None:
+            built[column] = unified
+        else:
+            if raw[column] is None:
+                raw[column] = [value for earlier in parts[column] for value in _original_values(earlier)]
+            built[column] = pd.DataFrame.from_records([(value,) for value in raw[column]], columns=[column], coerce_float=True)[column]
+    return pd.DataFrame(built, columns=columns)
 
 
 def read_table(name: str, *, omit_raw: bool = False) -> pd.DataFrame:
