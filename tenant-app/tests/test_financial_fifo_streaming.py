@@ -87,7 +87,9 @@ class FinancialFifoStreamingTests(DbTestCase):
             for source_id in (1, 2, 3):
                 self.assertEqual(facts[source_id], before[source_id])
                 self.assertEqual(fingerprint(facts[source_id]), fingerprint(before[source_id]))
-            self.assertLess(len(facts[4]['raw_json']), 100)
+            # An ordinary row is never looked up by the projections (no binding can reference it), so it is not handed to them;
+            # its payload is reduced to the SRID before the reconciliation (checked in the first test of this class).
+            self.assertNotIn(4, facts)
             return rows
 
         with patch('shared_warehouse_finance.apply_projection', inspect), patch('db.finished_history_import.project', inspect):

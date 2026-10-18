@@ -402,6 +402,11 @@ def build_dashboard(start: date, end: date) -> DashboardData:
             columns={"nm_id": "Артикул WB", "warehouse_name": "Склад", "region_name": "Регион"}
         ).sort_values(["Артикул WB", "Остаток"], ascending=[True, False])
 
+    # Frames the rest of the function no longer reads (the hourly block needs the order and sale frames only for a one-day period).
+    orders = ads_all = latest_stock = stocks = None
+    if start != end:
+        valid_orders = sales = None
+
     alert_rows = []
     if not products.empty:
         for _, row in products.iterrows():
@@ -486,7 +491,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
     financial_fifo_summary = summarize_financial_fifo_reconciliation(pd.DataFrame())
     financial_unallocated = pd.DataFrame()
     if not financial_df.empty:
-        f = financial_df.copy()
+        f = financial_df  # not used again: no copy is needed to protect it
+        financial_df = None
         f["operation_date"] = pd.to_datetime(f["operation_date"], errors="coerce")
         f = f.dropna(subset=["operation_date"])
         financial_cutoff = None
@@ -543,6 +549,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         is_return = event_types.eq("return")
         is_sale = event_types.eq("sale")
         return_documents = pd.Series([is_return_document(row) for row in operation_rows], index=f.index)
+        operation_rows = None
         # WB financial API returns magnitudes for returns in both API schemas.
         # Old imports can already be negative. Apply the sign exactly once,
         # before store/SKU aggregates; never negate service costs or raw data.
@@ -608,6 +615,7 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         if financial['shared_fifo_manual_source_rows'] or financial['migration_manual_source_rows']:
             financial['financial_period_complete'] = False
         _cogs_rows, cogs_by_nm, cogs_store = project_historical_cogs(reconciliation)
+        reconciliation = _cogs_rows = None
         financial["cost"] = float(cogs_store["cogs_rub"])
         for field in (
             "exact_fifo_cogs_rub", "current_cost_estimate_rub", "insufficient_units",
@@ -644,7 +652,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # 2) calculated article profit after allocating common store expenses.
         # Deductions and technical/inactive article rows remain at store level and
         # are deliberately not spread across products.
-        fp = f.copy()
+        fp = f  # f is not read after this point
+        f = None
         if "supplier_article" not in fp.columns:
             fp["supplier_article"] = ""
         fp["sale_units"] = np.where(is_sale, quantity_abs, 0)

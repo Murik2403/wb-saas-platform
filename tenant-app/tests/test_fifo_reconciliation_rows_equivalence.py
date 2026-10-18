@@ -126,3 +126,42 @@ class FifoRowsEquivalenceTests(DbTestCase):
         pd.testing.assert_frame_equal(new, old, check_exact=True)
         self.assertGreater(len(new), 20)
         self.assertIn("exact", set(new["status"]))
+
+
+class ProjectionPlumbingTests(FifoRowsEquivalenceTests):
+    """Only protected rows reach the projections; the changed rows land at the right place of the frame."""
+
+    def test_projected_rows_land_on_their_own_rows_and_the_rest_is_untouched(self):
+        self._fill()
+        protected = {2, 5, 22}
+        self._protect(*protected)
+        base = reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30")
+
+        seen = []
+
+        def apply(conn, sources, rows):
+            seen.append([source["rrd_id"] for source in sources])
+            for source, row in zip(sources, rows):
+                row.update(status="manual_source", reason="plumbing", eligible_fifo_cogs_rub=float(source["rrd_id"]), layer_sources=["x"])
+            return rows
+
+        with patch("shared_warehouse_finance.apply_projection", apply), patch("db.finished_history_import.project", lambda conn, sources, rows: rows):
+            projected = reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30")
+        self.assertEqual(sorted(seen[0]), sorted(protected))
+        self.assertEqual(len(projected), len(base))
+        pd.testing.assert_series_equal(projected["rrd_id"], base["rrd_id"])
+        changed = projected["rrd_id"].isin(protected)
+        for column in base.columns:  # values only: a column's dtype depends on all of its rows, which the projection changed
+            left, right = projected.loc[~changed, column].tolist(), base.loc[~changed, column].tolist()
+            self.assertEqual([None if value != value else value for value in left] if column == "eligible_fifo_cogs_rub" else left,
+                             [None if value != value else value for value in right] if column == "eligible_fifo_cogs_rub" else right, column)
+        self.assertTrue((projected.loc[changed, "reason"] == "plumbing").all())
+        self.assertEqual(sorted(projected.loc[changed, "eligible_fifo_cogs_rub"].tolist()), sorted(float(i) for i in protected))
+        self.assertEqual(projected.loc[changed, "layer_sources"].tolist(), [["x"]] * 3)
+
+    def test_without_any_protected_row_the_projections_are_not_called(self):
+        self._fill()
+        calls = []
+        with patch("shared_warehouse_finance.apply_projection", lambda *a: calls.append(1)), patch("db.finished_history_import.project", lambda *a: calls.append(1)):
+            reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30")
+        self.assertEqual(calls, [])
