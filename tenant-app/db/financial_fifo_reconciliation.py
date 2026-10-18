@@ -90,34 +90,32 @@ def _reconcile(
             events_by_key[(normalized["nm_id"], srid, _text(event.get("event_type")))].append(normalized)
 
     financial_keys: dict[tuple[int, str, str], int] = defaultdict(int)
-    prepared: list[dict[str, Any]] = []
-    for source in financial_rows:
-        row = dict(source)
+    # One small tuple per row instead of a full copy of the row dict (the copy held every column of every row at once).
+    prepared: list[tuple[Any, ...]] = []
+    for row in financial_rows:
         kind = _event_type(row)
         quantity = abs(int(row.get("quantity") or 0))
         srid = _json_srid(row.get("raw_json"))
         nm_id = int(row.get("nm_id") or 0)
         if kind and srid and quantity:
             financial_keys[(nm_id, srid, kind)] += 1
-        row.update({"_kind": kind, "_units": quantity, "_srid": srid, "_nm_id": nm_id})
-        prepared.append(row)
+        prepared.append((
+            row.get("rrd_id"), row.get("operation_date"), row.get("sale_date"), row.get("supplier_article"),
+            row.get("operation_name"), row.get("doc_type_name"), kind, quantity, srid, nm_id,
+        ))
 
     output: list[dict[str, Any]] = []
-    for row in prepared:
-        kind = row["_kind"]
-        units = row["_units"]
-        nm_id = row["_nm_id"]
-        srid = row["_srid"]
+    for rrd_id, operation_date, sale_date, supplier_article, operation_name, doc_type_name, kind, units, srid, nm_id in prepared:
         sign = -1 if kind == "return" else 1
         baseline = round(float(baseline_rates.get(nm_id, 0.0)) * units * sign, 2) if kind else 0.0
         result = {
-            "rrd_id": int(row.get("rrd_id") or 0),
-            "operation_date": _text(row.get("operation_date")),
-            "sale_date": _text(row.get("sale_date")),
+            "rrd_id": int(rrd_id or 0),
+            "operation_date": _text(operation_date),
+            "sale_date": _text(sale_date),
             "nm_id": nm_id,
-            "supplier_article": _text(row.get("supplier_article")),
-            "operation_name": _text(row.get("operation_name")),
-            "doc_type_name": _text(row.get("doc_type_name")),
+            "supplier_article": _text(supplier_article),
+            "operation_name": _text(operation_name),
+            "doc_type_name": _text(doc_type_name),
             "srid": srid,
             "event_type": kind,
             "units": units,
@@ -251,6 +249,38 @@ def _reconcile(
     return output
 
 
+# The columns `_reconcile` and the row projections read of a financial row. The reconciliation itself needs nothing else;
+# only a row whose rrd_id is protected (a binding, a projection or a migration document references it) is used further as a whole
+# (its fingerprint hashes the full row), so only those rows are read in full, exactly as before.
+_RECONCILE_COLUMNS = ("rrd_id", "operation_date", "sale_date", "nm_id", "supplier_article", "operation_name", "doc_type_name", "quantity", "raw_json")
+
+
+def _window_financial_rows(conn, start: date, end_exclusive: date, preserve_raw_ids: set) -> list[dict[str, Any]]:
+    """The financial rows of the window in (operation_date, rrd_id) order, one dict each.
+
+    Streams the cursor and keeps, per ordinary row, only the nine columns above with `raw_json` reduced to its SRID (the
+    previous code kept all 28 columns of every row). A protected row is re-read with `SELECT *` and kept untouched."""
+    present = {row[1] for row in conn.execute("PRAGMA table_info(financial_report)")}
+    columns = [column for column in _RECONCILE_COLUMNS if column in present]
+    select = ",".join(f'"{column}"' for column in columns)
+    cursor = conn.execute(
+        f"""SELECT {select}
+              FROM financial_report
+             WHERE operation_date >= ? AND operation_date < ?
+             ORDER BY operation_date,rrd_id""",
+        (start.isoformat(), end_exclusive.isoformat()),
+    )
+    rows: list[dict[str, Any]] = []
+    for source in cursor:
+        row = dict(source)
+        if row.get("rrd_id") in preserve_raw_ids:
+            row = dict(conn.execute("SELECT * FROM financial_report WHERE rrd_id=?", (row["rrd_id"],)).fetchone())
+        elif "raw_json" in row:
+            row["raw_json"] = _srid_payload(row["raw_json"])
+        rows.append(row)
+    return rows
+
+
 def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_local_fifo:bool=True) -> pd.DataFrame:
     """Return read-only financial-operation to FIFO diagnostics for an operation-date range."""
     start = date.fromisoformat(str(date_from))
@@ -268,19 +298,7 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
         for table in ("warehouse_financial_bindings", "warehouse_financial_projection", "migration_historical_documents"):
             if table in tables:
                 preserve_raw_ids.update(row[0] for row in conn.execute(f"SELECT rrd_id FROM {table}"))
-        finance = conn.execute(
-            """SELECT *
-                 FROM financial_report
-                WHERE operation_date >= ? AND operation_date < ?
-                ORDER BY operation_date,rrd_id""",
-            (start.isoformat(), end_exclusive.isoformat()),
-        )
-        financial_rows = []
-        for source in finance:
-            row = dict(source)
-            if row.get("rrd_id") not in preserve_raw_ids and "raw_json" in row:
-                row["raw_json"] = _srid_payload(row["raw_json"])
-            financial_rows.append(row)
+        financial_rows = _window_financial_rows(conn, start, end_exclusive, preserve_raw_ids)
         relevant_srids: dict[int, set[str]] = defaultdict(set)
         relevant_nm_ids: set[int] = set()
         for row in financial_rows:
