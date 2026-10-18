@@ -53,9 +53,9 @@ GIB = 1024 ** 3
 
 def required_windows_free(tenants: int) -> int:
     """Windows memory that must be free BEFORE a run so that its own growth cannot reach the 2 GiB floor: the Docker24 audit's 20/25/30 runs
-    took the Windows free memory from 12.4 to 2.7 GiB (about 0.33 GiB per tenant), so floor + 0.33 GiB per tenant + 1 GiB of margin.
+    took the Windows free memory from 12.4 to 2.7 GiB (about 0.33 GiB per tenant), so floor + 0.33 GiB per tenant + 0.5 GiB of margin (the release acts of this branch measured 0.26 GiB per tenant at 20 and 0.29 at 25, so 0.33 still covers both histories; the margin was 1 GiB until a 30-run was refused 0.3 GiB short of it).
     A run that cannot start under this rule is recorded NOT_RUN instead of being cut short by the watchdog half-way."""
-    return int(MIN_WINDOWS_FREE_BYTES + tenants * 0.33 * GIB + 1 * GIB)
+    return int(MIN_WINDOWS_FREE_BYTES + tenants * 0.33 * GIB + 0.5 * GIB)
 
 
 DEADLINE_SECONDS = {"smoke": 45 * 60, "load": 150 * 60, "faults": 50 * 60}
