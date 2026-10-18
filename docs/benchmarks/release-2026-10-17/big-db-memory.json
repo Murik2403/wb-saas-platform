@@ -1,0 +1,83 @@
+{
+ "what": "Peak memory and time of one full 21-metric PDF (isolated mode, 30 days, 2 CPUs, network none) on SYNTHETIC databases scaled from the demo seed with scripts/make_large_tenant_db.py. Not a restored production backup.",
+ "old_image": "bench-tenant:accept-bde27bf (candidate 024a6fe, one process per metric)",
+ "new_image": "bench-tenant:speed-b048b41 (one process per report)",
+ "scale": "copies=150: 1950 products, 386,250 orders, 363,900 sales, 363,900 financial rows, 118,950 ad rows, 243 MiB",
+ "production_hard_ceiling": "provisioner TENANT_MEM_LIMIT default 768m",
+ "results": [
+  {
+   "copies": 25,
+   "db_mib": 41,
+   "orders": null,
+   "limit": "768m",
+   "old": {
+    "s": 60.5,
+    "peak_mib": 387,
+    "oom": false
+   },
+   "new": {
+    "s": 11.0,
+    "peak_mib": 395,
+    "oom": false
+   }
+  },
+  {
+   "copies": 50,
+   "db_mib": 81,
+   "limit": "768m",
+   "old": {
+    "s": 165.8,
+    "peak_mib": 548,
+    "oom": false
+   },
+   "new": {
+    "s": 19.3,
+    "peak_mib": 550,
+    "oom": false
+   }
+  },
+  {
+   "copies": 75,
+   "db_mib": 122,
+   "limit": "768m",
+   "old": {
+    "s": 221.7,
+    "peak_mib": 715,
+    "oom": false
+   },
+   "new": {
+    "s": 25.8,
+    "peak_mib": 714,
+    "oom": false
+   }
+  },
+  {
+   "copies": 150,
+   "db_mib": 243,
+   "limit": "3g",
+   "old": {
+    "s": 257.1,
+    "peak_mib": 1468,
+    "oom": false
+   },
+   "new": {
+    "s": 28.5,
+    "peak_mib": 1233,
+    "oom": false
+   }
+  },
+  {
+   "copies": 150,
+   "db_mib": 243,
+   "limit": "768m",
+   "old": {
+    "oom": true,
+    "failed_at": "first section (sales_orders): build_dashboard"
+   },
+   "new": {
+    "oom": true,
+    "failed_at": "first section (batch worker, build_dashboard)"
+   }
+  }
+ ]
+}

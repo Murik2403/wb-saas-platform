@@ -42,3 +42,17 @@ python scripts/run_local_daemon_acceptance.py --phase smoke|load|faults --head <
 python scripts/profile_pdf_stages.py --out profile.json
 python -m pytest tenant-app/reports scripts/tests
 ```
+
+## Peak memory on large databases (synthetic, not a restored backup)
+
+No restored copy of a large production database exists on this machine and production was not touched, so the databases are the demo seed multiplied by `scripts/make_large_tenant_db.py` (own products, order, sale and finance rows per copy). Data: `benchmarks/release-2026-10-17/big-db-memory.json`; one full 21-metric PDF in a container with 2 CPUs and no network.
+
+| Database | Old (one process per metric) | New (one process per report) | Limit |
+|---|---|---|---|
+| 41 MiB, 650 products | 60.5 s, 387 MiB | 11.0 s, 395 MiB | 768m |
+| 81 MiB, 1300 products | 165.8 s, 548 MiB | 19.3 s, 550 MiB | 768m |
+| 122 MiB, 975 products (75 copies) | 221.7 s, 715 MiB | 25.8 s, 714 MiB | 768m |
+| 243 MiB, 1950 products, 386k orders | 257.1 s, 1468 MiB | 28.5 s, 1233 MiB | 3g |
+| 243 MiB | OOM on the first section | OOM on the first section | 768m |
+
+The single worker does not raise the peak: it equals the old one within 5 MiB, because the peak is the dashboard computation (`calculations.build_dashboard`), not the number of processes. The finding that matters for rollout is older than this change: the production hard ceiling is 768 MiB (`TENANT_MEM_LIMIT`), and a PDF on a database of about 120 MiB (about 190k orders) already peaks at 715 MiB; above that it is killed by OOM in the old code and in the new. Reducing the memory of `build_dashboard` (reading only the period instead of whole tables) is the next step for large tenants and is not part of this change.
