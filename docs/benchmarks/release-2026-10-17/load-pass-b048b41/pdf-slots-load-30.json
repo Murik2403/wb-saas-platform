@@ -1,0 +1,3567 @@
+{
+  "scenario": "shared PDF slots under simultaneous API and background load",
+  "git": {
+    "head": "b048b41f4223ed3704da2f78b0f372cd183be215",
+    "branch": "HEAD",
+    "dirty": false
+  },
+  "tenants": 30,
+  "slots": 2,
+  "declared_before_start": {
+    "deadline_seconds": 960.0,
+    "health_p95_ms": 3000.0,
+    "floor_mib": 1500,
+    "formula": "ceil(tenants/slots)*pdf_seconds+margin",
+    "pdf_seconds": 60.0,
+    "margin_seconds": 60.0,
+    "api_parallel_per_tenant": 3,
+    "api_pdf_request_every_seconds": 20.0
+  },
+  "started": "2026-10-18 20:47:36",
+  "image": {
+    "reference": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+    "id": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+    "labels": {
+      "org.opencontainers.image.revision": "b048b41f4223ed3704da2f78b0f372cd183be215",
+      "wb-saas.bench-base-image": "sha256:9f02e4b491ce7ef8ebd5d6a84a03d32938aa8c3907f1c4d4f7835f9c6c1325a7",
+      "wb-saas.bench-base-revision": "fdcc3017d61bbcbfb64e6bb4232ec150ce907688",
+      "wb-saas.bench-head": "b048b41f4223ed3704da2f78b0f372cd183be215"
+    },
+    "source_trees": {
+      "head_tenant_app": "bca02ce2a4be59ca9657e3cc00fdadcfb4afe62a",
+      "head_tenant_api": "eceee5114ee55d3431e7fa15d6a8d5ed744a2eb2",
+      "built_from": "b048b41f4223ed3704da2f78b0f372cd183be215",
+      "built_from_tenant_app": "bca02ce2a4be59ca9657e3cc00fdadcfb4afe62a",
+      "built_from_tenant_api": "eceee5114ee55d3431e7fa15d6a8d5ed744a2eb2"
+    },
+    "key_file_sha256_in_every_tenant": {
+      "/app/tenant-app/reports/pdf_budget.py": "57a72bfa77764c0ae843df22168264734dadd7a40f0c2e4f597f8b60af0623ca",
+      "/app/tenant-app/report_scheduler.py": "6fab18a41e50966e550445b4a0bb83059a200cdf1c6701ac2590b6b89d59b341",
+      "/app/tenant-app/reports/store.py": "3b3f1f8f103b652701aed8a01df2c39904a7cc5979fb86fb3503053aee0ac1d6",
+      "/app/tenant-app/reports/pdf_builder.py": "91bd1d49e82a47683327d138f83d7936dbedf1174d06c28ea66b18d17fd4327b",
+      "/app/tenant-app/reports/catalog.py": "d6dd649a093f6136165de86d2db8b38d261bf101ea8934f0b0c88e076982a6f1",
+      "/app/tenant-app/background_worker.py": "06865161a05714be4d19f3cada846bb2578e6d4caa2cc2c031f9f369739141e1",
+      "/app/tenant-app/reports/metrics.py": "d22343775ae4f053f2e468a22f9c8580a1d4d80db3119ec4379efe934208e6bd",
+      "/app/tenant-app/db/financial_fifo_reconciliation.py": "4c80abd22ec59d2f11054402c55a6368e3b8968561d2ad48287eb2db575eff92",
+      "/app/tenant-app/api_server.py": "ae0effeb4a09dcad72cdb04d0ffc0e2f0a67458b757cf8277e2dcdde445d662e"
+    }
+  },
+  "topology": {
+    "bench-load-t01-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t01-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "e0c581ce6342ed89f58b6c5150470a0139c9b3af5dbe7cafad2679f692d2ded9"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "3024"
+        ],
+        "worker": [
+          "3025"
+        ],
+        "nginx": [
+          "3026"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "3024"
+        ],
+        "worker": [
+          "3025"
+        ],
+        "nginx": [
+          "3026"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t02-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t02-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "346e3ceb626a2dfd4466f5885b9002abe06948f4eedcae836f91182df1bcf8b4"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "3027"
+        ],
+        "worker": [
+          "3028"
+        ],
+        "nginx": [
+          "3030"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "3027"
+        ],
+        "worker": [
+          "3028"
+        ],
+        "nginx": [
+          "3030"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t03-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t03-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "3e818c518f2044fa0d72943b7404aeef2d6c2060a8ffa2879e8148e7a636a186"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "3112"
+        ],
+        "worker": [
+          "3113"
+        ],
+        "nginx": [
+          "3114"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "3112"
+        ],
+        "worker": [
+          "3113"
+        ],
+        "nginx": [
+          "3114"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t04-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t04-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "627411f3731bb167bba693d05961ce1c3fba1954122fdd7f81a1769fee0becd7"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "4638"
+        ],
+        "worker": [
+          "4639"
+        ],
+        "nginx": [
+          "4640"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "4638"
+        ],
+        "worker": [
+          "4639"
+        ],
+        "nginx": [
+          "4640"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t05-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t05-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "996a28c944f6db2d216d8fae7b908acd8ce12ef16f55c5e4fb7112f4a56fadeb"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "4543"
+        ],
+        "worker": [
+          "4544"
+        ],
+        "nginx": [
+          "4545"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "4543"
+        ],
+        "worker": [
+          "4544"
+        ],
+        "nginx": [
+          "4545"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t06-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t06-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "b4f7414b04df0e6c3d0bc220292674af9b9aea289141d4d3b29a27034f8ccdcd"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "4608"
+        ],
+        "worker": [
+          "4609"
+        ],
+        "nginx": [
+          "4610"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "4608"
+        ],
+        "worker": [
+          "4609"
+        ],
+        "nginx": [
+          "4610"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t07-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t07-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "50a95ffdc00fe0fb24846b2c6b9f97a5fc7f829eb0c4f95e10d6035d47279b23"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "6182"
+        ],
+        "worker": [
+          "6183"
+        ],
+        "nginx": [
+          "6184"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "6182"
+        ],
+        "worker": [
+          "6183"
+        ],
+        "nginx": [
+          "6184"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t08-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t08-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "62561030fe7a927a88c672adb3df412c3071fbc6809d266db5428c46b3145f77"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "6146"
+        ],
+        "worker": [
+          "6147"
+        ],
+        "nginx": [
+          "6148"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "6146"
+        ],
+        "worker": [
+          "6147"
+        ],
+        "nginx": [
+          "6148"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t09-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t09-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "a7c375678c406f13bac27d8c6d1fc544ff5ef6f4f7b0b051d6c3957a1068dc21"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "6100"
+        ],
+        "worker": [
+          "6101"
+        ],
+        "nginx": [
+          "6102"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "6100"
+        ],
+        "worker": [
+          "6101"
+        ],
+        "nginx": [
+          "6102"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t10-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t10-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "ce658a09b7f807bb5bf850ec9a9e09f4bbd5b7b29b7de92f9affcddef3a41ede"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "7631"
+        ],
+        "worker": [
+          "7632"
+        ],
+        "nginx": [
+          "7634"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "7631"
+        ],
+        "worker": [
+          "7632"
+        ],
+        "nginx": [
+          "7634"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t11-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t11-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "b477f10e3c37dcf76b9c669c30123d328dd758c6032d52e012796ae1773536c7"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "7683"
+        ],
+        "worker": [
+          "7684"
+        ],
+        "nginx": [
+          "7685"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "7683"
+        ],
+        "worker": [
+          "7684"
+        ],
+        "nginx": [
+          "7685"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t12-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t12-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "e38cfe2c805a7386f3618374c8bab9cfdee7058f2ebb54002c483977aaf1b81b"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "7640"
+        ],
+        "worker": [
+          "7641"
+        ],
+        "nginx": [
+          "7642"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "7640"
+        ],
+        "worker": [
+          "7641"
+        ],
+        "nginx": [
+          "7642"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t13-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t13-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "4ac3f473fe947c0e61ab6dd8d71a83f6857552696e9a9bed0338154b90eeabd0"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "8707"
+        ],
+        "worker": [
+          "8708"
+        ],
+        "nginx": [
+          "8709"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "8707"
+        ],
+        "worker": [
+          "8708"
+        ],
+        "nginx": [
+          "8709"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t14-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t14-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "c20c571460e56d6b20514bdc73e8c8ea4aab34ca0d4b7980e7c8ba299612f7cb"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "8639"
+        ],
+        "worker": [
+          "8640"
+        ],
+        "nginx": [
+          "8641"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "8639"
+        ],
+        "worker": [
+          "8640"
+        ],
+        "nginx": [
+          "8641"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t15-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t15-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "ef4aec683f0de8edf0715e76b1df818e3662a67ab32d9cb9d6d14d19b6b526c0"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "8667"
+        ],
+        "worker": [
+          "8668"
+        ],
+        "nginx": [
+          "8669"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "8667"
+        ],
+        "worker": [
+          "8668"
+        ],
+        "nginx": [
+          "8669"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t16-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t16-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "43f49c7d5126cbb767ed47f811571653189cf1c16d1a5946df367dc6a482412b"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "9690"
+        ],
+        "worker": [
+          "9691"
+        ],
+        "nginx": [
+          "9692"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "9690"
+        ],
+        "worker": [
+          "9691"
+        ],
+        "nginx": [
+          "9692"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t17-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t17-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "b9aff6b9a1ac514826fe3e9aaefcf880c99069e295f3f7ef25b47a128935a239"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "9653"
+        ],
+        "worker": [
+          "9654"
+        ],
+        "nginx": [
+          "9655"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "9653"
+        ],
+        "worker": [
+          "9654"
+        ],
+        "nginx": [
+          "9655"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t18-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t18-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "74b8056e58ad07d5306b275210a4c251da5a883d1d114c1fe79fd2ad96f89c1b"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "9675"
+        ],
+        "worker": [
+          "9676"
+        ],
+        "nginx": [
+          "9677"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "9675"
+        ],
+        "worker": [
+          "9676"
+        ],
+        "nginx": [
+          "9677"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t19-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t19-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "2c1337abedb3f9e35a8d2c91b3ed661389147a3d660ec99c12324884fef4d74e"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "10676"
+        ],
+        "worker": [
+          "10678"
+        ],
+        "nginx": [
+          "10679"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "10676"
+        ],
+        "worker": [
+          "10678"
+        ],
+        "nginx": [
+          "10679"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t20-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t20-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "b24db6a35bee248be162146e51d36d92c8a16cde71d06804aa78d5bbdfe10680"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "10733"
+        ],
+        "worker": [
+          "10734"
+        ],
+        "nginx": [
+          "10735"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "10733"
+        ],
+        "worker": [
+          "10734"
+        ],
+        "nginx": [
+          "10735"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t21-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t21-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "d73cc8de343e92bd8e99ffc9143df1ea2df0b5c23c16cae25373db0a476cef6f"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "10697"
+        ],
+        "worker": [
+          "10698"
+        ],
+        "nginx": [
+          "10699"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "10697"
+        ],
+        "worker": [
+          "10698"
+        ],
+        "nginx": [
+          "10699"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t22-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t22-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "743bfce8150331d4d7e61c3da78cd24ca4b9d99214be7f67ed08ad192e7893d2"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "11735"
+        ],
+        "worker": [
+          "11736"
+        ],
+        "nginx": [
+          "11737"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "11735"
+        ],
+        "worker": [
+          "11736"
+        ],
+        "nginx": [
+          "11737"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t23-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t23-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "2a246b0dbc3e15c4ea6baa04b4fc3a0e6efa4cc732d4d01baf319282743c4da9"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "11686"
+        ],
+        "worker": [
+          "11687"
+        ],
+        "nginx": [
+          "11688"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "11686"
+        ],
+        "worker": [
+          "11687"
+        ],
+        "nginx": [
+          "11688"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t24-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t24-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "eb0bd909f8729bf4450b6a803b94726d672d9a6835ecfc0aae72b057ae884d8e"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "11720"
+        ],
+        "worker": [
+          "11721"
+        ],
+        "nginx": [
+          "11723"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "11720"
+        ],
+        "worker": [
+          "11721"
+        ],
+        "nginx": [
+          "11723"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t25-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t25-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "51102a12ffcb1c217eb18511a94c4113013146aaaf75fe7fba6e68ff6263e490"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "12743"
+        ],
+        "worker": [
+          "12744"
+        ],
+        "nginx": [
+          "12745"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "12743"
+        ],
+        "worker": [
+          "12744"
+        ],
+        "nginx": [
+          "12745"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t26-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t26-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "5e87b1cb7502a424551821388d0e1cb7cb5da175c85c10a8b6eb85759a3d3915"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "12630"
+        ],
+        "worker": [
+          "12632"
+        ],
+        "nginx": [
+          "12633"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "12630"
+        ],
+        "worker": [
+          "12632"
+        ],
+        "nginx": [
+          "12633"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t27-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t27-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "7af83e94ac3b5a92e67e00fb0868d063b8698fbdd58bb8f2f862aae2c74766d0"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "12827"
+        ],
+        "worker": [
+          "12828"
+        ],
+        "nginx": [
+          "12829"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "12827"
+        ],
+        "worker": [
+          "12828"
+        ],
+        "nginx": [
+          "12829"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t28-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t28-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "c063bab90b776c9f08dcd9ab2a5d471044116a4e194fb0d54b9d452a307c3464"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "13666"
+        ],
+        "worker": [
+          "13667"
+        ],
+        "nginx": [
+          "13668"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "13666"
+        ],
+        "worker": [
+          "13667"
+        ],
+        "nginx": [
+          "13668"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t29-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t29-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "13b288653403981f67cc2d2e90e5819e549ea76d9fa1f76c06b09132b9f8ec60"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "13762"
+        ],
+        "worker": [
+          "13763"
+        ],
+        "nginx": [
+          "13764"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "13762"
+        ],
+        "worker": [
+          "13763"
+        ],
+        "nginx": [
+          "13764"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    },
+    "bench-load-t30-9a4f1fe6": {
+      "image": "sha256:2ae80a77ddd598919c86c2e822edf6cfe51fa6c4cc7d320a59c194826b4e0d70",
+      "user": "10001:10001",
+      "mounts": [
+        [
+          "/app/data",
+          "volume",
+          "bench-load-t30-9a4f1fe6-data"
+        ],
+        [
+          "/app/tenant-app/data",
+          "volume",
+          "6f8f46edc5b3768acc5ace243371d300e74d399b8fe1548318b359c765358970"
+        ],
+        [
+          "/pdf-slots",
+          "volume",
+          "bench-load-slots-9a4f1fe6"
+        ]
+      ],
+      "roles_before": {
+        "api": [
+          "13735"
+        ],
+        "worker": [
+          "13736"
+        ],
+        "nginx": [
+          "13737"
+        ]
+      },
+      "roles_after": {
+        "api": [
+          "13735"
+        ],
+        "worker": [
+          "13736"
+        ],
+        "nginx": [
+          "13737"
+        ]
+      },
+      "locks": {
+        "dir": {
+          "dev": 2096,
+          "ino": 772870,
+          "uid": 10001,
+          "mode": 504
+        },
+        "files": {
+          "pdf-slot-00.lock": {
+            "dev": 2096,
+            "ino": 775027,
+            "uid": 10001,
+            "mode": 420
+          },
+          "pdf-slot-01.lock": {
+            "dev": 2096,
+            "ino": 775031,
+            "uid": 10001,
+            "mode": 420
+          }
+        }
+      }
+    }
+  },
+  "start_gate": [
+    {
+      "index": 0,
+      "name": "bench-load-t01-9a4f1fe6",
+      "at": 1792356461.0954983,
+      "decision": "admitted",
+      "vm_available_mib": 21390,
+      "create_started_at": 1792356461.3406005
+    },
+    {
+      "index": 1,
+      "name": "bench-load-t02-9a4f1fe6",
+      "at": 1792356461.3410106,
+      "decision": "admitted",
+      "vm_available_mib": 21383,
+      "create_started_at": 1792356461.6121392
+    },
+    {
+      "index": 2,
+      "name": "bench-load-t03-9a4f1fe6",
+      "at": 1792356461.612482,
+      "decision": "admitted",
+      "vm_available_mib": 21367,
+      "create_started_at": 1792356461.8524334
+    },
+    {
+      "index": 3,
+      "name": "bench-load-t04-9a4f1fe6",
+      "at": 1792356461.8526044,
+      "decision": "admitted",
+      "vm_available_mib": 21377,
+      "create_started_at": 1792356463.7118433
+    },
+    {
+      "index": 4,
+      "name": "bench-load-t05-9a4f1fe6",
+      "at": 1792356462.162982,
+      "decision": "admitted",
+      "vm_available_mib": 21375,
+      "create_started_at": 1792356463.7119336
+    },
+    {
+      "index": 5,
+      "name": "bench-load-t06-9a4f1fe6",
+      "at": 1792356462.4282753,
+      "decision": "admitted",
+      "vm_available_mib": 21318,
+      "create_started_at": 1792356463.7122304
+    },
+    {
+      "index": 6,
+      "name": "bench-load-t07-9a4f1fe6",
+      "at": 1792356462.6858187,
+      "decision": "admitted",
+      "vm_available_mib": 21270,
+      "create_started_at": 1792356465.6498268
+    },
+    {
+      "index": 7,
+      "name": "bench-load-t08-9a4f1fe6",
+      "at": 1792356462.8923526,
+      "decision": "admitted",
+      "vm_available_mib": 21235,
+      "create_started_at": 1792356465.6502805
+    },
+    {
+      "index": 8,
+      "name": "bench-load-t09-9a4f1fe6",
+      "at": 1792356463.103864,
+      "decision": "admitted",
+      "vm_available_mib": 21224,
+      "create_started_at": 1792356465.6525536
+    },
+    {
+      "index": 9,
+      "name": "bench-load-t10-9a4f1fe6",
+      "at": 1792356463.3786387,
+      "decision": "admitted",
+      "vm_available_mib": 21174,
+      "create_started_at": 1792356467.6462557
+    },
+    {
+      "index": 10,
+      "name": "bench-load-t11-9a4f1fe6",
+      "at": 1792356463.7117808,
+      "decision": "admitted",
+      "vm_available_mib": 21108,
+      "create_started_at": 1792356467.6463668
+    },
+    {
+      "index": 11,
+      "name": "bench-load-t12-9a4f1fe6",
+      "at": 1792356464.0057116,
+      "decision": "admitted",
+      "vm_available_mib": 21057,
+      "create_started_at": 1792356467.6466873
+    },
+    {
+      "index": 12,
+      "name": "bench-load-t13-9a4f1fe6",
+      "at": 1792356464.2838755,
+      "decision": "admitted",
+      "vm_available_mib": 20960,
+      "create_started_at": 1792356469.5662522
+    },
+    {
+      "index": 13,
+      "name": "bench-load-t14-9a4f1fe6",
+      "at": 1792356464.5983863,
+      "decision": "admitted",
+      "vm_available_mib": 20788,
+      "create_started_at": 1792356469.5811937
+    },
+    {
+      "index": 14,
+      "name": "bench-load-t15-9a4f1fe6",
+      "at": 1792356464.849456,
+      "decision": "admitted",
+      "vm_available_mib": 20751,
+      "create_started_at": 1792356469.5877523
+    },
+    {
+      "index": 15,
+      "name": "bench-load-t16-9a4f1fe6",
+      "at": 1792356465.1297352,
+      "decision": "admitted",
+      "vm_available_mib": 20687,
+      "create_started_at": 1792356471.4617836
+    },
+    {
+      "index": 16,
+      "name": "bench-load-t17-9a4f1fe6",
+      "at": 1792356465.4017715,
+      "decision": "admitted",
+      "vm_available_mib": 20649,
+      "create_started_at": 1792356471.4885752
+    },
+    {
+      "index": 17,
+      "name": "bench-load-t18-9a4f1fe6",
+      "at": 1792356465.649586,
+      "decision": "admitted",
+      "vm_available_mib": 20597,
+      "create_started_at": 1792356471.501954
+    },
+    {
+      "index": 18,
+      "name": "bench-load-t19-9a4f1fe6",
+      "at": 1792356465.990572,
+      "decision": "admitted",
+      "vm_available_mib": 20559,
+      "create_started_at": 1792356473.3932185
+    },
+    {
+      "index": 19,
+      "name": "bench-load-t20-9a4f1fe6",
+      "at": 1792356466.2865772,
+      "decision": "admitted",
+      "vm_available_mib": 20509,
+      "create_started_at": 1792356473.4165254
+    },
+    {
+      "index": 20,
+      "name": "bench-load-t21-9a4f1fe6",
+      "at": 1792356466.598817,
+      "decision": "admitted",
+      "vm_available_mib": 20341,
+      "create_started_at": 1792356473.4253583
+    },
+    {
+      "index": 21,
+      "name": "bench-load-t22-9a4f1fe6",
+      "at": 1792356466.8650558,
+      "decision": "admitted",
+      "vm_available_mib": 20279,
+      "create_started_at": 1792356475.3130364
+    },
+    {
+      "index": 22,
+      "name": "bench-load-t23-9a4f1fe6",
+      "at": 1792356467.1108475,
+      "decision": "admitted",
+      "vm_available_mib": 20238,
+      "create_started_at": 1792356475.314261
+    },
+    {
+      "index": 23,
+      "name": "bench-load-t24-9a4f1fe6",
+      "at": 1792356467.3688247,
+      "decision": "admitted",
+      "vm_available_mib": 20187,
+      "create_started_at": 1792356475.346886
+    },
+    {
+      "index": 24,
+      "name": "bench-load-t25-9a4f1fe6",
+      "at": 1792356467.6462228,
+      "decision": "admitted",
+      "vm_available_mib": 20084,
+      "create_started_at": 1792356477.1561215
+    },
+    {
+      "index": 25,
+      "name": "bench-load-t26-9a4f1fe6",
+      "at": 1792356468.0240235,
+      "decision": "admitted",
+      "vm_available_mib": 20012,
+      "create_started_at": 1792356477.1948643
+    },
+    {
+      "index": 26,
+      "name": "bench-load-t27-9a4f1fe6",
+      "at": 1792356468.3589957,
+      "decision": "admitted",
+      "vm_available_mib": 19882,
+      "create_started_at": 1792356477.1959429
+    },
+    {
+      "index": 27,
+      "name": "bench-load-t28-9a4f1fe6",
+      "at": 1792356468.7057922,
+      "decision": "admitted",
+      "vm_available_mib": 19773,
+      "create_started_at": 1792356479.003453
+    },
+    {
+      "index": 28,
+      "name": "bench-load-t29-9a4f1fe6",
+      "at": 1792356468.9642315,
+      "decision": "admitted",
+      "vm_available_mib": 19731,
+      "create_started_at": 1792356479.083288
+    },
+    {
+      "index": 29,
+      "name": "bench-load-t30-9a4f1fe6",
+      "at": 1792356469.2285836,
+      "decision": "admitted",
+      "vm_available_mib": 19684,
+      "create_started_at": 1792356479.1618059
+    }
+  ],
+  "idle_vm_available_mib": 15946,
+  "admission": {
+    "decision": "admitted",
+    "budget_mib": 16822,
+    "reserved_mib": 11520,
+    "free_mib": 5302,
+    "running_tenants": 30,
+    "host_available_mib": 15942,
+    "decided_at": 1792356528.450727
+  },
+  "load_started_at": 1792356528.4542682,
+  "jobs": {
+    "bench-load-t01-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t02-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t03-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t04-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t05-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t06-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t07-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t08-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t09-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t10-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t11-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t12-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t13-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t14-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t15-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t16-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t17-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t18-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t19-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t20-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t21-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t22-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t23-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t24-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t25-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t26-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t27-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t28-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t29-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    },
+    "bench-load-t30-9a4f1fe6": {
+      "run_id": 1,
+      "definition_id": 1,
+      "metrics": [
+        "abc_analysis",
+        "ad_funnel",
+        "ad_performance",
+        "ads",
+        "buyout_rate",
+        "cost_structure",
+        "frozen_capital",
+        "oos_risk",
+        "organic_vs_ads",
+        "pnl",
+        "returns_cancellations",
+        "roi_by_sku",
+        "sales_orders",
+        "stock_in_transit",
+        "stocks",
+        "unit_economics",
+        "warehouse_stocks",
+        "wb_commission_rate",
+        "wb_deductions",
+        "wb_incident_losses",
+        "weekday_pattern"
+      ],
+      "before": {
+        "runs": 0,
+        "definitions": 0
+      }
+    }
+  },
+  "metric_codes": [
+    "abc_analysis",
+    "ad_funnel",
+    "ad_performance",
+    "ads",
+    "buyout_rate",
+    "cost_structure",
+    "frozen_capital",
+    "oos_risk",
+    "organic_vs_ads",
+    "pnl",
+    "returns_cancellations",
+    "roi_by_sku",
+    "sales_orders",
+    "stock_in_transit",
+    "stocks",
+    "unit_economics",
+    "warehouse_stocks",
+    "wb_commission_rate",
+    "wb_deductions",
+    "wb_incident_losses",
+    "weekday_pattern"
+  ],
+  "attestation_failures": [],
+  "observation_failures": [],
+  "runs": [
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855109,
+      "error": null,
+      "started_at": "2026-10-18T23:53:04",
+      "finished_at": "2026-10-18T23:53:48"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855110,
+      "error": null,
+      "started_at": "2026-10-18T23:57:08",
+      "finished_at": "2026-10-18T23:57:39"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:51:47",
+      "finished_at": "2026-10-18T23:52:18"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855113,
+      "error": null,
+      "started_at": "2026-10-18T23:54:23",
+      "finished_at": "2026-10-18T23:54:56"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855109,
+      "error": null,
+      "started_at": "2026-10-18T23:53:22",
+      "finished_at": "2026-10-18T23:53:53"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855109,
+      "error": null,
+      "started_at": "2026-10-18T23:52:51",
+      "finished_at": "2026-10-18T23:53:21"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855114,
+      "error": null,
+      "started_at": "2026-10-18T23:49:24",
+      "finished_at": "2026-10-18T23:49:49"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:52:18",
+      "finished_at": "2026-10-18T23:52:50"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855110,
+      "error": null,
+      "started_at": "2026-10-18T23:57:02",
+      "finished_at": "2026-10-18T23:57:33"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:51:18",
+      "finished_at": "2026-10-18T23:51:49"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:49:58",
+      "finished_at": "2026-10-18T23:50:38"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:51:50",
+      "finished_at": "2026-10-18T23:52:34"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855113,
+      "error": null,
+      "started_at": "2026-10-18T23:53:54",
+      "finished_at": "2026-10-18T23:54:30"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855113,
+      "error": null,
+      "started_at": "2026-10-18T23:53:49",
+      "finished_at": "2026-10-18T23:54:22"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855110,
+      "error": null,
+      "started_at": "2026-10-18T23:56:21",
+      "finished_at": "2026-10-18T23:57:05"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855111,
+      "error": null,
+      "started_at": "2026-10-18T23:55:38",
+      "finished_at": "2026-10-18T23:56:19"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855110,
+      "error": null,
+      "started_at": "2026-10-18T23:54:57",
+      "finished_at": "2026-10-18T23:55:38"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855110,
+      "error": null,
+      "started_at": "2026-10-18T23:54:31",
+      "finished_at": "2026-10-18T23:55:07"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:51:14",
+      "finished_at": "2026-10-18T23:51:47"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855111,
+      "error": null,
+      "started_at": "2026-10-18T23:55:40",
+      "finished_at": "2026-10-18T23:56:17"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:50:39",
+      "finished_at": "2026-10-18T23:51:18"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855114,
+      "error": null,
+      "started_at": "2026-10-18T23:49:04",
+      "finished_at": "2026-10-18T23:49:26"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:49:50",
+      "finished_at": "2026-10-18T23:50:15"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:50:16",
+      "finished_at": "2026-10-18T23:50:45"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855109,
+      "error": null,
+      "started_at": "2026-10-18T23:52:35",
+      "finished_at": "2026-10-18T23:53:04"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855114,
+      "error": null,
+      "started_at": "2026-10-18T23:49:06",
+      "finished_at": "2026-10-18T23:49:24"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855114,
+      "error": null,
+      "started_at": "2026-10-18T23:49:26",
+      "finished_at": "2026-10-18T23:49:57"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855111,
+      "error": null,
+      "started_at": "2026-10-18T23:56:18",
+      "finished_at": "2026-10-18T23:56:58"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855110,
+      "error": null,
+      "started_at": "2026-10-18T23:55:07",
+      "finished_at": "2026-10-18T23:55:37"
+    },
+    {
+      "status": "ok",
+      "attempts": 1,
+      "pdf_header_ok": true,
+      "pdf_bytes": 855108,
+      "error": null,
+      "started_at": "2026-10-18T23:50:46",
+      "finished_at": "2026-10-18T23:51:14"
+    }
+  ],
+  "seconds_to_last_run": 530.5,
+  "peak_concurrent_pdfs_from_intervals": 2,
+  "peak_busy_slots_sampled": 2,
+  "vm_min_available_mib": 12956,
+  "vm_drop_mib": 2990,
+  "api": {
+    "dashboard_requests": 219315,
+    "dashboard_p50_ms": 39,
+    "dashboard_p95_ms": 1734,
+    "dashboard_max_ms": 9863,
+    "dashboard_5xx_or_no_answer": 0,
+    "dashboard_status_by_endpoint": {
+      "200 /api/v1/control/data-quality": 21944,
+      "200 /api/v1/dashboard/ads": 21936,
+      "200 /api/v1/dashboard/analytics": 21927,
+      "200 /api/v1/dashboard/assistant": 21926,
+      "409 /api/v1/dashboard/customer-quality": 21922,
+      "200 /api/v1/dashboard/finance": 21917,
+      "422 /api/v1/dashboard/management-economics": 10991,
+      "200 /api/v1/dashboard/management-pnl": 10989,
+      "200 /api/v1/dashboard/management-pnl/monthly": 10982,
+      "200 /api/v1/dashboard/production": 10971,
+      "200 /api/v1/dashboard/reports": 10963,
+      "200 /api/v1/dashboard/stock": 10956,
+      "200 /api/v1/dashboard/supply": 10946,
+      "200 /api/v1/dashboard/today": 10945
+    },
+    "pdf_in_request_total": 870,
+    "pdf_in_request_200": 14,
+    "pdf_in_request_503_retry_after": 856,
+    "pdf_in_request_bad": 0,
+    "pdf_in_request_max_ms": 27018
+  },
+  "healthz": {
+    "n": 31626,
+    "failures": 0,
+    "p50_ms": 44,
+    "p95_ms": 213,
+    "max_ms": 2068
+  },
+  "kernel_memory": {
+    "events": {
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0
+    },
+    "oom_killed_containers": 0,
+    "restarts": 0,
+    "container_peak_mib_max": 435.4,
+    "cpu_throttled_pct": 0.3
+  },
+  "cleanup": {
+    "owned": {
+      "container": 32,
+      "volume": 31,
+      "network": 1
+    },
+    "removed_by_full_id": 64,
+    "removed_ids_all_full": true,
+    "already_absent": [],
+    "not_ours": [],
+    "owned_remaining": [],
+    "unknown": [],
+    "observation_errors": [],
+    "unexpected_labelled": [],
+    "foreign_collisions": [],
+    "foreign_missing": [],
+    "foreign_changed": [],
+    "foreign_unstable_before_the_run": []
+  },
+  "cleanup_residual_counts": {
+    "container": 0,
+    "volume": 0,
+    "network": 0
+  },
+  "verdict": "PASS",
+  "failed_checks": [],
+  "finished": "2026-10-18 20:59:22",
+  "raw_evidence": {
+    "file": "pdf-slots-load-30.raw.json",
+    "sha256": "f480435fc824c9d606c27cf556b3b1c10ea735d781a23cb12b8205363c7911cb",
+    "bytes": 5257376
+  }
+}
