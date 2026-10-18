@@ -44,3 +44,22 @@ One guard is essential: the pushdown is only valid while every date of the table
 3. Period and latest-snapshot filters in SQL behind the ISO guard.
 4. Group once instead of per product (time).
 Each step is checked by exact `DashboardData` equality (the prototype's `compare`), plus the existing finance tests; limits of 768 MiB per tenant stay as they are.
+
+## Branch `claude/dashboard-memory-20261030` (from ed0748f): what was done and measured
+
+Two changes, no limit raised, no financial formula touched.
+
+1. **`211ca31` FIFO reconciliation** (`db/financial_fifo_reconciliation.py`): reads the nine columns the reconciliation uses instead of `SELECT *` (28), streams the cursor, reduces `raw_json` to its SRID exactly as before, re-reads in full only the rows protected by a binding, projection or migration document (their fingerprint hashes the whole row), and keeps small tuples instead of per-row copies in `_reconcile`. Isolated on a 177k-row window: Python peak **513 to 279 MiB**, 21 to 14 s.
+2. **`824f42c` chunked table reads** (`db.core.read_sql_chunked`, used by `read_table` and `read_financial`): 50,000 rows per fetch instead of one `fetchall`. Columns whose dtype differs between chunks (a NULL-only chunk is `object`, the next is `float64`) are rebuilt with the same `DataFrame.from_records` inference a whole read uses, so the frame equals `pd.read_sql_query`, dtypes and index included.
+
+| `build_dashboard`, 243 MiB synthetic base | before | after step 1 | after step 2 |
+|---|---|---|---|
+| process peak (RSS) | 1075.6 MiB | 1074.2 MiB | **854.3 MiB** |
+| time | 31.5 s | 29.8 s | 29.5 s |
+| `DashboardData` vs before | | identical | identical |
+
+Stage peaks (tracemalloc): `orders` 365 to 85 MiB, `read_financial` 749 to 247 MiB, FIFO reconciliation inside the function 779 to 545 MiB (it starts from about 266 MiB already held). The RSS did not move after step 1 alone because the maximum was the financial read, not the reconciliation; step 2 moved it.
+
+Equality checks: `DashboardData` (daily, products, ads, stocks, alerts, FIFO summary, the financial dict) compared field by field with exact frame equality (`prototype_dashboard_pushdown.py compare`); 24 legacy/damaged `raw_json` shapes (invalid JSON, BOM, array/number/string top level, numeric/boolean/nested/NaN `srid`, `SRID` upper case, both keys, duplicate keys, 300 KB payloads) give the same rows as the previous reader; protected rows keep the same fingerprint; the whole reconciliation frame equals the previous one; 13 chunked-read cases including a random fuzz (without the dtype rebuild 6 of them fail). Full suites: 1328 tenant-app tests and 687 tenant-api tests pass.
+
+**What this did not solve** (measured, not hoped): the full 21-metric PDF in a 768 MiB container with these changes fits at 75 copies (122 MiB base, 697 MiB peak, was 714) and is still killed by OOM at 150 copies (243 MiB). `build_dashboard` is the heaviest step, but about 300 MiB stays held while the reconciliation and the COGS projection run, and the PDF worker keeps a dashboard snapshot besides. The next levers, in order: free `financial_df` and the filtered frames before the FIFO block, build the reconciliation output column-wise instead of 176k dicts of 18 keys (the projections mutate those dicts, so this needs care), and the period filter in SQL behind the ISO guard.
