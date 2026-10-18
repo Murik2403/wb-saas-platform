@@ -49,8 +49,8 @@ No restored copy of a large production database exists on this machine and produ
 
 | Database | Old (one process per metric) | New (one process per report) | Limit |
 |---|---|---|---|
-| 41 MiB, 650 products | 60.5 s, 387 MiB | 11.0 s, 395 MiB | 768m |
-| 81 MiB, 1300 products | 165.8 s, 548 MiB | 19.3 s, 550 MiB | 768m |
+| 41 MiB, 325 products | 60.5 s, 387 MiB | 11.0 s, 395 MiB | 768m |
+| 81 MiB, 650 products | 165.8 s, 548 MiB | 19.3 s, 550 MiB | 768m |
 | 122 MiB, 975 products (75 copies) | 221.7 s, 715 MiB | 25.8 s, 714 MiB | 768m |
 | 243 MiB, 1950 products, 386k orders | 257.1 s, 1468 MiB | 28.5 s, 1233 MiB | 3g |
 | 243 MiB | OOM on the first section | OOM on the first section | 768m |
