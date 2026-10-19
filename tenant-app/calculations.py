@@ -211,7 +211,6 @@ def build_dashboard(start: date, end: date) -> DashboardData:
     stocks = read_table("stocks", omit_raw=True)
     costs = read_table("costs", omit_raw=True)
     catalog = read_table("products_catalog", omit_raw=True)
-    financial_df = read_financial(omit_raw=True)
 
     if not orders.empty:
         orders = orders[(orders["day"] >= start) & (orders["day"] <= end)]
@@ -490,6 +489,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
     financial_products = pd.DataFrame()
     financial_fifo_summary = summarize_financial_fifo_reconciliation(pd.DataFrame())
     financial_unallocated = pd.DataFrame()
+    # Operational frames are consumed above; do not hold them during the financial SQL read.
+    financial_df = read_financial(omit_raw=True)
     if not financial_df.empty:
         f = financial_df  # not used again: no copy is needed to protect it
         financial_df = None
