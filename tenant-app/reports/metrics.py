@@ -18,6 +18,7 @@ import pandas as pd
 
 from calculations import build_dashboard
 from db import read_table, read_wb_incident_cases
+from db.core import read_first_row, read_latest_stocks, read_table_period
 
 # Branded palette adapted for print / light PDF background -- the app itself
 # is dark-themed (see app.py's CSS variables), but a PDF is read/printed on
@@ -33,6 +34,20 @@ COLOR_GRID = "#e2e8f0"
 COLOR_BG = "#ffffff"
 
 from .catalog import METRIC_LABELS
+
+
+def _read_period(name: str, date_column: str, start: date, end: date) -> pd.DataFrame:
+    """`read_table(name, omit_raw=True)` narrowed to the period where that is provably equal for the metric (see
+    db.core.read_period_or_whole: this is the same rule, with the whole-table fallback going through this module's `read_table`)."""
+    frame = read_table_period(name, date_column, start, end, omit_raw=True)
+    if frame is None:
+        return read_table(name, omit_raw=True)
+    return frame if not frame.empty else read_first_row(name)
+
+
+def _read_latest_stocks() -> pd.DataFrame:
+    frame = read_latest_stocks(omit_raw=True)
+    return frame if frame is not None else read_table("stocks", omit_raw=True)
 
 
 @dataclass
@@ -204,7 +219,7 @@ def _ads(start: date, end: date) -> MetricResult:
 
 
 def _stocks(start: date, end: date) -> MetricResult:
-    stocks = read_table("stocks", omit_raw=True)
+    stocks = _read_latest_stocks()
     fig, ax = plt.subplots(figsize=(7, 4))
     _apply_chart_style(fig, ax)
 
@@ -606,8 +621,8 @@ def _unit_economics(start: date, end: date) -> MetricResult:
 
 
 def _returns_cancellations(start: date, end: date) -> MetricResult:
-    orders = read_table("orders", omit_raw=True)
-    sales = read_table("sales", omit_raw=True)
+    orders = _read_period("orders", "order_date", start, end)
+    sales = _read_period("sales", "sale_date", start, end)
     fig, ax = plt.subplots(figsize=(7, 3.5))
     _apply_chart_style(fig, ax)
 
@@ -692,7 +707,7 @@ def _organic_vs_ads(start: date, end: date) -> MetricResult:
 
 
 def _ad_funnel(start: date, end: date) -> MetricResult:
-    ads_daily = read_table("ads_daily", omit_raw=True)
+    ads_daily = _read_period("ads_daily", "day", start, end)
     fig, ax = plt.subplots(figsize=(7, 3.5))
 
     if ads_daily.empty or "day" not in ads_daily.columns:
@@ -812,7 +827,7 @@ def _wb_commission_rate(start: date, end: date) -> MetricResult:
     # Raw marketplace payloads are not used in this chart. Exclude them in
     # SQLite, before fetch/DataFrame copies, so a metric worker does not hold
     # the entire realization JSON history alongside its numerical projection.
-    fin = read_table("financial_report", omit_raw=True)
+    fin = _read_period("financial_report", "operation_date", start, end)
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if fin.empty or "operation_date" not in fin.columns:
@@ -876,7 +891,7 @@ def _wb_commission_rate(start: date, end: date) -> MetricResult:
 
 
 def _stock_in_transit(start: date, end: date) -> MetricResult:
-    stocks = read_table("stocks", omit_raw=True)
+    stocks = _read_latest_stocks()
     fig, ax = plt.subplots(figsize=(7, 3.8))
 
     if stocks.empty or "snapshot_at" not in stocks.columns or "warehouse_name" not in stocks.columns:
@@ -938,7 +953,7 @@ def _stock_in_transit(start: date, end: date) -> MetricResult:
 
 
 def _weekday_pattern(start: date, end: date) -> MetricResult:
-    orders = read_table("orders", omit_raw=True)
+    orders = _read_period("orders", "order_date", start, end)
     fig, ax = plt.subplots(figsize=(7, 3.5))
 
     if orders.empty or "order_date" not in orders.columns:

@@ -1477,6 +1477,109 @@ def read_cursor_chunked(cursor) -> pd.DataFrame:
     return pd.DataFrame(built, columns=columns, copy=False)
 
 
+_DATE_FORMATS = (
+    "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]",
+    "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][T ][0-9][0-9]:[0-9][0-9]:[0-9][0-9]",
+    "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][T ][0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*",
+)
+
+
+def uniform_iso_dates(conn, table: str, column: str) -> bool:
+    """True when every value of table.column has one and the same plain ISO shape (no NULL, no time zone, no second format).
+
+    Only then is a date filter in SQL equal to the filter pandas applies after `to_datetime`: pandas infers the format of mixed
+    dates from the first row, so a filtered read of a mixed column could parse different rows than the whole read, and a time zone
+    shifts the calendar day. With any other shape the caller reads the whole table as before."""
+    try:
+        total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        if not total:
+            return False
+        return _uniform_iso(conn, table, column, total)
+    except sqlite3.Error:  # no such table or column: the caller reads the table the way it always did (and fails the way it did)
+        return False
+
+
+def _uniform_iso(conn, table: str, column: str, total: int) -> bool:
+    # A shape alone is insufficient: GLOB's final '*' accepts arbitrary
+    # suffixes, and MAX over an impossible date can discard the valid latest
+    # stock snapshot. Fail back to whole-table parsing for every unsafe value.
+    unsafe = conn.execute(f'''SELECT 1 FROM "{table}" WHERE
+        "{column}" IS NULL
+        OR substr("{column}",1,10) < '1677-09-22'
+        OR substr("{column}",1,10) > '2262-04-10'
+        OR date(substr("{column}",1,10), '+0 days') IS NULL
+        OR date(substr("{column}",1,10), '+0 days') != substr("{column}",1,10)
+        OR (length("{column}") > 10 AND (
+            substr("{column}",12,2) > '23' OR substr("{column}",15,2) > '59'
+            OR substr("{column}",18,2) > '59'))
+        OR (length("{column}") > 19 AND (
+            length("{column}") NOT BETWEEN 21 AND 29
+            OR substr("{column}",21) GLOB '*[^0-9]*'))
+        LIMIT 1''').fetchone()
+    if unsafe is not None:
+        return False
+    for pattern in _DATE_FORMATS:
+        # the separator and the fraction digits must also agree, so a table mixing 'T' and ' ' is not uniform
+        if conn.execute(f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" GLOB ?', (pattern,)).fetchone()[0] == total:
+            separators = conn.execute(f'SELECT COUNT(DISTINCT substr("{column}",11,1)) FROM "{table}"').fetchone()[0]
+            lengths = conn.execute(f'SELECT COUNT(DISTINCT length("{column}")) FROM "{table}"').fetchone()[0]
+            return separators == 1 and lengths == 1
+    return False
+
+
+def read_table_period(name: str, date_column: str, start, end, *, omit_raw: bool = False) -> pd.DataFrame | None:
+    """The rows of `name` whose `date_column` day lies in [start, end], in the table's own (rowid) order, or None when the
+    column is not uniformly ISO-shaped (the caller then reads the whole table)."""
+    if name not in {"orders", "sales", "ads_daily", "financial_report"}:
+        raise ValueError("Недопустимая таблица")
+    with connect() as conn:
+        # Keep validation and the filtered read on one SQLite snapshot.
+        conn.execute("BEGIN")
+        if not uniform_iso_dates(conn, name, date_column):
+            return None
+        sql = (f"SELECT {_table_projection(conn, name, omit_raw=omit_raw)} FROM {name} "
+               f'WHERE substr("{date_column}",1,10) BETWEEN ? AND ? ORDER BY rowid')
+        return read_sql_chunked(sql, conn, params=(start.isoformat(), end.isoformat()))
+
+
+def read_first_row(name: str) -> pd.DataFrame:
+    """The first row of `name` (rowid order), dashboard projection; stands in for a table whose rows all lie outside the period."""
+    with connect() as conn:
+        return read_sql_chunked(f"SELECT {_table_projection(conn, name, omit_raw=True)} FROM {name} ORDER BY rowid LIMIT 1", conn)
+
+
+def read_period_or_whole(name: str, date_column: str, start, end) -> pd.DataFrame:
+    """read_table(name, omit_raw=True) narrowed to the period when that is provably the same for the caller, else the whole table.
+
+    The callers filter the period again themselves, but they also test whether the *table* is empty (to print "no data" instead of an
+    empty chart), and a period read cannot tell an empty table from an empty period. When the table has rows but none in the period
+    (every date is uniformly ISO-shaped, so none is inside the period) one row of the table is returned: the caller sees a table with
+    rows and its own period filter leaves nothing, exactly as with the whole table. A table that is not uniformly ISO-shaped, or
+    is empty, is read whole."""
+    frame = read_table_period(name, date_column, start, end, omit_raw=True)
+    if frame is None:
+        return read_table(name, omit_raw=True)
+    return frame if not frame.empty else read_first_row(name)
+
+
+def read_latest_stocks_or_whole() -> pd.DataFrame:
+    """The newest `stocks` snapshot (all that the dashboard and the stock charts read), else the whole table."""
+    frame = read_latest_stocks(omit_raw=True)
+    return frame if frame is not None else read_table("stocks", omit_raw=True)
+
+
+def read_latest_stocks(*, omit_raw: bool = False) -> pd.DataFrame | None:
+    """Only the newest snapshot of `stocks` (what the dashboard uses), or None when snapshot_at is not uniformly ISO-shaped."""
+    with connect() as conn:
+        # Keep validation and the filtered read on one SQLite snapshot.
+        conn.execute("BEGIN")
+        if not uniform_iso_dates(conn, "stocks", "snapshot_at"):
+            return None
+        sql = (f"SELECT {_table_projection(conn, 'stocks', omit_raw=omit_raw)} FROM stocks "
+               "WHERE snapshot_at = (SELECT MAX(snapshot_at) FROM stocks) ORDER BY rowid")
+        return read_sql_chunked(sql, conn)
+
+
 def read_table(name: str, *, omit_raw: bool = False) -> pd.DataFrame:
     allowed = {"orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "financial_report", "production_settings", "material_inventory", "material_inventory_color", "product_pipeline", "production_capacity", "execution_tasks", "inventory_movements", "procurement_orders", "procurement_items", "suppliers", "procurement_payments", "material_cost_layers", "material_fifo_consumptions", "production_cost_batches", "wip_blank_batches", "wip_blank_allocations", "sync_log"}
     if name not in allowed:

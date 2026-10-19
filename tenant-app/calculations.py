@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 
 from db import read_table, read_financial
+from db.core import read_first_row, read_latest_stocks, read_table_period
+from db.ingest import read_financial_period
 from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation, summarize_financial_fifo_reconciliation
 from db.historical_cogs import project_historical_cogs
 from financial_operations import financial_event_type, is_return_document, is_promotion_settlement
@@ -205,11 +207,25 @@ def read_product_operation_totals(nm_id: int, start: date, end: date) -> tuple[f
     return float(row['buyer_revenue']), float(row['units'])
 
 
+def _read_period(name: str, column: str, start: date, end: date) -> pd.DataFrame:
+    """The table narrowed to the period when that is provably the same for this function (db.core.read_period_or_whole states the
+    rule), otherwise `read_table` of this module, whole."""
+    frame = read_table_period(name, column, start, end, omit_raw=True)
+    if frame is None:
+        return read_table(name, omit_raw=True)
+    return frame if not frame.empty else read_first_row(name)
+
+
+def _read_latest_stocks() -> pd.DataFrame:
+    frame = read_latest_stocks(omit_raw=True)
+    return frame if frame is not None else read_table("stocks", omit_raw=True)
+
+
 def build_dashboard(start: date, end: date, *, release_memory: Callable[[], None] | None = None) -> DashboardData:
-    orders = _prepare_dates(read_table("orders", omit_raw=True), "order_date")
-    sales = _prepare_dates(read_table("sales", omit_raw=True), "sale_date")
-    ads_all = _prepare_dates(read_table("ads_daily", omit_raw=True), "day")
-    stocks = read_table("stocks", omit_raw=True)
+    orders = _prepare_dates(_read_period("orders", "order_date", start, end), "order_date")
+    sales = _prepare_dates(_read_period("sales", "sale_date", start, end), "sale_date")
+    ads_all = _prepare_dates(_read_period("ads_daily", "day", start, end), "day")
+    stocks = _read_latest_stocks()
     costs = read_table("costs", omit_raw=True)
     catalog = read_table("products_catalog", omit_raw=True)
 
@@ -493,7 +509,9 @@ def build_dashboard(start: date, end: date, *, release_memory: Callable[[], None
     # Operational frames are consumed above; do not hold them during the financial SQL read.
     if release_memory is not None:
         release_memory()
-    financial_df = read_financial(omit_raw=True)
+    financial_df = read_financial_period(start, end, omit_raw=True)
+    if financial_df is None:
+        financial_df = read_financial(omit_raw=True)
     if not financial_df.empty:
         f = financial_df  # not used again: no copy is needed to protect it
         financial_df = None

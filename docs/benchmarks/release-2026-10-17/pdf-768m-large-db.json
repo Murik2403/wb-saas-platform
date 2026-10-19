@@ -1,0 +1,101 @@
+{
+ "what": "Full 21-metric PDF in one container (2 CPUs, no network, memory limit as stated), synthetic 243 MiB tenant database (1950 products, 386,250 orders, 363,900 sales, 363,900 financial rows, 118,950 ad rows; 61 days of history).",
+ "note": "cgroup_peak_mib is the container's memory.peak (it includes reclaimable file cache of the database); oom is State.OOMKilled / memory.events.",
+ "old": {
+  "image": "bench-tenant:close-ed0748f (code of ed0748f)",
+  "results": [
+   {
+    "days": 1,
+    "limit": "3g",
+    "cgroup_peak_mib": 1200,
+    "oom": false
+   },
+   {
+    "days": 7,
+    "limit": "3g",
+    "cgroup_peak_mib": 1192,
+    "oom": false
+   },
+   {
+    "days": 30,
+    "limit": "3g",
+    "cgroup_peak_mib": 1198,
+    "oom": false
+   },
+   {
+    "days": 1,
+    "limit": "768m",
+    "oom": true
+   },
+   {
+    "days": 7,
+    "limit": "768m",
+    "oom": true
+   },
+   {
+    "days": 30,
+    "limit": "768m",
+    "oom": true
+   }
+  ]
+ },
+ "new": {
+  "code": "claude/dashboard-memory-20261030 (this change)",
+  "results": [
+   {
+    "days": 1,
+    "limit": "768m",
+    "cgroup_peak_mib": 201,
+    "seconds": 4.5,
+    "oom": false
+   },
+   {
+    "days": 7,
+    "limit": "768m",
+    "cgroup_peak_mib": 282,
+    "seconds": 12.5,
+    "oom": false
+   },
+   {
+    "days": 30,
+    "limit": "768m",
+    "cgroup_peak_mib": 606,
+    "seconds": 27.5,
+    "oom": false
+   },
+   {
+    "days": 30,
+    "limit": "512m",
+    "oom": true
+   },
+   {
+    "days": 30,
+    "limit": "448m",
+    "oom": true
+   }
+  ]
+ },
+ "equality": {
+  "DashboardData": "identical field by field (exact frame equality, dicts by json) for 1, 7, 30, 90 days, old code vs new code on the same database",
+  "pdf": "text and page count identical for 1, 7, 30 days (11 pages for 7/30; footer time masked)",
+  "per_metric": "title, summary and PNG sha256 of all 21 metrics identical with and without period reads for 1/7/30/90 days and two empty periods (tests/test_period_reads.py)"
+ },
+ "process_peak_build_dashboard_mib": {
+  "1_day": [
+   1075,
+   124
+  ],
+  "7_days": [
+   1075,
+   209
+  ],
+  "30_days": [
+   1077,
+   492
+  ],
+  "90_days": [
+   1940,
+   877
+  ]
+ }
+}
