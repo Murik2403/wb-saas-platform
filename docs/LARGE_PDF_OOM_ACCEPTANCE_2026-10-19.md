@@ -53,3 +53,5 @@ Reproduce (run one at a time):
 python scripts/bench_large_pdf.py --image bench-tenant:codex-largepdf-final --database C:/Users/mvvor/bm-tmp/bigdata/wb_dashboard.sqlite3 --days 90 --out C:/Users/mvvor/bm-tmp/repeat-large-pdf-90.json
 python scripts/bench_large_pdf.py --image bench-tenant:codex-largepdf-final --database C:/Users/mvvor/bm-tmp/bigdata/wb_dashboard.sqlite3 --days 30 --out C:/Users/mvvor/bm-tmp/repeat-large-pdf-30.json
 ```
+
+The JSON SHA-256 manifest covers committed LF bytes (repository .gitattributes), verified against git show, not transient Windows CRLF copies. PDF hashes cover the original binary files.
