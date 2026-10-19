@@ -1473,6 +1473,54 @@ def read_sql_chunked(sql: str, conn, params=()) -> pd.DataFrame:
     return pd.DataFrame(built, columns=columns, copy=False)
 
 
+_DATE_FORMATS = (
+    "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]",
+    "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][T ][0-9][0-9]:[0-9][0-9]:[0-9][0-9]",
+    "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][T ][0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*",
+)
+
+
+def uniform_iso_dates(conn, table: str, column: str) -> bool:
+    """True when every value of table.column has one and the same plain ISO shape (no NULL, no time zone, no second format).
+
+    Only then is a date filter in SQL equal to the filter pandas applies after `to_datetime`: pandas infers the format of mixed
+    dates from the first row, so a filtered read of a mixed column could parse different rows than the whole read, and a time zone
+    shifts the calendar day. With any other shape the caller reads the whole table as before."""
+    total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+    if not total:
+        return False
+    for pattern in _DATE_FORMATS:
+        # the separator and the fraction digits must also agree, so a table mixing 'T' and ' ' is not uniform
+        if conn.execute(f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" GLOB ?', (pattern,)).fetchone()[0] == total:
+            separators = conn.execute(f'SELECT COUNT(DISTINCT substr("{column}",11,1)) FROM "{table}"').fetchone()[0]
+            lengths = conn.execute(f'SELECT COUNT(DISTINCT length("{column}")) FROM "{table}"').fetchone()[0]
+            return separators == 1 and (lengths == 1 or pattern == _DATE_FORMATS[2])
+    return False
+
+
+def read_table_period(name: str, date_column: str, start, end, *, omit_raw: bool = False) -> pd.DataFrame | None:
+    """The rows of `name` whose `date_column` day lies in [start, end], in the table's own (rowid) order, or None when the
+    column is not uniformly ISO-shaped (the caller then reads the whole table)."""
+    if name not in {"orders", "sales", "ads_daily"}:
+        raise ValueError("Недопустимая таблица")
+    with connect() as conn:
+        if not uniform_iso_dates(conn, name, date_column):
+            return None
+        sql = (f"SELECT {_table_projection(conn, name, omit_raw=omit_raw)} FROM {name} "
+               f'WHERE substr("{date_column}",1,10) BETWEEN ? AND ? ORDER BY rowid')
+        return read_sql_chunked(sql, conn, params=(start.isoformat(), end.isoformat()))
+
+
+def read_latest_stocks(*, omit_raw: bool = False) -> pd.DataFrame | None:
+    """Only the newest snapshot of `stocks` (what the dashboard uses), or None when snapshot_at is not uniformly ISO-shaped."""
+    with connect() as conn:
+        if not uniform_iso_dates(conn, "stocks", "snapshot_at"):
+            return None
+        sql = (f"SELECT {_table_projection(conn, 'stocks', omit_raw=omit_raw)} FROM stocks "
+               "WHERE snapshot_at = (SELECT MAX(snapshot_at) FROM stocks) ORDER BY rowid")
+        return read_sql_chunked(sql, conn)
+
+
 def read_table(name: str, *, omit_raw: bool = False) -> pd.DataFrame:
     allowed = {"orders", "sales", "stocks", "ads_daily", "costs", "products_catalog", "financial_report", "production_settings", "material_inventory", "material_inventory_color", "product_pipeline", "production_capacity", "execution_tasks", "inventory_movements", "procurement_orders", "procurement_items", "suppliers", "procurement_payments", "material_cost_layers", "material_fifo_consumptions", "production_cost_batches", "wip_blank_batches", "wip_blank_allocations", "sync_log"}
     if name not in allowed:

@@ -418,6 +418,25 @@ def upsert_financial(rows: Iterable[dict[str, Any]], *, source_identity: str | N
         conn.executemany(sql, values)
     return len(payload)
 
+def read_financial_period(start, end, *, omit_raw: bool = False):
+    """read_financial() for the rows of the period plus the one row carrying the latest operation date (the dashboard needs that
+    date for its accounting horizon), in rowid order, or None when operation_date is not uniformly ISO-shaped."""
+    from .core import connect, ensure_financial_schema, _table_projection, read_sql_chunked, uniform_iso_dates
+    ensure_financial_schema()
+    with connect() as conn:
+        if not uniform_iso_dates(conn, "financial_report", "operation_date"):
+            return None
+        reason = """CASE WHEN json_valid(raw_json) THEN
+            COALESCE(json_extract(raw_json, '$.bonusTypeName'),
+                     json_extract(raw_json, '$.bonus_type_name'), '')
+            ELSE '' END AS deduction_reason"""
+        return read_sql_chunked(
+            f"SELECT {_table_projection(conn, 'financial_report', omit_raw=omit_raw)}, {reason} FROM financial_report "
+            "WHERE substr(operation_date,1,10) BETWEEN ? AND ? OR rowid = "
+            "(SELECT rowid FROM financial_report WHERE operation_date = (SELECT MAX(operation_date) FROM financial_report) ORDER BY rowid LIMIT 1) "
+            "ORDER BY rowid", conn, params=(start.isoformat(), end.isoformat()))
+
+
 def read_financial(*, omit_raw: bool = False, dates_only: bool = False) -> pd.DataFrame:
     from .core import connect, ensure_financial_schema, _table_projection, read_sql_chunked
     ensure_financial_schema()

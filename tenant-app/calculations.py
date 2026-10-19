@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 from db import read_table, read_financial
+from db.core import read_latest_stocks, read_table_period
+from db.ingest import read_financial_period
 from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation, summarize_financial_fifo_reconciliation
 from db.historical_cogs import project_historical_cogs
 from financial_operations import financial_event_type, is_return_document, is_promotion_settlement
@@ -204,14 +206,22 @@ def read_product_operation_totals(nm_id: int, start: date, end: date) -> tuple[f
     return float(row['buyer_revenue']), float(row['units'])
 
 
+def _read_period(name: str, column: str, start: date, end: date) -> pd.DataFrame:
+    """The table's rows of the period only when its dates are uniformly ISO-shaped (see db.core.uniform_iso_dates), else the whole
+    table; either way the period filter below is applied, so the result is the same."""
+    frame = read_table_period(name, column, start, end, omit_raw=True)
+    return frame if frame is not None else read_table(name, omit_raw=True)
+
+
 def build_dashboard(start: date, end: date) -> DashboardData:
-    orders = _prepare_dates(read_table("orders", omit_raw=True), "order_date")
-    sales = _prepare_dates(read_table("sales", omit_raw=True), "sale_date")
-    ads_all = _prepare_dates(read_table("ads_daily", omit_raw=True), "day")
-    stocks = read_table("stocks", omit_raw=True)
+    orders = _prepare_dates(_read_period("orders", "order_date", start, end), "order_date")
+    sales = _prepare_dates(_read_period("sales", "sale_date", start, end), "sale_date")
+    ads_all = _prepare_dates(_read_period("ads_daily", "day", start, end), "day")
+    stocks = read_latest_stocks(omit_raw=True)
+    if stocks is None:
+        stocks = read_table("stocks", omit_raw=True)
     costs = read_table("costs", omit_raw=True)
     catalog = read_table("products_catalog", omit_raw=True)
-    financial_df = read_financial(omit_raw=True)
 
     if not orders.empty:
         orders = orders[(orders["day"] >= start) & (orders["day"] <= end)]
@@ -487,6 +497,10 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         "financial_ad_spend": 0.0,
         "allocation_basis": "выручке",
     }
+    # Read only now: the order and sale frames are released above, so the largest read does not sit on top of them.
+    financial_df = read_financial_period(start, end, omit_raw=True)
+    if financial_df is None:
+        financial_df = read_financial(omit_raw=True)
     financial_products = pd.DataFrame()
     financial_fifo_summary = summarize_financial_fifo_reconciliation(pd.DataFrame())
     financial_unallocated = pd.DataFrame()
