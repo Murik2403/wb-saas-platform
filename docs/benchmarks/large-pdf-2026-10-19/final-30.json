@@ -1,0 +1,619 @@
+{
+  "run_id": "e29f6d8041a843d388e37c273d8412e7",
+  "image_id": "sha256:99692ceae02ab8b1bec8d350fc9737513db1fb02a45c4c8755ba7eecfd3dd5d6",
+  "image_labels": {
+    "org.opencontainers.image.revision": "ae4dc154519257841af30ef3336a355378ad2b13",
+    "wb-saas.bench-base-image": "sha256:0f4baed97545ee69db9ee96911474ce81a7898aab04352be043ec476f3af7c69",
+    "wb-saas.bench-base-revision": "ed0748fd92feba9326e19b1dee2e82f7c43cb1ba",
+    "wb-saas.bench-head": "ae4dc154519257841af30ef3336a355378ad2b13"
+  },
+  "database_bytes": 254914560,
+  "database_sha256": "96f13a1afc36e281f7cd5097ff5738bf382aae7199039d4b0e54575b365ecb61",
+  "row_counts": {
+    "orders": 386250,
+    "sales": 363900,
+    "financial_report": 363900,
+    "products_catalog": 1950
+  },
+  "days": 30,
+  "memory_limit": 805306368,
+  "swap_limit": 0,
+  "cpus": 2,
+  "scope": "full PDF parent + report worker; no resident API/nginx or concurrent reports",
+  "endpoint": "npipe:////./pipe/dockerDesktopLinuxEngine",
+  "cleanup_confirmed": true,
+  "pass": true,
+  "container_id": "e1c7d69ed2694d802e6a29e13e8a314106e6f255fb45e1dfbea0631f571bffff",
+  "state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-19T09:39:44.713800374Z",
+    "FinishedAt": "2026-10-19T09:41:05.549768744Z",
+    "Health": {
+      "Status": "unhealthy",
+      "FailingStreak": 4,
+      "Log": [
+        {
+          "Start": "2026-10-19T09:40:05.490389439Z",
+          "End": "2026-10-19T09:40:05.657604273Z",
+          "ExitCode": 1,
+          "Output": "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1344, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1386, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1432, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1381, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1141, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1085, in send\n    self.connect()\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1051, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.12/socket.py\", line 850, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 515, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 532, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+        },
+        {
+          "Start": "2026-10-19T09:40:09.714040014Z",
+          "End": "2026-10-19T09:40:09.91271368Z",
+          "ExitCode": 1,
+          "Output": "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1344, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1386, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1432, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1381, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1141, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1085, in send\n    self.connect()\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1051, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.12/socket.py\", line 850, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 515, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 532, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+        },
+        {
+          "Start": "2026-10-19T09:40:24.912636453Z",
+          "End": "2026-10-19T09:40:25.137002066Z",
+          "ExitCode": 1,
+          "Output": "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1344, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1386, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1432, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1381, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1141, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1085, in send\n    self.connect()\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1051, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.12/socket.py\", line 850, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 515, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 532, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+        },
+        {
+          "Start": "2026-10-19T09:40:40.137934356Z",
+          "End": "2026-10-19T09:40:40.301110829Z",
+          "ExitCode": 1,
+          "Output": "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1344, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1386, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1432, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1381, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1141, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1085, in send\n    self.connect()\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1051, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.12/socket.py\", line 850, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 515, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 532, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+        },
+        {
+          "Start": "2026-10-19T09:40:55.300667579Z",
+          "End": "2026-10-19T09:40:55.492549264Z",
+          "ExitCode": 1,
+          "Output": "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1344, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1386, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1432, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1381, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1141, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1085, in send\n    self.connect()\n  File \"/usr/local/lib/python3.12/http/client.py\", line 1051, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.12/socket.py\", line 850, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 515, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 532, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+        }
+      ]
+    }
+  },
+  "effective_host_config": {
+    "Memory": 805306368,
+    "MemorySwap": 805306368,
+    "NanoCpus": 2000000000,
+    "NetworkMode": "none",
+    "PortBindings": {}
+  },
+  "logs": "{\"period\": [\"2026-09-19\", \"2026-10-18\"], \"metric_codes\": [\"sales_orders\", \"ads\", \"stocks\", \"pnl\", \"abc_analysis\", \"buyout_rate\", \"oos_risk\", \"wb_deductions\", \"ad_performance\", \"warehouse_stocks\", \"unit_economics\", \"returns_cancellations\", \"organic_vs_ads\", \"ad_funnel\", \"cost_structure\", \"wb_commission_rate\", \"stock_in_transit\", \"weekday_pattern\", \"wb_incident_losses\", \"frozen_capital\", \"roi_by_sku\"], \"before\": {\"memory.peak\": \"101425152\", \"memory.current\": \"101425152\", \"memory.max\": \"805306368\", \"memory.swap.max\": \"0\", \"memory.events\": \"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\"}, \"ok\": true, \"bytes\": 1119012, \"sha256\": \"f9d467433cbcf413fd5625a3efd4b47574a02601ae98cf3dc77305a958b9707b\", \"seconds\": 79.02, \"after\": {\"memory.peak\": \"719638528\", \"memory.current\": \"110587904\", \"memory.max\": \"805306368\", \"memory.swap.max\": \"0\", \"memory.events\": \"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\"}, \"peak_samples\": [{\"seconds\": 0.0, \"peak_bytes\": 101425152, \"completed_pngs\": 0}, {\"seconds\": 0.1, \"peak_bytes\": 114405376, \"completed_pngs\": 0}, {\"seconds\": 0.2, \"peak_bytes\": 114712576, \"completed_pngs\": 0}, {\"seconds\": 0.38, \"peak_bytes\": 119754752, \"completed_pngs\": 0}, {\"seconds\": 0.48, \"peak_bytes\": 125284352, \"completed_pngs\": 0}, {\"seconds\": 0.58, \"peak_bytes\": 133025792, \"completed_pngs\": 0}, {\"seconds\": 0.68, \"peak_bytes\": 138375168, \"completed_pngs\": 0}, {\"seconds\": 0.78, \"peak_bytes\": 143880192, \"completed_pngs\": 0}, {\"seconds\": 0.88, \"peak_bytes\": 152334336, \"completed_pngs\": 0}, {\"seconds\": 0.98, \"peak_bytes\": 168325120, \"completed_pngs\": 0}, {\"seconds\": 1.08, \"peak_bytes\": 185081856, \"completed_pngs\": 0}, {\"seconds\": 1.18, \"peak_bytes\": 191635456, \"completed_pngs\": 0}, {\"seconds\": 1.28, \"peak_bytes\": 200204288, \"completed_pngs\": 0}, {\"seconds\": 1.38, \"peak_bytes\": 209903616, \"completed_pngs\": 0}, {\"seconds\": 1.48, \"peak_bytes\": 216453120, \"completed_pngs\": 0}, {\"seconds\": 1.58, \"peak_bytes\": 221425664, \"completed_pngs\": 0}, {\"seconds\": 1.68, \"peak_bytes\": 226144256, \"completed_pngs\": 0}, {\"seconds\": 1.78, \"peak_bytes\": 231120896, \"completed_pngs\": 0}, {\"seconds\": 1.88, \"peak_bytes\": 235839488, \"completed_pngs\": 0}, {\"seconds\": 1.99, \"peak_bytes\": 238460928, \"completed_pngs\": 0}, {\"seconds\": 2.09, \"peak_bytes\": 240287744, \"completed_pngs\": 0}, {\"seconds\": 2.19, \"peak_bytes\": 242909184, \"completed_pngs\": 0}, {\"seconds\": 2.29, \"peak_bytes\": 248676352, \"completed_pngs\": 0}, {\"seconds\": 2.39, \"peak_bytes\": 254963712, \"completed_pngs\": 0}, {\"seconds\": 2.49, \"peak_bytes\": 260726784, \"completed_pngs\": 0}, {\"seconds\": 2.59, \"peak_bytes\": 265965568, \"completed_pngs\": 0}, {\"seconds\": 2.69, \"peak_bytes\": 270946304, \"completed_pngs\": 0}, {\"seconds\": 2.79, \"peak_bytes\": 275398656, \"completed_pngs\": 0}, {\"seconds\": 2.89, \"peak_bytes\": 282210304, \"completed_pngs\": 0}, {\"seconds\": 2.99, \"peak_bytes\": 289546240, \"completed_pngs\": 0}, {\"seconds\": 3.09, \"peak_bytes\": 294264832, \"completed_pngs\": 0}, {\"seconds\": 3.19, \"peak_bytes\": 296099840, \"completed_pngs\": 0}, {\"seconds\": 3.29, \"peak_bytes\": 304480256, \"completed_pngs\": 0}, {\"seconds\": 3.39, \"peak_bytes\": 311672832, \"completed_pngs\": 0}, {\"seconds\": 3.49, \"peak_bytes\": 323108864, \"completed_pngs\": 0}, {\"seconds\": 3.59, \"peak_bytes\": 332865536, \"completed_pngs\": 0}, {\"seconds\": 3.69, \"peak_bytes\": 336273408, \"completed_pngs\": 0}, {\"seconds\": 3.79, \"peak_bytes\": 336834560, \"completed_pngs\": 0}, {\"seconds\": 3.9, \"peak_bytes\": 342601728, \"completed_pngs\": 0}, {\"seconds\": 4.0, \"peak_bytes\": 348889088, \"completed_pngs\": 0}, {\"seconds\": 4.1, \"peak_bytes\": 353607680, \"completed_pngs\": 0}, {\"seconds\": 4.2, \"peak_bytes\": 358588416, \"completed_pngs\": 0}, {\"seconds\": 4.3, \"peak_bytes\": 363298816, \"completed_pngs\": 0}, {\"seconds\": 4.4, \"peak_bytes\": 368803840, \"completed_pngs\": 0}, {\"seconds\": 4.5, \"peak_bytes\": 369061888, \"completed_pngs\": 0}, {\"seconds\": 4.6, \"peak_bytes\": 374042624, \"completed_pngs\": 0}, {\"seconds\": 4.7, \"peak_bytes\": 381906944, \"completed_pngs\": 0}, {\"seconds\": 4.8, \"peak_bytes\": 387145728, \"completed_pngs\": 0}, {\"seconds\": 4.9, \"peak_bytes\": 392646656, \"completed_pngs\": 0}, {\"seconds\": 5.0, \"peak_bytes\": 397062144, \"completed_pngs\": 0}, {\"seconds\": 5.1, \"peak_bytes\": 403091456, \"completed_pngs\": 0}, {\"seconds\": 5.2, \"peak_bytes\": 407019520, \"completed_pngs\": 0}, {\"seconds\": 5.3, \"peak_bytes\": 412000256, \"completed_pngs\": 0}, {\"seconds\": 5.4, \"peak_bytes\": 418025472, \"completed_pngs\": 0}, {\"seconds\": 5.5, \"peak_bytes\": 423788544, \"completed_pngs\": 0}, {\"seconds\": 5.6, \"peak_bytes\": 427925504, \"completed_pngs\": 0}, {\"seconds\": 5.71, \"peak_bytes\": 433430528, \"completed_pngs\": 0}, {\"seconds\": 5.81, \"peak_bytes\": 437354496, \"completed_pngs\": 0}, {\"seconds\": 5.91, \"peak_bytes\": 439451648, \"completed_pngs\": 0}, {\"seconds\": 6.01, \"peak_bytes\": 444694528, \"completed_pngs\": 0}, {\"seconds\": 6.11, \"peak_bytes\": 449937408, \"completed_pngs\": 0}, {\"seconds\": 6.21, \"peak_bytes\": 457273344, \"completed_pngs\": 0}, {\"seconds\": 6.31, \"peak_bytes\": 463036416, \"completed_pngs\": 0}, {\"seconds\": 6.41, \"peak_bytes\": 469065728, \"completed_pngs\": 0}, {\"seconds\": 6.51, \"peak_bytes\": 470372352, \"completed_pngs\": 0}, {\"seconds\": 6.61, \"peak_bytes\": 494215168, \"completed_pngs\": 0}, {\"seconds\": 6.71, \"peak_bytes\": 520474624, \"completed_pngs\": 0}, {\"seconds\": 6.81, \"peak_bytes\": 524775424, \"completed_pngs\": 0}, {\"seconds\": 6.91, \"peak_bytes\": 537313280, \"completed_pngs\": 0}, {\"seconds\": 7.11, \"peak_bytes\": 537317376, \"completed_pngs\": 0}, {\"seconds\": 7.31, \"peak_bytes\": 543399936, \"completed_pngs\": 0}, {\"seconds\": 11.83, \"peak_bytes\": 543518720, \"completed_pngs\": 0}, {\"seconds\": 11.93, \"peak_bytes\": 550592512, \"completed_pngs\": 0}, {\"seconds\": 12.03, \"peak_bytes\": 557666304, \"completed_pngs\": 0}, {\"seconds\": 12.13, \"peak_bytes\": 564473856, \"completed_pngs\": 0}, {\"seconds\": 12.23, \"peak_bytes\": 571547648, \"completed_pngs\": 0}, {\"seconds\": 12.33, \"peak_bytes\": 578359296, \"completed_pngs\": 0}, {\"seconds\": 12.43, \"peak_bytes\": 581763072, \"completed_pngs\": 0}, {\"seconds\": 12.53, \"peak_bytes\": 589099008, \"completed_pngs\": 0}, {\"seconds\": 12.63, \"peak_bytes\": 592764928, \"completed_pngs\": 0}, {\"seconds\": 12.73, \"peak_bytes\": 596434944, \"completed_pngs\": 0}, {\"seconds\": 12.84, \"peak_bytes\": 600100864, \"completed_pngs\": 0}, {\"seconds\": 12.94, \"peak_bytes\": 606388224, \"completed_pngs\": 0}, {\"seconds\": 13.04, \"peak_bytes\": 610578432, \"completed_pngs\": 0}, {\"seconds\": 13.14, \"peak_bytes\": 614768640, \"completed_pngs\": 0}, {\"seconds\": 13.24, \"peak_bytes\": 617168896, \"completed_pngs\": 0}, {\"seconds\": 13.34, \"peak_bytes\": 631062528, \"completed_pngs\": 0}, {\"seconds\": 13.44, \"peak_bytes\": 655298560, \"completed_pngs\": 0}, {\"seconds\": 13.54, \"peak_bytes\": 671694848, \"completed_pngs\": 0}, {\"seconds\": 13.74, \"peak_bytes\": 673447936, \"completed_pngs\": 0}, {\"seconds\": 13.84, \"peak_bytes\": 690483200, \"completed_pngs\": 0}, {\"seconds\": 13.94, \"peak_bytes\": 705847296, \"completed_pngs\": 0}, {\"seconds\": 14.04, \"peak_bytes\": 712019968, \"completed_pngs\": 0}, {\"seconds\": 36.12, \"peak_bytes\": 716754944, \"completed_pngs\": 0}, {\"seconds\": 36.62, \"peak_bytes\": 719638528, \"completed_pngs\": 0}]}\n",
+  "result": {
+    "period": [
+      "2026-09-19",
+      "2026-10-18"
+    ],
+    "metric_codes": [
+      "sales_orders",
+      "ads",
+      "stocks",
+      "pnl",
+      "abc_analysis",
+      "buyout_rate",
+      "oos_risk",
+      "wb_deductions",
+      "ad_performance",
+      "warehouse_stocks",
+      "unit_economics",
+      "returns_cancellations",
+      "organic_vs_ads",
+      "ad_funnel",
+      "cost_structure",
+      "wb_commission_rate",
+      "stock_in_transit",
+      "weekday_pattern",
+      "wb_incident_losses",
+      "frozen_capital",
+      "roi_by_sku"
+    ],
+    "before": {
+      "memory.peak": "101425152",
+      "memory.current": "101425152",
+      "memory.max": "805306368",
+      "memory.swap.max": "0",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    "ok": true,
+    "bytes": 1119012,
+    "sha256": "f9d467433cbcf413fd5625a3efd4b47574a02601ae98cf3dc77305a958b9707b",
+    "seconds": 79.02,
+    "after": {
+      "memory.peak": "719638528",
+      "memory.current": "110587904",
+      "memory.max": "805306368",
+      "memory.swap.max": "0",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    "peak_samples": [
+      {
+        "seconds": 0.0,
+        "peak_bytes": 101425152,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.1,
+        "peak_bytes": 114405376,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.2,
+        "peak_bytes": 114712576,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.38,
+        "peak_bytes": 119754752,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.48,
+        "peak_bytes": 125284352,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.58,
+        "peak_bytes": 133025792,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.68,
+        "peak_bytes": 138375168,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.78,
+        "peak_bytes": 143880192,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.88,
+        "peak_bytes": 152334336,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 0.98,
+        "peak_bytes": 168325120,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.08,
+        "peak_bytes": 185081856,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.18,
+        "peak_bytes": 191635456,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.28,
+        "peak_bytes": 200204288,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.38,
+        "peak_bytes": 209903616,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.48,
+        "peak_bytes": 216453120,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.58,
+        "peak_bytes": 221425664,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.68,
+        "peak_bytes": 226144256,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.78,
+        "peak_bytes": 231120896,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.88,
+        "peak_bytes": 235839488,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 1.99,
+        "peak_bytes": 238460928,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.09,
+        "peak_bytes": 240287744,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.19,
+        "peak_bytes": 242909184,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.29,
+        "peak_bytes": 248676352,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.39,
+        "peak_bytes": 254963712,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.49,
+        "peak_bytes": 260726784,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.59,
+        "peak_bytes": 265965568,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.69,
+        "peak_bytes": 270946304,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.79,
+        "peak_bytes": 275398656,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.89,
+        "peak_bytes": 282210304,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 2.99,
+        "peak_bytes": 289546240,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.09,
+        "peak_bytes": 294264832,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.19,
+        "peak_bytes": 296099840,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.29,
+        "peak_bytes": 304480256,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.39,
+        "peak_bytes": 311672832,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.49,
+        "peak_bytes": 323108864,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.59,
+        "peak_bytes": 332865536,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.69,
+        "peak_bytes": 336273408,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.79,
+        "peak_bytes": 336834560,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 3.9,
+        "peak_bytes": 342601728,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.0,
+        "peak_bytes": 348889088,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.1,
+        "peak_bytes": 353607680,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.2,
+        "peak_bytes": 358588416,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.3,
+        "peak_bytes": 363298816,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.4,
+        "peak_bytes": 368803840,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.5,
+        "peak_bytes": 369061888,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.6,
+        "peak_bytes": 374042624,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.7,
+        "peak_bytes": 381906944,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.8,
+        "peak_bytes": 387145728,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 4.9,
+        "peak_bytes": 392646656,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.0,
+        "peak_bytes": 397062144,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.1,
+        "peak_bytes": 403091456,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.2,
+        "peak_bytes": 407019520,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.3,
+        "peak_bytes": 412000256,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.4,
+        "peak_bytes": 418025472,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.5,
+        "peak_bytes": 423788544,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.6,
+        "peak_bytes": 427925504,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.71,
+        "peak_bytes": 433430528,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.81,
+        "peak_bytes": 437354496,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 5.91,
+        "peak_bytes": 439451648,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.01,
+        "peak_bytes": 444694528,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.11,
+        "peak_bytes": 449937408,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.21,
+        "peak_bytes": 457273344,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.31,
+        "peak_bytes": 463036416,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.41,
+        "peak_bytes": 469065728,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.51,
+        "peak_bytes": 470372352,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.61,
+        "peak_bytes": 494215168,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.71,
+        "peak_bytes": 520474624,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.81,
+        "peak_bytes": 524775424,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 6.91,
+        "peak_bytes": 537313280,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 7.11,
+        "peak_bytes": 537317376,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 7.31,
+        "peak_bytes": 543399936,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 11.83,
+        "peak_bytes": 543518720,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 11.93,
+        "peak_bytes": 550592512,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.03,
+        "peak_bytes": 557666304,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.13,
+        "peak_bytes": 564473856,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.23,
+        "peak_bytes": 571547648,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.33,
+        "peak_bytes": 578359296,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.43,
+        "peak_bytes": 581763072,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.53,
+        "peak_bytes": 589099008,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.63,
+        "peak_bytes": 592764928,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.73,
+        "peak_bytes": 596434944,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.84,
+        "peak_bytes": 600100864,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 12.94,
+        "peak_bytes": 606388224,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.04,
+        "peak_bytes": 610578432,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.14,
+        "peak_bytes": 614768640,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.24,
+        "peak_bytes": 617168896,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.34,
+        "peak_bytes": 631062528,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.44,
+        "peak_bytes": 655298560,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.54,
+        "peak_bytes": 671694848,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.74,
+        "peak_bytes": 673447936,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.84,
+        "peak_bytes": 690483200,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 13.94,
+        "peak_bytes": 705847296,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 14.04,
+        "peak_bytes": 712019968,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 36.12,
+        "peak_bytes": 716754944,
+        "completed_pngs": 0
+      },
+      {
+        "seconds": 36.62,
+        "peak_bytes": 719638528,
+        "completed_pngs": 0
+      }
+    ],
+    "pages": 11,
+    "extracted_text_chars": 3673,
+    "pdf_sha256_verified": true
+  },
+  "memory_events_delta": {
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0
+  }
+}

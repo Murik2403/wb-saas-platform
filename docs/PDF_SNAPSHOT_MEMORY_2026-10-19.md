@@ -11,3 +11,7 @@ A fresh-process synthetic measurement (`python scripts/profile_pdf_snapshot_copy
 The dashboard-build peak occurs before copying, so this change cannot alone solve the largest-database OOM. Full container acceptance and 20/25/30 on the final combined candidate remain separate.
 
 Verification: 127 report tests PASS, then 3 fresh-process worker equivalence tests PASS (105.94 s) with a dedicated pytest basetemp: all 21 PNG hashes/title/summary match the per-metric baseline, full PDF text/page count match the in-process renderer, failing metric is reported. An earlier parallel run overlapped pytest temporary directories and failed after its first test; isolated rerun above passes. New isolation tests were first run red before adding the helper. `git diff --check` and compileall pass. `graphify update .` completed (code AST only). No deployment.
+
+## Codex follow-up: full large-PDF acceptance
+
+The later code through ae4dc15 completes the full 21-metric PDF on this 243 MiB synthetic database at 30 and 90 days under 768 MiB with no swap, no pressure/OOM events. Details, limits of the claim and preserved failures: [LARGE_PDF_OOM_ACCEPTANCE_2026-10-19.md](LARGE_PDF_OOM_ACCEPTANCE_2026-10-19.md). This supersedes the open full-PDF OOM status above for this specific scenario; the original measurements remain historical.

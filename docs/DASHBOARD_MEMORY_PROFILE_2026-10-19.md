@@ -84,3 +84,7 @@ Equality checks: `DashboardData` (daily, products, ads, stocks, alerts, FIFO sum
 | full PDF, 768 MiB container, 243 MiB base | OOM | OOM | |
 
 The chunked read costs about 5-8 s on this base (Python loop over the rows to check the value types); it is the price of exact types and could be cut by a typed read of columns whose SQLite declared type is uniform. Still open: the 243 MiB base does not fit in 768 MiB for the PDF (`build_dashboard` alone peaks at 757 MiB, and the PDF worker holds a snapshot plus a copy per metric). Next levers: the period filter in SQL behind the ISO guard, a typed fast path for the chunked read, and sharing the dashboard snapshot between metrics without a deep copy where a metric only reads it. Tests: 1341 tenant-app, 687 tenant-api.
+
+## Codex follow-up: full large-PDF acceptance
+
+The later code through ae4dc15 completes the full 21-metric PDF on this 243 MiB synthetic database at 30 and 90 days under 768 MiB with no swap, no pressure/OOM events. Details, limits of the claim and preserved failures: [LARGE_PDF_OOM_ACCEPTANCE_2026-10-19.md](LARGE_PDF_OOM_ACCEPTANCE_2026-10-19.md). This supersedes the open full-PDF OOM status above for this specific scenario; the original measurements remain historical.

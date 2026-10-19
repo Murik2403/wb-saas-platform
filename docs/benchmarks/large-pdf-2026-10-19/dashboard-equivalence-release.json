@@ -1,0 +1,70 @@
+[
+  {
+    "days": 1,
+    "identical": true,
+    "fields": [
+      "kpi",
+      "daily",
+      "products",
+      "ads",
+      "stocks",
+      "alerts",
+      "financial",
+      "financial_products",
+      "financial_unallocated",
+      "hourly",
+      "financial_fifo_summary"
+    ]
+  },
+  {
+    "days": 7,
+    "identical": true,
+    "fields": [
+      "kpi",
+      "daily",
+      "products",
+      "ads",
+      "stocks",
+      "alerts",
+      "financial",
+      "financial_products",
+      "financial_unallocated",
+      "hourly",
+      "financial_fifo_summary"
+    ]
+  },
+  {
+    "days": 30,
+    "identical": true,
+    "fields": [
+      "kpi",
+      "daily",
+      "products",
+      "ads",
+      "stocks",
+      "alerts",
+      "financial",
+      "financial_products",
+      "financial_unallocated",
+      "hourly",
+      "financial_fifo_summary"
+    ]
+  },
+  {
+    "days": 90,
+    "identical": true,
+    "fields": [
+      "kpi",
+      "daily",
+      "products",
+      "ads",
+      "stocks",
+      "alerts",
+      "financial",
+      "financial_products",
+      "financial_unallocated",
+      "hourly",
+      "financial_fifo_summary"
+    ]
+  }
+]
