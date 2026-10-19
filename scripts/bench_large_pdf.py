@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-WORKER = r'''import json,time,hashlib,traceback,sys,io
+WORKER = r'''import json,time,hashlib,traceback,sys,io,threading,glob
 from pathlib import Path
 from datetime import date,timedelta
 sys.path.insert(0,"/app/tenant-app")
@@ -32,13 +32,26 @@ with sqlite3.connect(DB_PATH) as c:
 end=date.fromisoformat(last[:10]); start=end-timedelta(days=int(sys.argv[1])-1)
 r={'period':[str(start),str(end)],'metric_codes':list(METRIC_BUILDERS),'before':memory()}
 t=time.monotonic()
+stop=threading.Event(); peaks=[]
+def sample():
+    previous=0
+    while not stop.is_set():
+        peak=int(Path('/sys/fs/cgroup/memory.peak').read_text())
+        if peak>previous:
+            peaks.append({'seconds':round(time.monotonic()-t,2),'peak_bytes':peak,
+                          'completed_pngs':len(glob.glob('/tmp/marketshelper-report-*/*.png'))})
+            previous=peak
+        stop.wait(.1)
+thread=threading.Thread(target=sample,daemon=True); thread.start()
 try:
     pdf=_render_report_pdf('Large synthetic PDF',list(METRIC_BUILDERS),start,end)
     Path('/work/full.pdf').write_bytes(pdf)
     r.update(ok=True,bytes=len(pdf),sha256=hashlib.sha256(pdf).hexdigest())
 except BaseException as e:
     r.update(ok=False,error=str(e),traceback=traceback.format_exc())
+stop.set(); thread.join(timeout=2)
 r.update(seconds=round(time.monotonic()-t,2),after=memory())
+r['peak_samples']=peaks
 Path('/work/result.json').write_text(json.dumps(r,indent=2))
 print(json.dumps(r),flush=True)
 if not r['ok']:sys.exit(1)

@@ -14,7 +14,6 @@ Exit 3 names the failing metric on stderr.
 from __future__ import annotations
 
 import copy
-import gc
 import json
 import sys
 from dataclasses import fields
@@ -96,7 +95,7 @@ def main() -> None:
             sys.stderr.write(f"{code}: {type(exc).__name__}: {exc}\n")
             raise SystemExit(3)
         del result
-        gc.collect()
+        release_report_memory()
     (out / "done.json").write_text(json.dumps({"metrics": len(codes), "peak_rss_kb": peak_rss_kb(), "dashboard_builds": len(snapshots), "arrow_memory_pool": allocator}), encoding="utf-8")
 
 
