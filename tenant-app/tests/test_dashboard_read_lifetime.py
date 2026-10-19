@@ -42,7 +42,8 @@ class DashboardReadLifetimeTests(DbTestCase):
                 prefetched = calculations.read_financial(omit_raw=True)
                 with patch.object(calculations, "read_financial", return_value=prefetched):
                     reference = calculations.build_dashboard(start, end)
-                actual = calculations.build_dashboard(start, end)
+                from reports.memory import release_report_memory
+                actual = calculations.build_dashboard(start, end, release_memory=release_report_memory)
                 for field in reference.__dataclass_fields__:
                     expected, got = getattr(reference, field), getattr(actual, field)
                     if isinstance(expected, pd.DataFrame):

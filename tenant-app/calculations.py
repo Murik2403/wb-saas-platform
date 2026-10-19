@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -204,7 +205,7 @@ def read_product_operation_totals(nm_id: int, start: date, end: date) -> tuple[f
     return float(row['buyer_revenue']), float(row['units'])
 
 
-def build_dashboard(start: date, end: date) -> DashboardData:
+def build_dashboard(start: date, end: date, *, release_memory: Callable[[], None] | None = None) -> DashboardData:
     orders = _prepare_dates(read_table("orders", omit_raw=True), "order_date")
     sales = _prepare_dates(read_table("sales", omit_raw=True), "sale_date")
     ads_all = _prepare_dates(read_table("ads_daily", omit_raw=True), "day")
@@ -490,6 +491,8 @@ def build_dashboard(start: date, end: date) -> DashboardData:
     financial_fifo_summary = summarize_financial_fifo_reconciliation(pd.DataFrame())
     financial_unallocated = pd.DataFrame()
     # Operational frames are consumed above; do not hold them during the financial SQL read.
+    if release_memory is not None:
+        release_memory()
     financial_df = read_financial(omit_raw=True)
     if not financial_df.empty:
         f = financial_df  # not used again: no copy is needed to protect it
@@ -639,14 +642,20 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # Project each operation-date financial row exactly once. This replaces
         # the former positive-net-units x current-cost formula, which lost FIFO
         # history and did not reverse COGS in the return's operation period.
+        if release_memory is not None:
+            release_memory()
         reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())
         financial_fifo_summary = summarize_financial_fifo_reconciliation(reconciliation)
         financial['shared_fifo_manual_source_rows'] = int((reconciliation['reason']=='shared_fifo_manual_source').sum()) if not reconciliation.empty else 0
         financial['migration_manual_source_rows'] = int(reconciliation['reason'].str.startswith('migration_',na=False).sum()) if not reconciliation.empty else 0
         if financial['shared_fifo_manual_source_rows'] or financial['migration_manual_source_rows']:
             financial['financial_period_complete'] = False
+        if release_memory is not None:
+            release_memory()
         _cogs_rows, cogs_by_nm, cogs_store = project_historical_cogs(reconciliation)
         reconciliation = _cogs_rows = None
+        if release_memory is not None:
+            release_memory()
         financial["cost"] = float(cogs_store["cogs_rub"])
         for field in (
             "exact_fifo_cogs_rub", "current_cost_estimate_rub", "insufficient_units",

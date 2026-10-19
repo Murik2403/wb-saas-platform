@@ -72,6 +72,7 @@ def test_every_metric_is_identical_to_the_one_process_per_metric_output(data_dir
     assert not differing, f"metrics whose title, summary or image changed: {differing}"
     assert done["metrics"] == 21 and done["dashboard_builds"] == 1, "the dashboard must be computed once per report, not once per metric"
     assert done["peak_rss_kb"] > 0
+    assert done["arrow_memory_pool"] in {"system", "unavailable"}
 
 
 def pdf_text(data_dir, tmp_path, isolated, name):

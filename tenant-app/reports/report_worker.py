@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from . import metrics
+from .memory import configure_report_allocator, release_report_memory
 from calculations import DashboardData, build_dashboard as _build_dashboard
 
 DPI = 125  # identical to metric_worker
@@ -73,12 +74,13 @@ def main() -> None:
     start_text, end_text, out_dir, *codes = sys.argv[1:]
     start, end = date.fromisoformat(start_text), date.fromisoformat(end_text)
     out = Path(out_dir)
+    allocator = configure_report_allocator()
     snapshots: dict = {}
 
     def shared_dashboard(first, last):
         key = (first, last)
         if key not in snapshots:
-            snapshots[key] = _build_dashboard(first, last)
+            snapshots[key] = _build_dashboard(first, last, release_memory=release_report_memory)
         return _copy_dashboard(snapshots[key])
 
     metrics.build_dashboard = shared_dashboard  # the metrics module looks the name up at call time
@@ -95,7 +97,7 @@ def main() -> None:
             raise SystemExit(3)
         del result
         gc.collect()
-    (out / "done.json").write_text(json.dumps({"metrics": len(codes), "peak_rss_kb": peak_rss_kb(), "dashboard_builds": len(snapshots)}), encoding="utf-8")
+    (out / "done.json").write_text(json.dumps({"metrics": len(codes), "peak_rss_kb": peak_rss_kb(), "dashboard_builds": len(snapshots), "arrow_memory_pool": allocator}), encoding="utf-8")
 
 
 if __name__ == "__main__":
