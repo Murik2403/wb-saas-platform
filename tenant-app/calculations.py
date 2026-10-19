@@ -606,6 +606,36 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         financial["net_units"] = financial["sale_units"] - financial["return_units"]
         financial["report_rows"] = float(len(f))
 
+        fp = f  # f is not read after this point
+        f = None
+        if "supplier_article" not in fp.columns:
+            fp["supplier_article"] = ""
+        fp["sale_units"] = np.where(is_sale, quantity_abs, 0)
+        fp["return_units"] = np.where(is_return, quantity_abs, 0)
+        fp["buyer_revenue"] = fp["retail_price_withdisc_rub"] * fp["signed_units"]
+
+        grouped = fp.groupby(["nm_id"], as_index=False).agg(
+            supplier_article=("supplier_article", lambda x: next((str(v) for v in x if str(v)), "")),
+            sale_units=("sale_units", "sum"),
+            return_units=("return_units", "sum"),
+            units=("signed_units", "sum"),
+            buyer_revenue=("buyer_revenue", "sum"),
+            sales=("retail_amount", "sum"),
+            to_pay=("ppvz_for_pay", "sum"),
+            logistics=("delivery_rub", "sum"),
+            rebill_logistics=("rebill_logistic_cost", "sum"),
+            storage=("storage_fee", "sum"),
+            penalties=("penalty", "sum"),
+            deductions=("deduction", "sum"),
+            acceptance=("acceptance", "sum"),
+            additional_payment=("additional_payment", "sum"),
+        )
+        # Only SKU aggregates are needed below. Free the operation working set
+        # before constructing the independent FIFO reconciliation window.
+        fp = None
+        quantity_abs = is_sale = is_return = return_documents = event_types = None
+        reasons = promotion_settlements = commission_source = None
+
         # Project each operation-date financial row exactly once. This replaces
         # the former positive-net-units x current-cost formula, which lost FIFO
         # history and did not reverse COGS in the return's operation period.
@@ -653,30 +683,6 @@ def build_dashboard(start: date, end: date) -> DashboardData:
         # 2) calculated article profit after allocating common store expenses.
         # Deductions and technical/inactive article rows remain at store level and
         # are deliberately not spread across products.
-        fp = f  # f is not read after this point
-        f = None
-        if "supplier_article" not in fp.columns:
-            fp["supplier_article"] = ""
-        fp["sale_units"] = np.where(is_sale, quantity_abs, 0)
-        fp["return_units"] = np.where(is_return, quantity_abs, 0)
-        fp["buyer_revenue"] = fp["retail_price_withdisc_rub"] * fp["signed_units"]
-
-        grouped = fp.groupby(["nm_id"], as_index=False).agg(
-            supplier_article=("supplier_article", lambda x: next((str(v) for v in x if str(v)), "")),
-            sale_units=("sale_units", "sum"),
-            return_units=("return_units", "sum"),
-            units=("signed_units", "sum"),
-            buyer_revenue=("buyer_revenue", "sum"),
-            sales=("retail_amount", "sum"),
-            to_pay=("ppvz_for_pay", "sum"),
-            logistics=("delivery_rub", "sum"),
-            rebill_logistics=("rebill_logistic_cost", "sum"),
-            storage=("storage_fee", "sum"),
-            penalties=("penalty", "sum"),
-            deductions=("deduction", "sum"),
-            acceptance=("acceptance", "sum"),
-            additional_payment=("additional_payment", "sum"),
-        )
         ad_by_nm = pd.DataFrame(columns=["nm_id", "ad_spend"])
         if not finance_ads_products.empty and "nm_id" in finance_ads_products.columns:
             ad_by_nm = finance_ads_products.groupby("nm_id", as_index=False)["spend"].sum().rename(columns={"spend": "ad_spend"})

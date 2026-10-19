@@ -368,6 +368,11 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
             projected = project(conn, sources, apply_projection(conn, sources, projected))
             for index, row in zip(protected, projected):
                 rows[index] = tuple(row[column] for column in _COLUMNS)
+    # The output tuples own every value still needed. Do not keep source dicts,
+    # event payloads and lookup sets alive while pandas allocates its columns.
+    financial_rows = fifo_events = allocation_rows = None
+    relevant_srids = relevant_nm_ids = baseline_rates = None
+    sources = projected = None
     return pd.DataFrame.from_records(rows, columns=_COLUMNS)
 
 

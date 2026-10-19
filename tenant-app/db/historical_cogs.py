@@ -91,7 +91,7 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
         "event_type", "nm_id", "units", "status", "reason",
         "eligible_fifo_cogs_rub", "baseline_cogs_rub",
     )]
-    details: list[dict[str, Any]] = []
+    details: list[tuple[Any, ...]] = []
     for source_id, row in zip(ids.to_numpy(), source.itertuples(index=False, name=None)):
         kind, raw_nm, raw_quantity, raw_status, raw_reason, raw_exact, raw_baseline = (
             row[position] if position is not None else None for position in positions
@@ -132,17 +132,14 @@ def project_historical_cogs(reconciliation: pd.DataFrame) -> tuple[pd.DataFrame,
             else:
                 cogs_source = "insufficient"
                 reason = reason or "current_cost_baseline_missing_or_zero"
-        details.append({
-            "rrd_id": int(source_id) if pd.notna(source_id) else None,
-            "nm_id": nm_id,
-            "event_type": event_type,
-            "units": units,
-            "cogs_rub": float(cogs),
-            "cogs_source": cogs_source,
-            "reason": reason,
-        })
+        details.append((
+            int(source_id) if pd.notna(source_id) else None,
+            nm_id, event_type, units, float(cogs), cogs_source, reason,
+        ))
 
-    detail = pd.DataFrame(details, columns=_DETAIL_COLUMNS)
+    detail = pd.DataFrame.from_records(details, columns=_DETAIL_COLUMNS)
+    # Totals need the frame only, not a second copy of every detail row.
+    details = id_counts = ids = None
     if detail.empty:
         return detail, pd.DataFrame(columns=_GROUP_COLUMNS), _totals(detail, include_nm_id=False)
 

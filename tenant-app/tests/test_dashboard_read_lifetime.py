@@ -49,3 +49,22 @@ class DashboardReadLifetimeTests(DbTestCase):
                         pd.testing.assert_frame_equal(expected, got, check_exact=True)
                     else:
                         self.assertEqual(expected, got, field)
+
+    def test_financial_rows_are_aggregated_and_released_before_fifo(self):
+        self.seed()
+        refs = []
+        groupby = pd.DataFrame.groupby
+        fifo = calculations.read_financial_fifo_reconciliation
+
+        def grouped(frame, *args, **kwargs):
+            if "rrd_id" in frame and "retail_amount" in frame:
+                refs.append(weakref.ref(frame))
+            return groupby(frame, *args, **kwargs)
+
+        def reconcile(*args, **kwargs):
+            self.assertTrue(refs, "financial rows have not been aggregated before FIFO")
+            self.assertTrue(all(ref() is None for ref in refs), "financial frame still overlaps FIFO")
+            return fifo(*args, **kwargs)
+
+        with patch.object(pd.DataFrame, "groupby", grouped), patch.object(calculations, "read_financial_fifo_reconciliation", reconcile):
+            calculations.build_dashboard(date(2026, 9, 1), date(2026, 9, 30))
