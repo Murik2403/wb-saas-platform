@@ -1434,7 +1434,11 @@ def read_sql_chunked(sql: str, conn, params=()) -> pd.DataFrame:
     hold exactly those values) and all parts have the same dtype; the moment a column stops being that, its original Python
     values (recovered from the earlier parts, taken as fetched from later chunks) are collected and the column is built once with
     the whole read's inference. The result equals `pd.read_sql_query`, dtypes and index included."""
-    cursor = conn.execute(sql, tuple(params) if params else ())
+    return read_cursor_chunked(conn.execute(sql, tuple(params) if params else ()))
+
+
+def read_cursor_chunked(cursor) -> pd.DataFrame:
+    """Build exact-type columns from a bounded fetchmany cursor (SQL or owned records)."""
     columns = [description[0] for description in cursor.description]
     parts: dict[str, list] = {column: [] for column in columns}
     raw: dict[str, list | None] = {column: None for column in columns}

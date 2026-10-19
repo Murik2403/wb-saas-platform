@@ -127,3 +127,20 @@ class FinancialFifoStreamingTests(DbTestCase):
             self.assertEqual(list(window), first, 'all reconciliation passes must see one snapshot')
         with core.connect() as connection:
             self.assertEqual(connection.execute('SELECT quantity FROM financial_report WHERE rrd_id=1').fetchone()[0], 2)
+
+    def test_bounded_output_matches_whole_records_and_consumes_ownership(self):
+        from unittest.mock import patch
+        rows = []
+        for index in range(27):
+            values = dict.fromkeys(reconciliation._COLUMNS, None)
+            values.update(rrd_id=index+1, nm_id=123, operation_date='2026-06-02',
+                          event_type='sale', units=1, baseline_cogs_rub=10.5,
+                          eligible_fifo_cogs_rub=None if index<13 else 7.5,
+                          status='unmatched', reason='', matched_event_ids=[],
+                          layer_sources=['production'] if index%2 else [])
+            rows.append(tuple(values[column] for column in reconciliation._COLUMNS))
+        expected = pd.DataFrame.from_records(rows, columns=reconciliation._COLUMNS)
+        with patch.object(core, 'READ_CHUNK_ROWS', 4):
+            actual = reconciliation._records_frame(rows)
+        pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+        self.assertEqual(rows, [], 'output tuples must not overlap the completed frame')

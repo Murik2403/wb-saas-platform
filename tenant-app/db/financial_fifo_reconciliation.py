@@ -291,6 +291,24 @@ def _window_financial_rows(conn, start: date, end_exclusive: date, preserve_raw_
     return _FinancialWindow(conn, start, end_exclusive, preserve_raw_ids)
 
 
+def _records_frame(rows: list[tuple[Any, ...]]) -> pd.DataFrame:
+    """Consume owned output tuples in bounded chunks, preserving whole-read dtypes.
+
+    Converting all tuples at once overlaps the Python records and pandas' full
+    object matrix. The exact-type cursor builder releases each consumed chunk.
+    """
+    from .core import read_cursor_chunked
+    rows.reverse()
+
+    class Cursor:
+        description = [(column,) for column in _COLUMNS]
+
+        def fetchmany(self, size):
+            return [rows.pop() for _ in range(min(size, len(rows)))]
+
+    return read_cursor_chunked(Cursor())
+
+
 def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_local_fifo:bool=True) -> pd.DataFrame:
     """Return read-only financial-operation to FIFO diagnostics for an operation-date range."""
     start = date.fromisoformat(str(date_from))
@@ -386,7 +404,7 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
     financial_rows = fifo_events = allocation_rows = None
     relevant_srids = relevant_nm_ids = baseline_rates = None
     sources = projected = None
-    return pd.DataFrame.from_records(rows, columns=_COLUMNS)
+    return _records_frame(rows)
 
 
 def summarize_financial_fifo_reconciliation(rows: pd.DataFrame) -> dict[str, Any]:
@@ -401,6 +419,8 @@ def summarize_financial_fifo_reconciliation(rows: pd.DataFrame) -> dict[str, Any
             "exact_fifo_cogs_rub": 0.0,
             "status_counts": {},
         }
+    # Summary filters do not need source payloads or per-row event/layer lists.
+    rows = rows[["event_type", "status", "units", "eligible_fifo_cogs_rub"]]
     eligible = rows[rows["event_type"].isin(("sale", "return"))]
     counts = {str(key): int(value) for key, value in eligible["status"].value_counts().items()}
     exact = eligible[eligible["status"] == "exact"]

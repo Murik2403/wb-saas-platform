@@ -28,6 +28,8 @@ def _number(value: Any) -> float | None:
 
 
 def _totals(rows: pd.DataFrame, *, include_nm_id: bool) -> dict[str, Any]:
+    # Filters below need only these columns, never the per-row provenance payload.
+    rows = rows[["cogs_source", "units", "cogs_rub"]]
     events = rows[rows["cogs_source"].isin(("exact_fifo", "current_cost_estimate", "manual_source_fifo", "insufficient"))]
     exact = events[events["cogs_source"] == "exact_fifo"]
     estimated = events[events["cogs_source"].isin(("current_cost_estimate", "manual_source_fifo"))]
