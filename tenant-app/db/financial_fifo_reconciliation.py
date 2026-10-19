@@ -71,6 +71,7 @@ def _reconcile(
     fifo_events: list[dict[str, Any]],
     allocation_rows: list[dict[str, Any]],
     baseline_rates: dict[int, float],
+    *, output_columns=None, preserve_full_ids=frozenset(),
 ) -> list[tuple[Any, ...]]:
     """One tuple per financial row, in `_COLUMNS` order (a dict of 18 keys per row held a 177k-row window at ~1 KB each)."""
     allocations: dict[int, list[dict[str, Any]]] = defaultdict(list)
@@ -102,6 +103,12 @@ def _reconcile(
             financial_keys[(nm_id, srid, kind)] += 1
 
     output: list[tuple[Any, ...]] = []
+    columns = _COLUMNS if output_columns is None else output_columns
+
+    def append_result(result):
+        selected = _COLUMNS if result["rrd_id"] in preserve_full_ids else columns
+        output.append(tuple(result[column] for column in selected))
+
     for row in financial_rows:
         kind = _event_type(row)
         units = abs(int(row.get("quantity") or 0))
@@ -134,25 +141,25 @@ def _reconcile(
         }
         if not kind:
             result.update(status="excluded", reason="not_sale_or_return_operation")
-            output.append(tuple(result[column] for column in _COLUMNS))
+            append_result(result)
             continue
         if units <= 0:
             result.update(status="ambiguous", reason="financial_quantity_zero")
-            output.append(tuple(result[column] for column in _COLUMNS))
+            append_result(result)
             continue
         if not srid:
             result.update(status="unmatched", reason="financial_srid_missing")
-            output.append(tuple(result[column] for column in _COLUMNS))
+            append_result(result)
             continue
         key = (nm_id, srid, kind)
         if financial_keys[key] != 1:
             result.update(status="ambiguous", reason="duplicate_financial_rows_for_srid")
-            output.append(tuple(result[column] for column in _COLUMNS))
+            append_result(result)
             continue
         matches = events_by_key.get(key, [])
         if not matches:
             result.update(status="unmatched", reason="fifo_event_missing")
-            output.append(tuple(result[column] for column in _COLUMNS))
+            append_result(result)
             continue
         if sum(event["units"] for event in matches) != units:
             result.update(
@@ -160,7 +167,7 @@ def _reconcile(
                 matched_event_ids=[event["id"] for event in matches],
                 matched_units=sum(event["units"] for event in matches),
             )
-            output.append(tuple(result[column] for column in _COLUMNS))
+            append_result(result)
             continue
 
         result["matched_event_ids"] = [event["id"] for event in matches]
@@ -249,7 +256,7 @@ def _reconcile(
                 status=category, reason=";".join(unique_reasons) or "fifo_cost_not_verified",
                 observed_fifo_cost_rub=round(sum(event["fifo_cost_rub"] for event in matches), 2),
             )
-        output.append(tuple(result[column] for column in _COLUMNS))
+        append_result(result)
     return output
 
 
@@ -291,7 +298,7 @@ def _window_financial_rows(conn, start: date, end_exclusive: date, preserve_raw_
     return _FinancialWindow(conn, start, end_exclusive, preserve_raw_ids)
 
 
-def _records_frame(rows: list[tuple[Any, ...]]) -> pd.DataFrame:
+def _records_frame(rows: list[tuple[Any, ...]], columns=_COLUMNS) -> pd.DataFrame:
     """Consume owned output tuples in bounded chunks, preserving whole-read dtypes.
 
     Converting all tuples at once overlaps the Python records and pandas' full
@@ -301,7 +308,7 @@ def _records_frame(rows: list[tuple[Any, ...]]) -> pd.DataFrame:
     rows.reverse()
 
     class Cursor:
-        description = [(column,) for column in _COLUMNS]
+        description = [(column,) for column in columns]
 
         def fetchmany(self, size):
             return [rows.pop() for _ in range(min(size, len(rows)))]
@@ -309,12 +316,14 @@ def _records_frame(rows: list[tuple[Any, ...]]) -> pd.DataFrame:
     return read_cursor_chunked(Cursor())
 
 
-def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_local_fifo:bool=True) -> pd.DataFrame:
+def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_local_fifo:bool=True,for_dashboard:bool=False) -> pd.DataFrame:
     """Return read-only financial-operation to FIFO diagnostics for an operation-date range."""
+    output_columns = ("rrd_id", "nm_id", "event_type", "units", "baseline_cogs_rub",
+                      "status", "reason", "eligible_fifo_cogs_rub") if for_dashboard else _COLUMNS
     start = date.fromisoformat(str(date_from))
     end_exclusive = date.fromisoformat(str(date_to)) + timedelta(days=1)
     if end_exclusive <= start:
-        return pd.DataFrame(columns=_COLUMNS)
+        return pd.DataFrame(columns=output_columns)
     with connect() as conn:
         conn.execute('BEGIN')
         # Shared/manual history authenticates the entire original source row.
@@ -382,7 +391,11 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
                     nm_chunk,
                 ).fetchall()
                 baseline_rates.update({int(row["nm_id"]): max(0.0, float(row["cost_per_wb_unit"] or 0)) for row in costs})
-        rows = _reconcile(financial_rows, fifo_events, allocation_rows, baseline_rates)
+        if for_dashboard:
+            rows = _reconcile(financial_rows, fifo_events, allocation_rows, baseline_rates,
+                              output_columns=output_columns, preserve_full_ids=preserve_raw_ids)
+        else:
+            rows = _reconcile(financial_rows, fifo_events, allocation_rows, baseline_rates)
         # Only a row whose rrd_id is referenced by a binding, a projection or a migration document can be changed by the two
         # projections below (they look the row up by that id and skip it when there is none), and every such id is in
         # preserve_raw_ids. They get dicts and the full source rows; every other row stays a tuple and is not looked up.
@@ -398,13 +411,13 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
             projected = [dict(zip(_COLUMNS, rows[index])) for index in protected]
             projected = project(conn, sources, apply_projection(conn, sources, projected))
             for index, row in zip(protected, projected):
-                rows[index] = tuple(row[column] for column in _COLUMNS)
+                rows[index] = tuple(row[column] for column in output_columns)
     # The output tuples own every value still needed. Do not keep source dicts,
     # event payloads and lookup sets alive while pandas allocates its columns.
     financial_rows = fifo_events = allocation_rows = None
     relevant_srids = relevant_nm_ids = baseline_rates = None
     sources = projected = None
-    return _records_frame(rows)
+    return _records_frame(rows, output_columns)
 
 
 def summarize_financial_fifo_reconciliation(rows: pd.DataFrame) -> dict[str, Any]:

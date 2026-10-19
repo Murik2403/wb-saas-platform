@@ -165,3 +165,23 @@ class ProjectionPlumbingTests(FifoRowsEquivalenceTests):
         with patch("shared_warehouse_finance.apply_projection", lambda *a: calls.append(1)), patch("db.finished_history_import.project", lambda *a: calls.append(1)):
             reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30")
         self.assertEqual(calls, [])
+
+    def test_dashboard_projection_matches_full_frame_and_keeps_full_provenance(self):
+        self._fill()
+        self._protect(2, 5, 22)
+        full = reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30")
+        compact = reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30", for_dashboard=True)
+        self.assertEqual(len(compact.columns), 8)
+        pd.testing.assert_frame_equal(compact, full[list(compact.columns)], check_exact=True)
+        seen = []
+        def verify(conn, sources, rows):
+            for source, result in zip(sources, rows):
+                self.assertEqual(set(result), set(reconciliation._COLUMNS))
+                expected = dict(conn.execute('SELECT * FROM financial_report WHERE rrd_id=?', (source['rrd_id'],)).fetchone())
+                self.assertEqual(fingerprint(source), fingerprint(expected))
+            seen.append(True)
+            return rows
+        with patch('shared_warehouse_finance.apply_projection', verify), patch('db.finished_history_import.project', verify):
+            result = reconciliation.read_financial_fifo_reconciliation("2026-06-01", "2026-06-30", for_dashboard=True)
+        self.assertEqual(len(seen), 2)
+        pd.testing.assert_frame_equal(result, compact, check_exact=True)

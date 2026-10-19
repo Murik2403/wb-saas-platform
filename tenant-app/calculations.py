@@ -644,7 +644,7 @@ def build_dashboard(start: date, end: date, *, release_memory: Callable[[], None
         # history and did not reverse COGS in the return's operation period.
         if release_memory is not None:
             release_memory()
-        reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat())
+        reconciliation = read_financial_fifo_reconciliation(start.isoformat(), end.isoformat(), for_dashboard=True)
         financial_fifo_summary = summarize_financial_fifo_reconciliation(reconciliation)
         financial['shared_fifo_manual_source_rows'] = int((reconciliation['reason']=='shared_fifo_manual_source').sum()) if not reconciliation.empty else 0
         financial['migration_manual_source_rows'] = int(reconciliation['reason'].str.startswith('migration_',na=False).sum()) if not reconciliation.empty else 0

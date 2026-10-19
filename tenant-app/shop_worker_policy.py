@@ -39,4 +39,4 @@ def install():
     # explicit matching canonical source receipt is supplied by the bridge.
     import db.financial_fifo_reconciliation as reconciliation
     original_reader=reconciliation.read_financial_fifo_reconciliation
-    reconciliation.read_financial_fifo_reconciliation=lambda start,end:original_reader(start,end,allow_local_fifo=False)
+    reconciliation.read_financial_fifo_reconciliation=lambda start,end,*,for_dashboard=False:original_reader(start,end,allow_local_fifo=False,for_dashboard=for_dashboard)
