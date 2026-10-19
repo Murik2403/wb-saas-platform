@@ -3,7 +3,7 @@
 `metric_worker` starts a fresh interpreter per metric, which re-imports pandas and matplotlib 21 times and, for the
 thirteen metrics that call `calculations.build_dashboard`, re-reads and re-computes the same tables 13 times. This
 worker keeps the isolation that matters (the API process never holds the working set) but starts once and computes
-the dashboard once per (start, end). Each metric still receives its own deep copy, so a metric that edits a frame
+the dashboard once per (start, end). Each metric receives isolated metadata and copy-on-write frames, so a metric that edits a frame
 cannot change what the next one sees, and the figure is closed and the interpreter's garbage collected between
 metrics.
 
@@ -17,13 +17,15 @@ import copy
 import gc
 import json
 import sys
+from dataclasses import fields
 from datetime import date
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from . import metrics
-from calculations import build_dashboard as _build_dashboard
+from calculations import DashboardData, build_dashboard as _build_dashboard
 
 DPI = 125  # identical to metric_worker
 
@@ -50,6 +52,23 @@ def peak_rss_kb() -> int:
         return int(counters.PeakWorkingSetSize // 1024)
 
 
+def _copy_dashboard(snapshot: DashboardData) -> DashboardData:
+    """Isolate a metric without eagerly duplicating every cached frame.
+
+    Pandas 3 guarantees copy-on-write even if its deprecated option is false.
+    Earlier versions keep the previous deep-copy path: do not enable a global
+    pandas option here. Metadata still uses recursive deepcopy in either case.
+    """
+    if int(pd.__version__.split(".")[0]) < 3:
+        return copy.deepcopy(snapshot)
+    memo = {}
+    for field in fields(snapshot):
+        value = getattr(snapshot, field.name)
+        if isinstance(value, pd.DataFrame) and id(value) not in memo:
+            memo[id(value)] = value.copy(deep=False)
+    return copy.deepcopy(snapshot, memo)
+
+
 def main() -> None:
     start_text, end_text, out_dir, *codes = sys.argv[1:]
     start, end = date.fromisoformat(start_text), date.fromisoformat(end_text)
@@ -60,7 +79,7 @@ def main() -> None:
         key = (first, last)
         if key not in snapshots:
             snapshots[key] = _build_dashboard(first, last)
-        return copy.deepcopy(snapshots[key])
+        return _copy_dashboard(snapshots[key])
 
     metrics.build_dashboard = shared_dashboard  # the metrics module looks the name up at call time
     for index, code in enumerate(codes):

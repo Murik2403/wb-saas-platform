@@ -1,0 +1,25 @@
+{
+  "scope": "synthetic dashboard snapshot copying only; not full PDF or container acceptance",
+  "results": [
+    {
+      "mode": "eager",
+      "rows_per_frame": 1000000,
+      "pandas": "3.0.5",
+      "peak_before_kib": 185668,
+      "peak_after_copy_kib": 240436,
+      "copy_peak_growth_kib": 54768,
+      "shared_before_write": false,
+      "mutation_isolated": true
+    },
+    {
+      "mode": "cow",
+      "rows_per_frame": 1000000,
+      "pandas": "3.0.5",
+      "peak_before_kib": 185800,
+      "peak_after_copy_kib": 185800,
+      "copy_peak_growth_kib": 0,
+      "shared_before_write": true,
+      "mutation_isolated": true
+    }
+  ]
+}
