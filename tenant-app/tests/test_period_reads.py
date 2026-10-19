@@ -57,10 +57,19 @@ class PeriodReadTests(DbTestCase):
         end, start = TODAY, TODAY - timedelta(days=days - 1)
         if not force_whole:
             return calculations.build_dashboard(start, end)
-        with patch.object(calculations, "read_table_period", lambda *a, **k: None), \
-                patch.object(calculations, "read_latest_stocks", lambda **k: None), \
-                patch.object(calculations, "read_financial_period", lambda *a, **k: None):
+        with self._whole():
             return calculations.build_dashboard(start, end)
+
+    def _whole(self):
+        """Every period/latest-snapshot read answers None, so the readers fall back to the whole table (the previous behaviour)."""
+        from contextlib import ExitStack
+        stack = ExitStack()
+        from reports import metrics
+        for module in (calculations, metrics):
+            stack.enter_context(patch.object(module, "read_table_period", lambda *a, **k: None))
+            stack.enter_context(patch.object(module, "read_latest_stocks", lambda **k: None))
+        stack.enter_context(patch.object(calculations, "read_financial_period", lambda *a, **k: None))
+        return stack
 
     def _same(self, days):
         pushed, whole = self._dashboard(days), self._dashboard(days, force_whole=True)
@@ -125,3 +134,48 @@ class PeriodReadTests(DbTestCase):
         with core.connect() as conn:
             conn.execute("UPDATE stocks SET snapshot_at='2026-06-17 10:30:00' WHERE quantity=5")
         self.assertIsNone(core.read_latest_stocks(omit_raw=True), "two formats in one column")
+
+
+    # -- every report metric, the empty-period case included ---------------------------------------------------------------------------
+
+    def _all_metrics(self, start, end):
+        import hashlib
+        import io
+
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from reports import metrics
+        out = {}
+        for code in metrics.METRIC_BUILDERS:
+            result = metrics.build_metric(code, start, end)
+            buffer = io.BytesIO()
+            result.figure.savefig(buffer, format="png", dpi=125, bbox_inches="tight")
+            plt.close(result.figure)
+            out[code] = (result.title, result.summary, hashlib.sha256(buffer.getvalue()).hexdigest())
+        return out
+
+    def test_every_metric_is_identical_with_period_reads_for_busy_and_empty_periods(self):
+        self._fill("T")
+        periods = {"1 day": (TODAY, TODAY), "7 days": (TODAY - timedelta(days=6), TODAY), "30 days": (TODAY - timedelta(days=29), TODAY),
+                   "90 days": (TODAY - timedelta(days=89), TODAY), "empty period before the data": (TODAY - timedelta(days=400), TODAY - timedelta(days=380)),
+                   "empty period after the data": (TODAY + timedelta(days=30), TODAY + timedelta(days=36))}
+        for label, (start, end) in periods.items():
+            with self.subTest(period=label):
+                pushed = self._all_metrics(start, end)
+                with self._whole():
+                    whole = self._all_metrics(start, end)
+                self.assertEqual(pushed, whole)
+
+    def test_the_dashboard_is_identical_for_an_empty_period(self):
+        self._fill("T")
+        for start, end in ((TODAY - timedelta(days=400), TODAY - timedelta(days=380)), (TODAY + timedelta(days=30), TODAY + timedelta(days=36))):
+            pushed = calculations.build_dashboard(start, end)
+            with self._whole():
+                whole = calculations.build_dashboard(start, end)
+            for field in pushed.__dataclass_fields__:
+                a, b = getattr(pushed, field), getattr(whole, field)
+                if isinstance(a, pd.DataFrame):
+                    pd.testing.assert_frame_equal(a.reset_index(drop=True), b.reset_index(drop=True), check_exact=True, obj=field)
+                else:
+                    self.assertEqual(json.dumps(a, sort_keys=True, default=str), json.dumps(b, sort_keys=True, default=str), field)

@@ -84,3 +84,26 @@ Equality checks: `DashboardData` (daily, products, ads, stocks, alerts, FIFO sum
 | full PDF, 768 MiB container, 243 MiB base | OOM | OOM | |
 
 The chunked read costs about 5-8 s on this base (Python loop over the rows to check the value types); it is the price of exact types and could be cut by a typed read of columns whose SQLite declared type is uniform. Still open: the 243 MiB base does not fit in 768 MiB for the PDF (`build_dashboard` alone peaks at 757 MiB, and the PDF worker holds a snapshot plus a copy per metric). Next levers: the period filter in SQL behind the ISO guard, a typed fast path for the chunked read, and sharing the dashboard snapshot between metrics without a deep copy where a metric only reads it. Tests: 1341 tenant-app, 687 tenant-api.
+
+## Result: the full PDF on the 243 MiB base runs inside the existing 768 MiB limit (commits 330f1b6 and the following one)
+
+Measured on the whole container (`memory.peak`, `OOMKilled`, 2 CPUs, no network, limit 768 MiB), synthetic base of 243 MiB; raw data `benchmarks/release-2026-10-17/pdf-768m-large-db.json`.
+
+| Full 21-metric PDF | ed0748f | this change |
+|---|---|---|
+| 1 day | 1200 MiB peak, **OOM at 768m** | **201 MiB**, 4.5 s |
+| 7 days | 1192 MiB peak, **OOM at 768m** | **282 MiB**, 12.5 s |
+| 30 days | 1198 MiB peak, **OOM at 768m** | **606 MiB**, 27.5 s, no OOM |
+| 30 days at 512 MiB / 448 MiB | | OOM (the real floor is between 512 and 606 MiB) |
+
+The margin at 30 days is 162 MiB (21%) in a container that holds only the PDF process; the production container also holds the application and its API, which this measurement does not include.
+
+What moved the peak (found by per-stage and per-metric RSS in the container, not by tracemalloc, which does not see Arrow memory): the first `build_dashboard` peak came from reading whole `orders`, `sales`, `ads_daily`, `financial_report` and every `stocks` snapshot, and three metrics (`returns_cancellations`, `wb_commission_rate`, `weekday_pattern`, 635-685 MiB each) read whole tables again themselves.
+
+1. **Period reads in SQL** (`db.core.read_table_period`, `read_latest_stocks`, `db.ingest.read_financial_period`): used by `build_dashboard` and by the six metrics that read tables, only when the date column is uniformly one plain ISO shape (no NULL, no zone, one separator/length; mixed dates would parse differently once filtered, because pandas infers the format from the first row). Rows are returned in rowid order (float sums and "first value" aggregations keep their order). The financial read adds the one row with the latest operation date, which the accounting horizon needs. When the table has rows but none lies in the period, one row of the table is returned so the caller still sees a non-empty table and its own period filter leaves nothing, exactly as before; an empty or non-uniform table is read whole.
+2. **The financial table is read after the order and sale frames are released**, so the largest read no longer sits on top of them.
+3. Earlier steps of this branch: exact chunked reads, tuple FIFO output, protected-row projections, released intermediates.
+
+Equality, all on the same base and date: `DashboardData` identical for 1, 7, 30, 90 days; the PDF text and page count identical for 1, 7, 30 days; every metric's title, summary and PNG hash identical with and without period reads for four periods and two empty periods; the test that proves the guard (a mutation without it fails). Process peak of `build_dashboard`: 1075 to 124 MiB (1 day), 1075 to 209 (7), 1077 to 492 (30), 1940 to 877 (90). The 90-day dashboard is not a PDF period (daily, weekly, monthly give 1, 7, 30 days) and still does not fit in 768 MiB on this base.
+
+A malloc-trim / pyarrow release between stages was tried and gave 3 MiB; it was not kept. Tests: 1350 tenant-app, 687 tenant-api; one existing test class patches `calculations.read_table`, so the readers fall back to that name when the period read does not apply, and the tests keep passing unchanged.

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from db import read_table, read_financial
-from db.core import read_latest_stocks, read_table_period
+from db.core import read_first_row, read_latest_stocks, read_table_period
 from db.ingest import read_financial_period
 from db.financial_fifo_reconciliation import read_financial_fifo_reconciliation, summarize_financial_fifo_reconciliation
 from db.historical_cogs import project_historical_cogs
@@ -207,19 +207,24 @@ def read_product_operation_totals(nm_id: int, start: date, end: date) -> tuple[f
 
 
 def _read_period(name: str, column: str, start: date, end: date) -> pd.DataFrame:
-    """The table's rows of the period only when its dates are uniformly ISO-shaped (see db.core.uniform_iso_dates), else the whole
-    table; either way the period filter below is applied, so the result is the same."""
+    """The table narrowed to the period when that is provably the same for this function (db.core.read_period_or_whole states the
+    rule), otherwise `read_table` of this module, whole."""
     frame = read_table_period(name, column, start, end, omit_raw=True)
-    return frame if frame is not None else read_table(name, omit_raw=True)
+    if frame is None:
+        return read_table(name, omit_raw=True)
+    return frame if not frame.empty else read_first_row(name)
+
+
+def _read_latest_stocks() -> pd.DataFrame:
+    frame = read_latest_stocks(omit_raw=True)
+    return frame if frame is not None else read_table("stocks", omit_raw=True)
 
 
 def build_dashboard(start: date, end: date) -> DashboardData:
     orders = _prepare_dates(_read_period("orders", "order_date", start, end), "order_date")
     sales = _prepare_dates(_read_period("sales", "sale_date", start, end), "sale_date")
     ads_all = _prepare_dates(_read_period("ads_daily", "day", start, end), "day")
-    stocks = read_latest_stocks(omit_raw=True)
-    if stocks is None:
-        stocks = read_table("stocks", omit_raw=True)
+    stocks = _read_latest_stocks()
     costs = read_table("costs", omit_raw=True)
     catalog = read_table("products_catalog", omit_raw=True)
 

@@ -1486,9 +1486,16 @@ def uniform_iso_dates(conn, table: str, column: str) -> bool:
     Only then is a date filter in SQL equal to the filter pandas applies after `to_datetime`: pandas infers the format of mixed
     dates from the first row, so a filtered read of a mixed column could parse different rows than the whole read, and a time zone
     shifts the calendar day. With any other shape the caller reads the whole table as before."""
-    total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
-    if not total:
+    try:
+        total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        if not total:
+            return False
+        return _uniform_iso(conn, table, column, total)
+    except sqlite3.Error:  # no such table or column: the caller reads the table the way it always did (and fails the way it did)
         return False
+
+
+def _uniform_iso(conn, table: str, column: str, total: int) -> bool:
     for pattern in _DATE_FORMATS:
         # the separator and the fraction digits must also agree, so a table mixing 'T' and ' ' is not uniform
         if conn.execute(f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" GLOB ?', (pattern,)).fetchone()[0] == total:
@@ -1501,7 +1508,7 @@ def uniform_iso_dates(conn, table: str, column: str) -> bool:
 def read_table_period(name: str, date_column: str, start, end, *, omit_raw: bool = False) -> pd.DataFrame | None:
     """The rows of `name` whose `date_column` day lies in [start, end], in the table's own (rowid) order, or None when the
     column is not uniformly ISO-shaped (the caller then reads the whole table)."""
-    if name not in {"orders", "sales", "ads_daily"}:
+    if name not in {"orders", "sales", "ads_daily", "financial_report"}:
         raise ValueError("Недопустимая таблица")
     with connect() as conn:
         if not uniform_iso_dates(conn, name, date_column):
@@ -1509,6 +1516,32 @@ def read_table_period(name: str, date_column: str, start, end, *, omit_raw: bool
         sql = (f"SELECT {_table_projection(conn, name, omit_raw=omit_raw)} FROM {name} "
                f'WHERE substr("{date_column}",1,10) BETWEEN ? AND ? ORDER BY rowid')
         return read_sql_chunked(sql, conn, params=(start.isoformat(), end.isoformat()))
+
+
+def read_first_row(name: str) -> pd.DataFrame:
+    """The first row of `name` (rowid order), dashboard projection; stands in for a table whose rows all lie outside the period."""
+    with connect() as conn:
+        return read_sql_chunked(f"SELECT {_table_projection(conn, name, omit_raw=True)} FROM {name} ORDER BY rowid LIMIT 1", conn)
+
+
+def read_period_or_whole(name: str, date_column: str, start, end) -> pd.DataFrame:
+    """read_table(name, omit_raw=True) narrowed to the period when that is provably the same for the caller, else the whole table.
+
+    The callers filter the period again themselves, but they also test whether the *table* is empty (to print "no data" instead of an
+    empty chart), and a period read cannot tell an empty table from an empty period. When the table has rows but none in the period
+    (every date is uniformly ISO-shaped, so none is inside the period) one row of the table is returned: the caller sees a table with
+    rows and its own period filter leaves nothing, exactly as with the whole table. A table that is not uniformly ISO-shaped, or
+    is empty, is read whole."""
+    frame = read_table_period(name, date_column, start, end, omit_raw=True)
+    if frame is None:
+        return read_table(name, omit_raw=True)
+    return frame if not frame.empty else read_first_row(name)
+
+
+def read_latest_stocks_or_whole() -> pd.DataFrame:
+    """The newest `stocks` snapshot (all that the dashboard and the stock charts read), else the whole table."""
+    frame = read_latest_stocks(omit_raw=True)
+    return frame if frame is not None else read_table("stocks", omit_raw=True)
 
 
 def read_latest_stocks(*, omit_raw: bool = False) -> pd.DataFrame | None:
