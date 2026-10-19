@@ -52,9 +52,10 @@ class FinancialFifoStreamingTests(DbTestCase):
 
         def inspect(financial_rows, events, allocations, rates):
             observed.append(True)
-            self.assertLess(len(financial_rows[0]['raw_json']), 100)
+            first = next(iter(financial_rows))
+            self.assertLess(len(first['raw_json']), 100)
             self.assertLess(len(events[0]['sales_raw_json']), 100)
-            self.assertEqual(reconciliation._json_srid(financial_rows[0]['raw_json']), 'SR-1')
+            self.assertEqual(reconciliation._json_srid(first['raw_json']), 'SR-1')
             return original_reconcile(financial_rows, events, allocations, rates)
 
         with patch.object(reconciliation, 'connect', guarded_connect), patch.object(reconciliation, '_reconcile', inspect):
@@ -112,3 +113,17 @@ class FinancialFifoStreamingTests(DbTestCase):
         pd.testing.assert_frame_equal(projected, original, check_exact=True)
         self.assertTrue((projected[projected['rrd_id'].isin((1, 2, 99))]['reason'] == 'duplicate_financial_rows_for_srid').any())
         self.assertEqual(projected.loc[projected['rrd_id'] == 99, 'srid'].iloc[0], '')
+
+    def test_window_repeats_inside_the_same_read_snapshot(self):
+        from datetime import date
+        self._finance(1, operation_date='2026-06-02', sale_date='2026-06-01', quantity=1)
+        with core.connect() as connection:
+            connection.execute('BEGIN')
+            window = reconciliation._window_financial_rows(connection, date(2026, 6, 1), date(2026, 7, 1), set())
+            self.assertNotIsInstance(window, list, 'window must not retain every source row')
+            first = list(window)
+            with core.connect() as writer:
+                writer.execute("UPDATE financial_report SET quantity=2 WHERE rrd_id=1")
+            self.assertEqual(list(window), first, 'all reconciliation passes must see one snapshot')
+        with core.connect() as connection:
+            self.assertEqual(connection.execute('SELECT quantity FROM financial_report WHERE rrd_id=1').fetchone()[0], 2)

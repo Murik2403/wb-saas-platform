@@ -67,7 +67,7 @@ def _chunks(values: list[Any], size: int = 400) -> Iterable[list[Any]]:
 
 
 def _reconcile(
-    financial_rows: list[dict[str, Any]],
+    financial_rows: Iterable[dict[str, Any]],
     fifo_events: list[dict[str, Any]],
     allocation_rows: list[dict[str, Any]],
     baseline_rates: dict[int, float],
@@ -91,8 +91,8 @@ def _reconcile(
             events_by_key[(normalized["nm_id"], srid, _text(event.get("event_type")))].append(normalized)
 
     financial_keys: dict[tuple[int, str, str], int] = defaultdict(int)
-    # One small tuple per row instead of a full copy of the row dict (the copy held every column of every row at once).
-    prepared: list[tuple[Any, ...]] = []
+    # The source is re-iterable in one SQLite read transaction. Count duplicate
+    # keys first, then reconcile row by row without a second full prepared list.
     for row in financial_rows:
         kind = _event_type(row)
         quantity = abs(int(row.get("quantity") or 0))
@@ -100,13 +100,16 @@ def _reconcile(
         nm_id = int(row.get("nm_id") or 0)
         if kind and srid and quantity:
             financial_keys[(nm_id, srid, kind)] += 1
-        prepared.append((
-            row.get("rrd_id"), row.get("operation_date"), row.get("sale_date"), row.get("supplier_article"),
-            row.get("operation_name"), row.get("doc_type_name"), kind, quantity, srid, nm_id,
-        ))
 
     output: list[tuple[Any, ...]] = []
-    for rrd_id, operation_date, sale_date, supplier_article, operation_name, doc_type_name, kind, units, srid, nm_id in prepared:
+    for row in financial_rows:
+        kind = _event_type(row)
+        units = abs(int(row.get("quantity") or 0))
+        srid = _json_srid(row.get("raw_json"))
+        nm_id = int(row.get("nm_id") or 0)
+        rrd_id, operation_date, sale_date = row.get("rrd_id"), row.get("operation_date"), row.get("sale_date")
+        supplier_article = row.get("supplier_article")
+        operation_name, doc_type_name = row.get("operation_name"), row.get("doc_type_name")
         sign = -1 if kind == "return" else 1
         baseline = round(float(baseline_rates.get(nm_id, 0.0)) * units * sign, 2) if kind else 0.0
         result = {
@@ -256,30 +259,36 @@ def _reconcile(
 _RECONCILE_COLUMNS = ("rrd_id", "operation_date", "sale_date", "nm_id", "supplier_article", "operation_name", "doc_type_name", "quantity", "raw_json")
 
 
-def _window_financial_rows(conn, start: date, end_exclusive: date, preserve_raw_ids: set) -> list[dict[str, Any]]:
-    """The financial rows of the window in (operation_date, rrd_id) order, one dict each.
+class _FinancialWindow:
+    """Repeatable bounded cursor; every pass uses the caller's same read snapshot."""
 
-    Streams the cursor and keeps, per ordinary row, only the nine columns above with `raw_json` reduced to its SRID (the
-    previous code kept all 28 columns of every row). A protected row is re-read with `SELECT *` and kept untouched."""
-    present = {row[1] for row in conn.execute("PRAGMA table_info(financial_report)")}
-    columns = [column for column in _RECONCILE_COLUMNS if column in present]
-    select = ",".join(f'"{column}"' for column in columns)
-    cursor = conn.execute(
-        f"""SELECT {select}
-              FROM financial_report
-             WHERE operation_date >= ? AND operation_date < ?
-             ORDER BY operation_date,rrd_id""",
-        (start.isoformat(), end_exclusive.isoformat()),
-    )
-    rows: list[dict[str, Any]] = []
-    for source in cursor:
-        row = dict(source)
-        if row.get("rrd_id") in preserve_raw_ids:
-            row = dict(conn.execute("SELECT * FROM financial_report WHERE rrd_id=?", (row["rrd_id"],)).fetchone())
-        elif "raw_json" in row:
-            row["raw_json"] = _srid_payload(row["raw_json"])
-        rows.append(row)
-    return rows
+    def __init__(self, conn, start, end_exclusive, preserve_raw_ids):
+        self.conn = conn
+        self.start, self.end_exclusive = start, end_exclusive
+        self.preserve_raw_ids = preserve_raw_ids
+
+    def __iter__(self):
+        conn = self.conn
+        present = {row[1] for row in conn.execute("PRAGMA table_info(financial_report)")}
+        columns = [column for column in _RECONCILE_COLUMNS if column in present]
+        select = ",".join(f'"{column}"' for column in columns)
+        cursor = conn.execute(
+            f"""SELECT {select} FROM financial_report
+                 WHERE operation_date >= ? AND operation_date < ?
+                 ORDER BY operation_date,rrd_id""",
+            (self.start.isoformat(), self.end_exclusive.isoformat()),
+        )
+        for source in cursor:
+            row = dict(source)
+            if row.get("rrd_id") in self.preserve_raw_ids:
+                row = dict(conn.execute("SELECT * FROM financial_report WHERE rrd_id=?", (row["rrd_id"],)).fetchone())
+            elif "raw_json" in row:
+                row["raw_json"] = _srid_payload(row["raw_json"])
+            yield row
+
+
+def _window_financial_rows(conn, start: date, end_exclusive: date, preserve_raw_ids: set) -> Iterable[dict[str, Any]]:
+    return _FinancialWindow(conn, start, end_exclusive, preserve_raw_ids)
 
 
 def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_local_fifo:bool=True) -> pd.DataFrame:
@@ -359,11 +368,15 @@ def read_financial_fifo_reconciliation(date_from: str, date_to: str,*,allow_loca
         # Only a row whose rrd_id is referenced by a binding, a projection or a migration document can be changed by the two
         # projections below (they look the row up by that id and skip it when there is none), and every such id is in
         # preserve_raw_ids. They get dicts and the full source rows; every other row stays a tuple and is not looked up.
-        protected = [index for index, source in enumerate(financial_rows) if source.get("rrd_id") in preserve_raw_ids]
+        protected, sources = [], []
+        if preserve_raw_ids:
+            for index, source in enumerate(financial_rows):
+                if source.get("rrd_id") in preserve_raw_ids:
+                    protected.append(index)
+                    sources.append(source)
         if protected:
             from shared_warehouse_finance import apply_projection
             from .finished_history_import import project
-            sources = [financial_rows[index] for index in protected]
             projected = [dict(zip(_COLUMNS, rows[index])) for index in protected]
             projected = project(conn, sources, apply_projection(conn, sources, projected))
             for index, row in zip(protected, projected):

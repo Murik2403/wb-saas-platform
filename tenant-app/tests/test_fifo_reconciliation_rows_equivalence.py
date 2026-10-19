@@ -93,7 +93,7 @@ class FifoRowsEquivalenceTests(DbTestCase):
     def test_every_payload_shape_gives_the_same_rows_as_the_eager_reader(self):
         self._fill()
         with core.connect() as conn:
-            self.assertEqual(reconciliation._window_financial_rows(conn, START, END_EXCLUSIVE, set()),
+            self.assertEqual(list(reconciliation._window_financial_rows(conn, START, END_EXCLUSIVE, set())),
                              [self._lean(row) for row in reference_rows(conn, START, END_EXCLUSIVE, set())])
 
     def _lean(self, row):
@@ -104,7 +104,7 @@ class FifoRowsEquivalenceTests(DbTestCase):
         self._fill()
         self._protect(2, 5, 22)
         with core.connect() as conn:
-            lean = reconciliation._window_financial_rows(conn, START, END_EXCLUSIVE, {2, 5, 22})
+            lean = list(reconciliation._window_financial_rows(conn, START, END_EXCLUSIVE, {2, 5, 22}))
             eager = reference_rows(conn, START, END_EXCLUSIVE, {2, 5, 22})
         by_id = {row["rrd_id"]: row for row in lean}
         for expected in eager:
