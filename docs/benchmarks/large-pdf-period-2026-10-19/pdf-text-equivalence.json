@@ -1,0 +1,20 @@
+[
+  {
+    "days": 30,
+    "pages_identical": true,
+    "page_count": 11,
+    "text_identical_except_generation_footer": true,
+    "removed_footer_timestamps_per_pdf": 11,
+    "old_sha256": "f9d467433cbcf413fd5625a3efd4b47574a02601ae98cf3dc77305a958b9707b",
+    "new_sha256": "416aaf0e3445c50fdc6519f013b1c4e8d7e3f5e45f899f555f05f0c2dcf6ef93"
+  },
+  {
+    "days": 90,
+    "pages_identical": true,
+    "page_count": 11,
+    "text_identical_except_generation_footer": true,
+    "removed_footer_timestamps_per_pdf": 11,
+    "old_sha256": "7b4754a17eb66c9f0ee35d366e223aeeed8c09046cc1a5263eeb5b42e7254b8d",
+    "new_sha256": "3c2ed058a6382d4b799616ee168b318e78b5b7bf1b3c04907505b1801b6ec3f3"
+  }
+]
