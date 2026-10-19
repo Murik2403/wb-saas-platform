@@ -80,7 +80,7 @@ cd ../mobile && node scripts/store-shots.mjs
 4. На странице кабинета вызвать `Capacitor.Plugins.PushNotifications.requestPermissions()` и `register()`, токен отправить на сервер (эндпоинт нужно добавить в gateway). До этого push не работает.
 
 ## Нативные доработки, не сделанные автоматически
-- iOS: Associated Domains, Push capability, `ITSAppUsesNonExemptEncryption` — в Xcode (см. `store/checklist.md`).
+- iOS: Associated Domains и Push capability — в Xcode (см. `store/checklist.md`). `ITSAppUsesNonExemptEncryption=false` уже задано в `Info.plist`; при изменении использования шифрования декларацию нужно пересмотреть.
 - Подпись релиза Android — своим keystore (`store/checklist.md`), секреты только через переменные и локальные файлы.
 
 ## Приёмка Android на эмуляторе
