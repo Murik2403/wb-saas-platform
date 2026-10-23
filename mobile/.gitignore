@@ -7,3 +7,6 @@ ios/App/Pods/
 *.jks
 google-services.json
 GoogleService-Info.plist
+
+build-ios/
+dist-ios/
